@@ -1,0 +1,48 @@
+[
+  {
+    "clean_comment_id": "clean_001",
+    "original_comment_ids": ["comment_001", "comment_008", "comment_021"],
+    "platforms": ["reddit"],
+    "post_ids": ["post_001"],
+    "author_id": "user_hash_002",
+    "clean_text": "this product has serious quality issues",
+    "language": "en",
+    "duplicate_group_id": "dup_group_001",
+    "duplicate_count": 12,
+    "semantic_similarity_group": "sem_group_008",
+    "is_repeated_script": true,
+    "created_at_min": "2026-05-13T10:05:00Z",
+    "created_at_max": "2026-05-13T12:08:00Z"
+  },
+  {
+    "clean_comment_id": "clean_002",
+    "original_comment_ids": ["comment_002", "comment_015"],
+    "platforms": ["weibo"],
+    "post_ids": ["post_002"],
+    "author_id": "user_hash_009",
+    "clean_text": "最近同样的问题太多了 希望官方尽快回应",
+    "language": "zh",
+    "duplicate_group_id": "dup_group_002",
+    "duplicate_count": 8,
+    "semantic_similarity_group": "sem_group_011",
+    "is_repeated_script": true,
+    "created_at_min": "2026-05-13T10:20:00Z",
+    "created_at_max": "2026-05-13T12:18:00Z"
+  },
+  {
+    "clean_comment_id": "clean_003",
+    "original_comment_ids": ["comment_003"],
+    "platforms": ["reddit"],
+    "post_ids": ["post_003"],
+    "author_id": "user_hash_014",
+    "clean_text": "this looks coordinated the wording keeps repeating",
+    "language": "en",
+    "duplicate_group_id": null,
+    "duplicate_count": 1,
+    "semantic_similarity_group": "sem_group_012",
+    "is_repeated_script": false,
+    "created_at_min": "2026-05-13T10:32:00Z",
+    "created_at_max": "2026-05-13T10:32:00Z"
+  }
+]
+

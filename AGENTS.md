@@ -209,3 +209,16 @@ Focus only on:
 
 Follow the development order in docs/development_plan.md.
 ```
+
+## 11. Project Handoff Rule
+
+After each major Codex task, update `docs/progress.md`.
+
+The progress file should record:
+
+- Current project status
+- Completed MVP steps
+- Important files and modules changed
+- Windows local run commands
+- Known issues and validation status
+- Next recommended task

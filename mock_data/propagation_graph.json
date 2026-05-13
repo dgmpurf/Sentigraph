@@ -1,0 +1,88 @@
+{
+  "project_id": "project_001",
+  "nodes": [
+    {
+      "node_id": "post_001",
+      "type": "post",
+      "platform": "reddit",
+      "content": "Original complaint thread",
+      "author_id": "user_hash_001",
+      "created_at": "2026-05-13T10:00:00Z",
+      "sentiment_score": -0.72,
+      "influence_score": 0.88
+    },
+    {
+      "node_id": "comment_001",
+      "type": "comment",
+      "platform": "reddit",
+      "content": "Serious quality issues",
+      "author_id": "user_hash_002",
+      "created_at": "2026-05-13T10:05:00Z",
+      "sentiment_score": -0.82,
+      "influence_score": 0.57
+    },
+    {
+      "node_id": "post_002",
+      "type": "post",
+      "platform": "weibo",
+      "content": "Chinese repost cluster",
+      "author_id": "user_hash_007",
+      "created_at": "2026-05-13T10:18:00Z",
+      "sentiment_score": -0.67,
+      "influence_score": 0.74
+    },
+    {
+      "node_id": "comment_002",
+      "type": "comment",
+      "platform": "weibo",
+      "content": "Need official response",
+      "author_id": "user_hash_009",
+      "created_at": "2026-05-13T10:20:00Z",
+      "sentiment_score": -0.76,
+      "influence_score": 0.62
+    },
+    {
+      "node_id": "post_003",
+      "type": "post",
+      "platform": "youtube",
+      "content": "Video discussion",
+      "author_id": "user_hash_012",
+      "created_at": "2026-05-13T11:10:00Z",
+      "sentiment_score": -0.49,
+      "influence_score": 0.51
+    }
+  ],
+  "edges": [
+    {
+      "source": "post_001",
+      "target": "comment_001",
+      "relation": "reply",
+      "weight": 0.64
+    },
+    {
+      "source": "post_001",
+      "target": "post_002",
+      "relation": "repost",
+      "weight": 0.71
+    },
+    {
+      "source": "post_002",
+      "target": "comment_002",
+      "relation": "reply",
+      "weight": 0.58
+    },
+    {
+      "source": "post_002",
+      "target": "post_003",
+      "relation": "cross_platform",
+      "weight": 0.47
+    }
+  ],
+  "metrics": {
+    "depth": 4,
+    "breadth": 128,
+    "central_node_id": "post_001",
+    "propagation_speed": 0.84
+  }
+}
+

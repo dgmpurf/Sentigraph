@@ -8,6 +8,24 @@ Base path:
 
 During MVP 0 and MVP 1, all endpoints may return mock data.
 
+## 0. Health Check
+
+### Endpoint
+
+```http
+GET /api/v1/health
+```
+
+### Response
+
+```json
+{
+  "status": "ok",
+  "mode": "development",
+  "version": "0.1.0"
+}
+```
+
 ## 1. Keyword Expansion
 
 ### Endpoint

@@ -1,0 +1,106 @@
+{
+  "project_id": "project_001",
+  "summary": "Current public opinion is mainly negative and focused on product quality, customer response speed, and repeated complaint scripts.",
+  "sentiment": {
+    "positive_ratio": 0.12,
+    "neutral_ratio": 0.16,
+    "negative_ratio": 0.72,
+    "average_sentiment_score": -0.68
+  },
+  "topics": [
+    {
+      "cluster_id": "topic_001",
+      "topic": "Product quality issues",
+      "summary": "Many users complain about durability, defects, and inconsistent quality control.",
+      "comment_count": 356,
+      "average_sentiment_score": -0.74,
+      "representative_comments": [
+        "This product broke after two weeks.",
+        "Quality control seems terrible."
+      ]
+    },
+    {
+      "cluster_id": "topic_002",
+      "topic": "Delayed official response",
+      "summary": "Users expect a clearer response timeline and support policy.",
+      "comment_count": 184,
+      "average_sentiment_score": -0.61,
+      "representative_comments": [
+        "The company should explain what happened.",
+        "Silence makes this look worse."
+      ]
+    },
+    {
+      "cluster_id": "topic_003",
+      "topic": "Coordinated amplification",
+      "summary": "Several posts use similar wording and appear within a narrow time window.",
+      "comment_count": 97,
+      "average_sentiment_score": -0.55,
+      "representative_comments": [
+        "This exact sentence keeps appearing everywhere.",
+        "The timing feels coordinated."
+      ]
+    }
+  ],
+  "conflicts": [
+    {
+      "conflict_id": "conflict_001",
+      "side_a": "The product has real quality issues.",
+      "side_b": "The negative trend is caused by malicious competitors.",
+      "intensity": 0.83,
+      "evidence_comments": [
+        "This product has real quality problems.",
+        "This looks like a coordinated attack."
+      ]
+    }
+  ],
+  "bot_score": {
+    "suspected_bot_ratio": 0.24,
+    "suspected_bot_comment_ratio": 0.39
+  },
+  "risk": {
+    "risk_score": 87,
+    "risk_level": "high"
+  },
+  "sentiment_results": [
+    {
+      "comment_id": "clean_001",
+      "sentiment": "negative",
+      "sentiment_score": -0.82,
+      "emotion_tags": ["anger", "distrust"],
+      "stance": "opposing",
+      "confidence": 0.91,
+      "reason": "The comment expresses strong dissatisfaction and distrust."
+    },
+    {
+      "comment_id": "clean_002",
+      "sentiment": "negative",
+      "sentiment_score": -0.76,
+      "emotion_tags": ["disappointment", "questioning"],
+      "stance": "opposing",
+      "confidence": 0.88,
+      "reason": "The comment asks for an official response while expressing disappointment."
+    }
+  ],
+  "ai_generated": [
+    {
+      "comment_id": "clean_001",
+      "ai_generated_probability": 0.76,
+      "template_similarity_score": 0.88,
+      "reason": "Multiple comments share highly similar sentence structures."
+    }
+  ],
+  "bot_accounts": [
+    {
+      "author_id": "user_hash_002",
+      "bot_probability": 0.81,
+      "bot_reasons": [
+        "High repeated content ratio",
+        "Abnormally frequent comments",
+        "Highly synchronized posting time"
+      ],
+      "influence_weight": 0.43
+    }
+  ]
+}
+

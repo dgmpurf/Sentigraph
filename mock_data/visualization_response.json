@@ -1,0 +1,162 @@
+{
+  "project_id": "project_001",
+  "risk_score": 87,
+  "risk_level": "high",
+  "sentiment_trend": [
+    {
+      "time": "2026-05-13T08:00:00Z",
+      "positive": 18,
+      "neutral": 34,
+      "negative": 48
+    },
+    {
+      "time": "2026-05-13T09:00:00Z",
+      "positive": 16,
+      "neutral": 28,
+      "negative": 63
+    },
+    {
+      "time": "2026-05-13T10:00:00Z",
+      "positive": 12,
+      "neutral": 20,
+      "negative": 68
+    },
+    {
+      "time": "2026-05-13T11:00:00Z",
+      "positive": 11,
+      "neutral": 18,
+      "negative": 92
+    },
+    {
+      "time": "2026-05-13T12:00:00Z",
+      "positive": 14,
+      "neutral": 22,
+      "negative": 101
+    }
+  ],
+  "risk_radar": {
+    "negative_sentiment": 0.72,
+    "bot_impact": 0.61,
+    "propagation_speed": 0.84,
+    "controversy": 0.78,
+    "trend_shift": 0.67
+  },
+  "heatmap": [
+    {
+      "platform": "reddit",
+      "time_bucket": "08:00",
+      "intensity": 42
+    },
+    {
+      "platform": "reddit",
+      "time_bucket": "10:00",
+      "intensity": 79
+    },
+    {
+      "platform": "weibo",
+      "time_bucket": "10:00",
+      "intensity": 88
+    },
+    {
+      "platform": "weibo",
+      "time_bucket": "12:00",
+      "intensity": 95
+    },
+    {
+      "platform": "youtube",
+      "time_bucket": "12:00",
+      "intensity": 48
+    }
+  ],
+  "propagation_graph": {
+    "nodes": [
+      {
+        "node_id": "post_001",
+        "type": "post",
+        "platform": "reddit",
+        "content": "Original complaint thread",
+        "author_id": "user_hash_001",
+        "created_at": "2026-05-13T10:00:00Z",
+        "sentiment_score": -0.72,
+        "influence_score": 0.88
+      },
+      {
+        "node_id": "comment_001",
+        "type": "comment",
+        "platform": "reddit",
+        "content": "Serious quality issues",
+        "author_id": "user_hash_002",
+        "created_at": "2026-05-13T10:05:00Z",
+        "sentiment_score": -0.82,
+        "influence_score": 0.57
+      },
+      {
+        "node_id": "post_002",
+        "type": "post",
+        "platform": "weibo",
+        "content": "Chinese repost cluster",
+        "author_id": "user_hash_007",
+        "created_at": "2026-05-13T10:18:00Z",
+        "sentiment_score": -0.67,
+        "influence_score": 0.74
+      },
+      {
+        "node_id": "comment_002",
+        "type": "comment",
+        "platform": "weibo",
+        "content": "Need official response",
+        "author_id": "user_hash_009",
+        "created_at": "2026-05-13T10:20:00Z",
+        "sentiment_score": -0.76,
+        "influence_score": 0.62
+      }
+    ],
+    "edges": [
+      {
+        "source": "post_001",
+        "target": "comment_001",
+        "relation": "reply",
+        "weight": 0.64
+      },
+      {
+        "source": "post_001",
+        "target": "post_002",
+        "relation": "repost",
+        "weight": 0.71
+      },
+      {
+        "source": "post_002",
+        "target": "comment_002",
+        "relation": "reply",
+        "weight": 0.58
+      }
+    ]
+  },
+  "topic_clusters": [
+    {
+      "name": "Quality",
+      "value": 356,
+      "sentiment_score": -0.74
+    },
+    {
+      "name": "Response",
+      "value": 184,
+      "sentiment_score": -0.61
+    },
+    {
+      "name": "Coordination",
+      "value": 97,
+      "sentiment_score": -0.55
+    },
+    {
+      "name": "Pricing",
+      "value": 71,
+      "sentiment_score": -0.22
+    }
+  ],
+  "bot_impact": {
+    "suspected_bot_ratio": 0.24,
+    "suspected_bot_comment_ratio": 0.39
+  }
+}
+

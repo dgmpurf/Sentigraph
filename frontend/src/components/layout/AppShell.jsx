@@ -1,0 +1,82 @@
+import { Button, Layout, Menu, Space, Tag, Tooltip, Typography } from 'antd'
+import {
+  Activity,
+  BarChart3,
+  FileText,
+  Network,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Sparkles,
+} from 'lucide-react'
+
+import { riskTone } from '../../utils/formatters.js'
+
+const { Content, Header, Sider } = Layout
+const { Text, Title } = Typography
+
+const navItems = [
+  { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={17} /> },
+  { key: 'keyword', label: 'Keyword Search', icon: <Search size={17} /> },
+  { key: 'analysis', label: 'Analysis Result', icon: <Activity size={17} /> },
+  { key: 'propagation', label: 'Propagation Graph', icon: <Network size={17} /> },
+  { key: 'risk', label: 'Risk Monitor', icon: <ShieldAlert size={17} /> },
+  { key: 'summary', label: 'Summary Report', icon: <FileText size={17} /> },
+]
+
+export function AppShell({
+  activePage,
+  alertsCount,
+  children,
+  loading,
+  onNavigate,
+  onRefresh,
+  projectId,
+  riskLevel,
+  riskScore,
+}) {
+  return (
+    <Layout className="app-shell">
+      <Sider width={256} className="app-sider">
+        <div className="brand-lockup">
+          <div className="brand-mark">
+            <Sparkles size={21} />
+          </div>
+          <div>
+            <Title level={4}>Sentigraph</Title>
+            <Text>Public opinion intelligence</Text>
+          </div>
+        </div>
+        <Menu
+          mode="inline"
+          selectedKeys={[activePage]}
+          items={navItems}
+          onClick={({ key }) => onNavigate(key)}
+          className="app-menu"
+        />
+      </Sider>
+      <Layout>
+        <Header className="app-header">
+          <Space size={14} wrap>
+            <Tag color="cyan">Mock Mode</Tag>
+            <Text className="project-label">{projectId}</Text>
+            <Tag color={riskTone(riskLevel)}>Risk {riskScore}</Tag>
+            <Tag color="volcano">{alertsCount} Alerts</Tag>
+          </Space>
+          <Tooltip title="Refresh mock analysis">
+            <Button
+              icon={<RefreshCw size={16} />}
+              loading={loading}
+              onClick={onRefresh}
+              type="primary"
+            >
+              Refresh
+            </Button>
+          </Tooltip>
+        </Header>
+        <Content className="app-content">{children}</Content>
+      </Layout>
+    </Layout>
+  )
+}
+

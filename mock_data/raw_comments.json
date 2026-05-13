@@ -1,0 +1,48 @@
+[
+  {
+    "platform": "reddit",
+    "post_id": "post_001",
+    "comment_id": "comment_001",
+    "parent_id": null,
+    "author_id": "user_hash_002",
+    "author_name": "anonymous_user",
+    "content": "I think this product has serious quality issues.",
+    "like_count": 45,
+    "reply_count": 8,
+    "share_count": 0,
+    "created_at": "2026-05-13T10:05:00Z",
+    "url": "https://example.com/post/post_001/comment/comment_001",
+    "raw_data": {}
+  },
+  {
+    "platform": "weibo",
+    "post_id": "post_002",
+    "comment_id": "comment_002",
+    "parent_id": null,
+    "author_id": "user_hash_009",
+    "author_name": "anonymous_user",
+    "content": "最近同样的问题太多了，希望官方尽快回应。",
+    "like_count": 132,
+    "reply_count": 19,
+    "share_count": 11,
+    "created_at": "2026-05-13T10:20:00Z",
+    "url": "https://example.com/post/post_002/comment/comment_002",
+    "raw_data": {}
+  },
+  {
+    "platform": "reddit",
+    "post_id": "post_003",
+    "comment_id": "comment_003",
+    "parent_id": "comment_001",
+    "author_id": "user_hash_014",
+    "author_name": "anonymous_user",
+    "content": "This looks coordinated, the wording keeps repeating.",
+    "like_count": 28,
+    "reply_count": 5,
+    "share_count": 1,
+    "created_at": "2026-05-13T10:32:00Z",
+    "url": "https://example.com/post/post_003/comment/comment_003",
+    "raw_data": {}
+  }
+]
+
