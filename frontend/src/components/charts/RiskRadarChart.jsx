@@ -13,11 +13,11 @@ const indicators = [
 export function RiskRadarChart({ data }) {
   const values = data
     ? [
-        data.negative_sentiment,
-        data.bot_impact,
-        data.propagation_speed,
-        data.controversy,
-        data.trend_shift,
+        data.negative_sentiment ?? 0,
+        data.bot_impact ?? 0,
+        data.propagation_speed ?? 0,
+        data.controversy ?? 0,
+        data.trend_shift ?? 0,
       ]
     : []
 
@@ -49,4 +49,3 @@ export function RiskRadarChart({ data }) {
     </ChartFrame>
   )
 }
-

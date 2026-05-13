@@ -120,7 +120,9 @@ python -m pip install -r backend\requirements.txt
 Install frontend dependencies:
 
 ```powershell
-npm.cmd --prefix frontend install
+Set-Location frontend
+npm.cmd install
+Set-Location ..
 ```
 
 If PowerShell blocks `npm` because script execution is disabled, use `npm.cmd` as shown above.
@@ -129,7 +131,9 @@ If npm reports a stale dependency error after earlier local installs, remove the
 
 ```powershell
 Remove-Item -Recurse -Force frontend\node_modules
-npm.cmd --prefix frontend install
+Set-Location frontend
+npm.cmd install
+Set-Location ..
 ```
 
 ## Run Backend

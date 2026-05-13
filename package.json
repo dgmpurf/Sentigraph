@@ -6,7 +6,7 @@
     "backend:install": "python -m pip install -r backend/requirements.txt",
     "backend:dev": "python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000",
     "backend:test": "python -m pytest",
-    "frontend:install": "npm --prefix frontend install",
+    "frontend:install": "cd frontend && npm install",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build"
   }

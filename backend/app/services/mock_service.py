@@ -11,6 +11,14 @@ from app.schemas.propagation import PropagationResponse
 from app.schemas.recommendation import RecommendationRequest, RecommendationResponse
 from app.schemas.summary import SummaryGenerateRequest, SummaryGenerateResponse
 from app.schemas.visualization import VisualizationDataRequest, VisualizationResponse
+from app.services.mock_pipeline import (
+    build_mock_pipeline,
+    build_pipeline_analysis,
+    build_pipeline_propagation,
+    build_pipeline_visualization,
+)
+from app.services.recommendation.report_builder import build_public_opinion_report
+from app.services.visualization.chart_data_builder import build_visualization_response
 
 MOCK_DATA_DIR = Path(__file__).resolve().parents[3] / "mock_data"
 
@@ -23,12 +31,12 @@ def load_mock_json(filename: str) -> dict[str, Any] | list[dict[str, Any]]:
 
 def build_keyword_expansion(payload: KeywordExpandRequest) -> KeywordExpandResponse:
     keyword = payload.keyword.strip()
-    expanded = [keyword, "特斯拉", "Model Y", "自动驾驶", "降价"]
+    expanded = [keyword, "\u7279\u65af\u62c9", "Model Y", "\u81ea\u52a8\u9a7e\u9a76", "\u964d\u4ef7"]
     queries = [
         f"{keyword} problem",
         f"{keyword} recall",
-        "特斯拉 刹车",
-        "特斯拉 降价",
+        "\u7279\u65af\u62c9 \u5239\u8f66",
+        "\u7279\u65af\u62c9 \u964d\u4ef7",
     ]
     return KeywordExpandResponse(
         original_keyword=keyword,
@@ -56,65 +64,72 @@ def run_mock_analysis(payload: AnalysisRunRequest) -> AnalysisRunResponse:
 
 
 def get_mock_analysis_result(project_id: str) -> AnalysisResultResponse:
-    raw_data = load_mock_json("analysis_result.json")
-    assert isinstance(raw_data, dict)
-    data = dict(raw_data)
-    data["project_id"] = project_id
-    return AnalysisResultResponse(**data)
+    return build_pipeline_analysis(project_id)
 
 
 def get_mock_visualization(payload: VisualizationDataRequest) -> VisualizationResponse:
-    raw_data = load_mock_json("visualization_response.json")
-    assert isinstance(raw_data, dict)
-    data = dict(raw_data)
-    data["project_id"] = payload.project_id
-    return VisualizationResponse(**data)
+    return build_pipeline_visualization(payload.project_id, platforms=payload.platforms)
 
 
 def get_mock_propagation(project_id: str) -> PropagationResponse:
-    raw_data = load_mock_json("propagation_graph.json")
-    assert isinstance(raw_data, dict)
-    data = dict(raw_data)
-    data["project_id"] = project_id
-    return PropagationResponse(**data)
+    return build_pipeline_propagation(project_id)
 
 
 def generate_mock_summary(payload: SummaryGenerateRequest) -> SummaryGenerateResponse:
-    comments = [
-        "This product broke after two weeks.",
-        "Quality control seems terrible.",
-        "The timing of these posts looks unusually synchronized.",
-    ]
+    pipeline = build_mock_pipeline(payload.project_id)
+    visualization = build_visualization_response(
+        payload.project_id,
+        pipeline.analysis,
+        clean_comments=pipeline.clean_comments,
+        raw_comments=pipeline.raw_comments,
+        propagation=pipeline.propagation,
+        risk_result=pipeline.risk_result,
+    )
+    report = build_public_opinion_report(
+        pipeline.analysis,
+        visualization=visualization,
+        propagation=pipeline.propagation,
+        risk_factors=pipeline.risk_result.factors,
+        representative_comments=_pipeline_representative_comments(pipeline),
+        include_representative_comments=payload.include_representative_comments,
+    )
+    key_findings = (
+        report.main_risk_factors
+        + [f"Negative topic: {topic}" for topic in report.top_negative_topics]
+        + report.suspected_bot_signals
+    )
     return SummaryGenerateResponse(
         project_id=payload.project_id,
-        summary="Current public opinion is mainly negative and focused on product quality and response speed.",
-        key_findings=[
-            "Negative sentiment is increasing quickly across monitored platforms.",
-            "The main topic is product quality and delayed customer response.",
-            "Repeated negative scripts are present and should be reviewed before escalation.",
-        ],
-        representative_comments=comments if payload.include_representative_comments else [],
+        summary=report.overall_summary,
+        key_findings=key_findings[:8],
+        representative_comments=report.representative_comments,
     )
 
 
-def generate_mock_recommendation(_: RecommendationRequest) -> RecommendationResponse:
+def generate_mock_recommendation(payload: RecommendationRequest) -> RecommendationResponse:
+    pipeline = build_mock_pipeline(payload.project_id)
+    visualization = build_visualization_response(
+        payload.project_id,
+        pipeline.analysis,
+        clean_comments=pipeline.clean_comments,
+        raw_comments=pipeline.raw_comments,
+        propagation=pipeline.propagation,
+        risk_result=pipeline.risk_result,
+    )
+    report = build_public_opinion_report(
+        pipeline.analysis,
+        visualization=visualization,
+        propagation=pipeline.propagation,
+        risk_factors=pipeline.risk_result.factors,
+        representative_comments=_pipeline_representative_comments(pipeline),
+        user_type=payload.user_type,
+        tone=payload.tone,
+    )
     return RecommendationResponse(
-        summary="Current public opinion is mainly negative and focused on product quality.",
-        main_risks=[
-            "Quality-related complaints are spreading quickly.",
-            "Repeated negative scripts suggest coordinated amplification.",
-            "Delayed official response may increase distrust.",
-        ],
-        recommended_actions=[
-            "Publish a factual clarification within 24 hours.",
-            "Address the most repeated complaint directly.",
-            "Avoid emotional confrontation with users.",
-            "Prepare FAQ responses for customer service.",
-        ],
-        suggested_response=(
-            "We are aware of the concerns regarding product quality and are currently investigating. "
-            "We will publish verified findings and support options as soon as possible."
-        ),
+        summary=report.overall_summary,
+        main_risks=report.main_risk_factors + report.suspected_bot_signals,
+        recommended_actions=report.recommended_actions,
+        suggested_response=report.suggested_public_response,
     )
 
 
@@ -138,3 +153,18 @@ def get_mock_alerts(project_id: str) -> AlertsResponse:
             },
         ],
     )
+
+
+def _pipeline_representative_comments(pipeline) -> list[str]:
+    sentiment_by_comment = {
+        result.comment_id: result.sentiment_score for result in pipeline.sentiment_results
+    }
+    ranked_comments = sorted(
+        pipeline.clean_comments,
+        key=lambda comment: (
+            sentiment_by_comment.get(comment.clean_comment_id, 0.0),
+            -comment.duplicate_count,
+            comment.clean_comment_id,
+        ),
+    )
+    return [comment.clean_text for comment in ranked_comments if comment.clean_text][:5]

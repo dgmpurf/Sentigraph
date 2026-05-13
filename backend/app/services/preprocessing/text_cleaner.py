@@ -10,6 +10,7 @@ HASHTAG_PATTERN = re.compile(r"(?<!\w)#([\w\u4e00-\u9fff]+)")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 REPEATED_PUNCTUATION_PATTERN = re.compile(r"([!?.,\u3002\uff01\uff1f\uff0c])\1+")
 NON_TEXT_PATTERN = re.compile(r"[^\w\s\u4e00-\u9fff!?.,\u3002\uff01\uff1f\uff0c-]")
+SPACE_BEFORE_PUNCTUATION_PATTERN = re.compile(r"\s+([!?.,])")
 CHINESE_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 PUNCTUATION_TRANSLATION = str.maketrans(
     {
@@ -32,6 +33,7 @@ def normalize_text(text: str) -> str:
     normalized = REPEATED_PUNCTUATION_PATTERN.sub(r"\1", normalized)
     normalized = NON_TEXT_PATTERN.sub(" ", normalized)
     normalized = WHITESPACE_PATTERN.sub(" ", normalized)
+    normalized = SPACE_BEFORE_PUNCTUATION_PATTERN.sub(r"\1", normalized)
     return normalized.strip()
 
 

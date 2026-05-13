@@ -15,13 +15,13 @@ export function TopicClusterChart({ data = [] }) {
     yAxis: {
       type: 'category',
       data: data.map((item) => item.name),
-      axisLabel: { color: '#c9d4ea' },
+      axisLabel: { color: '#c9d4ea', overflow: 'truncate', width: 112 },
       axisLine: { lineStyle: { color: '#283043' } },
     },
     series: [
       {
         type: 'bar',
-        data: data.map((item) => item.value),
+        data: data.map((item) => item.value ?? 0),
         barWidth: 18,
         itemStyle: {
           borderRadius: [0, 6, 6, 0],
@@ -36,4 +36,3 @@ export function TopicClusterChart({ data = [] }) {
     </ChartFrame>
   )
 }
-

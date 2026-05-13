@@ -15,7 +15,7 @@ export function PropagationGraphChart({ graph }) {
     color: ['#42f5d7', '#ff5d8f', '#f5c44b'],
     tooltip: {
       formatter: (params) => {
-        if (params.dataType === 'edge') return `${params.data.source} → ${params.data.target}`
+        if (params.dataType === 'edge') return `${params.data.source} -> ${params.data.target}`
         return `${params.data.name}<br/>${params.data.platform}<br/>Influence ${params.data.influence}`
       },
     },
@@ -25,8 +25,8 @@ export function PropagationGraphChart({ graph }) {
         layout: 'force',
         roam: true,
         force: {
-          repulsion: 180,
-          edgeLength: 90,
+          repulsion: nodes.length <= 6 ? 260 : 180,
+          edgeLength: nodes.length <= 6 ? 120 : 90,
         },
         label: {
           show: true,
@@ -39,22 +39,25 @@ export function PropagationGraphChart({ graph }) {
         },
         edgeSymbol: ['none', 'arrow'],
         edgeSymbolSize: [0, 8],
-        data: nodes.map((node) => ({
-          name: node.node_id,
-          value: node.influence_score,
-          platform: node.platform,
-          influence: node.influence_score,
-          symbolSize: 38 + node.influence_score * 28,
-          itemStyle: {
-            color: platformColor[node.platform] || '#42f5d7',
-            shadowBlur: 18,
-            shadowColor: platformColor[node.platform] || '#42f5d7',
-          },
-        })),
+        data: nodes.map((node) => {
+          const influence = node.influence_score ?? 0
+          return {
+            name: node.node_id,
+            value: influence,
+            platform: node.platform,
+            influence,
+            symbolSize: 38 + influence * 28,
+            itemStyle: {
+              color: platformColor[node.platform] || '#42f5d7',
+              shadowBlur: 18,
+              shadowColor: platformColor[node.platform] || '#42f5d7',
+            },
+          }
+        }),
         links: edges.map((edge) => ({
           source: edge.source,
           target: edge.target,
-          value: edge.weight,
+          value: edge.weight ?? 0,
         })),
       },
     ],
@@ -66,4 +69,3 @@ export function PropagationGraphChart({ graph }) {
     </ChartFrame>
   )
 }
-

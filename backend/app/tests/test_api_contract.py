@@ -71,8 +71,10 @@ def test_analysis_result_contract() -> None:
     response = client.get("/api/v1/analysis/project_001")
     assert response.status_code == 200
     body = response.json()
-    assert body["risk"]["risk_level"] == "high"
+    assert body["risk"]["risk_level"] in {"low", "medium", "high", "critical"}
     assert body["bot_score"]["suspected_bot_ratio"] >= 0
+    assert body["sentiment_results"]
+    assert body["topics"]
 
 
 def test_summary_recommendation_propagation_and_alert_contracts() -> None:

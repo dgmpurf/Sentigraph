@@ -4,7 +4,7 @@ import { formatPercent } from '../../utils/formatters.js'
 import { ChartFrame } from './ChartFrame.jsx'
 
 export function BotImpactChart({ data }) {
-  const suspected = data?.suspected_bot_comment_ratio ?? 0
+  const suspected = Math.max(0, Math.min(1, data?.suspected_bot_comment_ratio ?? 0))
   const option = {
     color: ['#ff5d8f', '#283043'],
     tooltip: {
@@ -46,4 +46,3 @@ export function BotImpactChart({ data }) {
     </ChartFrame>
   )
 }
-
