@@ -646,6 +646,21 @@ Response:
   "keyword": "Tesla",
   "platforms": ["reddit", "weibo", "bilibili"],
   "status": "draft",
+  "monitoring_config": {
+    "enabled": false,
+    "interval_minutes": 60,
+    "last_run_at": null,
+    "next_run_at": null,
+    "threshold_config": {
+      "risk_score_delta_warning": 10,
+      "risk_score_delta_critical": 20,
+      "real_crisis_delta_warning": 10,
+      "manipulation_delta_warning": 15,
+      "topic_risk_high": 70,
+      "topic_risk_critical": 85
+    },
+    "status": "disabled"
+  },
   "analysis_result": null,
   "visualization_data": null,
   "report": null,
@@ -805,6 +820,123 @@ Response:
   }
 ]
 ```
+
+## 10.1 Monitoring Scheduler Foundation
+
+The v0.8 scheduler foundation stores monitoring configuration and scheduler job state, but it does not start a real background worker. Local demos should use the manual `run-due` endpoint to simulate scheduler behavior.
+
+### Get Scheduler Status
+
+```http
+GET /api/v1/scheduler/status
+```
+
+Response:
+
+```json
+{
+  "background_scheduler_running": false,
+  "total_cases": 1,
+  "enabled_cases": 1,
+  "due_cases": 1,
+  "next_due_at": null,
+  "job_states": [
+    {
+      "case_id": "case_001",
+      "title": "Tesla 舆情案例",
+      "keyword": "Tesla",
+      "enabled": true,
+      "interval_minutes": 60,
+      "last_run_at": null,
+      "next_run_at": "2026-05-14T09:05:00Z",
+      "status": "due",
+      "is_due": true,
+      "snapshot_count": 1,
+      "alert_count": 0
+    }
+  ],
+  "message": "Manual scheduler foundation is configured; no background worker is running."
+}
+```
+
+### Run Due Monitoring Jobs
+
+```http
+POST /api/v1/scheduler/run-due
+```
+
+Behavior:
+
+- Finds cases with monitoring enabled.
+- Runs only jobs whose `next_run_at` is due.
+- Calls the existing deterministic mock monitoring check.
+- Saves snapshots and alert events.
+- Updates `last_run_at` and `next_run_at`.
+- Does not run a background scheduler or real platform collection.
+
+Response:
+
+```json
+{
+  "checked_at": "2026-05-14T09:06:00Z",
+  "due_case_count": 1,
+  "executed_case_count": 1,
+  "skipped_case_count": 0,
+  "monitoring_results": [],
+  "job_states": [],
+  "message": "Executed 1 due monitoring job(s)."
+}
+```
+
+### Get Case Monitoring Config
+
+```http
+GET /api/v1/cases/{case_id}/monitoring/config
+```
+
+Response:
+
+```json
+{
+  "enabled": false,
+  "interval_minutes": 60,
+  "last_run_at": null,
+  "next_run_at": null,
+  "threshold_config": {
+    "risk_score_delta_warning": 10,
+    "risk_score_delta_critical": 20,
+    "real_crisis_delta_warning": 10,
+    "manipulation_delta_warning": 15,
+    "topic_risk_high": 70,
+    "topic_risk_critical": 85
+  },
+  "status": "disabled"
+}
+```
+
+### Update Case Monitoring Config
+
+```http
+PUT /api/v1/cases/{case_id}/monitoring/config
+```
+
+Request and response use `MonitoringScheduleConfig`. When `enabled=true` and `next_run_at` is missing, the backend schedules the case as due immediately for manual local testing.
+
+### Enable Case Monitoring
+
+```http
+POST /api/v1/cases/{case_id}/monitoring/enable
+```
+
+Enables the case and sets `next_run_at` to the deterministic repository clock so `POST /api/v1/scheduler/run-due` can run it in the local MVP.
+
+### Disable Case Monitoring
+
+```http
+POST /api/v1/cases/{case_id}/monitoring/disable
+```
+
+Disables scheduled monitoring for the case and clears `next_run_at`.
 
 ### Export Markdown Report
 

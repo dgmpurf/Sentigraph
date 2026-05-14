@@ -36,6 +36,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - normalized Chinese public opinion report API。
 - Summary Report 和 Analysis Result 页面已接入后端中文结构化报告。
 - 轻量分析案例管理：可创建本地 mock 案例、运行 V1.5 mock 分析、查看案例列表、通过本地 JSON 存储保留案例并导出 Markdown 报告。
+- v0.8 监控调度基础：可为案例启用/暂停监控配置，并通过手动 `run-due` endpoint 模拟到期监控任务。
 - backend pytest 与 frontend build 已在本地验证通过。
 
 当前没有实现：
@@ -71,6 +72,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - 建议公开回应文案复制按钮。
 
 - v0.7 lightweight monitoring foundation: completed cases can save local analysis snapshots, run deterministic mock monitoring checks, and show threshold-based alert events in Risk Monitor.
+- v0.8 scheduler foundation: completed cases can store monitoring schedule config, show enabled/paused status, and manually run due mock monitoring jobs without starting a background worker.
 
 ### Planned Features
 
@@ -358,9 +360,15 @@ Base path:
 - `POST /api/v1/cases/{case_id}/run`
 - `GET /api/v1/cases/{case_id}/snapshots`
 - `POST /api/v1/cases/{case_id}/monitor/run`
+- `GET /api/v1/cases/{case_id}/monitoring/config`
+- `PUT /api/v1/cases/{case_id}/monitoring/config`
+- `POST /api/v1/cases/{case_id}/monitoring/enable`
+- `POST /api/v1/cases/{case_id}/monitoring/disable`
 - `GET /api/v1/cases/{case_id}/alerts`
 - `GET /api/v1/cases/{case_id}/report/markdown`
 - `GET /api/v1/alerts`
+- `GET /api/v1/scheduler/status`
+- `POST /api/v1/scheduler/run-due`
 
 其他已实现 mock endpoints：
 

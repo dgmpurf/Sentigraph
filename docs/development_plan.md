@@ -205,6 +205,12 @@ Goal:
 
 Add hourly monitoring and alerting.
 
+Current status:
+
+- v0.7 persisted snapshot and alert foundation is implemented for the mock MVP.
+- v0.8 manual scheduler foundation is implemented: cases can store monitoring config and `POST /api/v1/scheduler/run-due` can simulate due monitoring jobs.
+- A real long-lived background scheduler is still future work and must stay disabled by default until persistence, deployment, and notification behavior are defined.
+
 Tasks:
 
 1. Implement hourly incremental crawl.

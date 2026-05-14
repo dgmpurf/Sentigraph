@@ -56,6 +56,36 @@ export async function listCaseAlerts(caseId) {
   return Array.isArray(data) ? data : []
 }
 
+export async function getCaseMonitoringConfig(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/monitoring/config`)
+  return normalizeMonitoringConfig(data)
+}
+
+export async function updateCaseMonitoringConfig(caseId, payload) {
+  const { data } = await apiClient.put(`${API_PREFIX}/cases/${caseId}/monitoring/config`, payload)
+  return normalizeMonitoringConfig(data)
+}
+
+export async function enableCaseMonitoring(caseId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/monitoring/enable`)
+  return normalizeMonitoringConfig(data)
+}
+
+export async function disableCaseMonitoring(caseId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/monitoring/disable`)
+  return normalizeMonitoringConfig(data)
+}
+
+export async function getSchedulerStatus() {
+  const { data } = await apiClient.get(`${API_PREFIX}/scheduler/status`)
+  return normalizeSchedulerStatus(data)
+}
+
+export async function runDueMonitoringJobs() {
+  const { data } = await apiClient.post(`${API_PREFIX}/scheduler/run-due`)
+  return normalizeSchedulerRunDueResponse(data)
+}
+
 export async function listAllAlertEvents() {
   const { data } = await apiClient.get(`${API_PREFIX}/alerts`)
   return Array.isArray(data) ? data : []
@@ -139,6 +169,7 @@ function normalizeCaseDetail(data) {
     analysis_result: normalizeRiskExtension(data.analysis_result),
     visualization_data: normalizeRiskExtension(data.visualization_data),
     report: normalizeRiskExtension(data.report),
+    monitoring_config: normalizeMonitoringConfig(data.monitoring_config),
   }
 }
 
@@ -161,6 +192,65 @@ function normalizeSnapshot(data) {
     overall_risk: normalizeOptionalScore(data.overall_risk) ?? 0,
     real_crisis_risk: normalizeOptionalScore(data.real_crisis_risk) ?? 0,
     manipulation_risk: normalizeOptionalScore(data.manipulation_risk) ?? 0,
+  }
+}
+
+function normalizeMonitoringConfig(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      enabled: false,
+      interval_minutes: 60,
+      last_run_at: null,
+      next_run_at: null,
+      threshold_config: {},
+      status: 'disabled',
+    }
+  }
+  return {
+    ...data,
+    enabled: Boolean(data.enabled),
+    interval_minutes: Number.isFinite(Number(data.interval_minutes)) ? Number(data.interval_minutes) : 60,
+    last_run_at: data.last_run_at || null,
+    next_run_at: data.next_run_at || null,
+    threshold_config: data.threshold_config && typeof data.threshold_config === 'object' ? data.threshold_config : {},
+    status: data.status || (data.enabled ? 'scheduled' : 'disabled'),
+  }
+}
+
+function normalizeSchedulerStatus(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    job_states: Array.isArray(data.job_states) ? data.job_states.map(normalizeMonitoringJobState) : [],
+    total_cases: Number(data.total_cases || 0),
+    enabled_cases: Number(data.enabled_cases || 0),
+    due_cases: Number(data.due_cases || 0),
+  }
+}
+
+function normalizeSchedulerRunDueResponse(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    monitoring_results: Array.isArray(data.monitoring_results)
+      ? data.monitoring_results.map(normalizeMonitoringStatus)
+      : [],
+    job_states: Array.isArray(data.job_states) ? data.job_states.map(normalizeMonitoringJobState) : [],
+    due_case_count: Number(data.due_case_count || 0),
+    executed_case_count: Number(data.executed_case_count || 0),
+    skipped_case_count: Number(data.skipped_case_count || 0),
+  }
+}
+
+function normalizeMonitoringJobState(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    enabled: Boolean(data.enabled),
+    interval_minutes: Number.isFinite(Number(data.interval_minutes)) ? Number(data.interval_minutes) : 60,
+    is_due: Boolean(data.is_due),
+    snapshot_count: Number(data.snapshot_count || 0),
+    alert_count: Number(data.alert_count || 0),
   }
 }
 

@@ -149,7 +149,7 @@ Acceptance:
 
 Goal: turn risk thresholds into practical warning cards.
 
-Status: v0.7 foundation implemented with persisted case snapshots and deterministic threshold alerts. Real scheduler, notifications, and delivery channels remain future work.
+Status: v0.8 foundation implemented with persisted case snapshots, deterministic threshold alerts, per-case monitoring config, and a manual run-due scheduler endpoint. Real background scheduler, notifications, and delivery channels remain future work.
 
 Scope:
 
@@ -158,15 +158,19 @@ Scope:
 - threshold alerts for risk increase, risk-level escalation, real-crisis increase, manipulation-risk increase, new high-risk topics, and top-topic shifts
 - warning severity labels
 - recommended action mapping
+- monitoring schedule config per case
+- manual scheduler status and run-due endpoints
 
 Acceptance:
 
 - RiskMonitor explains why an alert exists
 - no real notification service required
+- no real background worker starts by default
 
 Follow-up:
 
-- Add a real background scheduler only after persistence and notification requirements are defined.
+- Add APScheduler only after local manual scheduler behavior is stable.
+- Add Celery/RQ only if a real queue and deployment target are defined.
 - Add notification channels later, for example email, Slack, or webhook, behind explicit user configuration.
 - Add alert acknowledgement/resolution workflows when authentication exists.
 

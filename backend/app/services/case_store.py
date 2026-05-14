@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from app.repositories.case_repository import CaseRepository
-from app.schemas.alert import AlertEvent, AnalysisSnapshot, MonitoringStatus
+from app.schemas.alert import AlertEvent, AlertThresholdConfig, AnalysisSnapshot, MonitoringStatus
 from app.schemas.case import (
     AnalysisCaseCreateRequest,
     AnalysisCaseDetail,
@@ -136,7 +136,11 @@ def list_all_case_alerts() -> list[AlertEvent]:
     return get_case_repository().list_all_alert_events()
 
 
-def run_monitoring_check(case_id: str) -> MonitoringStatus | None:
+def run_monitoring_check(
+    case_id: str,
+    *,
+    threshold_config: AlertThresholdConfig | None = None,
+) -> MonitoringStatus | None:
     repository = get_case_repository()
     case = repository.get_case(case_id)
     if not case:
@@ -148,7 +152,7 @@ def run_monitoring_check(case_id: str) -> MonitoringStatus | None:
             return None
         snapshots = repository.list_analysis_snapshots(case_id)
         latest = snapshots[-1]
-        alerts = evaluate_alerts(None, latest)
+        alerts = evaluate_alerts(None, latest, config=threshold_config)
         repository.save_alert_events(case_id, alerts)
         return _build_monitoring_status(
             case_id,
@@ -161,7 +165,7 @@ def run_monitoring_check(case_id: str) -> MonitoringStatus | None:
     previous_snapshots = repository.list_analysis_snapshots(case_id)
     previous_snapshot = previous_snapshots[-1] if previous_snapshots else None
     latest_snapshot = _save_case_snapshot(repository, case, apply_mock_shift=True)
-    alerts = evaluate_alerts(previous_snapshot, latest_snapshot)
+    alerts = evaluate_alerts(previous_snapshot, latest_snapshot, config=threshold_config)
     repository.save_alert_events(case_id, alerts)
     return _build_monitoring_status(
         case_id,

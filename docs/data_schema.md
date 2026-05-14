@@ -97,6 +97,14 @@ failed
   "keyword": "Tesla",
   "platforms": ["reddit", "weibo", "bilibili"],
   "status": "completed",
+  "monitoring_config": {
+    "enabled": false,
+    "interval_minutes": 60,
+    "last_run_at": null,
+    "next_run_at": null,
+    "threshold_config": {},
+    "status": "disabled"
+  },
   "analysis_result": {},
   "visualization_data": {},
   "report": {},
@@ -228,6 +236,99 @@ Alert evaluator rules:
 - Trigger real-crisis alerts when `real_crisis_risk` increases by at least `10`.
 - Trigger manipulation-risk alerts when `manipulation_risk` increases by at least `15`.
 - Trigger topic alerts when a new topic appears with `topic_risk_score >= 70`; use `critical` when the score is at least `85`.
+
+## 0.7 Monitoring Scheduler Foundation
+
+The v0.8 scheduler foundation stores monitoring configuration and job state on each case. It remains manual and deterministic: no APScheduler, Celery, RQ, Redis, MongoDB, or long-running background worker starts by default.
+
+### MonitoringScheduleConfig
+
+```json
+{
+  "enabled": true,
+  "interval_minutes": 60,
+  "last_run_at": "2026-05-14T09:06:00Z",
+  "next_run_at": "2026-05-14T10:06:00Z",
+  "threshold_config": {
+    "risk_score_delta_warning": 10,
+    "risk_score_delta_critical": 20,
+    "real_crisis_delta_warning": 10,
+    "manipulation_delta_warning": 15,
+    "topic_risk_high": 70,
+    "topic_risk_critical": 85
+  },
+  "status": "scheduled"
+}
+```
+
+Allowed scheduler config statuses:
+
+```text
+disabled
+scheduled
+due
+```
+
+Rules:
+
+- `interval_minutes` defaults to `60`.
+- The MVP accepts intervals from `5` to `1440` minutes.
+- `threshold_config` uses the existing `AlertThresholdConfig` schema.
+- Enabling monitoring sets the case to due immediately for deterministic local demos.
+- Disabling monitoring clears `next_run_at`.
+
+### MonitoringJobState
+
+```json
+{
+  "case_id": "case_001",
+  "title": "Tesla 舆情案例",
+  "keyword": "Tesla",
+  "enabled": true,
+  "interval_minutes": 60,
+  "last_run_at": "2026-05-14T09:06:00Z",
+  "next_run_at": "2026-05-14T10:06:00Z",
+  "status": "scheduled",
+  "is_due": false,
+  "snapshot_count": 2,
+  "alert_count": 2
+}
+```
+
+### SchedulerStatus
+
+```json
+{
+  "background_scheduler_running": false,
+  "total_cases": 1,
+  "enabled_cases": 1,
+  "due_cases": 0,
+  "next_due_at": "2026-05-14T10:06:00Z",
+  "job_states": [],
+  "message": "Manual scheduler foundation is configured; no background worker is running."
+}
+```
+
+### SchedulerRunDueResponse
+
+```json
+{
+  "checked_at": "2026-05-14T09:06:00Z",
+  "due_case_count": 1,
+  "executed_case_count": 1,
+  "skipped_case_count": 0,
+  "monitoring_results": [],
+  "job_states": [],
+  "message": "Executed 1 due monitoring job(s)."
+}
+```
+
+Rules:
+
+- `POST /api/v1/scheduler/run-due` runs only enabled cases whose `next_run_at` is due.
+- It calls the existing mock monitoring logic and persists snapshots/alerts through the case store.
+- It updates `last_run_at` to the latest snapshot time and `next_run_at` by adding `interval_minutes`.
+- It must not start a background process, call real crawlers, or call real platform APIs.
 
 ## 1. Keyword Expansion
 

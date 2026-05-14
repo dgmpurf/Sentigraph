@@ -13,6 +13,7 @@ from app.schemas.case import (
 )
 from app.schemas.common import RiskLevel
 from app.schemas.report import PublicOpinionReport
+from app.schemas.scheduler import MonitoringScheduleConfig
 from app.schemas.visualization import VisualizationResponse
 from app.services.storage.base_store import CaseStore
 
@@ -56,6 +57,29 @@ class CaseRepository:
 
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
         return self.store.update_case(case)
+
+    def get_monitoring_config(self, case_id: str) -> MonitoringScheduleConfig | None:
+        case = self.get_case(case_id)
+        return case.monitoring_config if case else None
+
+    def save_monitoring_config(
+        self,
+        case_id: str,
+        config: MonitoringScheduleConfig,
+        *,
+        updated_at: datetime | None = None,
+    ) -> AnalysisCaseDetail | None:
+        case = self.get_case(case_id)
+        if not case:
+            return None
+        updated_case = case.model_copy(
+            update={
+                "monitoring_config": config,
+                "updated_at": updated_at or self.next_timestamp(),
+            },
+            deep=True,
+        )
+        return self.update_case(updated_case)
 
     def save_analysis_result(
         self,
@@ -162,6 +186,7 @@ def _to_list_item(case: AnalysisCaseDetail) -> AnalysisCaseListItem:
         risk_level=case.risk_level,
         risk_model_version=case.risk_model_version,
         report_language=case.report_language,
+        monitoring_config=case.monitoring_config,
     )
 
 

@@ -1,6 +1,8 @@
 # Sentigraph Local Demo Checklist
 
-Use this checklist for the current v0.7 case-based, mock-first desktop web MVP demo.
+Use this checklist for the current v0.8 case-based, mock-first desktop web MVP demo.
+
+Latest v0.8 scheduler QA validation: 2026-05-14. Backend tests passed with `81 passed in 1.76s`. Frontend production build passed in 7.46s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks confirmed enabling monitoring, `GET /api/v1/scheduler/status`, `POST /api/v1/scheduler/run-due`, disabled/not-due cases being skipped, case-specific alert thresholds, snapshot/alert persistence, disabling monitoring, and the old `monitor/run` endpoint. The scheduler foundation is manual only; no background worker starts by default.
 
 Latest v0.7 monitoring QA validation: 2026-05-14. Backend tests passed with `68 passed in 1.05s`. Frontend production build passed in 7.45s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks confirmed the monitoring flow creates persisted snapshots and alerts, including a deterministic `12.0` latest risk delta after repeated monitor runs. The Risk Monitor page supports persisted snapshots, case alert events, and a `Run Mock Monitoring Check` action. In-app browser automation timed out during this QA pass, so manually click through Risk Monitor before a live demo.
 
@@ -292,6 +294,34 @@ Expected result:
 - Repeated checks should show growing snapshot history; the local QA smoke test created 3 snapshots, 5 alerts, and a `12.0` latest risk delta.
 - No real scheduler, real crawler, real platform API, or notification service is used.
 
+## 8.6 Enable Scheduled Monitoring Foundation
+
+With a completed case selected:
+
+1. Open Risk Monitor.
+2. Find `监控配置`.
+3. Click `启用监控`.
+4. Confirm the status changes to `监控已到期` or `监控已启用`.
+5. Click `运行到期监控任务`.
+6. Confirm a new snapshot appears, alerts update if thresholds are crossed, and `下次检查` advances by the configured interval.
+7. Click `暂停监控` if you want to stop future manual run-due checks for this case.
+
+Backend smoke commands:
+
+```cmd
+powershell -Command "$case = Invoke-RestMethod -Method Post 'http://127.0.0.1:8000/api/v1/cases' -ContentType 'application/json' -Body '{\"keyword\":\"Tesla\",\"platforms\":[\"reddit\",\"weibo\"],\"title\":\"v0.8 Scheduler Demo\"}'; Invoke-RestMethod -Method Post \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/run\"; Invoke-RestMethod -Method Post \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/monitoring/enable\"; Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/scheduler/status'; Invoke-RestMethod -Method Post 'http://127.0.0.1:8000/api/v1/scheduler/run-due'; Invoke-RestMethod \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/snapshots\""
+```
+
+Expected result:
+
+- `GET /api/v1/scheduler/status` shows `background_scheduler_running=false`.
+- Enabled due cases are listed in `job_states`.
+- `POST /api/v1/scheduler/run-due` runs only due enabled cases.
+- Disabled cases are not executed.
+- Enabled but not-due cases are skipped and do not create extra snapshots.
+- `last_run_at` and `next_run_at` are updated after a due run.
+- No real background scheduler, crawler, platform API, external LLM, or notification delivery is started.
+
 ## 9. Open PropagationGraph
 
 Open Propagation Graph.
@@ -310,6 +340,18 @@ Expected result:
 - Empty graph data would show an empty state instead of a runtime error.
 
 ## 10. Browser QA Smoke Result
+
+Latest v0.8 scheduler QA pass: 2026-05-14.
+
+Validated by backend tests, frontend production build, source-level RiskMonitor review, and API smoke checks. The backend and frontend dev servers responded with HTTP 200 at `http://127.0.0.1:8000/api/v1/health` and `http://127.0.0.1:5173`, but the in-app Browser runtime timed out while opening the frontend. Before a public live demo, manually verify:
+
+- Open a completed case.
+- Open Risk Monitor.
+- Click `启用监控`.
+- Click `运行到期监控任务`.
+- Confirm a new snapshot appears and `下次检查` advances.
+- Click `暂停监控`.
+- Run due jobs again and confirm the disabled case does not create another snapshot.
 
 Latest v0.7 monitoring QA pass: 2026-05-14.
 

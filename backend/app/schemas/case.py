@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.common import RiskLevel
 from app.schemas.report import PublicOpinionReport, ReportLanguage
+from app.schemas.scheduler import MonitoringScheduleConfig
 from app.schemas.visualization import VisualizationResponse
 
 
@@ -32,6 +33,7 @@ class AnalysisCase(BaseModel):
     risk_level: RiskLevel | None = None
     risk_model_version: str | None = None
     report_language: ReportLanguage = "zh-CN"
+    monitoring_config: MonitoringScheduleConfig = Field(default_factory=MonitoringScheduleConfig)
 
 
 class AnalysisCaseListItem(AnalysisCase):

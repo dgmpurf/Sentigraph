@@ -43,6 +43,18 @@ const alertTones = {
   critical: 'error',
 }
 
+const scheduleStatusLabels = {
+  disabled: '监控已暂停',
+  scheduled: '监控已启用',
+  due: '监控已到期',
+}
+
+const scheduleStatusTones = {
+  disabled: 'default',
+  scheduled: 'cyan',
+  due: 'warning',
+}
+
 const radarLabels = [
   ['negative_sentiment', '负面情绪'],
   ['bot_impact', '疑似水军/重复话术'],
@@ -70,6 +82,11 @@ function getSnapshotTime(snapshot) {
   const date = new Date(snapshot.created_at)
   if (Number.isNaN(date.getTime())) return snapshot.created_at
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function getScheduleTime(value) {
+  if (!value) return '未设置'
+  return getSnapshotTime({ created_at: value })
 }
 
 function normalizeTopic(topic, index = 0) {
@@ -173,10 +190,16 @@ export function RiskMonitor({
   currentCase,
   error,
   loading,
+  monitoringConfig,
   monitoringLoading = false,
   monitoringStatus,
+  onDisableMonitoring,
+  onEnableMonitoring,
+  onRunDueMonitoringJobs,
   onRunMonitoringCheck,
   recommendation,
+  schedulerLoading = false,
+  schedulerStatus,
   summary,
   visualization,
 }) {
@@ -204,6 +227,17 @@ export function RiskMonitor({
     report.riskExplanation ||
     latestSnapshot?.summary ||
     '暂无触发原因。运行 mock 监控检查后，这里会显示最新预警解释。'
+  const scheduleConfig = monitoringConfig || currentCase?.monitoring_config || {
+    enabled: false,
+    interval_minutes: 60,
+    last_run_at: null,
+    next_run_at: null,
+    status: 'disabled',
+  }
+  const scheduleStatus = scheduleConfig.status || (scheduleConfig.enabled ? 'scheduled' : 'disabled')
+  const scheduleLabel = scheduleStatusLabels[scheduleStatus] || scheduleStatus
+  const schedulerDueCases = Number(schedulerStatus?.due_cases || 0)
+  const schedulerEnabledCases = Number(schedulerStatus?.enabled_cases || 0)
 
   if (!visualization && !latestSnapshot) {
     return (
@@ -244,6 +278,63 @@ export function RiskMonitor({
       </div>
 
       <Row gutter={[16, 16]}>
+        <Col span={24}>
+          <Card className="panel-card trend-explanation-card">
+            <div className="panel-heading">
+              <Space>
+                <RadioTower size={18} />
+                <Title level={4}>监控配置</Title>
+              </Space>
+              <Tag color={scheduleStatusTones[scheduleStatus] || 'default'}>{scheduleLabel}</Tag>
+            </div>
+            <Row gutter={[16, 16]}>
+              <Col span={5}>
+                <Statistic title="检查间隔" value={scheduleConfig.interval_minutes || 60} suffix="分钟" />
+              </Col>
+              <Col span={6}>
+                <Space direction="vertical" size={4}>
+                  <Text type="secondary">上次检查</Text>
+                  <Text>{getScheduleTime(scheduleConfig.last_run_at)}</Text>
+                </Space>
+              </Col>
+              <Col span={6}>
+                <Space direction="vertical" size={4}>
+                  <Text type="secondary">下次检查</Text>
+                  <Text>{getScheduleTime(scheduleConfig.next_run_at)}</Text>
+                </Space>
+              </Col>
+              <Col span={7}>
+                <Space direction="vertical" size={4}>
+                  <Text type="secondary">手动调度器状态</Text>
+                  <Text>
+                    {schedulerEnabledCases} 个已启用 · {schedulerDueCases} 个到期 · 后台调度未运行
+                  </Text>
+                </Space>
+              </Col>
+            </Row>
+            <Space wrap style={{ marginTop: 16 }}>
+              <Button
+                disabled={!currentCase?.case_id || scheduleConfig.enabled}
+                loading={schedulerLoading}
+                onClick={onEnableMonitoring}
+                type="primary"
+              >
+                启用监控
+              </Button>
+              <Button
+                disabled={!currentCase?.case_id || !scheduleConfig.enabled}
+                loading={schedulerLoading}
+                onClick={onDisableMonitoring}
+              >
+                暂停监控
+              </Button>
+              <Button loading={schedulerLoading} onClick={onRunDueMonitoringJobs}>
+                运行到期监控任务
+              </Button>
+            </Space>
+          </Card>
+        </Col>
+
         <Col span={6}>
           <Card className={`panel-card risk-monitor-hero risk-${riskLevel}`}>
             <Space className="metric-heading">

@@ -10,6 +10,7 @@ from app.api.v1.routes import (
     platforms,
     propagation,
     recommendation,
+    scheduler,
     summary,
     visualization,
 )
@@ -26,3 +27,4 @@ api_router.include_router(summary.router, prefix="/summary", tags=["summary"])
 api_router.include_router(recommendation.router, prefix="/recommendation", tags=["recommendation"])
 api_router.include_router(propagation.router, prefix="/propagation", tags=["propagation"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
+api_router.include_router(scheduler.router, prefix="/scheduler", tags=["scheduler"])

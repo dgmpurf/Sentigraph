@@ -7,6 +7,7 @@ from app.schemas.case import (
     AnalysisCaseListItem,
     MarkdownExportResponse,
 )
+from app.schemas.scheduler import MonitoringScheduleConfig
 from app.services.case_store import (
     create_case,
     export_case_markdown,
@@ -16,6 +17,12 @@ from app.services.case_store import (
     list_cases,
     run_case,
     run_monitoring_check,
+)
+from app.services.monitoring.scheduler_service import (
+    disable_case_monitoring,
+    enable_case_monitoring,
+    get_case_monitoring_config,
+    update_case_monitoring_config,
 )
 
 router = APIRouter()
@@ -61,6 +68,38 @@ def run_case_monitoring(case_id: str) -> MonitoringStatus:
     if not status:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return status
+
+
+@router.get("/{case_id}/monitoring/config", response_model=MonitoringScheduleConfig)
+def get_monitoring_config(case_id: str) -> MonitoringScheduleConfig:
+    config = get_case_monitoring_config(case_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return config
+
+
+@router.put("/{case_id}/monitoring/config", response_model=MonitoringScheduleConfig)
+def update_monitoring_config(case_id: str, payload: MonitoringScheduleConfig) -> MonitoringScheduleConfig:
+    config = update_case_monitoring_config(case_id, payload)
+    if not config:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return config
+
+
+@router.post("/{case_id}/monitoring/enable", response_model=MonitoringScheduleConfig)
+def enable_monitoring(case_id: str) -> MonitoringScheduleConfig:
+    config = enable_case_monitoring(case_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return config
+
+
+@router.post("/{case_id}/monitoring/disable", response_model=MonitoringScheduleConfig)
+def disable_monitoring(case_id: str) -> MonitoringScheduleConfig:
+    config = disable_case_monitoring(case_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return config
 
 
 @router.get("/{case_id}/alerts", response_model=list[AlertEvent])

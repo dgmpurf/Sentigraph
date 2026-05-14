@@ -4,19 +4,24 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
   createAnalysisCase,
+  disableCaseMonitoring,
+  enableCaseMonitoring,
   expandKeywords,
   generateRecommendation,
   generateSummary,
   getAnalysisCase,
   getAlerts,
   getAnalysisResult,
+  getCaseMonitoringConfig,
   getCaseMarkdownReport,
   getPlatforms,
   getPropagation,
+  getSchedulerStatus,
   getVisualizationData,
   listCaseAlerts,
   listAnalysisCases,
   listCaseSnapshots,
+  runDueMonitoringJobs,
   runAnalysisCase,
   runCaseMonitoringCheck,
 } from './api/sentigraphApi.js'
@@ -71,8 +76,11 @@ function App() {
   const [markdownReport, setMarkdownReport] = useState(null)
   const [markdownLoading, setMarkdownLoading] = useState(false)
   const [caseSnapshots, setCaseSnapshots] = useState([])
+  const [monitoringConfig, setMonitoringConfig] = useState(null)
   const [monitoringStatus, setMonitoringStatus] = useState(null)
   const [monitoringLoading, setMonitoringLoading] = useState(false)
+  const [schedulerStatus, setSchedulerStatus] = useState(null)
+  const [schedulerLoading, setSchedulerLoading] = useState(false)
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -98,6 +106,7 @@ function App() {
     setKeyword(caseDetail.keyword || 'Tesla')
     setMarkdownReport(null)
     setMonitoringStatus(null)
+    setMonitoringConfig(caseDetail.monitoring_config || null)
 
     if (caseDetail.analysis_result) {
       setAnalysis(caseDetail.analysis_result)
@@ -122,16 +131,19 @@ function App() {
     if (!caseId) {
       setCaseSnapshots([])
       setAlerts([])
+      setMonitoringConfig(null)
       setMonitoringStatus(null)
       return { snapshots: [], alerts: [] }
     }
 
-    const [snapshots, caseAlertEvents] = await Promise.all([
+    const [snapshots, caseAlertEvents, config] = await Promise.all([
       listCaseSnapshots(caseId),
       listCaseAlerts(caseId),
+      getCaseMonitoringConfig(caseId),
     ])
     setCaseSnapshots(snapshots)
     setAlerts(caseAlertEvents)
+    setMonitoringConfig(config)
     return { snapshots, alerts: caseAlertEvents }
   }, [])
 
@@ -170,6 +182,7 @@ function App() {
       setPropagation(propagationData)
       setAlerts(alertsData.alerts || [])
       setCaseSnapshots([])
+      setMonitoringConfig(null)
       setMonitoringStatus(null)
     } catch (requestError) {
       setError(requestError?.message || 'Unable to load mock analysis data.')
@@ -211,6 +224,24 @@ function App() {
       .catch(() => {
         if (isMounted) {
           setPlatformRegistry([])
+        }
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+    getSchedulerStatus()
+      .then((status) => {
+        if (isMounted) {
+          setSchedulerStatus(status)
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setSchedulerStatus(null)
         }
       })
     return () => {
@@ -290,6 +321,7 @@ function App() {
       const status = await runCaseMonitoringCheck(currentCase.case_id)
       setMonitoringStatus(status)
       await loadCaseMonitoring(currentCase.case_id)
+      setSchedulerStatus(await getSchedulerStatus())
       return status
     } catch (requestError) {
       setError(requestError?.message || 'Unable to run mock monitoring check.')
@@ -298,6 +330,73 @@ function App() {
       setMonitoringLoading(false)
     }
   }, [currentCase, loadCaseMonitoring])
+
+  const handleEnableMonitoring = useCallback(async () => {
+    if (!currentCase?.case_id) {
+      setError('Please create or open a case before enabling monitoring.')
+      return null
+    }
+    setSchedulerLoading(true)
+    setError('')
+    try {
+      const config = await enableCaseMonitoring(currentCase.case_id)
+      setMonitoringConfig(config)
+      setSchedulerStatus(await getSchedulerStatus())
+      await refreshCases()
+      return config
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to enable scheduled monitoring.')
+      return null
+    } finally {
+      setSchedulerLoading(false)
+    }
+  }, [currentCase, refreshCases])
+
+  const handleDisableMonitoring = useCallback(async () => {
+    if (!currentCase?.case_id) {
+      setError('Please create or open a case before disabling monitoring.')
+      return null
+    }
+    setSchedulerLoading(true)
+    setError('')
+    try {
+      const config = await disableCaseMonitoring(currentCase.case_id)
+      setMonitoringConfig(config)
+      setSchedulerStatus(await getSchedulerStatus())
+      await refreshCases()
+      return config
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to disable scheduled monitoring.')
+      return null
+    } finally {
+      setSchedulerLoading(false)
+    }
+  }, [currentCase, refreshCases])
+
+  const handleRunDueMonitoringJobs = useCallback(async () => {
+    setSchedulerLoading(true)
+    setError('')
+    try {
+      const response = await runDueMonitoringJobs()
+      setSchedulerStatus(await getSchedulerStatus())
+      if (currentCase?.case_id) {
+        const currentResult = response.monitoring_results?.find((item) => item.case_id === currentCase.case_id)
+        const refreshedCase = await getAnalysisCase(currentCase.case_id)
+        applyCaseDetail(refreshedCase)
+        await loadCaseMonitoring(currentCase.case_id)
+        if (currentResult) {
+          setMonitoringStatus(currentResult)
+        }
+      }
+      await refreshCases()
+      return response
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to run due monitoring jobs.')
+      return null
+    } finally {
+      setSchedulerLoading(false)
+    }
+  }, [applyCaseDetail, currentCase, loadCaseMonitoring, refreshCases])
 
   const handleGetMarkdownReport = useCallback(async () => {
     if (!currentCase?.case_id) {
@@ -365,13 +464,19 @@ function App() {
     caseSnapshots,
     markdownLoading,
     markdownReport,
+    monitoringConfig,
     monitoringLoading,
     monitoringStatus,
+    schedulerLoading,
+    schedulerStatus,
     onGetMarkdownReport: handleGetMarkdownReport,
+    onEnableMonitoring: handleEnableMonitoring,
+    onDisableMonitoring: handleDisableMonitoring,
     onNavigateToKeyword: () => setActivePage('keyword'),
     onOpenCaseReport: handleOpenCaseReport,
     onRefreshCases: refreshCases,
     onRunCase: handleRunCase,
+    onRunDueMonitoringJobs: handleRunDueMonitoringJobs,
     onRunMonitoringCheck: handleRunMonitoringCheck,
     onStartAnalysis: handleStartAnalysis,
     platformOptions,
