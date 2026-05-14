@@ -1,12 +1,22 @@
 from fastapi import APIRouter, HTTPException
 
+from app.schemas.alert import AlertEvent, AnalysisSnapshot, MonitoringStatus
 from app.schemas.case import (
     AnalysisCaseCreateRequest,
     AnalysisCaseDetail,
     AnalysisCaseListItem,
     MarkdownExportResponse,
 )
-from app.services.case_store import create_case, export_case_markdown, get_case, list_cases, run_case
+from app.services.case_store import (
+    create_case,
+    export_case_markdown,
+    get_case,
+    list_case_alerts,
+    list_case_snapshots,
+    list_cases,
+    run_case,
+    run_monitoring_check,
+)
 
 router = APIRouter()
 
@@ -35,6 +45,30 @@ def run_analysis_case(case_id: str) -> AnalysisCaseDetail:
     if not case:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return case
+
+
+@router.get("/{case_id}/snapshots", response_model=list[AnalysisSnapshot])
+def get_case_snapshots(case_id: str) -> list[AnalysisSnapshot]:
+    snapshots = list_case_snapshots(case_id)
+    if snapshots is None:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return snapshots
+
+
+@router.post("/{case_id}/monitor/run", response_model=MonitoringStatus)
+def run_case_monitoring(case_id: str) -> MonitoringStatus:
+    status = run_monitoring_check(case_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return status
+
+
+@router.get("/{case_id}/alerts", response_model=list[AlertEvent])
+def get_case_alerts(case_id: str) -> list[AlertEvent]:
+    alerts = list_case_alerts(case_id)
+    if alerts is None:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return alerts
 
 
 @router.get("/{case_id}/report/markdown", response_model=MarkdownExportResponse)

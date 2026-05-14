@@ -82,6 +82,8 @@ Latest local JSON persistence update: case management now uses a repository/stor
 
 Latest v0.6 persistence QA update: revalidated the local JSON persistence layer and tightened git hygiene for runtime store files. Case APIs still use the repository/storage layer, created and completed cases persist through a repository reload, and Markdown export remains available after reload. `.gitignore` now excludes both `backend/data/*.json` and transient `backend/data/*.json.tmp` while keeping `backend/data/.gitkeep`. Targeted case/persistence tests passed with `10 passed in 0.49s`; full backend validation passed with `55 passed in 0.51s`. Frontend build was not rerun because no frontend files changed. Known limitation: local JSON persistence is suitable for the offline demo but is not a production database or concurrent multi-user store.
 
+Latest v0.7 monitoring foundation update: implemented persisted analysis snapshots and deterministic threshold-based alert events for local analysis cases. `POST /api/v1/cases/{case_id}/run` now saves a baseline snapshot, `POST /api/v1/cases/{case_id}/monitor/run` creates a new deterministic mock monitoring snapshot, evaluates risk increase / risk-level escalation / real-crisis delta / manipulation delta / new high-risk topic / top-topic shift alerts, and persists alert events in the same local JSON store. New endpoints are available for case snapshots, case alerts, and all persisted alerts. Risk Monitor now displays monitoring status, risk delta, latest snapshots, alert badges, top triggered reason, real-crisis risk, manipulation risk, and high-risk topic cards. Backend validation passed with `65 passed in 1.04s`; frontend production build passed in 7.54s with the existing non-blocking Ant Design/ECharts vendor chunk warning.
+
 Maintenance status audit:
 
 | Area | Status | Notes |
@@ -89,8 +91,9 @@ Maintenance status audit:
 | Project skeleton | complete | Backend, frontend, docs, mock data, tests, and local scripts are present. |
 | V1.5 topic-risk backend | complete | `v1_5_topic_risk_mvp` fields appear in analysis, visualization, summary, recommendation, and case run outputs. |
 | Frontend V1.5 display | complete | Dashboard, AnalysisResult, RiskMonitor, and SummaryReport consume V1.5 fields; production build passes. |
-| Case management | complete | Local JSON-backed case APIs, repository/storage abstraction, and frontend case flow are present. |
+| Case management | complete | Local JSON-backed case APIs, repository/storage abstraction, frontend case flow, snapshots, and alerts are present. |
 | Markdown export | complete | Completed cases export/copy Markdown with report sections and risk metadata. |
+| Monitoring and alerts | complete for v0.7 foundation | Case runs create snapshots; mock monitoring checks create deterministic shifted snapshots and persisted threshold alerts. No real scheduler or notification service yet. |
 | Platform registry | complete | 9 mock-selectable platforms are active; crawler-later and YouTube remain inactive. |
 | Reddit adapter foundation | complete for mock scaffold | Adapter contract, factory, mock fallback, credential placeholders, and tests are present. Real mode remains future. |
 | Demo checklist | complete | Includes v0.4 validation and optional Reddit mock adapter smoke check. |
@@ -98,11 +101,11 @@ Maintenance status audit:
 
 Recommended release checkpoint:
 
-- Checkpoint name: Sentigraph v0.6 local JSON case persistence.
-- Suggested git tag: `v0.6-local-json-case-persistence`.
-- Completed capabilities: mock-first V1.5 topic-risk pipeline, Chinese structured reports, lightweight local JSON-backed cases, Markdown export, platform registry, Reddit mock adapter scaffold, and full backend/frontend local validation.
-- Known non-blocking issues: Vite still reports large vendor chunks for Ant Design and ECharts; browser QA may require Playwright/Chrome fallback if the in-app Browser runtime times out. Local JSON persistence is demo-friendly but not a production database or concurrent multi-user store.
-- Next recommended task: implement a mock-only crawl service bridge that can call the adapter factory for Reddit mock data without enabling real Reddit mode.
+- Checkpoint name: Sentigraph v0.7 monitoring alert foundation.
+- Suggested git tag: `v0.7-monitoring-alert-foundation`.
+- Completed capabilities: mock-first V1.5 topic-risk pipeline, Chinese structured reports, lightweight local JSON-backed cases, Markdown export, persisted monitoring snapshots, threshold alert events, platform registry, Reddit mock/optional real-mode adapter scaffold, and full backend/frontend local validation.
+- Known non-blocking issues: Vite still reports large vendor chunks for Ant Design and ECharts; browser QA may require Playwright/Chrome fallback if the in-app Browser runtime times out. Local JSON persistence is demo-friendly but not a production database or concurrent multi-user store. Monitoring remains manual/mock-only and has no real background scheduler or notification delivery.
+- Next recommended task: run browser QA for the v0.7 monitoring flow, then implement a mock-only crawl service bridge that can call the adapter factory for Reddit mock data without enabling real Reddit mode.
 
 ## 2. Completed MVP Steps
 
@@ -368,6 +371,7 @@ npm.cmd --prefix frontend run build
 - Latest v0.5 Reddit real-mode QA passed with full backend validation `51 passed in 0.41s`, targeted Reddit adapter validation `11 passed in 0.09s`, and API smoke checks for old MVP and case/report endpoints.
 - Latest backend validation after local JSON case persistence passed with `54 passed in 0.53s`.
 - Latest backend validation after v0.6 persistence QA passed with `55 passed in 0.51s`.
+- Latest backend validation after v0.7 monitoring foundation passed with `65 passed in 1.04s`.
 - Frontend dependency installation passes with `npm.cmd run frontend:install`, which runs `cd frontend && npm install`; the latest install completed with dependencies already up to date.
 - Avoid using `npm.cmd --prefix frontend install` for installation on npm 10.9.2; it can incorrectly link the parent package into `frontend` as `sentigraph: file:..`.
 - Frontend production build passes with `npm.cmd run build` from `frontend`; the latest MVP stabilization Vite build completed in 7.73s.
@@ -375,6 +379,7 @@ npm.cmd --prefix frontend run build
 - Latest frontend validation after case management and Markdown export passed with `npm.cmd run build` in 7.55s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
 - Latest frontend validation after v0.3 stabilization QA passed with `npm.cmd run build` in 7.71s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
 - Latest frontend validation after the long maintenance pass passed with `npm.cmd run build` in 7.68s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
+- Latest frontend validation after v0.7 monitoring foundation passed with `npm run build` in 7.54s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
 - Frontend build was not rerun for the platform adapter scaffold because no frontend files changed.
 - No blocking environment, dependency, import, path, or test issue was found in the latest MVP stabilization pass.
 - README validation passed after the README update: all README-listed API endpoints exist in FastAPI, the Windows run commands are still valid, and no README command correction was needed.
@@ -436,18 +441,18 @@ Audit date: 2026-05-14.
 | SummaryReport frontend page | complete for MVP | `frontend/src/pages/SummaryReport.jsx`, `frontend/src/components/report/PublicOpinionReport.jsx`, and `frontend/src/utils/reportModel.js`; browser QA confirmed the suggested response copy button works. | Later add print/PDF export polish. |
 | AnalysisResult frontend page | complete for MVP | `frontend/src/pages/AnalysisResult.jsx` renders analysis plus report insights, V1.5 topic-risk labels, and a copyable suggested response. | Later add deeper topic drill-down interactions. |
 | Dashboard visualization | complete for MVP | `frontend/src/pages/Dashboard.jsx` and chart components consume backend visualization data. | Browser visual QA and later code splitting for large chart bundle. |
-| RiskMonitor page | complete for MVP | `frontend/src/pages/RiskMonitor.jsx` renders risk trend, radar factors, warnings, and risk model fallback. | Backend should eventually return explicit risk model metadata. |
+| RiskMonitor page | complete for v0.7 foundation | `frontend/src/pages/RiskMonitor.jsx` renders monitoring status, risk delta, snapshot timeline, alert events, risk drivers, radar factors, and V1.5 signals. | Browser QA should verify the new monitoring button/case flow; real scheduler and notifications remain future work. |
 | PropagationGraph page | complete for MVP | `frontend/src/pages/PropagationGraph.jsx` and `PropagationGraphChart.jsx`; smoke check returned 6 nodes and 3 edges. | Real graph metrics and NetworkX-backed propagation builder are future work. |
 | README accuracy | complete with minor caveat | README endpoints match routes in `backend/app/api/v1/api.py`; Windows commands are consistent with root `requirements.txt` and scripts. | Keep README updated after schema changes; production-readiness is correctly not claimed. |
 | Algorithm docs | complete for V1.5 | `docs/algorithm_design.md` and `docs/risk_model_roadmap.md` document V1 active, V1.5 implemented as a practical topic-risk bridge, and V2 planned for later. | Frontend should surface V1.5 topic-risk explanations more directly; do not start full V2 yet. |
-| Backend tests | complete | `.\.venv\Scripts\python.exe -m pytest` passed with `40 passed in 0.41s`. | Add tests as new features land. |
-| Frontend build | complete | `npm.cmd run build` in `frontend` passed in 7.55s. | Vite large chunk warning remains for Ant Design and ECharts vendor chunks; the app chunk is now smaller after safe manual chunking. |
+| Backend tests | complete | `python -m pytest` passed with `65 passed in 1.13s`. | Add tests as new features land. |
+| Frontend build | complete | `npm run build` in `frontend` passed in 7.67s. | Vite large chunk warning remains for Ant Design and ECharts vendor chunks; the app chunk is now smaller after safe manual chunking. |
 
-Overall audit conclusion: MVP 0 through MVP 4 are complete enough for the mock-first desktop prototype. The project should not move to real crawlers or real platform APIs yet. The compatibility/metadata and interactive browser QA tasks are complete for the local demo baseline.
+Overall audit conclusion: MVP 0 through the v0.7 monitoring foundation are complete enough for the mock-first desktop prototype. The project should not move to real crawlers or broad real platform APIs yet. Browser QA should now cover the new monitoring check flow before the next implementation task.
 
 ## 7. Next Recommended Task
 
-Recommended next implementation task: add a mock-only crawl service bridge that can call the adapter factory in safe mock mode for Reddit-selected crawl starts without enabling live Reddit requests.
+Recommended next implementation task: run a browser QA pass for the v0.7 monitoring flow, then add a mock-only crawl service bridge that can call the adapter factory in safe mock mode for Reddit-selected crawl starts without enabling live Reddit requests.
 
 Suggested scope:
 
@@ -455,7 +460,7 @@ Suggested scope:
 - Do not replace V1/V1.5 with full V2 during the next task.
 - Keep the current mock pipeline and V1.5 report APIs stable.
 - Future persistence work should add MongoDB/Redis as optional stores behind the existing repository interface; do not require them for local demos.
-- If alert refinement is selected next, generate alerts from existing V1.5 risk fields without real notifications.
+- If alert refinement continues next, keep it manual/mock-only and do not add a real background scheduler or notification delivery yet.
 - If Reddit integration is selected next, keep real mode disabled by default and use sanitized fixtures or mocked clients only.
 - Re-run the browser checklist in `docs/demo_checklist.md` after the next product-polish task.
 - Keep existing API schemas stable.

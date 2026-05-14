@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import re
 
 from app.schemas.analysis import AnalysisResultResponse
+from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import (
     AnalysisCaseCreateRequest,
     AnalysisCaseDetail,
@@ -98,6 +99,21 @@ class CaseRepository:
     def get_markdown_report(self, case_id: str) -> MarkdownExportResponse | None:
         return self.store.get_markdown_report(case_id)
 
+    def save_analysis_snapshot(self, case_id: str, snapshot: AnalysisSnapshot) -> AnalysisSnapshot:
+        return self.store.save_analysis_snapshot(case_id, snapshot)
+
+    def list_analysis_snapshots(self, case_id: str) -> list[AnalysisSnapshot]:
+        return self.store.list_analysis_snapshots(case_id)
+
+    def save_alert_events(self, case_id: str, alerts: list[AlertEvent]) -> list[AlertEvent]:
+        return self.store.save_alert_events(case_id, alerts)
+
+    def list_case_alerts(self, case_id: str) -> list[AlertEvent]:
+        return self.store.list_case_alerts(case_id)
+
+    def list_all_alert_events(self) -> list[AlertEvent]:
+        return self.store.list_all_alert_events()
+
     def reset(self) -> None:
         self.store.reset()
 
@@ -107,8 +123,21 @@ class CaseRepository:
             timestamps.extend([case.created_at, case.updated_at])
         for markdown_report in self.store.list_markdown_reports():
             timestamps.append(markdown_report.generated_at)
+        for case in self.store.list_cases():
+            for snapshot in self.store.list_analysis_snapshots(case.case_id):
+                timestamps.append(snapshot.created_at)
+            for alert in self.store.list_case_alerts(case.case_id):
+                timestamps.append(alert.created_at)
         latest = max(_ensure_aware(timestamp) for timestamp in timestamps)
         return latest + timedelta(minutes=1)
+
+    def next_snapshot_number(self, case_id: str) -> int:
+        max_number = 0
+        for snapshot in self.store.list_analysis_snapshots(case_id):
+            match = re.fullmatch(rf"{re.escape(case_id)}_snapshot_(\d+)", snapshot.snapshot_id)
+            if match:
+                max_number = max(max_number, int(match.group(1)))
+        return max_number + 1
 
     def _next_case_number(self) -> int:
         max_number = 0

@@ -7,6 +7,7 @@ from threading import RLock
 from typing import Any
 
 from app.schemas.analysis import AnalysisResultResponse
+from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
 from app.schemas.common import RiskLevel
 from app.schemas.report import PublicOpinionReport
@@ -129,12 +130,55 @@ class LocalJsonCaseStore(CaseStore):
             data = self._read_data()
         return [MarkdownExportResponse.model_validate(item) for item in data["markdown_reports"].values()]
 
+    def save_analysis_snapshot(self, case_id: str, snapshot: AnalysisSnapshot) -> AnalysisSnapshot:
+        with self._lock:
+            data = self._read_data()
+            data["snapshots"].setdefault(case_id, [])
+            data["snapshots"][case_id].append(snapshot.model_dump(mode="json"))
+            self._write_data(data)
+        return snapshot.model_copy(deep=True)
+
+    def list_analysis_snapshots(self, case_id: str) -> list[AnalysisSnapshot]:
+        with self._lock:
+            data = self._read_data()
+            raw_snapshots = data["snapshots"].get(case_id, [])
+        snapshots = [AnalysisSnapshot.model_validate(item) for item in raw_snapshots]
+        return sorted(snapshots, key=lambda snapshot: snapshot.created_at)
+
+    def save_alert_events(self, case_id: str, alerts: list[AlertEvent]) -> list[AlertEvent]:
+        if not alerts:
+            return []
+        with self._lock:
+            data = self._read_data()
+            data["alerts"].setdefault(case_id, [])
+            data["alerts"][case_id].extend(alert.model_dump(mode="json") for alert in alerts)
+            self._write_data(data)
+        return [alert.model_copy(deep=True) for alert in alerts]
+
+    def list_case_alerts(self, case_id: str) -> list[AlertEvent]:
+        with self._lock:
+            data = self._read_data()
+            raw_alerts = data["alerts"].get(case_id, [])
+        alerts = [AlertEvent.model_validate(item) for item in raw_alerts]
+        return sorted(alerts, key=lambda alert: alert.created_at)
+
+    def list_all_alert_events(self) -> list[AlertEvent]:
+        with self._lock:
+            data = self._read_data()
+            raw_alert_groups = data["alerts"].values()
+        alerts = [
+            AlertEvent.model_validate(item)
+            for raw_alerts in raw_alert_groups
+            for item in raw_alerts
+        ]
+        return sorted(alerts, key=lambda alert: alert.created_at, reverse=True)
+
     def reset(self) -> None:
         with self._lock:
             if self.path.exists():
                 self.path.unlink()
 
-    def _read_data(self) -> dict[str, dict[str, Any]]:
+    def _read_data(self) -> dict[str, Any]:
         if not self.path.exists():
             return _empty_data()
         with self.path.open("r", encoding="utf-8") as file:
@@ -143,12 +187,16 @@ class LocalJsonCaseStore(CaseStore):
             return _empty_data()
         cases = raw.get("cases")
         markdown_reports = raw.get("markdown_reports")
+        snapshots = raw.get("snapshots")
+        alerts = raw.get("alerts")
         return {
             "cases": cases if isinstance(cases, dict) else {},
             "markdown_reports": markdown_reports if isinstance(markdown_reports, dict) else {},
+            "snapshots": snapshots if isinstance(snapshots, dict) else {},
+            "alerts": alerts if isinstance(alerts, dict) else {},
         }
 
-    def _write_data(self, data: dict[str, dict[str, Any]]) -> None:
+    def _write_data(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
         with tmp_path.open("w", encoding="utf-8") as file:
@@ -157,8 +205,8 @@ class LocalJsonCaseStore(CaseStore):
         tmp_path.replace(self.path)
 
 
-def _empty_data() -> dict[str, dict[str, Any]]:
-    return {"cases": {}, "markdown_reports": {}}
+def _empty_data() -> dict[str, Any]:
+    return {"cases": {}, "markdown_reports": {}, "snapshots": {}, "alerts": {}}
 
 
 def _case_to_json(case: AnalysisCaseDetail) -> dict[str, Any]:

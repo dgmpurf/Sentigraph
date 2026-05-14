@@ -149,9 +149,13 @@ Acceptance:
 
 Goal: turn risk thresholds into practical warning cards.
 
+Status: v0.7 foundation implemented with persisted case snapshots and deterministic threshold alerts. Real scheduler, notifications, and delivery channels remain future work.
+
 Scope:
 
-- mock alert generation from risk level and risk factors
+- persisted analysis snapshots per case
+- deterministic mock monitoring checks
+- threshold alerts for risk increase, risk-level escalation, real-crisis increase, manipulation-risk increase, new high-risk topics, and top-topic shifts
 - warning severity labels
 - recommended action mapping
 
@@ -159,6 +163,12 @@ Acceptance:
 
 - RiskMonitor explains why an alert exists
 - no real notification service required
+
+Follow-up:
+
+- Add a real background scheduler only after persistence and notification requirements are defined.
+- Add notification channels later, for example email, Slack, or webhook, behind explicit user configuration.
+- Add alert acknowledgement/resolution workflows when authentication exists.
 
 ## P3: Real Data Integration Preparation
 

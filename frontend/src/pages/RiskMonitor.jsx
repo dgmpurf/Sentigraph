@@ -1,5 +1,20 @@
-import { Alert, Card, Col, Empty, List, Progress, Row, Skeleton, Space, Statistic, Tag, Typography } from 'antd'
-import { Activity, AlertTriangle, Bot, Gauge, RadioTower, ShieldAlert, TrendingDown } from 'lucide-react'
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Empty,
+  List,
+  Progress,
+  Row,
+  Skeleton,
+  Space,
+  Statistic,
+  Tag,
+  Timeline,
+  Typography,
+} from 'antd'
+import { Activity, AlertTriangle, Bot, Gauge, PlayCircle, RadioTower, ShieldAlert } from 'lucide-react'
 
 import { PlatformHeatmapChart } from '../components/charts/PlatformHeatmapChart.jsx'
 import { RiskRadarChart } from '../components/charts/RiskRadarChart.jsx'
@@ -7,35 +22,7 @@ import { SentimentTrendChart } from '../components/charts/SentimentTrendChart.js
 import { formatPercent, riskTone } from '../utils/formatters.js'
 import { buildPublicOpinionReportModel } from '../utils/reportModel.js'
 
-const { Text, Title } = Typography
-
-const radarLabels = [
-  {
-    key: 'negative_sentiment',
-    label: '负面情绪',
-    description: 'mock 管线中负面评论的占比与强度。',
-  },
-  {
-    key: 'bot_impact',
-    label: '疑似水军/重复话术',
-    description: '重复表达、协同发布或异常账号行为带来的压力。',
-  },
-  {
-    key: 'propagation_speed',
-    label: '扩散速度',
-    description: '讨论在传播图谱中扩散的速度和范围。',
-  },
-  {
-    key: 'controversy',
-    label: '争议程度',
-    description: '讨论是否出现明显对立、分裂或高强度交锋。',
-  },
-  {
-    key: 'trend_shift',
-    label: '趋势突变',
-    description: '近期风险信号相对前一时间段的变化压力。',
-  },
-]
+const { Paragraph, Text, Title } = Typography
 
 const riskLevelLabels = {
   low: '低风险',
@@ -44,112 +31,188 @@ const riskLevelLabels = {
   critical: '严重风险',
 }
 
+const alertLevelLabels = {
+  info: '信息',
+  warning: '预警',
+  critical: '严重预警',
+}
+
+const alertTones = {
+  info: 'blue',
+  warning: 'warning',
+  critical: 'error',
+}
+
+const radarLabels = [
+  ['negative_sentiment', '负面情绪'],
+  ['bot_impact', '疑似水军/重复话术'],
+  ['propagation_speed', '扩散速度'],
+  ['controversy', '争议程度'],
+  ['trend_shift', '趋势突变'],
+]
+
 function scoreText(value) {
   const numericValue = Number(value)
   return Number.isFinite(numericValue) ? numericValue.toFixed(1) : '0.0'
 }
 
-function getRiskLevelExplanation(level) {
-  const messages = {
-    low: '当前风险较低，可保持常规监测并继续积累趋势基线。',
-    medium: '风险正在形成，建议将负面情绪、扩散速度和高风险话题一起观察。',
-    high: '风险较高，建议明确回应负责人、事实口径和对外更新时间窗口。',
-    critical: '风险严重，建议立即提升监测频率并协调统一回应。',
-  }
-  return messages[level] || messages.low
+function scorePercent(value) {
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue) ? Math.max(0, Math.min(100, Math.round(numericValue))) : 0
 }
 
-function buildTrendInsights(riskRadar, sentimentTrend = [], alerts = []) {
-  const latest = sentimentTrend[sentimentTrend.length - 1]
-  const previous = sentimentTrend[sentimentTrend.length - 2]
-  const negativeDelta =
-    latest && previous ? Number(latest.negative || 0) - Number(previous.negative || 0) : null
-  const trendShift = riskRadar?.trend_shift ?? 0
-  const propagationSpeed = riskRadar?.propagation_speed ?? 0
-  const controversy = riskRadar?.controversy ?? 0
-
-  const insights = [
-    trendShift >= 0.65
-      ? '趋势突变信号较高，应视为可能的加速窗口。'
-      : trendShift >= 0.35
-        ? '趋势突变信号中等，建议继续观察下一个时间段。'
-        : '当前 mock 数据中的趋势突变信号较低。',
-    propagationSpeed >= 0.7
-      ? '扩散速度较强，即使图谱规模较小，也需要关注回应时机。'
-      : '扩散速度尚未成为主导因素，当前更应关注话题质量与情绪结构。',
-    controversy >= 0.65
-      ? '争议信号明显，回应语言应保持事实化，避免放大未经证实的说法。'
-      : '当前 mock 时间窗内争议信号相对可控。',
-  ]
-
-  if (negativeDelta !== null) {
-    insights.push(
-      negativeDelta > 0
-        ? `最近两个时间段之间负面量增加 ${negativeDelta} 条。`
-        : `最近两个时间段之间负面量未增加（变化 ${negativeDelta}）。`,
-    )
-  } else {
-    insights.push('当前只有一个情绪时间段，真实趋势斜率需要更多时间窗支持。')
-  }
-
-  if (alerts.length) {
-    insights.push(`当前有 ${alerts.length} 张预警卡片，发布回应前建议逐条核查。`)
-  }
-
-  return insights
+function getAlertTone(level) {
+  return alertTones[level] || riskTone(level)
 }
 
-function buildTopRiskDrivers(report, riskRadar) {
-  const topicDrivers = report.topRiskTopics.slice(0, 3).map((topic) => ({
-    title: topic.topic,
-    value: `${scoreText(topic.riskScore)}/100`,
-    description: topic.explanation || '暂无话题风险解释。',
-    level: topic.riskLevel,
+function getSnapshotTime(snapshot) {
+  if (!snapshot?.created_at) return '未生成'
+  const date = new Date(snapshot.created_at)
+  if (Number.isNaN(date.getTime())) return snapshot.created_at
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function normalizeTopic(topic, index = 0) {
+  if (!topic || typeof topic !== 'object') {
+    return {
+      topicId: `topic_${index + 1}`,
+      topic: '未命名话题',
+      riskScore: 0,
+      riskLevel: 'low',
+      explanation: '暂无风险解释。',
+      drivers: [],
+    }
+  }
+
+  const riskScore = Number(topic.topic_risk_score ?? topic.risk_score ?? topic.riskScore ?? 0)
+  return {
+    topicId: String(topic.topic_id || topic.cluster_id || topic.topicId || `topic_${index + 1}`),
+    topic: String(topic.topic || topic.name || '未命名话题'),
+    riskScore,
+    riskLevel: topic.topic_risk_level || topic.risk_level || topic.riskLevel || 'low',
+    explanation: String(topic.risk_explanation || topic.explanation || '暂无风险解释。'),
+    drivers: [
+      ['负面严重度', topic.neg_severity ?? topic.negSeverity],
+      ['扩散信号', topic.spread_signal ?? topic.spreadSignal],
+      ['争议信号', topic.controversy_signal ?? topic.controversySignal],
+      ['重复话术信号', topic.bot_signal ?? topic.botSignal],
+      ['影响力代理', topic.influence_proxy ?? topic.influenceProxy],
+    ].filter(([, value]) => Number.isFinite(Number(value))),
+  }
+}
+
+function getLatestSnapshot(caseSnapshots = [], monitoringStatus) {
+  if (monitoringStatus?.latest_snapshot) return monitoringStatus.latest_snapshot
+  return caseSnapshots.length ? caseSnapshots[caseSnapshots.length - 1] : null
+}
+
+function getPreviousSnapshot(caseSnapshots = [], monitoringStatus) {
+  if (monitoringStatus?.previous_snapshot) return monitoringStatus.previous_snapshot
+  return caseSnapshots.length > 1 ? caseSnapshots[caseSnapshots.length - 2] : null
+}
+
+function buildSnapshotTrend(caseSnapshots = []) {
+  return caseSnapshots.slice(-6).map((snapshot) => ({
+    color: riskTone(snapshot.risk_level),
+    children: (
+      <Space direction="vertical" size={2}>
+        <Text strong>{scoreText(snapshot.risk_score)}/100</Text>
+        <Text type="secondary">
+          {riskLevelLabels[snapshot.risk_level] || snapshot.risk_level} · {getSnapshotTime(snapshot)}
+        </Text>
+      </Space>
+    ),
   }))
+}
+
+function buildTopDrivers(report, latestSnapshot, riskRadar) {
+  const topicSource = latestSnapshot?.top_risk_topics?.length
+    ? latestSnapshot.top_risk_topics
+    : report.topRiskTopics
+  const topicDrivers = topicSource.slice(0, 3).map((topic, index) => {
+    const normalized = normalizeTopic(topic, index)
+    return {
+      title: normalized.topic,
+      value: `${scoreText(normalized.riskScore)}/100`,
+      level: normalized.riskLevel,
+      description: normalized.explanation,
+    }
+  })
+
   const signalDrivers = [
     {
       title: '真实危机风险',
-      value: `${scoreText(report.realCrisisRisk ?? 0)}/100`,
-      description: '由高风险话题与负面严重度综合映射，仅基于 mock 管线。',
-      level: report.realCrisisRisk >= 70 ? 'high' : report.realCrisisRisk >= 40 ? 'medium' : 'low',
+      value: `${scoreText(latestSnapshot?.real_crisis_risk ?? report.realCrisisRisk ?? 0)}/100`,
+      level: (latestSnapshot?.real_crisis_risk ?? report.realCrisisRisk ?? 0) >= 70 ? 'high' : 'medium',
+      description: '服务体验、事实争议、合规安全等信号的综合风险。',
     },
     {
-      title: '操纵/重复话术风险',
-      value: `${scoreText(report.manipulationRisk ?? 0)}/100`,
-      description: '由疑似水军、重复脚本与协同表达信号综合映射。',
-      level: report.manipulationRisk >= 70 ? 'high' : report.manipulationRisk >= 40 ? 'medium' : 'low',
+      title: '操纵传播风险',
+      value: `${scoreText(latestSnapshot?.manipulation_risk ?? report.manipulationRisk ?? 0)}/100`,
+      level: (latestSnapshot?.manipulation_risk ?? report.manipulationRisk ?? 0) >= 70 ? 'high' : 'medium',
+      description: '疑似水军、重复话术、异常协同传播的综合风险。',
     },
-    riskRadar?.trend_shift
-      ? {
-          title: '趋势突变',
-          value: formatPercent(riskRadar.trend_shift),
-          description: '近期风险变化对监测节奏的影响。',
-          level: riskRadar.trend_shift >= 0.65 ? 'high' : 'medium',
-        }
-      : null,
-  ].filter(Boolean)
+  ]
+
+  if (riskRadar?.trend_shift) {
+    signalDrivers.push({
+      title: '趋势突变',
+      value: formatPercent(riskRadar.trend_shift),
+      level: riskRadar.trend_shift >= 0.65 ? 'high' : 'medium',
+      description: '最近风险信号相对前一窗口的变化压力。',
+    })
+  }
 
   return [...topicDrivers, ...signalDrivers].slice(0, 5)
 }
 
-export function RiskMonitor({ alerts = [], analysis, error, loading, recommendation, summary, visualization }) {
+export function RiskMonitor({
+  alerts = [],
+  analysis,
+  caseSnapshots = [],
+  currentCase,
+  error,
+  loading,
+  monitoringLoading = false,
+  monitoringStatus,
+  onRunMonitoringCheck,
+  recommendation,
+  summary,
+  visualization,
+}) {
   const report = buildPublicOpinionReportModel({ analysis, recommendation, summary, visualization })
+  const latestSnapshot = getLatestSnapshot(caseSnapshots, monitoringStatus)
+  const previousSnapshot = getPreviousSnapshot(caseSnapshots, monitoringStatus)
   const riskRadar = visualization?.risk_radar
-  const riskScore = Number(report.overallRisk ?? report.riskScore ?? visualization?.risk_score ?? 0)
-  const riskLevel = report.riskLevel || visualization?.risk_level || 'low'
-  const riskModelVersion = report.riskModelVersion || visualization?.risk_model_version || 'v1_static_mvp'
   const sentimentTrend = visualization?.sentiment_trend || []
-  const trendInsights = buildTrendInsights(riskRadar, sentimentTrend, alerts)
-  const topRiskDrivers = buildTopRiskDrivers(report, riskRadar)
+  const visibleAlerts = alerts.length ? alerts : monitoringStatus?.alerts || []
+  const riskScore = Number(
+    latestSnapshot?.risk_score ?? report.overallRisk ?? report.riskScore ?? visualization?.risk_score ?? 0,
+  )
+  const riskLevel = latestSnapshot?.risk_level || report.riskLevel || visualization?.risk_level || 'low'
+  const riskModelVersion =
+    latestSnapshot?.risk_model_version || report.riskModelVersion || visualization?.risk_model_version || 'v1_static_mvp'
+  const realCrisisRisk = Number(latestSnapshot?.real_crisis_risk ?? report.realCrisisRisk ?? 0)
+  const manipulationRisk = Number(latestSnapshot?.manipulation_risk ?? report.manipulationRisk ?? 0)
+  const riskDelta = Number(
+    monitoringStatus?.latest_risk_delta ??
+      (latestSnapshot && previousSnapshot ? latestSnapshot.risk_score - previousSnapshot.risk_score : 0),
+  )
+  const topDrivers = buildTopDrivers(report, latestSnapshot, riskRadar)
+  const topReason =
+    visibleAlerts[0]?.reason ||
+    report.riskExplanation ||
+    latestSnapshot?.summary ||
+    '暂无触发原因。运行 mock 监控检查后，这里会显示最新预警解释。'
 
-  if (!visualization) {
+  if (!visualization && !latestSnapshot) {
     return (
       <Card className="panel-card">
         {error ? <Alert message="风险监控数据加载失败" description={error} type="error" showIcon /> : null}
         {loading ? (
           <Skeleton active paragraph={{ rows: 8 }} title />
         ) : (
-          <Empty description="暂无风险可视化数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty description="暂无风险监控数据，请先创建并运行一个 mock 分析案例。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         )}
       </Card>
     )
@@ -160,9 +223,19 @@ export function RiskMonitor({ alerts = [], analysis, error, loading, recommendat
       <div className="page-heading">
         <div>
           <Title level={2}>风险监控</Title>
-          <Text>监测小时级变化、预警阈值、平台热度和 V1.5 话题级风险。</Text>
+          <Text>
+            基于持久化案例快照，对总体风险、真实危机风险、操纵传播风险和高风险话题变化做离线 mock 预警。
+          </Text>
         </div>
         <Space direction="vertical" align="end" size={8}>
+          <Button
+            icon={<PlayCircle size={16} />}
+            loading={monitoringLoading}
+            onClick={onRunMonitoringCheck}
+            type="primary"
+          >
+            Run Mock Monitoring Check
+          </Button>
           <Tag color={riskTone(riskLevel)} className="large-tag">
             {riskLevelLabels[riskLevel] || riskLevel}
           </Tag>
@@ -171,92 +244,134 @@ export function RiskMonitor({ alerts = [], analysis, error, loading, recommendat
       </div>
 
       <Row gutter={[16, 16]}>
-        <Col span={8}>
+        <Col span={6}>
           <Card className={`panel-card risk-monitor-hero risk-${riskLevel}`}>
             <Space className="metric-heading">
               <AlertTriangle size={20} />
-              <Text>风险态势</Text>
+              <Text>监控状态</Text>
             </Space>
             <Statistic value={scoreText(riskScore)} suffix="/100" valueStyle={{ color: '#ff5d8f' }} />
-            <Progress percent={Math.round(riskScore)} showInfo={false} strokeColor="#ff5d8f" trailColor="#283043" />
-            <Text>{getRiskLevelExplanation(riskLevel)}</Text>
+            <Progress percent={scorePercent(riskScore)} showInfo={false} strokeColor="#ff5d8f" trailColor="#283043" />
+            <Text type="secondary">
+              {currentCase?.title || '默认 mock 项目'} · {riskLevelLabels[riskLevel] || riskLevel}
+            </Text>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
           <Card className="panel-card">
             <Space className="metric-heading">
-              <TrendingDown size={20} />
-              <Text>真实危机风险</Text>
+              <Activity size={20} />
+              <Text>风险变化</Text>
             </Space>
-            <Statistic value={scoreText(report.realCrisisRisk ?? 0)} suffix="/100" />
-            <Progress
-              percent={Math.round(report.realCrisisRisk ?? 0)}
-              showInfo={false}
-              strokeColor="#f5c44b"
-              trailColor="#283043"
+            <Statistic
+              value={scoreText(riskDelta)}
+              prefix={riskDelta > 0 ? '+' : ''}
+              suffix="分"
+              valueStyle={{ color: riskDelta >= 10 ? '#ff5d8f' : '#42f5d7' }}
             />
-            <Text>偏向真实事件、服务体验、合规安全等风险信号。</Text>
+            <Text>{monitoringStatus?.message || '尚未运行本轮监控检查。'}</Text>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
+          <Card className="panel-card">
+            <Space className="metric-heading">
+              <ShieldAlert size={20} />
+              <Text>真实危机风险</Text>
+            </Space>
+            <Statistic value={scoreText(realCrisisRisk)} suffix="/100" />
+            <Progress percent={scorePercent(realCrisisRisk)} showInfo={false} strokeColor="#f5c44b" trailColor="#283043" />
+            <Text type="secondary">事实争议、服务体验、合规安全信号。</Text>
+          </Card>
+        </Col>
+        <Col span={6}>
           <Card className="panel-card">
             <Space className="metric-heading">
               <Bot size={20} />
-              <Text>操纵/重复话术风险</Text>
+              <Text>操纵传播风险</Text>
             </Space>
-            <Statistic value={scoreText(report.manipulationRisk ?? 0)} suffix="/100" />
+            <Statistic value={scoreText(manipulationRisk)} suffix="/100" />
             <Progress
-              percent={Math.round(report.manipulationRisk ?? 0)}
+              percent={scorePercent(manipulationRisk)}
               showInfo={false}
               strokeColor="#42f5d7"
               trailColor="#283043"
             />
-            <Text>偏向疑似水军、重复脚本和异常协同信号。</Text>
+            <Text type="secondary">疑似水军、重复话术、协同扩散信号。</Text>
           </Card>
         </Col>
       </Row>
 
       <Row gutter={[16, 16]}>
-        <Col span={24}>
+        <Col span={14}>
           <Card className="panel-card trend-explanation-card">
             <div className="panel-heading">
               <Space>
-                <Activity size={18} />
-                <Title level={4}>趋势解释</Title>
+                <RadioTower size={18} />
+                <Title level={4}>预警事件</Title>
               </Space>
-              <Tag color={riskRadar?.trend_shift >= 0.65 ? 'volcano' : 'cyan'}>
-                趋势突变 {formatPercent(riskRadar?.trend_shift)}
-              </Tag>
+              <Tag color={visibleAlerts.length ? 'volcano' : 'cyan'}>{visibleAlerts.length}</Tag>
             </div>
+            <Paragraph className="dashboard-summary-copy">{topReason}</Paragraph>
             <List
-              className="trend-insight-list"
-              dataSource={trendInsights}
-              grid={{ gutter: 12, column: 2 }}
+              className="monitor-alert-list"
+              dataSource={visibleAlerts}
+              locale={{ emptyText: '暂无预警事件。运行监控检查后，如阈值被触发会显示在这里。' }}
               renderItem={(item) => (
                 <List.Item>
-                  <div className="insight-tile">
-                    <Text>{item}</Text>
+                  <div className={`alert-tile alert-${item.level}`}>
+                    <Space direction="vertical" size={8} className="full-width">
+                      <Space className="analysis-signal-line" wrap>
+                        <Tag color={getAlertTone(item.level)}>{alertLevelLabels[item.level] || item.level}</Tag>
+                        <Text type="secondary">{getSnapshotTime({ created_at: item.created_at })}</Text>
+                      </Space>
+                      <Text strong>{item.message}</Text>
+                      <Text type="secondary">{item.reason}</Text>
+                    </Space>
                   </div>
                 </List.Item>
               )}
             />
           </Card>
         </Col>
+        <Col span={10}>
+          <Card className="panel-card">
+            <div className="panel-heading">
+              <Space>
+                <Gauge size={18} />
+                <Title level={4}>最新快照</Title>
+              </Space>
+              <Tag color="geekblue">{caseSnapshots.length}</Tag>
+            </div>
+            {caseSnapshots.length ? (
+              <Timeline className="snapshot-timeline" items={buildSnapshotTrend(caseSnapshots)} />
+            ) : (
+              <Empty description="暂无监控快照" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
+          </Card>
+        </Col>
+
         <Col span={14}>
           <SentimentTrendChart data={sentimentTrend} focusNegative />
+        </Col>
+        <Col span={10}>
+          <RiskRadarChart data={riskRadar} />
+        </Col>
+
+        <Col span={14}>
+          <PlatformHeatmapChart data={visualization?.heatmap || []} />
         </Col>
         <Col span={10}>
           <Card className="panel-card">
             <div className="panel-heading">
               <Space>
                 <ShieldAlert size={18} />
-                <Title level={4}>Top 风险驱动因子</Title>
+                <Title level={4}>Top 风险驱动因素</Title>
               </Space>
               <Tag color="geekblue">{riskModelVersion}</Tag>
             </div>
             <List
-              dataSource={topRiskDrivers}
-              locale={{ emptyText: '暂无 V1.5 风险驱动数据' }}
+              dataSource={topDrivers}
+              locale={{ emptyText: '暂无风险驱动因素' }}
               renderItem={(driver) => (
                 <List.Item>
                   <Space direction="vertical" className="full-width" size={5}>
@@ -271,58 +386,37 @@ export function RiskMonitor({ alerts = [], analysis, error, loading, recommendat
             />
           </Card>
         </Col>
-        <Col span={14}>
-          <PlatformHeatmapChart data={visualization.heatmap || []} />
-        </Col>
-        <Col span={10}>
-          <Card className="panel-card">
-            <div className="panel-heading">
-              <Space>
-                <Gauge size={18} />
-                <Title level={4}>风险因子读数</Title>
-              </Space>
-              <Tag color="cyan">{radarLabels.length}</Tag>
-            </div>
-            <List
-              dataSource={radarLabels}
-              renderItem={(factor) => {
-                const value = riskRadar?.[factor.key] || 0
-                return (
-                  <List.Item>
-                    <Space direction="vertical" className="full-width" size={4}>
-                      <Space className="analysis-signal-line">
-                        <Text>{factor.label}</Text>
-                        <Tag color={value >= 0.5 ? 'volcano' : 'default'}>{formatPercent(value)}</Tag>
-                      </Space>
-                      <Text type="secondary">{factor.description}</Text>
-                      <Progress percent={Math.round(value * 100)} showInfo={false} strokeColor="#42f5d7" />
-                    </Space>
-                  </List.Item>
-                )
-              }}
-            />
-          </Card>
-        </Col>
+
         <Col span={24}>
           <Card className="panel-card">
             <div className="panel-heading">
               <Space>
-                <RadioTower size={18} />
-                <Title level={4}>阈值预警</Title>
+                <Activity size={18} />
+                <Title level={4}>高风险话题监控</Title>
               </Space>
-              <Tag color="volcano">{alerts.length}</Tag>
+              <Tag color="cyan">{(latestSnapshot?.top_risk_topics || report.topRiskTopics).length}</Tag>
             </div>
             <List
-              dataSource={alerts}
-              locale={{ emptyText: '暂无预警' }}
-              grid={{ gutter: 16, column: 2 }}
-              renderItem={(item) => (
+              grid={{ gutter: 16, column: 3 }}
+              dataSource={(latestSnapshot?.top_risk_topics || report.topRiskTopics).slice(0, 3).map(normalizeTopic)}
+              locale={{ emptyText: '暂无 V1.5 高风险话题数据' }}
+              renderItem={(topic) => (
                 <List.Item>
-                  <div className="alert-tile">
-                    <Space direction="vertical" size={8}>
-                      <Tag color={riskTone(item.level)}>{riskLevelLabels[item.level] || item.level}</Tag>
-                      <Text strong>{item.created_at}</Text>
-                      <Text>{item.message}</Text>
+                  <div className={`topic-risk-card risk-${topic.riskLevel}`}>
+                    <Space direction="vertical" className="full-width" size={10}>
+                      <Space className="analysis-signal-line" wrap>
+                        <Text strong>{topic.topic}</Text>
+                        <Tag color={riskTone(topic.riskLevel)}>{riskLevelLabels[topic.riskLevel] || topic.riskLevel}</Tag>
+                      </Space>
+                      <Progress percent={scorePercent(topic.riskScore)} strokeColor="#ff5d8f" trailColor="#283043" />
+                      <Paragraph className="topic-risk-explanation">{topic.explanation}</Paragraph>
+                      <div className="topic-risk-meta-grid">
+                        {topic.drivers.map(([label, value]) => (
+                          <span key={`${topic.topicId}-${label}`}>
+                            {label}: {formatPercent(Number(value))}
+                          </span>
+                        ))}
+                      </div>
                     </Space>
                   </div>
                 </List.Item>

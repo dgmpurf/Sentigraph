@@ -1,6 +1,8 @@
 # Sentigraph Local Demo Checklist
 
-Use this checklist for the current v0.6 case-based, mock-first desktop web MVP demo.
+Use this checklist for the current v0.7 case-based, mock-first desktop web MVP demo.
+
+Latest v0.7 monitoring validation: 2026-05-14. Backend tests passed with `65 passed in 1.04s`. Frontend production build passed in 7.54s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The Risk Monitor page now supports persisted snapshots, case alert events, and a `Run Mock Monitoring Check` action.
 
 Latest v0.6 persistence validation: 2026-05-14. Backend tests passed with `55 passed in 0.51s`. Case API tests now verify create/list/detail/run, Chinese report attachment, Markdown export, and retrieval after reloading the repository/store from the same local JSON file. Frontend build was not rerun because no frontend files changed.
 
@@ -249,6 +251,7 @@ Open Risk Monitor.
 
 Check that the page shows:
 
+- Monitoring status
 - Risk trend
 - `real_crisis_risk`
 - `manipulation_risk`
@@ -264,6 +267,29 @@ Expected result:
 
 - Empty arrays do not crash the page.
 - Missing optional fields fall back gracefully.
+
+## 8.5 Run Mock Monitoring Check
+
+With a completed case selected:
+
+1. Open Risk Monitor.
+2. Click `Run Mock Monitoring Check`.
+3. Confirm a new snapshot appears in the latest snapshot timeline.
+4. Confirm the risk delta, latest risk level, top triggered reason, and alert list update.
+5. Call the backend endpoints if needed:
+
+```cmd
+powershell -Command "Invoke-RestMethod http://127.0.0.1:8000/api/v1/cases/case_001/snapshots"
+powershell -Command "Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/v1/cases/case_001/monitor/run"
+powershell -Command "Invoke-RestMethod http://127.0.0.1:8000/api/v1/cases/case_001/alerts"
+```
+
+Expected result:
+
+- Each monitoring check creates a deterministic local snapshot in `backend/data/cases.json`.
+- The first monitoring result can create a baseline event.
+- Later monitoring checks may trigger warning/critical alert events when thresholds are crossed.
+- No real scheduler, real crawler, real platform API, or notification service is used.
 
 ## 9. Open PropagationGraph
 

@@ -14,8 +14,11 @@ import {
   getPlatforms,
   getPropagation,
   getVisualizationData,
+  listCaseAlerts,
   listAnalysisCases,
+  listCaseSnapshots,
   runAnalysisCase,
+  runCaseMonitoringCheck,
 } from './api/sentigraphApi.js'
 import { AppShell } from './components/layout/AppShell.jsx'
 import { AnalysisResult } from './pages/AnalysisResult.jsx'
@@ -67,6 +70,9 @@ function App() {
   const [currentCase, setCurrentCase] = useState(null)
   const [markdownReport, setMarkdownReport] = useState(null)
   const [markdownLoading, setMarkdownLoading] = useState(false)
+  const [caseSnapshots, setCaseSnapshots] = useState([])
+  const [monitoringStatus, setMonitoringStatus] = useState(null)
+  const [monitoringLoading, setMonitoringLoading] = useState(false)
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -91,6 +97,7 @@ function App() {
     setProjectId(caseDetail.project_id || DEFAULT_PROJECT_ID)
     setKeyword(caseDetail.keyword || 'Tesla')
     setMarkdownReport(null)
+    setMonitoringStatus(null)
 
     if (caseDetail.analysis_result) {
       setAnalysis(caseDetail.analysis_result)
@@ -109,6 +116,23 @@ function App() {
     const caseList = await listAnalysisCases()
     setCases(caseList)
     return caseList
+  }, [])
+
+  const loadCaseMonitoring = useCallback(async (caseId) => {
+    if (!caseId) {
+      setCaseSnapshots([])
+      setAlerts([])
+      setMonitoringStatus(null)
+      return { snapshots: [], alerts: [] }
+    }
+
+    const [snapshots, caseAlertEvents] = await Promise.all([
+      listCaseSnapshots(caseId),
+      listCaseAlerts(caseId),
+    ])
+    setCaseSnapshots(snapshots)
+    setAlerts(caseAlertEvents)
+    return { snapshots, alerts: caseAlertEvents }
   }, [])
 
   const loadProjectData = useCallback(async (nextProjectId = DEFAULT_PROJECT_ID) => {
@@ -145,6 +169,8 @@ function App() {
       setRecommendation(recommendationData)
       setPropagation(propagationData)
       setAlerts(alertsData.alerts || [])
+      setCaseSnapshots([])
+      setMonitoringStatus(null)
     } catch (requestError) {
       setError(requestError?.message || 'Unable to load mock analysis data.')
     } finally {
@@ -213,15 +239,14 @@ function App() {
       setExpandedKeywords(keywordData)
       applyCaseDetail(completedCase)
       await refreshCases()
-      const alertsData = await getAlerts(completedCase.project_id)
-      setAlerts(alertsData.alerts || [])
+      await loadCaseMonitoring(completedCase.case_id)
       setActivePage('dashboard')
     } catch (requestError) {
       setError(requestError?.message || 'Unable to create and run mock analysis case.')
     } finally {
       setLoading(false)
     }
-  }, [activeMvpPlatforms, applyCaseDetail, refreshCases])
+  }, [activeMvpPlatforms, applyCaseDetail, loadCaseMonitoring, refreshCases])
 
   const handleRunCase = useCallback(async (caseId, nextPage = 'dashboard') => {
     setLoading(true)
@@ -230,15 +255,14 @@ function App() {
       const completedCase = await runAnalysisCase(caseId)
       applyCaseDetail(completedCase)
       await refreshCases()
-      const alertsData = await getAlerts(completedCase.project_id)
-      setAlerts(alertsData.alerts || [])
+      await loadCaseMonitoring(completedCase.case_id)
       setActivePage(nextPage)
     } catch (requestError) {
       setError(requestError?.message || 'Unable to run mock analysis case.')
     } finally {
       setLoading(false)
     }
-  }, [applyCaseDetail, refreshCases])
+  }, [applyCaseDetail, loadCaseMonitoring, refreshCases])
 
   const handleOpenCaseReport = useCallback(async (caseId) => {
     setLoading(true)
@@ -246,15 +270,34 @@ function App() {
     try {
       const caseDetail = await getAnalysisCase(caseId)
       applyCaseDetail(caseDetail)
-      const alertsData = await getAlerts(caseDetail.project_id)
-      setAlerts(alertsData.alerts || [])
+      await loadCaseMonitoring(caseDetail.case_id)
       setActivePage('summary')
     } catch (requestError) {
       setError(requestError?.message || 'Unable to open the selected case report.')
     } finally {
       setLoading(false)
     }
-  }, [applyCaseDetail])
+  }, [applyCaseDetail, loadCaseMonitoring])
+
+  const handleRunMonitoringCheck = useCallback(async () => {
+    if (!currentCase?.case_id) {
+      setError('Please create or open a case before running monitoring.')
+      return null
+    }
+    setMonitoringLoading(true)
+    setError('')
+    try {
+      const status = await runCaseMonitoringCheck(currentCase.case_id)
+      setMonitoringStatus(status)
+      await loadCaseMonitoring(currentCase.case_id)
+      return status
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to run mock monitoring check.')
+      return null
+    } finally {
+      setMonitoringLoading(false)
+    }
+  }, [currentCase, loadCaseMonitoring])
 
   const handleGetMarkdownReport = useCallback(async () => {
     if (!currentCase?.case_id) {
@@ -319,13 +362,17 @@ function App() {
     expandedKeywords,
     keyword,
     loading,
+    caseSnapshots,
     markdownLoading,
     markdownReport,
+    monitoringLoading,
+    monitoringStatus,
     onGetMarkdownReport: handleGetMarkdownReport,
     onNavigateToKeyword: () => setActivePage('keyword'),
     onOpenCaseReport: handleOpenCaseReport,
     onRefreshCases: refreshCases,
     onRunCase: handleRunCase,
+    onRunMonitoringCheck: handleRunMonitoringCheck,
     onStartAnalysis: handleStartAnalysis,
     platformOptions,
     platformRegistry,

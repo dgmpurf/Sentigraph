@@ -41,6 +41,26 @@ export async function getCaseMarkdownReport(caseId) {
   return data
 }
 
+export async function listCaseSnapshots(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/snapshots`)
+  return Array.isArray(data) ? data : []
+}
+
+export async function runCaseMonitoringCheck(caseId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/monitor/run`)
+  return normalizeMonitoringStatus(data)
+}
+
+export async function listCaseAlerts(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/alerts`)
+  return Array.isArray(data) ? data : []
+}
+
+export async function listAllAlertEvents() {
+  const { data } = await apiClient.get(`${API_PREFIX}/alerts`)
+  return Array.isArray(data) ? data : []
+}
+
 export async function startCrawl(payload) {
   const { data } = await apiClient.post(`${API_PREFIX}/crawl/start`, payload)
   return data
@@ -119,6 +139,28 @@ function normalizeCaseDetail(data) {
     analysis_result: normalizeRiskExtension(data.analysis_result),
     visualization_data: normalizeRiskExtension(data.visualization_data),
     report: normalizeRiskExtension(data.report),
+  }
+}
+
+function normalizeMonitoringStatus(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    latest_snapshot: normalizeSnapshot(data.latest_snapshot),
+    previous_snapshot: normalizeSnapshot(data.previous_snapshot),
+    alerts: Array.isArray(data.alerts) ? data.alerts : [],
+  }
+}
+
+function normalizeSnapshot(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    top_risk_topics: Array.isArray(data.top_risk_topics) ? data.top_risk_topics : [],
+    risk_score: normalizeOptionalScore(data.risk_score) ?? 0,
+    overall_risk: normalizeOptionalScore(data.overall_risk) ?? 0,
+    real_crisis_risk: normalizeOptionalScore(data.real_crisis_risk) ?? 0,
+    manipulation_risk: normalizeOptionalScore(data.manipulation_risk) ?? 0,
   }
 }
 

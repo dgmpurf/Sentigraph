@@ -126,6 +126,109 @@ Rules:
 }
 ```
 
+## 0.6 Monitoring and Alert Foundation
+
+The v0.7 monitoring foundation stores local snapshots and alert events with the same case repository/storage layer. It is deterministic, mock-first, and does not require a scheduler, Redis, MongoDB, real crawlers, real platform APIs, or notification services.
+
+### AnalysisSnapshot
+
+```json
+{
+  "snapshot_id": "case_001_snapshot_002",
+  "case_id": "case_001",
+  "created_at": "2026-05-14T09:08:00Z",
+  "run_index": 2,
+  "risk_score": 64.2,
+  "overall_risk": 64.2,
+  "risk_level": "medium",
+  "risk_model_version": "v1_5_topic_risk_mvp",
+  "real_crisis_risk": 58.4,
+  "manipulation_risk": 47.0,
+  "top_risk_topics": [],
+  "summary": "Template-based mock public opinion summary."
+}
+```
+
+Rules:
+
+- `snapshot_id` and `case_id` are strings.
+- `risk_score`, `overall_risk`, `real_crisis_risk`, and `manipulation_risk` are clamped to `0-100`.
+- `top_risk_topics` uses the existing V1.5 `TopicRiskScore` item shape.
+- Repeated mock monitoring checks may apply deterministic snapshot-index shifts to support local demo trends.
+
+### AlertLevel
+
+```text
+info
+warning
+critical
+```
+
+### AlertEvent
+
+```json
+{
+  "alert_id": "alert_case_001_snapshot_002_001",
+  "case_id": "case_001",
+  "snapshot_id": "case_001_snapshot_002",
+  "level": "warning",
+  "alert_type": "risk_score_increase",
+  "message": "总体风险分上升 12.0 分。",
+  "reason": "最新快照相对上一轮出现明显风险增量，建议优先复核高风险话题和传播信号。",
+  "created_at": "2026-05-14T09:08:00Z",
+  "resolved": false,
+  "metadata": {
+    "risk_score_delta": 12.0
+  }
+}
+```
+
+### AlertThresholdConfig
+
+```json
+{
+  "risk_score_delta_warning": 10,
+  "risk_score_delta_critical": 20,
+  "real_crisis_delta_warning": 10,
+  "manipulation_delta_warning": 15,
+  "topic_risk_high": 70,
+  "topic_risk_critical": 85
+}
+```
+
+### MonitoringStatus
+
+```json
+{
+  "case_id": "case_001",
+  "status": "alerts_detected",
+  "latest_snapshot": {},
+  "previous_snapshot": {},
+  "alerts": [],
+  "snapshot_count": 2,
+  "latest_risk_delta": 12.0,
+  "latest_risk_level": "medium",
+  "message": "本轮监控触发 1 条预警事件。"
+}
+```
+
+Allowed monitoring statuses:
+
+```text
+baseline_created
+alerts_detected
+stable
+```
+
+Alert evaluator rules:
+
+- Create an `info` baseline event when no previous snapshot exists.
+- Trigger risk-score alerts when `risk_score_delta >= 10`; use `critical` when the delta is at least `20`.
+- Trigger risk-level escalation alerts when the latest raw `risk_level` moves upward.
+- Trigger real-crisis alerts when `real_crisis_risk` increases by at least `10`.
+- Trigger manipulation-risk alerts when `manipulation_risk` increases by at least `15`.
+- Trigger topic alerts when a new topic appears with `topic_risk_score >= 70`; use `critical` when the score is at least `85`.
+
 ## 1. Keyword Expansion
 
 ### KeywordExpandRequest

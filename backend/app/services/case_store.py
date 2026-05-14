@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from app.repositories.case_repository import CaseRepository
+from app.schemas.alert import AlertEvent, AnalysisSnapshot, MonitoringStatus
 from app.schemas.case import (
     AnalysisCaseCreateRequest,
     AnalysisCaseDetail,
@@ -11,6 +12,8 @@ from app.schemas.case import (
 )
 from app.services.mock_pipeline import build_mock_pipeline
 from app.services.mock_service import _pipeline_representative_comments
+from app.services.monitoring.alert_evaluator import evaluate_alerts
+from app.services.monitoring.snapshot_builder import build_analysis_snapshot
 from app.services.recommendation.report_builder import build_public_opinion_report
 from app.services.storage.base_store import CaseStore
 from app.services.storage.local_json_store import LocalJsonCaseStore
@@ -111,7 +114,62 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
             generated_at=repository.next_timestamp(),
         ),
     )
+    _save_case_snapshot(repository, completed_case, apply_mock_shift=False)
     return completed_case.model_copy(deep=True)
+
+
+def list_case_snapshots(case_id: str) -> list[AnalysisSnapshot] | None:
+    repository = get_case_repository()
+    if not repository.get_case(case_id):
+        return None
+    return repository.list_analysis_snapshots(case_id)
+
+
+def list_case_alerts(case_id: str) -> list[AlertEvent] | None:
+    repository = get_case_repository()
+    if not repository.get_case(case_id):
+        return None
+    return repository.list_case_alerts(case_id)
+
+
+def list_all_case_alerts() -> list[AlertEvent]:
+    return get_case_repository().list_all_alert_events()
+
+
+def run_monitoring_check(case_id: str) -> MonitoringStatus | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+
+    if not case.report:
+        completed_case = run_case(case_id)
+        if not completed_case:
+            return None
+        snapshots = repository.list_analysis_snapshots(case_id)
+        latest = snapshots[-1]
+        alerts = evaluate_alerts(None, latest)
+        repository.save_alert_events(case_id, alerts)
+        return _build_monitoring_status(
+            case_id,
+            latest_snapshot=latest,
+            previous_snapshot=None,
+            alerts=alerts,
+            snapshot_count=len(snapshots),
+        )
+
+    previous_snapshots = repository.list_analysis_snapshots(case_id)
+    previous_snapshot = previous_snapshots[-1] if previous_snapshots else None
+    latest_snapshot = _save_case_snapshot(repository, case, apply_mock_shift=True)
+    alerts = evaluate_alerts(previous_snapshot, latest_snapshot)
+    repository.save_alert_events(case_id, alerts)
+    return _build_monitoring_status(
+        case_id,
+        latest_snapshot=latest_snapshot,
+        previous_snapshot=previous_snapshot,
+        alerts=alerts,
+        snapshot_count=len(previous_snapshots) + 1,
+    )
 
 
 def export_case_markdown(case_id: str) -> MarkdownExportResponse | None:
@@ -132,6 +190,57 @@ def export_case_markdown(case_id: str) -> MarkdownExportResponse | None:
         generated_at=repository.next_timestamp(),
     )
     return repository.save_markdown_report(case_id, report)
+
+
+def _save_case_snapshot(
+    repository: CaseRepository,
+    case: AnalysisCaseDetail,
+    *,
+    apply_mock_shift: bool,
+) -> AnalysisSnapshot:
+    run_index = repository.next_snapshot_number(case.case_id)
+    snapshot = build_analysis_snapshot(
+        case,
+        snapshot_id=f"{case.case_id}_snapshot_{run_index:03d}",
+        created_at=repository.next_timestamp(),
+        run_index=run_index,
+        apply_mock_shift=apply_mock_shift,
+    )
+    return repository.save_analysis_snapshot(case.case_id, snapshot)
+
+
+def _build_monitoring_status(
+    case_id: str,
+    *,
+    latest_snapshot: AnalysisSnapshot,
+    previous_snapshot: AnalysisSnapshot | None,
+    alerts: list[AlertEvent],
+    snapshot_count: int,
+) -> MonitoringStatus:
+    if previous_snapshot is None:
+        status = "baseline_created"
+        message = "已创建监控基线快照。"
+        latest_risk_delta = 0.0
+    elif alerts:
+        status = "alerts_detected"
+        message = f"本轮监控触发 {len(alerts)} 条预警事件。"
+        latest_risk_delta = latest_snapshot.risk_score - previous_snapshot.risk_score
+    else:
+        status = "stable"
+        message = "本轮监控未触发新的风险阈值。"
+        latest_risk_delta = latest_snapshot.risk_score - previous_snapshot.risk_score
+
+    return MonitoringStatus(
+        case_id=case_id,
+        status=status,
+        latest_snapshot=latest_snapshot,
+        previous_snapshot=previous_snapshot,
+        alerts=alerts,
+        snapshot_count=snapshot_count,
+        latest_risk_delta=round(latest_risk_delta, 2),
+        latest_risk_level=latest_snapshot.risk_level,
+        message=message,
+    )
 
 
 def _build_markdown(case: AnalysisCaseDetail) -> str:

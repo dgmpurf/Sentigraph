@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 
 from app.schemas.analysis import AnalysisResultResponse
+from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
 from app.schemas.common import RiskLevel
 from app.schemas.report import PublicOpinionReport
@@ -72,6 +73,25 @@ class CaseStore(ABC):
         """Return all persisted Markdown reports."""
 
     @abstractmethod
+    def save_analysis_snapshot(self, case_id: str, snapshot: AnalysisSnapshot) -> AnalysisSnapshot:
+        """Persist one monitoring snapshot for a case."""
+
+    @abstractmethod
+    def list_analysis_snapshots(self, case_id: str) -> list[AnalysisSnapshot]:
+        """Return persisted monitoring snapshots for a case."""
+
+    @abstractmethod
+    def save_alert_events(self, case_id: str, alerts: list[AlertEvent]) -> list[AlertEvent]:
+        """Persist alert events for a case."""
+
+    @abstractmethod
+    def list_case_alerts(self, case_id: str) -> list[AlertEvent]:
+        """Return persisted alert events for a case."""
+
+    @abstractmethod
+    def list_all_alert_events(self) -> list[AlertEvent]:
+        """Return all persisted alert events."""
+
+    @abstractmethod
     def reset(self) -> None:
         """Clear persisted cases for tests or explicit local reset."""
-

@@ -70,6 +70,8 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
   - 建议公开回应文案
 - 建议公开回应文案复制按钮。
 
+- v0.7 lightweight monitoring foundation: completed cases can save local analysis snapshots, run deterministic mock monitoring checks, and show threshold-based alert events in Risk Monitor.
+
 ### Planned Features
 
 - 更完整的浏览器端 smoke test。
@@ -354,7 +356,11 @@ Base path:
 - `POST /api/v1/cases`
 - `GET /api/v1/cases/{case_id}`
 - `POST /api/v1/cases/{case_id}/run`
+- `GET /api/v1/cases/{case_id}/snapshots`
+- `POST /api/v1/cases/{case_id}/monitor/run`
+- `GET /api/v1/cases/{case_id}/alerts`
 - `GET /api/v1/cases/{case_id}/report/markdown`
+- `GET /api/v1/alerts`
 
 其他已实现 mock endpoints：
 
