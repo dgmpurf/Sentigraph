@@ -54,7 +54,7 @@ Latest frontend V1.5 API alignment update: the frontend API client now normalize
 
 Latest browser QA and demo polish update: a 1440x900 desktop browser smoke test passed for Dashboard, Keyword Search, Analysis Result, Summary Report, Risk Monitor, and Propagation Graph. The mock analysis flow was exercised from Keyword Search back to Dashboard, V1.5 fields displayed correctly across pages, the Chinese structured report rendered, the suggested public response copy button wrote report text to the browser clipboard, crawler-later platforms were visible as disabled/future items, and YouTube remained inactive. Small polish fixes were added: Summary Report risk badge text no longer wraps the raw risk enum, copy buttons now have stable QA selectors, and `frontend/index.html` includes a local favicon to avoid the browser favicon 404. Backend tests passed with `34 passed in 0.38s`; frontend build passed in 7.64s with the existing non-blocking Vite vendor chunk warning. The in-app Browser runtime still timed out, so QA used a local Playwright + Chrome fallback.
 
-Latest case management and Markdown export update: Sentigraph now has lightweight in-memory analysis case management for the mock MVP. New backend endpoints support creating cases, listing cases, retrieving case details, running the existing offline V1.5 mock pipeline for a case, and exporting a Chinese public opinion report as Markdown. The frontend now includes a Cases page, Keyword Search creates and runs a case, the header shows the current case, Summary Report can copy/download Markdown for the selected completed case, and the existing Dashboard, AnalysisResult, RiskMonitor, PropagationGraph, and Chinese report pages continue to work. Backend tests passed with `40 passed in 0.41s`; frontend build passed in 7.55s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser QA via local Playwright + Chrome passed for create case -> run mock analysis -> Cases list -> open report -> copy Markdown -> download `.md` -> V1.5 page navigation, with no console errors.
+Latest case management and Markdown export update: Sentigraph now has lightweight analysis case management for the mock MVP, currently backed by local JSON persistence. New backend endpoints support creating cases, listing cases, retrieving case details, running the existing offline V1.5 mock pipeline for a case, and exporting a Chinese public opinion report as Markdown. The frontend now includes a Cases page, Keyword Search creates and runs a case, the header shows the current case, Summary Report can copy/download Markdown for the selected completed case, and the existing Dashboard, AnalysisResult, RiskMonitor, PropagationGraph, and Chinese report pages continue to work. Backend tests passed with `40 passed in 0.41s`; frontend build passed in 7.55s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser QA via local Playwright + Chrome passed for create case -> run mock analysis -> Cases list -> open report -> copy Markdown -> download `.md` -> V1.5 page navigation, with no console errors.
 
 Latest v0.3 stabilization QA update: the case management and Markdown export flow was revalidated end to end without product code changes. Backend tests passed with `40 passed in 0.43s`, frontend production build passed in 7.71s, API smoke checks passed for all new case endpoints plus the existing platform, visualization, summary, recommendation, and analysis endpoints, and browser QA passed at a 1440x960 desktop viewport. The browser flow verified Keyword Search -> create/run case -> Dashboard -> Cases -> Summary Report -> copy suggested public response -> copy Markdown -> download `.md` -> AnalysisResult -> RiskMonitor -> PropagationGraph, with no relevant console errors. The in-app Browser runtime still timed out, so this QA pass used temporary Playwright + Chromium tooling outside the repository; no project dependency files were changed.
 
@@ -62,7 +62,7 @@ Latest platform adapter foundation update: added a safe shared platform adapter 
 
 Latest platform adapter revalidation update: re-read the required project docs and rechecked the adapter scaffold. The active interface remains `search_posts`, `fetch_comments`, `normalize_post`, and `normalize_comment`; Reddit remains mock-first with credential-gated optional real mode and local mock fallback. Backend tests passed with `44 passed in 0.41s`; frontend build was not rerun because this task did not change frontend files.
 
-Latest case management and Markdown export revalidation update: re-read the required project docs and rechecked the existing lightweight case-based mock MVP implementation. The backend case schemas, in-memory case store, case routes, V1.5 mock pipeline attachment, Chinese report attachment, and Markdown report export are present; the frontend Cases page, Keyword Search create/run flow, Summary Report case loading, and Markdown copy/download controls are present. Backend tests passed with `44 passed in 0.50s`; frontend production build passed in 7.92s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks passed for create case, run case, Markdown export, and the existing platform, visualization, summary, recommendation, and analysis endpoints.
+Latest case management and Markdown export revalidation update: re-read the required project docs and rechecked the existing lightweight case-based mock MVP implementation. The backend case schemas, case store facade, local JSON persistence layer, case routes, V1.5 mock pipeline attachment, Chinese report attachment, and Markdown report export are present; the frontend Cases page, Keyword Search create/run flow, Summary Report case loading, and Markdown copy/download controls are present. Backend tests passed with `44 passed in 0.50s`; frontend production build passed in 7.92s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks passed for create case, run case, Markdown export, and the existing platform, visualization, summary, recommendation, and analysis endpoints.
 
 Latest v0.3 case-flow stabilization QA update: completed a full stabilization pass for lightweight case management and Markdown export. API smoke checks passed for all case endpoints, old MVP endpoints, Markdown report content, V1.5 topic-risk fields, 9 mock-selectable platforms, crawler-later disabled state, and YouTube inactive state. Backend tests passed with `44 passed in 0.48s`; frontend production build passed in 7.83s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser QA at 1440x960 passed through a Chrome headless CDP fallback after the in-app Browser connection timed out: Dashboard, Keyword Search, Cases, Analysis Result, Summary Report, Risk Monitor, and Propagation Graph rendered; create/run case worked; suggested public response copy worked; Markdown copy worked; no relevant console errors or `[object Object]` rendering were observed.
 
@@ -78,6 +78,10 @@ Latest Reddit real-mode hardening update: tightened the Reddit adapter so a code
 
 Latest v0.5 Reddit real-mode QA update: revalidated the minimal Reddit real-mode integration without enabling live product flows. `REDDIT_ADAPTER_MODE=mock` remains the default, missing credentials fall back to mock mode, and real mode requires `REDDIT_ADAPTER_MODE=real`, all three Reddit credentials, and an explicit code-level real-mode request. Targeted Reddit adapter tests passed with `11 passed in 0.09s`; full backend tests passed with `51 passed in 0.41s`; API smoke checks passed for health, platform registry, crawl start, case create/run, V1.5 topic-risk output, Chinese report, Markdown export, visualization, summary, and recommendation. Frontend build was not rerun because no frontend files changed. Recommended checkpoint tag: `v0.5-reddit-real-mode-qa`.
 
+Latest local JSON persistence update: case management now uses a repository/storage abstraction with `LocalJsonCaseStore` as the default backend. Created cases, completed V1.5 mock analysis output, Chinese structured reports, and Markdown report metadata persist to `backend/data/cases.json` by default, while tests use temporary JSON paths and do not write to the demo store. Runtime case JSON files are ignored by git via `backend/data/*.json`; `backend/data/.gitkeep` preserves the directory. Targeted persistence/case API tests passed with `9 passed in 0.53s`; full backend validation passed with `54 passed in 0.53s`. Frontend build was not rerun because no frontend files changed. MongoDB/Redis remain future TODOs behind the same interface.
+
+Latest v0.6 persistence QA update: revalidated the local JSON persistence layer and tightened git hygiene for runtime store files. Case APIs still use the repository/storage layer, created and completed cases persist through a repository reload, and Markdown export remains available after reload. `.gitignore` now excludes both `backend/data/*.json` and transient `backend/data/*.json.tmp` while keeping `backend/data/.gitkeep`. Targeted case/persistence tests passed with `10 passed in 0.49s`; full backend validation passed with `55 passed in 0.51s`. Frontend build was not rerun because no frontend files changed. Known limitation: local JSON persistence is suitable for the offline demo but is not a production database or concurrent multi-user store.
+
 Maintenance status audit:
 
 | Area | Status | Notes |
@@ -85,7 +89,7 @@ Maintenance status audit:
 | Project skeleton | complete | Backend, frontend, docs, mock data, tests, and local scripts are present. |
 | V1.5 topic-risk backend | complete | `v1_5_topic_risk_mvp` fields appear in analysis, visualization, summary, recommendation, and case run outputs. |
 | Frontend V1.5 display | complete | Dashboard, AnalysisResult, RiskMonitor, and SummaryReport consume V1.5 fields; production build passes. |
-| Case management | complete | In-memory case APIs and frontend case flow are present; persistence remains future work. |
+| Case management | complete | Local JSON-backed case APIs, repository/storage abstraction, and frontend case flow are present. |
 | Markdown export | complete | Completed cases export/copy Markdown with report sections and risk metadata. |
 | Platform registry | complete | 9 mock-selectable platforms are active; crawler-later and YouTube remain inactive. |
 | Reddit adapter foundation | complete for mock scaffold | Adapter contract, factory, mock fallback, credential placeholders, and tests are present. Real mode remains future. |
@@ -94,10 +98,10 @@ Maintenance status audit:
 
 Recommended release checkpoint:
 
-- Checkpoint name: Sentigraph v0.4 adapter foundation.
-- Suggested git tag: `v0.4-adapter-foundation`.
-- Completed capabilities: mock-first V1.5 topic-risk pipeline, Chinese structured reports, lightweight in-memory cases, Markdown export, platform registry, Reddit mock adapter scaffold, and full backend/frontend local validation.
-- Known non-blocking issues: case storage is still in-memory per backend process; Vite still reports large vendor chunks for Ant Design and ECharts; browser QA may require Playwright/Chrome fallback if the in-app Browser runtime times out.
+- Checkpoint name: Sentigraph v0.6 local JSON case persistence.
+- Suggested git tag: `v0.6-local-json-case-persistence`.
+- Completed capabilities: mock-first V1.5 topic-risk pipeline, Chinese structured reports, lightweight local JSON-backed cases, Markdown export, platform registry, Reddit mock adapter scaffold, and full backend/frontend local validation.
+- Known non-blocking issues: Vite still reports large vendor chunks for Ant Design and ECharts; browser QA may require Playwright/Chrome fallback if the in-app Browser runtime times out. Local JSON persistence is demo-friendly but not a production database or concurrent multi-user store.
 - Next recommended task: implement a mock-only crawl service bridge that can call the adapter factory for Reddit mock data without enabling real Reddit mode.
 
 ## 2. Completed MVP Steps
@@ -215,7 +219,11 @@ Backend:
 - `backend/app/schemas/report.py` - Normalized public opinion report schema and report language enum.
 - `backend/app/schemas/platform.py` - Platform registry response schemas.
 - `backend/app/services/mock_service.py` - Mock API response service now backed by the deterministic mock pipeline/report builder where possible.
-- `backend/app/services/case_store.py` - Deterministic in-memory analysis case store and Markdown report exporter for the mock MVP.
+- `backend/app/services/case_store.py` - Case management facade that runs the offline mock pipeline and exports Markdown reports.
+- `backend/app/repositories/case_repository.py` - Repository layer for case IDs, timestamps, list/detail mapping, and persisted report attachments.
+- `backend/app/services/storage/base_store.py` - Storage interface for current local JSON and future MongoDB/Redis implementations.
+- `backend/app/services/storage/local_json_store.py` - Default project-local JSON case store at `backend/data/cases.json`.
+- `backend/data/.gitkeep` - Keeps the runtime data directory present while generated `*.json` files remain ignored.
 - `backend/app/services/crawling/base_adapter.py` - Shared adapter interface and safe utility helpers for future public platform adapters.
 - `backend/app/services/crawling/adapter_factory.py` - Adapter registry/factory; currently registers the Reddit scaffold.
 - `backend/app/services/crawling/platform_registry.py` - Platform source registry defining mock-selectable MVP, official API planned, future real adapter candidate, crawler-later, and optional future platforms.
@@ -358,6 +366,8 @@ npm.cmd --prefix frontend run build
 - Latest targeted Reddit adapter validation after minimal real-mode helper updates passed with `9 passed in 0.14s`.
 - Latest backend validation after Reddit real-mode hardening passed with `51 passed in 0.43s`; targeted Reddit adapter validation passed with `11 passed in 0.12s`.
 - Latest v0.5 Reddit real-mode QA passed with full backend validation `51 passed in 0.41s`, targeted Reddit adapter validation `11 passed in 0.09s`, and API smoke checks for old MVP and case/report endpoints.
+- Latest backend validation after local JSON case persistence passed with `54 passed in 0.53s`.
+- Latest backend validation after v0.6 persistence QA passed with `55 passed in 0.51s`.
 - Frontend dependency installation passes with `npm.cmd run frontend:install`, which runs `cd frontend && npm install`; the latest install completed with dependencies already up to date.
 - Avoid using `npm.cmd --prefix frontend install` for installation on npm 10.9.2; it can incorrectly link the parent package into `frontend` as `sentigraph: file:..`.
 - Frontend production build passes with `npm.cmd run build` from `frontend`; the latest MVP stabilization Vite build completed in 7.73s.
@@ -379,7 +389,7 @@ npm.cmd --prefix frontend run build
 - Case-flow browser QA passed through local Playwright + Chrome: create case, run mock analysis, open the Cases page, open Summary Report, copy Markdown, download `.md`, and navigate to AnalysisResult, RiskMonitor, and PropagationGraph with no console errors.
 - v0.3 browser QA passed through temporary Playwright + Chromium tooling at 1440x960: create case, run mock analysis, verify platform roadmap, open report, copy suggested public response, copy Markdown, download `.md`, and navigate through Dashboard, Cases, AnalysisResult, RiskMonitor, and PropagationGraph with no relevant console errors.
 - v0.3 API smoke validation passed for `GET /api/v1/cases`, `POST /api/v1/cases`, `GET /api/v1/cases/{case_id}`, `POST /api/v1/cases/{case_id}/run`, `GET /api/v1/cases/{case_id}/report/markdown`, `GET /api/v1/platforms`, `POST /api/v1/visualization/data`, `POST /api/v1/summary/generate`, `POST /api/v1/recommendation/generate`, and `GET /api/v1/analysis/{project_id}`.
-- Case storage is currently in-memory per backend process. Restarting the FastAPI server clears created cases; this is intentional for the mock MVP and should be replaced by local JSON or database persistence in a later phase.
+- Case storage now uses the default local JSON store at `backend/data/cases.json`. Restarting the FastAPI server preserves local demo cases unless that runtime JSON file is deleted.
 - If npm reports a stale dependency or `extraneous` error after earlier local installs, remove generated dependencies and install again:
 
 ```powershell
@@ -437,14 +447,14 @@ Overall audit conclusion: MVP 0 through MVP 4 are complete enough for the mock-f
 
 ## 7. Next Recommended Task
 
-Recommended next implementation task: add a mock-only crawl service bridge that can call the adapter factory in safe mock mode for Reddit-selected crawl starts without enabling live Reddit requests. If demo continuity is more important, add simple local JSON persistence for cases first.
+Recommended next implementation task: add a mock-only crawl service bridge that can call the adapter factory in safe mock mode for Reddit-selected crawl starts without enabling live Reddit requests.
 
 Suggested scope:
 
 - Do not enable V2 scoring yet.
 - Do not replace V1/V1.5 with full V2 during the next task.
 - Keep the current mock pipeline and V1.5 report APIs stable.
-- If persistence is selected next, keep it local JSON first and do not add MongoDB/Redis yet.
+- Future persistence work should add MongoDB/Redis as optional stores behind the existing repository interface; do not require them for local demos.
 - If alert refinement is selected next, generate alerts from existing V1.5 risk fields without real notifications.
 - If Reddit integration is selected next, keep real mode disabled by default and use sanitized fixtures or mocked clients only.
 - Re-run the browser checklist in `docs/demo_checklist.md` after the next product-polish task.

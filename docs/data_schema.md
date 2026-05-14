@@ -39,7 +39,14 @@ Only `selectable_for_mock=true` platforms should appear in active MVP frontend s
 
 ## 0.5 Analysis Case
 
-Analysis cases are lightweight MVP objects used to preserve one mock analysis context across pages. Current storage is in-memory/local-process only. MongoDB/Redis persistence remains future work.
+Analysis cases are lightweight MVP objects used to preserve one mock analysis context across pages. Current default storage is a project-local JSON file through the case repository/storage abstraction. MongoDB/Redis persistence remains future work.
+
+Persistence defaults:
+
+- `CASE_STORE_BACKEND=local_json`
+- `CASE_STORE_PATH=backend/data/cases.json`
+- Runtime JSON data is ignored by git with `backend/data/*.json` and `backend/data/*.json.tmp`.
+- `backend/data/.gitkeep` keeps the runtime data directory in the repository.
 
 ### AnalysisCaseCreateRequest
 
@@ -103,6 +110,8 @@ Rules:
 - `visualization_data` uses the existing `VisualizationResponse` schema.
 - `report` uses the normalized `PublicOpinionReport` schema.
 - The MVP case store is deterministic and does not require a database.
+- Case data survives backend restart when using the default local JSON store.
+- Tests must use temporary case-store paths instead of `backend/data/cases.json`.
 - Case creation and case run must remain mock-first and must not call real platform APIs or crawlers.
 
 ### MarkdownExportResponse

@@ -551,7 +551,15 @@ GET /api/v1/alerts/{project_id}
 
 ## 10. Analysis Cases
 
-Case APIs are lightweight MVP endpoints for saving one mock analysis context in memory during local development. They do not require MongoDB, Redis, authentication, real crawlers, real platform APIs, or external LLM APIs.
+Case APIs are lightweight MVP endpoints for saving mock analysis contexts during local development. The default store is project-local JSON at `backend/data/cases.json` through the case repository/storage abstraction. They do not require MongoDB, Redis, authentication, real crawlers, real platform APIs, or external LLM APIs.
+
+Persistence notes:
+
+- Default backend: `CASE_STORE_BACKEND=local_json`.
+- Default path: `CASE_STORE_PATH=backend/data/cases.json`.
+- Runtime case JSON files are ignored by git via `backend/data/*.json` and `backend/data/*.json.tmp`.
+- Tests must use temporary paths and must not write to the real local demo store.
+- MongoDB/Redis stores remain future TODOs behind the same repository interface.
 
 ### List Cases
 

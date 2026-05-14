@@ -1,6 +1,8 @@
 # Sentigraph Local Demo Checklist
 
-Use this checklist for the current v0.3 case-based, mock-first desktop web MVP demo.
+Use this checklist for the current v0.6 case-based, mock-first desktop web MVP demo.
+
+Latest v0.6 persistence validation: 2026-05-14. Backend tests passed with `55 passed in 0.51s`. Case API tests now verify create/list/detail/run, Chinese report attachment, Markdown export, and retrieval after reloading the repository/store from the same local JSON file. Frontend build was not rerun because no frontend files changed.
 
 Latest v0.4 adapter-foundation validation: 2026-05-14. Backend tests passed with `47 passed in 0.42s`, frontend production build passed in 7.68s, and API smoke checks passed for health, platform registry, crawl start, case create/list/detail/run, Markdown export, visualization, summary, recommendation, analysis result, V1.5 topic-risk fields, and the Reddit mock adapter. The Vite Ant Design/ECharts vendor chunk warning remains non-blocking.
 
@@ -67,7 +69,7 @@ From Keyword Search:
 
 Expected result:
 
-- A new local in-memory case is created through `POST /api/v1/cases`.
+- A new local JSON-backed case is created through `POST /api/v1/cases`.
 - The case is run through `POST /api/v1/cases/{case_id}/run`.
 - The app returns to Dashboard with the selected case context in the top bar.
 - Cases page shows the case title, keyword, platforms, risk score, risk level, updated time, and status.
@@ -142,7 +144,7 @@ In Keyword Search:
 Expected result:
 
 - Keyword expansion runs.
-- A lightweight in-memory case is created.
+- A lightweight local JSON-backed case is created.
 - The existing offline V1.5 mock pipeline runs for that case.
 - The case detail receives analysis data, visualization data, V1.5 topic risk fields, and a Chinese structured report.
 - Dashboard data refreshes from the completed case context.
@@ -201,6 +203,45 @@ Expected result:
 
 - Markdown includes title, keyword, selected platforms, risk score, risk level, risk model version, overall summary, key findings, top risk topics, representative comments, suspected bot/repeated-script signals, recommended actions, and suggested public response.
 - Export uses `GET /api/v1/cases/{case_id}/report/markdown`.
+- Completed case data and generated Markdown metadata are persisted locally in `backend/data/cases.json` by default.
+- To reset local demo cases safely, stop the backend and delete only `backend\data\cases.json`.
+
+## 7.6 Persistence QA
+
+After creating and running one case:
+
+1. Confirm the local runtime store exists:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+dir backend\data
+```
+
+Expected result:
+
+- `cases.json` exists after a case has been created or run.
+- `backend/data/cases.json` is ignored by git and should not be committed.
+
+2. Restart the backend server.
+3. Open Cases again or call:
+
+```cmd
+powershell -Command "Invoke-RestMethod http://127.0.0.1:8000/api/v1/cases"
+```
+
+Expected result:
+
+- Previously created local demo cases still appear.
+- Completed cases still expose V1.5 topic risk, Chinese report data, and Markdown export.
+
+Safe reset:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+del backend\data\cases.json
+```
+
+Only delete `backend\data\cases.json` when intentionally resetting local demo cases. Keep `backend\data\.gitkeep`.
 
 ## 8. Open RiskMonitor
 

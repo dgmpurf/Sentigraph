@@ -35,7 +35,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - 模板化 summary/recommendation/report builder。
 - normalized Chinese public opinion report API。
 - Summary Report 和 Analysis Result 页面已接入后端中文结构化报告。
-- 轻量分析案例管理：可创建本地 mock 案例、运行 V1.5 mock 分析、查看案例列表并导出 Markdown 报告。
+- 轻量分析案例管理：可创建本地 mock 案例、运行 V1.5 mock 分析、查看案例列表、通过本地 JSON 存储保留案例并导出 Markdown 报告。
 - backend pytest 与 frontend build 已在本地验证通过。
 
 当前没有实现：
@@ -43,7 +43,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - 真实平台 API 调用。
 - 真实爬虫。
 - OpenAI 或外部 LLM 调用。
-- MongoDB/Redis 持久化。
+- MongoDB/Redis 生产级持久化。
 - 登录、鉴权、用户系统。
 - 生产级部署和监控。
 
@@ -53,7 +53,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 
 - 关键词输入与 mock 关键词扩展。
 - mock 平台选择与 mock 分析流程。
-- 本地内存型 analysis case 管理与 Markdown 报告复制/下载。
+- 本地 JSON-backed analysis case 管理与 Markdown 报告复制/下载。
 - 后端平台 registry，区分 mock-selectable、official API planned、crawler-later、optional future。
 - 后端 deterministic mock analysis pipeline。
 - 情绪分析、话题聚类、重复话术/疑似水军信号、风险评分。
@@ -155,6 +155,29 @@ set REDDIT_USER_AGENT=sentigraph-dev
 ```
 
 The code path must also explicitly request real adapter mode, for example through `get_adapter("reddit", mode="real")` or `RedditAdapter(mode="real")`. If any credential is missing, or if `REDDIT_ADAPTER_MODE` is not `real`, the adapter falls back to local mock data. Tests do not require credentials and do not make real Reddit network calls.
+
+### Local Case Persistence
+
+Case management uses a lightweight local JSON store by default. Created cases, completed mock analysis output, Chinese reports, and Markdown report metadata are saved under:
+
+```text
+backend/data/cases.json
+```
+
+Runtime JSON files in `backend/data/` are ignored by git. To reset local demo cases safely, stop the backend and delete only:
+
+```cmd
+del backend\data\cases.json
+```
+
+Optional environment variables:
+
+```cmd
+set CASE_STORE_BACKEND=local_json
+set CASE_STORE_PATH=backend/data/cases.json
+```
+
+MongoDB/Redis storage remains a future TODO behind the same repository interface.
 
 ## 5. Architecture
 

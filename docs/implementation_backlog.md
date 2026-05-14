@@ -108,12 +108,12 @@ Acceptance:
 
 Goal: make the demo feel like a case-based product.
 
-Status: completed for the lightweight mock MVP with in-memory backend storage and a frontend Cases page.
+Status: completed for the lightweight mock MVP with local JSON backend persistence and a frontend Cases page.
 
 Scope:
 
 - mock case model
-- local/session persistence
+- local JSON persistence
 - case list or recent case panel
 - current case context in header
 
@@ -121,6 +121,11 @@ Acceptance:
 
 - user can return to the last mock case
 - no real database required in the first version
+
+Follow-up:
+
+- Add MongoDB/Redis-backed stores later behind the existing case repository/storage interface.
+- Add migration/backup behavior before production-style deployments.
 
 ### Report Export Preparation
 

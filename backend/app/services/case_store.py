@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
+from app.repositories.case_repository import CaseRepository
 from app.schemas.case import (
     AnalysisCaseCreateRequest,
     AnalysisCaseDetail,
@@ -12,64 +12,58 @@ from app.schemas.case import (
 from app.services.mock_pipeline import build_mock_pipeline
 from app.services.mock_service import _pipeline_representative_comments
 from app.services.recommendation.report_builder import build_public_opinion_report
+from app.services.storage.base_store import CaseStore
+from app.services.storage.local_json_store import LocalJsonCaseStore
 from app.services.visualization.chart_data_builder import build_visualization_response
 
 
-_BASE_TIME = datetime(2026, 5, 14, 9, 0, 0, tzinfo=timezone.utc)
-_CASES: dict[str, AnalysisCaseDetail] = {}
-_CASE_COUNTER = 0
-_TIME_COUNTER = 0
+_CASE_REPOSITORY: CaseRepository | None = None
+
+
+def get_case_repository() -> CaseRepository:
+    global _CASE_REPOSITORY
+    if _CASE_REPOSITORY is None:
+        _CASE_REPOSITORY = CaseRepository(LocalJsonCaseStore.from_env())
+    return _CASE_REPOSITORY
+
+
+def configure_case_repository(repository: CaseRepository) -> None:
+    """Swap the case repository, primarily for tests with temporary storage."""
+
+    global _CASE_REPOSITORY
+    _CASE_REPOSITORY = repository
+
+
+def configure_case_store(store: CaseStore) -> None:
+    configure_case_repository(CaseRepository(store))
 
 
 def reset_case_store() -> None:
-    """Reset the in-memory store for deterministic tests."""
-    global _CASE_COUNTER, _TIME_COUNTER
-    _CASES.clear()
-    _CASE_COUNTER = 0
-    _TIME_COUNTER = 0
+    """Reset the configured case store for tests or explicit local cleanup."""
+
+    get_case_repository().reset()
 
 
 def list_cases() -> list[AnalysisCaseListItem]:
-    cases = sorted(_CASES.values(), key=lambda item: item.updated_at, reverse=True)
-    return [_to_list_item(case) for case in cases]
+    return get_case_repository().list_cases()
 
 
 def create_case(payload: AnalysisCaseCreateRequest) -> AnalysisCaseDetail:
-    global _CASE_COUNTER
-    _CASE_COUNTER += 1
-    case_id = f"case_{_CASE_COUNTER:03d}"
-    project_id = f"project_{_CASE_COUNTER:03d}"
-    timestamp = _next_timestamp()
-    keyword = payload.keyword.strip()
-    title = (payload.title or f"{keyword} 舆情分析").strip()
-
-    detail = AnalysisCaseDetail(
-        case_id=case_id,
-        project_id=project_id,
-        title=title,
-        keyword=keyword,
-        platforms=_normalize_platforms(payload.platforms),
-        status="draft",
-        created_at=timestamp,
-        updated_at=timestamp,
-        report_language=payload.report_language,
-    )
-    _CASES[case_id] = detail
-    return detail.model_copy(deep=True)
+    return get_case_repository().create_case(payload)
 
 
 def get_case(case_id: str) -> AnalysisCaseDetail | None:
-    case = _CASES.get(case_id)
-    return case.model_copy(deep=True) if case else None
+    return get_case_repository().get_case(case_id)
 
 
 def run_case(case_id: str) -> AnalysisCaseDetail | None:
-    case = _CASES.get(case_id)
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
     if not case:
         return None
 
-    running_case = case.model_copy(update={"status": "running", "updated_at": _next_timestamp()})
-    _CASES[case_id] = running_case
+    running_case = case.model_copy(update={"status": "running", "updated_at": repository.next_timestamp()})
+    repository.update_case(running_case)
 
     pipeline = build_mock_pipeline(running_case.project_id, platforms=running_case.platforms)
     visualization = build_visualization_response(
@@ -95,7 +89,7 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
     completed_case = running_case.model_copy(
         update={
             "status": "completed",
-            "updated_at": _next_timestamp(),
+            "updated_at": repository.next_timestamp(),
             "analysis_result": pipeline.analysis,
             "visualization_data": visualization,
             "report": report,
@@ -106,38 +100,38 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
         },
         deep=True,
     )
-    _CASES[case_id] = completed_case
+    repository.update_case(completed_case)
+    repository.save_markdown_report(
+        completed_case.case_id,
+        MarkdownExportResponse(
+            case_id=completed_case.case_id,
+            project_id=completed_case.project_id,
+            filename=f"{_safe_filename(completed_case.title)}_{completed_case.case_id}.md",
+            markdown=_build_markdown(completed_case),
+            generated_at=repository.next_timestamp(),
+        ),
+    )
     return completed_case.model_copy(deep=True)
 
 
 def export_case_markdown(case_id: str) -> MarkdownExportResponse | None:
-    case = _CASES.get(case_id)
+    repository = get_case_repository()
+    persisted_report = repository.get_markdown_report(case_id)
+    if persisted_report:
+        return persisted_report
+
+    case = repository.get_case(case_id)
     if not case or not case.report:
         return None
-    return MarkdownExportResponse(
+
+    report = MarkdownExportResponse(
         case_id=case.case_id,
         project_id=case.project_id,
         filename=f"{_safe_filename(case.title)}_{case.case_id}.md",
         markdown=_build_markdown(case),
-        generated_at=_next_timestamp(),
+        generated_at=repository.next_timestamp(),
     )
-
-
-def _to_list_item(case: AnalysisCaseDetail) -> AnalysisCaseListItem:
-    return AnalysisCaseListItem(
-        case_id=case.case_id,
-        project_id=case.project_id,
-        title=case.title,
-        keyword=case.keyword,
-        platforms=case.platforms,
-        status=case.status,
-        created_at=case.created_at,
-        updated_at=case.updated_at,
-        risk_score=case.risk_score,
-        risk_level=case.risk_level,
-        risk_model_version=case.risk_model_version,
-        report_language=case.report_language,
-    )
+    return repository.save_markdown_report(case_id, report)
 
 
 def _build_markdown(case: AnalysisCaseDetail) -> str:
@@ -150,15 +144,15 @@ def _build_markdown(case: AnalysisCaseDetail) -> str:
     lines = [
         f"# {case.title}",
         "",
-        f"- 案例ID：{case.case_id}",
-        f"- 项目ID：{case.project_id}",
-        f"- 关键词：{case.keyword}",
-        f"- 平台：{platforms}",
-        f"- 状态：{case.status}",
-        f"- 风险分数：{risk_score:.1f}/100",
-        f"- 风险等级：{report.risk_level_label or report.risk_level} ({report.risk_level})",
-        f"- 风险模型版本：{report.risk_model_version}",
-        f"- 生成方式：{'离线 mock 管线' if report.generated_from_mock_pipeline else '外部生成'}",
+        f"- 案例ID: {case.case_id}",
+        f"- 项目ID: {case.project_id}",
+        f"- 关键词: {case.keyword}",
+        f"- 平台: {platforms}",
+        f"- 状态: {case.status}",
+        f"- 风险分数: {risk_score:.1f}/100",
+        f"- 风险等级: {report.risk_level_label or report.risk_level} ({report.risk_level})",
+        f"- 风险模型版本: {report.risk_model_version}",
+        f"- 生成方式: {'离线 mock 管线' if report.generated_from_mock_pipeline else '外部生成'}",
         "",
         "## 舆情总览",
         "",
@@ -217,14 +211,10 @@ def _markdown_topic_risks(items) -> list[str]:
     for topic in items:
         lines.append(
             "- "
-            f"{topic.topic}：{topic.topic_risk_score:.1f}/100，"
-            f"{topic.topic_risk_level}，{topic.risk_explanation}"
+            f"{topic.topic}: {topic.topic_risk_score:.1f}/100, "
+            f"{topic.topic_risk_level}, {topic.risk_explanation}"
         )
     return lines
-
-
-def _normalize_platforms(platforms: list[str]) -> list[str]:
-    return list(dict.fromkeys(platform.strip().lower() for platform in platforms if platform.strip()))
 
 
 def _report_score(report) -> float:
@@ -235,10 +225,3 @@ def _report_score(report) -> float:
 def _safe_filename(value: str) -> str:
     safe = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value.strip())
     return safe.strip("_") or "sentigraph_report"
-
-
-def _next_timestamp() -> datetime:
-    global _TIME_COUNTER
-    timestamp = _BASE_TIME + timedelta(minutes=_TIME_COUNTER)
-    _TIME_COUNTER += 1
-    return timestamp

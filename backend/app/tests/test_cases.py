@@ -2,16 +2,24 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.repositories.case_repository import CaseRepository
 from app.schemas.risk import TOPIC_RISK_MODEL_VERSION
-from app.services.case_store import reset_case_store
+from app.services.case_store import configure_case_repository, reset_case_store
+from app.services.storage.local_json_store import LocalJsonCaseStore
 
 
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def clear_cases() -> None:
+def clear_cases(case_store_path) -> None:
+    configure_case_repository(CaseRepository(LocalJsonCaseStore(case_store_path)))
     reset_case_store()
+
+
+@pytest.fixture
+def case_store_path(tmp_path):
+    return tmp_path / "cases.json"
 
 
 def test_create_and_list_cases() -> None:
@@ -82,11 +90,35 @@ def test_export_markdown_report() -> None:
     body = report_response.json()
     assert body["case_id"] == case_id
     assert body["filename"].endswith(".md")
-    assert "# Tesla 舆情案例" in body["markdown"]
+    assert body["markdown"].startswith("# Tesla")
     assert "## 舆情总览" in body["markdown"]
     assert "## 高风险话题" in body["markdown"]
     assert "建议公开回应文案" in body["markdown"]
     assert TOPIC_RISK_MODEL_VERSION in body["markdown"]
+
+
+def test_case_api_persists_after_repository_reload(case_store_path) -> None:
+    case_id = _create_case()
+    run_response = client.post(f"/api/v1/cases/{case_id}/run")
+    assert run_response.status_code == 200
+
+    configure_case_repository(CaseRepository(LocalJsonCaseStore(case_store_path)))
+
+    detail_response = client.get(f"/api/v1/cases/{case_id}")
+    markdown_response = client.get(f"/api/v1/cases/{case_id}/report/markdown")
+
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["case_id"] == case_id
+    assert detail["status"] == "completed"
+    assert detail["analysis_result"]["topic_risks"]
+    assert detail["report"]["report_language"] == "zh-CN"
+    assert detail["markdown_available"] is True
+
+    assert markdown_response.status_code == 200
+    markdown = markdown_response.json()
+    assert markdown["case_id"] == case_id
+    assert TOPIC_RISK_MODEL_VERSION in markdown["markdown"]
 
 
 def test_case_markdown_requires_completed_report() -> None:
