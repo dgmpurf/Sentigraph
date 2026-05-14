@@ -113,6 +113,15 @@ def test_alert_evaluator_detects_manipulation_risk_increase() -> None:
     assert any(alert.alert_type == "manipulation_risk_increase" for alert in alerts)
 
 
+def test_alert_evaluator_detects_real_crisis_risk_increase() -> None:
+    previous = _snapshot("case_001_snapshot_001", "case_001", 45, "medium", real_crisis_risk=18)
+    latest = _snapshot("case_001_snapshot_002", "case_001", 50, "medium", real_crisis_risk=32)
+
+    alerts = evaluate_alerts(previous, latest)
+
+    assert any(alert.alert_type == "real_crisis_risk_increase" for alert in alerts)
+
+
 def test_alert_evaluator_detects_new_high_risk_topic() -> None:
     previous = _snapshot(
         "case_001_snapshot_001",
@@ -166,6 +175,30 @@ def test_local_json_store_persists_snapshots_and_alerts(case_store_path) -> None
     assert alerts[0].alert_type == "baseline_created"
 
 
+def test_repeated_monitor_runs_persist_snapshot_history_and_delta() -> None:
+    case_id = _create_case()
+    client.post(f"/api/v1/cases/{case_id}/run")
+
+    first_monitor_response = client.post(f"/api/v1/cases/{case_id}/monitor/run")
+    second_monitor_response = client.post(f"/api/v1/cases/{case_id}/monitor/run")
+    snapshots_response = client.get(f"/api/v1/cases/{case_id}/snapshots")
+    alerts_response = client.get(f"/api/v1/cases/{case_id}/alerts")
+
+    assert first_monitor_response.status_code == 200
+    assert second_monitor_response.status_code == 200
+    assert snapshots_response.status_code == 200
+    assert alerts_response.status_code == 200
+
+    snapshots = snapshots_response.json()
+    second_body = second_monitor_response.json()
+    assert len(snapshots) == 3
+    assert [snapshot["run_index"] for snapshot in snapshots] == [1, 2, 3]
+    assert second_body["snapshot_count"] == 3
+    assert second_body["latest_snapshot"]["run_index"] == 3
+    assert second_body["latest_risk_delta"] == pytest.approx(12.0)
+    assert isinstance(alerts_response.json(), list)
+
+
 def test_old_case_flow_still_exports_markdown() -> None:
     case_id = _create_case()
     run_response = client.post(f"/api/v1/cases/{case_id}/run")
@@ -174,6 +207,48 @@ def test_old_case_flow_still_exports_markdown() -> None:
     assert run_response.status_code == 200
     assert markdown_response.status_code == 200
     assert TOPIC_RISK_MODEL_VERSION in markdown_response.json()["markdown"]
+
+
+def test_old_mvp_apis_still_work_with_monitoring_changes() -> None:
+    assert client.get("/api/v1/health").status_code == 200
+    assert client.get("/api/v1/platforms").status_code == 200
+    assert (
+        client.post(
+            "/api/v1/crawl/start",
+            json={"keyword": "Tesla", "platforms": ["reddit"], "limit": 20},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/v1/analysis/run",
+            json={"project_id": "project_001", "analysis_types": ["sentiment", "risk"]},
+        ).status_code
+        == 200
+    )
+    assert client.get("/api/v1/analysis/project_001").status_code == 200
+    assert (
+        client.post(
+            "/api/v1/visualization/data",
+            json={"project_id": "project_001", "platforms": ["reddit"]},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/v1/summary/generate",
+            json={"project_id": "project_001", "report_language": "zh-CN"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/v1/recommendation/generate",
+            json={"project_id": "project_001", "report_language": "zh-CN"},
+        ).status_code
+        == 200
+    )
+    assert client.get("/api/v1/alerts/project_001").status_code == 200
 
 
 def _create_case() -> str:

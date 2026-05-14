@@ -84,6 +84,8 @@ Latest v0.6 persistence QA update: revalidated the local JSON persistence layer 
 
 Latest v0.7 monitoring foundation update: implemented persisted analysis snapshots and deterministic threshold-based alert events for local analysis cases. `POST /api/v1/cases/{case_id}/run` now saves a baseline snapshot, `POST /api/v1/cases/{case_id}/monitor/run` creates a new deterministic mock monitoring snapshot, evaluates risk increase / risk-level escalation / real-crisis delta / manipulation delta / new high-risk topic / top-topic shift alerts, and persists alert events in the same local JSON store. New endpoints are available for case snapshots, case alerts, and all persisted alerts. Risk Monitor now displays monitoring status, risk delta, latest snapshots, alert badges, top triggered reason, real-crisis risk, manipulation risk, and high-risk topic cards. Backend validation passed with `65 passed in 1.04s`; frontend production build passed in 7.54s with the existing non-blocking Ant Design/ECharts vendor chunk warning.
 
+Latest v0.7 monitoring QA update: revalidated the monitoring and alert foundation without enabling real crawlers, real platform APIs, external LLM calls, authentication, MongoDB/Redis, or a scheduler. Added narrow regression coverage for real-crisis-risk alert detection, repeated monitor runs, persisted snapshot history, deterministic risk deltas, and the frontend-loaded legacy `GET /api/v1/alerts/{project_id}` path. Backend tests passed with `68 passed in 1.05s`. Frontend production build passed in 7.45s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks passed for health, platform registry, crawl start, analysis, visualization, summary, recommendation, case create/list/detail/run, Markdown export, snapshots, monitor/run, case alerts, and all alerts. The in-app browser automation connection timed out during this QA pass; the frontend dev server responded with HTTP 200, and RiskMonitor source/build/API wiring were verified, but an interactive click-through should still be repeated manually or with a stable browser runtime before a public demo.
+
 Maintenance status audit:
 
 | Area | Status | Notes |
@@ -372,6 +374,7 @@ npm.cmd --prefix frontend run build
 - Latest backend validation after local JSON case persistence passed with `54 passed in 0.53s`.
 - Latest backend validation after v0.6 persistence QA passed with `55 passed in 0.51s`.
 - Latest backend validation after v0.7 monitoring foundation passed with `65 passed in 1.04s`.
+- Latest backend validation after v0.7 monitoring QA passed with `68 passed in 1.05s`.
 - Frontend dependency installation passes with `npm.cmd run frontend:install`, which runs `cd frontend && npm install`; the latest install completed with dependencies already up to date.
 - Avoid using `npm.cmd --prefix frontend install` for installation on npm 10.9.2; it can incorrectly link the parent package into `frontend` as `sentigraph: file:..`.
 - Frontend production build passes with `npm.cmd run build` from `frontend`; the latest MVP stabilization Vite build completed in 7.73s.
@@ -380,6 +383,7 @@ npm.cmd --prefix frontend run build
 - Latest frontend validation after v0.3 stabilization QA passed with `npm.cmd run build` in 7.71s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
 - Latest frontend validation after the long maintenance pass passed with `npm.cmd run build` in 7.68s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
 - Latest frontend validation after v0.7 monitoring foundation passed with `npm run build` in 7.54s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
+- Latest frontend validation after v0.7 monitoring QA passed with `npm run build` in 7.45s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
 - Frontend build was not rerun for the platform adapter scaffold because no frontend files changed.
 - No blocking environment, dependency, import, path, or test issue was found in the latest MVP stabilization pass.
 - README validation passed after the README update: all README-listed API endpoints exist in FastAPI, the Windows run commands are still valid, and no README command correction was needed.
@@ -390,7 +394,7 @@ npm.cmd --prefix frontend run build
 - `git diff --check` only reports CRLF normalization warnings for touched files; no whitespace errors were reported.
 - Vite still reports a large chunk warning for Ant Design and ECharts vendor chunks. Safe manual chunking reduced the app chunk from roughly 2.4 MB to roughly 226 KB, but deeper lazy loading would require a broader frontend refactor and should be handled separately.
 - The latest `npm install` emitted an npm audit endpoint retirement notice. Previous audit output reported 2 moderate vulnerabilities; they were not force-fixed because `npm audit fix --force` may introduce breaking dependency changes.
-- Rendered browser QA passed through a local Playwright + Chrome fallback at 1440x900. The in-app Browser runtime still timed out during connection, so future Codex browser sessions may need the same fallback until that runtime is stable.
+- Rendered browser QA passed through a local Playwright + Chrome fallback at 1440x900 in an earlier pass. The in-app Browser runtime timed out again during the v0.7 monitoring QA pass, so future Codex browser sessions may need manual verification or a stable local browser fallback until that runtime is stable.
 - Case-flow browser QA passed through local Playwright + Chrome: create case, run mock analysis, open the Cases page, open Summary Report, copy Markdown, download `.md`, and navigate to AnalysisResult, RiskMonitor, and PropagationGraph with no console errors.
 - v0.3 browser QA passed through temporary Playwright + Chromium tooling at 1440x960: create case, run mock analysis, verify platform roadmap, open report, copy suggested public response, copy Markdown, download `.md`, and navigate through Dashboard, Cases, AnalysisResult, RiskMonitor, and PropagationGraph with no relevant console errors.
 - v0.3 API smoke validation passed for `GET /api/v1/cases`, `POST /api/v1/cases`, `GET /api/v1/cases/{case_id}`, `POST /api/v1/cases/{case_id}/run`, `GET /api/v1/cases/{case_id}/report/markdown`, `GET /api/v1/platforms`, `POST /api/v1/visualization/data`, `POST /api/v1/summary/generate`, `POST /api/v1/recommendation/generate`, and `GET /api/v1/analysis/{project_id}`.
@@ -441,18 +445,18 @@ Audit date: 2026-05-14.
 | SummaryReport frontend page | complete for MVP | `frontend/src/pages/SummaryReport.jsx`, `frontend/src/components/report/PublicOpinionReport.jsx`, and `frontend/src/utils/reportModel.js`; browser QA confirmed the suggested response copy button works. | Later add print/PDF export polish. |
 | AnalysisResult frontend page | complete for MVP | `frontend/src/pages/AnalysisResult.jsx` renders analysis plus report insights, V1.5 topic-risk labels, and a copyable suggested response. | Later add deeper topic drill-down interactions. |
 | Dashboard visualization | complete for MVP | `frontend/src/pages/Dashboard.jsx` and chart components consume backend visualization data. | Browser visual QA and later code splitting for large chart bundle. |
-| RiskMonitor page | complete for v0.7 foundation | `frontend/src/pages/RiskMonitor.jsx` renders monitoring status, risk delta, snapshot timeline, alert events, risk drivers, radar factors, and V1.5 signals. | Browser QA should verify the new monitoring button/case flow; real scheduler and notifications remain future work. |
+| RiskMonitor page | complete for v0.7 foundation | `frontend/src/pages/RiskMonitor.jsx` renders monitoring status, risk delta, snapshot timeline, alert events, risk drivers, radar factors, and V1.5 signals; API smoke confirmed repeated monitor runs create 3 snapshots, 5 alerts, and a deterministic latest delta of `12.0`. | Interactive browser automation timed out in the latest QA pass, so manually click the monitoring button before a live demo; real scheduler and notifications remain future work. |
 | PropagationGraph page | complete for MVP | `frontend/src/pages/PropagationGraph.jsx` and `PropagationGraphChart.jsx`; smoke check returned 6 nodes and 3 edges. | Real graph metrics and NetworkX-backed propagation builder are future work. |
 | README accuracy | complete with minor caveat | README endpoints match routes in `backend/app/api/v1/api.py`; Windows commands are consistent with root `requirements.txt` and scripts. | Keep README updated after schema changes; production-readiness is correctly not claimed. |
 | Algorithm docs | complete for V1.5 | `docs/algorithm_design.md` and `docs/risk_model_roadmap.md` document V1 active, V1.5 implemented as a practical topic-risk bridge, and V2 planned for later. | Frontend should surface V1.5 topic-risk explanations more directly; do not start full V2 yet. |
-| Backend tests | complete | `python -m pytest` passed with `65 passed in 1.13s`. | Add tests as new features land. |
-| Frontend build | complete | `npm run build` in `frontend` passed in 7.67s. | Vite large chunk warning remains for Ant Design and ECharts vendor chunks; the app chunk is now smaller after safe manual chunking. |
+| Backend tests | complete | `python -m pytest` passed with `68 passed in 1.05s`. | Add tests as new features land. |
+| Frontend build | complete | `npm run build` in `frontend` passed in 7.45s. | Vite large chunk warning remains for Ant Design and ECharts vendor chunks; the app chunk is now smaller after safe manual chunking. |
 
 Overall audit conclusion: MVP 0 through the v0.7 monitoring foundation are complete enough for the mock-first desktop prototype. The project should not move to real crawlers or broad real platform APIs yet. Browser QA should now cover the new monitoring check flow before the next implementation task.
 
 ## 7. Next Recommended Task
 
-Recommended next implementation task: run a browser QA pass for the v0.7 monitoring flow, then add a mock-only crawl service bridge that can call the adapter factory in safe mock mode for Reddit-selected crawl starts without enabling live Reddit requests.
+Recommended next implementation task: run one manual or stable-runtime browser click-through for the v0.7 monitoring flow, then add a mock-only crawl service bridge that can call the adapter factory in safe mock mode for Reddit-selected crawl starts without enabling live Reddit requests.
 
 Suggested scope:
 

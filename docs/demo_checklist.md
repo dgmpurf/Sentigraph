@@ -2,7 +2,7 @@
 
 Use this checklist for the current v0.7 case-based, mock-first desktop web MVP demo.
 
-Latest v0.7 monitoring validation: 2026-05-14. Backend tests passed with `65 passed in 1.04s`. Frontend production build passed in 7.54s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The Risk Monitor page now supports persisted snapshots, case alert events, and a `Run Mock Monitoring Check` action.
+Latest v0.7 monitoring QA validation: 2026-05-14. Backend tests passed with `68 passed in 1.05s`. Frontend production build passed in 7.45s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks confirmed the monitoring flow creates persisted snapshots and alerts, including a deterministic `12.0` latest risk delta after repeated monitor runs. The Risk Monitor page supports persisted snapshots, case alert events, and a `Run Mock Monitoring Check` action. In-app browser automation timed out during this QA pass, so manually click through Risk Monitor before a live demo.
 
 Latest v0.6 persistence validation: 2026-05-14. Backend tests passed with `55 passed in 0.51s`. Case API tests now verify create/list/detail/run, Chinese report attachment, Markdown export, and retrieval after reloading the repository/store from the same local JSON file. Frontend build was not rerun because no frontend files changed.
 
@@ -289,6 +289,7 @@ Expected result:
 - Each monitoring check creates a deterministic local snapshot in `backend/data/cases.json`.
 - The first monitoring result can create a baseline event.
 - Later monitoring checks may trigger warning/critical alert events when thresholds are crossed.
+- Repeated checks should show growing snapshot history; the local QA smoke test created 3 snapshots, 5 alerts, and a `12.0` latest risk delta.
 - No real scheduler, real crawler, real platform API, or notification service is used.
 
 ## 9. Open PropagationGraph
@@ -310,7 +311,17 @@ Expected result:
 
 ## 10. Browser QA Smoke Result
 
-Latest local browser QA pass: 2026-05-14, final v0.3 case flow.
+Latest v0.7 monitoring QA pass: 2026-05-14.
+
+Validated by backend tests, frontend production build, source-level RiskMonitor review, and API smoke checks. The frontend dev server responded with HTTP 200 at `http://127.0.0.1:5173`, but in-app browser automation timed out during connection. Before a public live demo, manually verify:
+
+- Open a completed case.
+- Open Risk Monitor.
+- Click `Run Mock Monitoring Check`.
+- Confirm the snapshot timeline increases.
+- Confirm risk delta, alert list, alert badges, real-crisis risk, manipulation risk, and top triggered reason are visible.
+
+Previous local browser QA pass: 2026-05-14, final v0.3 case flow.
 
 Validated with a 1440x960 desktop browser viewport through Chrome headless CDP fallback after the in-app Browser connection timed out:
 
