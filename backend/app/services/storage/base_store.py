@@ -7,6 +7,7 @@ from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
 from app.schemas.common import RiskLevel
+from app.schemas.notification import NotificationOutboxItem
 from app.schemas.report import PublicOpinionReport
 from app.schemas.visualization import VisualizationResponse
 
@@ -91,6 +92,26 @@ class CaseStore(ABC):
     @abstractmethod
     def list_all_alert_events(self) -> list[AlertEvent]:
         """Return all persisted alert events."""
+
+    @abstractmethod
+    def save_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem:
+        """Persist one notification outbox item."""
+
+    @abstractmethod
+    def get_notification(self, notification_id: str) -> NotificationOutboxItem | None:
+        """Return one notification outbox item, if available."""
+
+    @abstractmethod
+    def update_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem | None:
+        """Replace an existing notification outbox item."""
+
+    @abstractmethod
+    def list_notifications(self) -> list[NotificationOutboxItem]:
+        """Return all notification outbox items."""
+
+    @abstractmethod
+    def list_case_notifications(self, case_id: str) -> list[NotificationOutboxItem]:
+        """Return notification outbox items for one case."""
 
     @abstractmethod
     def reset(self) -> None:

@@ -7,6 +7,7 @@ from app.api.v1.routes import (
     crawl,
     health,
     keywords,
+    notifications,
     platforms,
     propagation,
     recommendation,
@@ -28,3 +29,4 @@ api_router.include_router(recommendation.router, prefix="/recommendation", tags=
 api_router.include_router(propagation.router, prefix="/propagation", tags=["propagation"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 api_router.include_router(scheduler.router, prefix="/scheduler", tags=["scheduler"])
+api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])

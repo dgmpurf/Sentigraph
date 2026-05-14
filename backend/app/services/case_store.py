@@ -14,6 +14,7 @@ from app.services.mock_pipeline import build_mock_pipeline
 from app.services.mock_service import _pipeline_representative_comments
 from app.services.monitoring.alert_evaluator import evaluate_alerts
 from app.services.monitoring.snapshot_builder import build_analysis_snapshot
+from app.services.notifications.notification_service import create_notifications_from_alerts
 from app.services.recommendation.report_builder import build_public_opinion_report
 from app.services.storage.base_store import CaseStore
 from app.services.storage.local_json_store import LocalJsonCaseStore
@@ -153,12 +154,13 @@ def run_monitoring_check(
         snapshots = repository.list_analysis_snapshots(case_id)
         latest = snapshots[-1]
         alerts = evaluate_alerts(None, latest, config=threshold_config)
-        repository.save_alert_events(case_id, alerts)
+        saved_alerts = repository.save_alert_events(case_id, alerts)
+        create_notifications_from_alerts(saved_alerts, repository=repository)
         return _build_monitoring_status(
             case_id,
             latest_snapshot=latest,
             previous_snapshot=None,
-            alerts=alerts,
+            alerts=saved_alerts,
             snapshot_count=len(snapshots),
         )
 
@@ -166,12 +168,13 @@ def run_monitoring_check(
     previous_snapshot = previous_snapshots[-1] if previous_snapshots else None
     latest_snapshot = _save_case_snapshot(repository, case, apply_mock_shift=True)
     alerts = evaluate_alerts(previous_snapshot, latest_snapshot, config=threshold_config)
-    repository.save_alert_events(case_id, alerts)
+    saved_alerts = repository.save_alert_events(case_id, alerts)
+    create_notifications_from_alerts(saved_alerts, repository=repository)
     return _build_monitoring_status(
         case_id,
         latest_snapshot=latest_snapshot,
         previous_snapshot=previous_snapshot,
-        alerts=alerts,
+        alerts=saved_alerts,
         snapshot_count=len(previous_snapshots) + 1,
     )
 

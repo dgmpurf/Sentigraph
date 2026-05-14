@@ -749,7 +749,98 @@ Rules:
 - Representative comments preserve original text and are not translated by the report builder.
 - Report generation is deterministic and template-based; it does not call external LLM APIs.
 
-## 15. Recommendation Response
+## 15. Notification Outbox Schemas
+
+The v0.9 notification foundation stores local notification outbox items in the same mock-first persistence layer as cases, snapshots, and alerts. Notifications are generated from alert events and are never sent to real external services in the MVP.
+
+### NotificationChannelType
+
+Allowed values:
+
+- `in_app`
+- `email_placeholder`
+- `webhook_placeholder`
+- `slack_placeholder`
+- `enterprise_wechat_placeholder`
+- `feishu_placeholder`
+
+Only `in_app` is active. Placeholder channel types are schema-compatible future slots and must not call real APIs yet.
+
+### NotificationStatus
+
+Allowed values:
+
+- `pending`
+- `simulated_sent`
+- `failed`
+
+Read/unread state is represented separately with `read_at`.
+
+### NotificationOutboxItem
+
+```json
+{
+  "notification_id": "notification_alert_case_001_snapshot_002_001_in_app",
+  "alert_id": "alert_case_001_snapshot_002_001",
+  "case_id": "case_001",
+  "level": "warning",
+  "title": "舆情风险预警",
+  "message": "舆情风险出现上升，请关注该案例。",
+  "channel_type": "in_app",
+  "status": "pending",
+  "created_at": "2026-05-14T09:08:00Z",
+  "read_at": null,
+  "simulated_sent_at": null,
+  "metadata": {
+    "alert_type": "risk_score_increase",
+    "alert_message": "risk increased",
+    "reason": "risk delta exceeded threshold",
+    "snapshot_id": "case_001_snapshot_002"
+  }
+}
+```
+
+Rules:
+
+- `notification_id` is deterministic for the alert/channel pair to prevent duplicate notifications.
+- `message` uses deterministic Chinese templates.
+- `simulate_send` only updates local fields and never calls email, Slack, webhook, Enterprise WeChat, Feishu, SMS, or push services.
+- Notification runtime data is persisted in the local JSON case store by default and is ignored by git.
+
+### NotificationSendResult
+
+```json
+{
+  "notification_id": "notification_alert_case_001_snapshot_002_001_in_app",
+  "channel_type": "in_app",
+  "status": "simulated_sent",
+  "simulated": true,
+  "simulated_sent_at": "2026-05-14T09:09:00Z",
+  "message": "通知已完成本地模拟发送，未调用任何外部通道。",
+  "notification": {
+    "notification_id": "notification_alert_case_001_snapshot_002_001_in_app",
+    "status": "simulated_sent",
+    "simulated_sent_at": "2026-05-14T09:09:00Z"
+  }
+}
+```
+
+### NotificationOutboxStatus
+
+```json
+{
+  "total": 2,
+  "unread": 2,
+  "pending": 1,
+  "simulated_sent": 1,
+  "failed": 0,
+  "mock_only": true,
+  "channels": [],
+  "message": "通知出箱仅用于本地模拟，不会发送真实外部消息。"
+}
+```
+
+## 16. Recommendation Response
 
 ```json
 {

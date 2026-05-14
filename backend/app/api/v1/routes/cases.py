@@ -7,6 +7,7 @@ from app.schemas.case import (
     AnalysisCaseListItem,
     MarkdownExportResponse,
 )
+from app.schemas.notification import NotificationOutboxItem
 from app.schemas.scheduler import MonitoringScheduleConfig
 from app.services.case_store import (
     create_case,
@@ -24,6 +25,7 @@ from app.services.monitoring.scheduler_service import (
     get_case_monitoring_config,
     update_case_monitoring_config,
 )
+from app.services.notifications.notification_service import list_case_notifications
 
 router = APIRouter()
 
@@ -108,6 +110,13 @@ def get_case_alerts(case_id: str) -> list[AlertEvent]:
     if alerts is None:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return alerts
+
+
+@router.get("/{case_id}/notifications", response_model=list[NotificationOutboxItem])
+def get_case_notifications(case_id: str) -> list[NotificationOutboxItem]:
+    if not get_case(case_id):
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return list_case_notifications(case_id)
 
 
 @router.get("/{case_id}/report/markdown", response_model=MarkdownExportResponse)

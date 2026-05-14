@@ -149,7 +149,7 @@ Acceptance:
 
 Goal: turn risk thresholds into practical warning cards.
 
-Status: v0.8 foundation implemented with persisted case snapshots, deterministic threshold alerts, per-case monitoring config, and a manual run-due scheduler endpoint. Real background scheduler, notifications, and delivery channels remain future work.
+Status: v0.9 foundation implemented with persisted case snapshots, deterministic threshold alerts, per-case monitoring config, a manual run-due scheduler endpoint, and a local notification outbox. Real background scheduler and external delivery channels remain future work.
 
 Scope:
 
@@ -160,18 +160,25 @@ Scope:
 - recommended action mapping
 - monitoring schedule config per case
 - manual scheduler status and run-due endpoints
+- local in-app notification outbox generated from alert events
+- local simulate-send and mark-read notification state changes
 
 Acceptance:
 
 - RiskMonitor explains why an alert exists
-- no real notification service required
+- no real notification service or external delivery channel required
 - no real background worker starts by default
 
 Follow-up:
 
 - Add APScheduler only after local manual scheduler behavior is stable.
 - Add Celery/RQ only if a real queue and deployment target are defined.
-- Add notification channels later, for example email, Slack, or webhook, behind explicit user configuration.
+- Add real notification channels later, behind explicit configuration and tests:
+  - SMTP/email
+  - Slack webhook
+  - Enterprise WeChat
+  - Feishu
+  - generic webhook
 - Add alert acknowledgement/resolution workflows when authentication exists.
 
 ## P3: Real Data Integration Preparation

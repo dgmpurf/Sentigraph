@@ -56,6 +56,36 @@ export async function listCaseAlerts(caseId) {
   return Array.isArray(data) ? data : []
 }
 
+export async function listNotifications() {
+  const { data } = await apiClient.get(`${API_PREFIX}/notifications`)
+  return Array.isArray(data) ? data.map(normalizeNotification) : []
+}
+
+export async function listCaseNotifications(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/notifications`)
+  return Array.isArray(data) ? data.map(normalizeNotification) : []
+}
+
+export async function markNotificationRead(notificationId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/notifications/${notificationId}/read`)
+  return normalizeNotification(data)
+}
+
+export async function simulateSendNotification(notificationId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/notifications/${notificationId}/simulate-send`)
+  return normalizeNotificationSendResult(data)
+}
+
+export async function simulateSendPendingNotifications() {
+  const { data } = await apiClient.post(`${API_PREFIX}/notifications/simulate-send-pending`)
+  return Array.isArray(data) ? data.map(normalizeNotificationSendResult) : []
+}
+
+export async function getNotificationOutboxStatus() {
+  const { data } = await apiClient.get(`${API_PREFIX}/notifications/outbox/status`)
+  return normalizeNotificationOutboxStatus(data)
+}
+
 export async function getCaseMonitoringConfig(caseId) {
   const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/monitoring/config`)
   return normalizeMonitoringConfig(data)
@@ -180,6 +210,65 @@ function normalizeMonitoringStatus(data) {
     latest_snapshot: normalizeSnapshot(data.latest_snapshot),
     previous_snapshot: normalizeSnapshot(data.previous_snapshot),
     alerts: Array.isArray(data.alerts) ? data.alerts : [],
+  }
+}
+
+function normalizeNotification(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    notification_id: String(data.notification_id || ''),
+    alert_id: String(data.alert_id || ''),
+    case_id: String(data.case_id || ''),
+    level: data.level || 'info',
+    title: String(data.title || '舆情通知'),
+    message: String(data.message || ''),
+    channel_type: data.channel_type || 'in_app',
+    status: data.status || 'pending',
+    created_at: data.created_at || null,
+    read_at: data.read_at || null,
+    simulated_sent_at: data.simulated_sent_at || null,
+    metadata: data.metadata && typeof data.metadata === 'object' ? data.metadata : {},
+  }
+}
+
+function normalizeNotificationSendResult(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    notification_id: String(data.notification_id || ''),
+    channel_type: data.channel_type || 'in_app',
+    status: data.status || 'pending',
+    simulated: Boolean(data.simulated),
+    simulated_sent_at: data.simulated_sent_at || data.notification?.simulated_sent_at || null,
+    message: String(data.message || ''),
+    notification: normalizeNotification(data.notification),
+  }
+}
+
+function normalizeNotificationOutboxStatus(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      total: 0,
+      unread: 0,
+      pending: 0,
+      simulated_sent: 0,
+      failed: 0,
+      mock_only: true,
+      channels: [],
+      message: '通知出箱仅用于本地模拟。',
+    }
+  }
+  return {
+    ...data,
+    total: Number(data.total || 0),
+    unread: Number(data.unread || 0),
+    pending: Number(data.pending || 0),
+    simulated_sent: Number(data.simulated_sent || 0),
+    failed: Number(data.failed || 0),
+    mock_only: data.mock_only !== false,
+    channels: Array.isArray(data.channels) ? data.channels : [],
+    message: String(data.message || ''),
   }
 }
 

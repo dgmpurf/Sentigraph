@@ -14,16 +14,21 @@ import {
   getAnalysisResult,
   getCaseMonitoringConfig,
   getCaseMarkdownReport,
+  getNotificationOutboxStatus,
   getPlatforms,
   getPropagation,
   getSchedulerStatus,
   getVisualizationData,
   listCaseAlerts,
+  listCaseNotifications,
   listAnalysisCases,
   listCaseSnapshots,
+  markNotificationRead,
   runDueMonitoringJobs,
   runAnalysisCase,
   runCaseMonitoringCheck,
+  simulateSendNotification,
+  simulateSendPendingNotifications,
 } from './api/sentigraphApi.js'
 import { AppShell } from './components/layout/AppShell.jsx'
 import { AnalysisResult } from './pages/AnalysisResult.jsx'
@@ -82,6 +87,9 @@ function App() {
   const [schedulerStatus, setSchedulerStatus] = useState(null)
   const [schedulerLoading, setSchedulerLoading] = useState(false)
   const [alerts, setAlerts] = useState([])
+  const [notifications, setNotifications] = useState([])
+  const [notificationOutboxStatus, setNotificationOutboxStatus] = useState(null)
+  const [notificationLoading, setNotificationLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -127,25 +135,38 @@ function App() {
     return caseList
   }, [])
 
+  const refreshNotificationOutbox = useCallback(async (caseId) => {
+    const [caseNotifications, outboxStatus] = await Promise.all([
+      caseId ? listCaseNotifications(caseId) : Promise.resolve([]),
+      getNotificationOutboxStatus(),
+    ])
+    setNotifications(caseNotifications)
+    setNotificationOutboxStatus(outboxStatus)
+    return { notifications: caseNotifications, outboxStatus }
+  }, [])
+
   const loadCaseMonitoring = useCallback(async (caseId) => {
     if (!caseId) {
       setCaseSnapshots([])
       setAlerts([])
+      setNotifications([])
+      setNotificationOutboxStatus(null)
       setMonitoringConfig(null)
       setMonitoringStatus(null)
       return { snapshots: [], alerts: [] }
     }
 
-    const [snapshots, caseAlertEvents, config] = await Promise.all([
+    const [snapshots, caseAlertEvents, config, notificationState] = await Promise.all([
       listCaseSnapshots(caseId),
       listCaseAlerts(caseId),
       getCaseMonitoringConfig(caseId),
+      refreshNotificationOutbox(caseId),
     ])
     setCaseSnapshots(snapshots)
     setAlerts(caseAlertEvents)
     setMonitoringConfig(config)
-    return { snapshots, alerts: caseAlertEvents }
-  }, [])
+    return { snapshots, alerts: caseAlertEvents, notifications: notificationState.notifications }
+  }, [refreshNotificationOutbox])
 
   const loadProjectData = useCallback(async (nextProjectId = DEFAULT_PROJECT_ID) => {
     setLoading(true)
@@ -181,6 +202,8 @@ function App() {
       setRecommendation(recommendationData)
       setPropagation(propagationData)
       setAlerts(alertsData.alerts || [])
+      setNotifications([])
+      setNotificationOutboxStatus(await getNotificationOutboxStatus())
       setCaseSnapshots([])
       setMonitoringConfig(null)
       setMonitoringStatus(null)
@@ -398,6 +421,53 @@ function App() {
     }
   }, [applyCaseDetail, currentCase, loadCaseMonitoring, refreshCases])
 
+  const handleMarkNotificationRead = useCallback(async (notificationId) => {
+    if (!notificationId) return null
+    setNotificationLoading(true)
+    setError('')
+    try {
+      const notification = await markNotificationRead(notificationId)
+      await refreshNotificationOutbox(currentCase?.case_id)
+      return notification
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to mark notification as read.')
+      return null
+    } finally {
+      setNotificationLoading(false)
+    }
+  }, [currentCase, refreshNotificationOutbox])
+
+  const handleSimulateSendNotification = useCallback(async (notificationId) => {
+    if (!notificationId) return null
+    setNotificationLoading(true)
+    setError('')
+    try {
+      const result = await simulateSendNotification(notificationId)
+      await refreshNotificationOutbox(currentCase?.case_id)
+      return result
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to simulate notification send.')
+      return null
+    } finally {
+      setNotificationLoading(false)
+    }
+  }, [currentCase, refreshNotificationOutbox])
+
+  const handleSimulateSendPendingNotifications = useCallback(async () => {
+    setNotificationLoading(true)
+    setError('')
+    try {
+      const results = await simulateSendPendingNotifications()
+      await refreshNotificationOutbox(currentCase?.case_id)
+      return results
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to simulate pending notification send.')
+      return []
+    } finally {
+      setNotificationLoading(false)
+    }
+  }, [currentCase, refreshNotificationOutbox])
+
   const handleGetMarkdownReport = useCallback(async () => {
     if (!currentCase?.case_id) {
       throw new Error('No analysis case is currently selected.')
@@ -467,17 +537,23 @@ function App() {
     monitoringConfig,
     monitoringLoading,
     monitoringStatus,
+    notificationLoading,
+    notificationOutboxStatus,
+    notifications,
     schedulerLoading,
     schedulerStatus,
     onGetMarkdownReport: handleGetMarkdownReport,
     onEnableMonitoring: handleEnableMonitoring,
     onDisableMonitoring: handleDisableMonitoring,
+    onMarkNotificationRead: handleMarkNotificationRead,
     onNavigateToKeyword: () => setActivePage('keyword'),
     onOpenCaseReport: handleOpenCaseReport,
     onRefreshCases: refreshCases,
     onRunCase: handleRunCase,
     onRunDueMonitoringJobs: handleRunDueMonitoringJobs,
     onRunMonitoringCheck: handleRunMonitoringCheck,
+    onSimulateSendNotification: handleSimulateSendNotification,
+    onSimulateSendPendingNotifications: handleSimulateSendPendingNotifications,
     onStartAnalysis: handleStartAnalysis,
     platformOptions,
     platformRegistry,

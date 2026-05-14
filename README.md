@@ -37,6 +37,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - Summary Report 和 Analysis Result 页面已接入后端中文结构化报告。
 - 轻量分析案例管理：可创建本地 mock 案例、运行 V1.5 mock 分析、查看案例列表、通过本地 JSON 存储保留案例并导出 Markdown 报告。
 - v0.8 监控调度基础：可为案例启用/暂停监控配置，并通过手动 `run-due` endpoint 模拟到期监控任务。
+- v0.9 通知基础：监控预警可生成本地站内通知出箱，支持标记已读和模拟发送；不会调用真实邮件、Slack、Webhook、企业微信、飞书、短信或推送服务。
 - backend pytest 与 frontend build 已在本地验证通过。
 
 当前没有实现：
@@ -73,6 +74,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 
 - v0.7 lightweight monitoring foundation: completed cases can save local analysis snapshots, run deterministic mock monitoring checks, and show threshold-based alert events in Risk Monitor.
 - v0.8 scheduler foundation: completed cases can store monitoring schedule config, show enabled/paused status, and manually run due mock monitoring jobs without starting a background worker.
+- v0.9 notification foundation: alert events can create local in-app notification outbox items; notifications can be marked read and simulate-sent without external delivery.
 
 ### Planned Features
 
@@ -365,10 +367,16 @@ Base path:
 - `POST /api/v1/cases/{case_id}/monitoring/enable`
 - `POST /api/v1/cases/{case_id}/monitoring/disable`
 - `GET /api/v1/cases/{case_id}/alerts`
+- `GET /api/v1/cases/{case_id}/notifications`
 - `GET /api/v1/cases/{case_id}/report/markdown`
 - `GET /api/v1/alerts`
 - `GET /api/v1/scheduler/status`
 - `POST /api/v1/scheduler/run-due`
+- `GET /api/v1/notifications`
+- `POST /api/v1/notifications/{notification_id}/read`
+- `POST /api/v1/notifications/{notification_id}/simulate-send`
+- `POST /api/v1/notifications/simulate-send-pending`
+- `GET /api/v1/notifications/outbox/status`
 
 其他已实现 mock endpoints：
 
@@ -393,6 +401,8 @@ Base path:
 - 前端不要直接渲染 JavaScript object。
 - 代表性评论保持原语言，不自动翻译。
 - 前端报告默认中文展示，默认请求 `report_language: "zh-CN"`。
+
+Additional v0.9 constraint: notification MVP is local-only. Do not send real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, or push notifications.
 
 ## 11. Roadmap
 

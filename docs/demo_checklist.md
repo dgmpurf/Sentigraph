@@ -1,6 +1,8 @@
 # Sentigraph Local Demo Checklist
 
-Use this checklist for the current v0.8 case-based, mock-first desktop web MVP demo.
+Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
+
+Latest v0.9 notification QA validation: 2026-05-14. Backend tests passed with `90 passed in 2.34s`. Frontend production build passed in 7.61s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Isolated API smoke checks confirmed alert events create local `in_app` notification outbox items, notifications can be listed by case or globally, `标记已读` sets `read_at`, `模拟发送` sets `simulated_sent_at`, and `模拟发送待处理通知` updates all pending local notifications. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, or external LLM call is made.
 
 Latest v0.8 scheduler QA validation: 2026-05-14. Backend tests passed with `81 passed in 1.76s`. Frontend production build passed in 7.46s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks confirmed enabling monitoring, `GET /api/v1/scheduler/status`, `POST /api/v1/scheduler/run-due`, disabled/not-due cases being skipped, case-specific alert thresholds, snapshot/alert persistence, disabling monitoring, and the old `monitor/run` endpoint. The scheduler foundation is manual only; no background worker starts by default.
 
@@ -126,7 +128,7 @@ Expected result:
 This checks the backend adapter scaffold directly. It should stay offline and should not require Reddit credentials.
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph\backend"
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\backend"
 ..\.venv\Scripts\python.exe -c "from app.services.crawling.adapter_factory import get_adapter; a=get_adapter('reddit'); posts=a.search_posts('Tesla', limit=2); comments=a.fetch_comments(posts[0].post_id, limit=2); print(a.health_check()); print(len(posts), len(comments), posts[0].platform, comments[0].platform)"
 ```
 
@@ -321,6 +323,31 @@ Expected result:
 - Enabled but not-due cases are skipped and do not create extra snapshots.
 - `last_run_at` and `next_run_at` are updated after a due run.
 - No real background scheduler, crawler, platform API, external LLM, or notification delivery is started.
+
+## 8.7 Verify Notification Outbox
+
+With a completed case selected:
+
+1. Open Risk Monitor.
+2. Click `Run Mock Monitoring Check`, or enable monitoring and click `运行到期监控任务`.
+3. Confirm alert events appear.
+4. Confirm the `通知中心` card shows notification level, linked case id, message, read/unread state, and simulated send state.
+5. Click `标记已读` on one notification.
+6. Click `模拟发送` on one notification.
+7. Click `模拟发送待处理通知` to update all pending local notifications.
+
+Backend smoke commands:
+
+```cmd
+powershell -Command "$case = Invoke-RestMethod -Method Post 'http://127.0.0.1:8000/api/v1/cases' -ContentType 'application/json' -Body '{\"keyword\":\"Tesla\",\"platforms\":[\"reddit\",\"weibo\"],\"title\":\"v0.9 Notification Demo\"}'; Invoke-RestMethod -Method Post \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/run\"; Invoke-RestMethod -Method Post \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/monitor/run\"; Invoke-RestMethod \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/notifications\"; Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/notifications/outbox/status'; Invoke-RestMethod -Method Post 'http://127.0.0.1:8000/api/v1/notifications/simulate-send-pending'"
+```
+
+Expected result:
+
+- Monitor-generated alerts create local `in_app` notifications.
+- `GET /api/v1/notifications/outbox/status` reports total, unread, pending, and simulated-sent counts.
+- Simulated sends only update local JSON state.
+- No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push service, crawler, platform API, or external LLM is called.
 
 ## 9. Open PropagationGraph
 

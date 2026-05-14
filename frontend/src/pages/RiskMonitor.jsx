@@ -14,7 +14,18 @@ import {
   Timeline,
   Typography,
 } from 'antd'
-import { Activity, AlertTriangle, Bot, Gauge, PlayCircle, RadioTower, ShieldAlert } from 'lucide-react'
+import {
+  Activity,
+  AlertTriangle,
+  Bell,
+  Bot,
+  CheckCircle,
+  Gauge,
+  PlayCircle,
+  RadioTower,
+  Send,
+  ShieldAlert,
+} from 'lucide-react'
 
 import { PlatformHeatmapChart } from '../components/charts/PlatformHeatmapChart.jsx'
 import { RiskRadarChart } from '../components/charts/RiskRadarChart.jsx'
@@ -55,6 +66,27 @@ const scheduleStatusTones = {
   due: 'warning',
 }
 
+const notificationStatusLabels = {
+  pending: '待模拟发送',
+  simulated_sent: '已模拟发送',
+  failed: '发送失败',
+}
+
+const notificationStatusTones = {
+  pending: 'warning',
+  simulated_sent: 'cyan',
+  failed: 'error',
+}
+
+const channelTypeLabels = {
+  in_app: '站内通知',
+  email_placeholder: '邮件占位',
+  webhook_placeholder: 'Webhook 占位',
+  slack_placeholder: 'Slack 占位',
+  enterprise_wechat_placeholder: '企业微信占位',
+  feishu_placeholder: '飞书占位',
+}
+
 const radarLabels = [
   ['negative_sentiment', '负面情绪'],
   ['bot_impact', '疑似水军/重复话术'],
@@ -86,6 +118,11 @@ function getSnapshotTime(snapshot) {
 
 function getScheduleTime(value) {
   if (!value) return '未设置'
+  return getSnapshotTime({ created_at: value })
+}
+
+function getNotificationTime(value) {
+  if (!value) return '未生成'
   return getSnapshotTime({ created_at: value })
 }
 
@@ -193,10 +230,16 @@ export function RiskMonitor({
   monitoringConfig,
   monitoringLoading = false,
   monitoringStatus,
+  notificationLoading = false,
+  notificationOutboxStatus,
+  notifications = [],
   onDisableMonitoring,
   onEnableMonitoring,
+  onMarkNotificationRead,
   onRunDueMonitoringJobs,
   onRunMonitoringCheck,
+  onSimulateSendNotification,
+  onSimulateSendPendingNotifications,
   recommendation,
   schedulerLoading = false,
   schedulerStatus,
@@ -238,6 +281,10 @@ export function RiskMonitor({
   const scheduleLabel = scheduleStatusLabels[scheduleStatus] || scheduleStatus
   const schedulerDueCases = Number(schedulerStatus?.due_cases || 0)
   const schedulerEnabledCases = Number(schedulerStatus?.enabled_cases || 0)
+  const visibleNotifications = notifications.slice(0, 6)
+  const unreadNotifications = notifications.filter((item) => !item.read_at).length
+  const pendingNotifications =
+    notificationOutboxStatus?.pending ?? notifications.filter((item) => item.status === 'pending').length
 
   if (!visualization && !latestSnapshot) {
     return (
@@ -438,6 +485,80 @@ export function RiskMonitor({
             ) : (
               <Empty description="暂无监控快照" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
+          </Card>
+        </Col>
+
+        <Col span={24}>
+          <Card className="panel-card trend-explanation-card">
+            <div className="panel-heading">
+              <Space>
+                <Bell size={18} />
+                <Title level={4}>通知中心</Title>
+              </Space>
+              <Space wrap>
+                <Tag color={unreadNotifications ? 'volcano' : 'cyan'}>{unreadNotifications} 未读通知</Tag>
+                <Tag color={pendingNotifications ? 'warning' : 'cyan'}>{pendingNotifications} 待模拟发送</Tag>
+                <Tag color="geekblue">{notificationOutboxStatus?.mock_only === false ? '外部通道' : '本地模拟出箱'}</Tag>
+              </Space>
+            </div>
+            <Paragraph className="dashboard-summary-copy">
+              当前 MVP 仅把预警事件写入本地通知出箱，可模拟发送状态，不会调用邮件、Slack、Webhook、企业微信或飞书接口。
+            </Paragraph>
+            <Space wrap style={{ marginBottom: 12 }}>
+              <Button
+                icon={<Send size={15} />}
+                loading={notificationLoading}
+                onClick={onSimulateSendPendingNotifications}
+              >
+                模拟发送待处理通知
+              </Button>
+            </Space>
+            <List
+              className="monitor-alert-list"
+              dataSource={visibleNotifications}
+              locale={{ emptyText: '暂无通知。运行 mock 监控检查并触发预警后，通知会显示在这里。' }}
+              renderItem={(item) => (
+                <List.Item>
+                  <div className={`alert-tile alert-${item.level}`}>
+                    <Space direction="vertical" size={8} className="full-width">
+                      <Space className="analysis-signal-line" wrap>
+                        <Tag color={getAlertTone(item.level)}>{alertLevelLabels[item.level] || item.level}</Tag>
+                        <Tag color={notificationStatusTones[item.status] || 'default'}>
+                          发送状态：{notificationStatusLabels[item.status] || item.status}
+                        </Tag>
+                        <Tag color={item.read_at ? 'default' : 'gold'}>{item.read_at ? '已读' : '未读通知'}</Tag>
+                        <Text type="secondary">关联案例：{item.case_id}</Text>
+                      </Space>
+                      <Text strong>{item.title}</Text>
+                      <Text>{item.message}</Text>
+                      <Text type="secondary">
+                        {channelTypeLabels[item.channel_type] || item.channel_type} · {getNotificationTime(item.created_at)}
+                      </Text>
+                      <Space wrap>
+                        <Button
+                          disabled={Boolean(item.read_at)}
+                          icon={<CheckCircle size={15} />}
+                          loading={notificationLoading}
+                          onClick={() => onMarkNotificationRead?.(item.notification_id)}
+                          size="small"
+                        >
+                          标记已读
+                        </Button>
+                        <Button
+                          disabled={item.status === 'simulated_sent'}
+                          icon={<Send size={15} />}
+                          loading={notificationLoading}
+                          onClick={() => onSimulateSendNotification?.(item.notification_id)}
+                          size="small"
+                        >
+                          模拟发送
+                        </Button>
+                      </Space>
+                    </Space>
+                  </div>
+                </List.Item>
+              )}
+            />
           </Card>
         </Col>
 

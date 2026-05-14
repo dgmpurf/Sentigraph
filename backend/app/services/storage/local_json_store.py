@@ -10,6 +10,7 @@ from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
 from app.schemas.common import RiskLevel
+from app.schemas.notification import NotificationOutboxItem
 from app.schemas.report import PublicOpinionReport
 from app.schemas.visualization import VisualizationResponse
 from app.services.storage.base_store import CaseStore
@@ -173,6 +174,39 @@ class LocalJsonCaseStore(CaseStore):
         ]
         return sorted(alerts, key=lambda alert: alert.created_at, reverse=True)
 
+    def save_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem:
+        with self._lock:
+            data = self._read_data()
+            data["notifications"][notification.notification_id] = notification.model_dump(mode="json")
+            self._write_data(data)
+        return notification.model_copy(deep=True)
+
+    def get_notification(self, notification_id: str) -> NotificationOutboxItem | None:
+        with self._lock:
+            data = self._read_data()
+            raw_notification = data["notifications"].get(notification_id)
+        return NotificationOutboxItem.model_validate(raw_notification) if raw_notification else None
+
+    def update_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem | None:
+        with self._lock:
+            data = self._read_data()
+            if notification.notification_id not in data["notifications"]:
+                return None
+            data["notifications"][notification.notification_id] = notification.model_dump(mode="json")
+            self._write_data(data)
+        return notification.model_copy(deep=True)
+
+    def list_notifications(self) -> list[NotificationOutboxItem]:
+        with self._lock:
+            data = self._read_data()
+            raw_notifications = data["notifications"].values()
+        notifications = [NotificationOutboxItem.model_validate(item) for item in raw_notifications]
+        return sorted(notifications, key=lambda item: item.created_at, reverse=True)
+
+    def list_case_notifications(self, case_id: str) -> list[NotificationOutboxItem]:
+        notifications = [item for item in self.list_notifications() if item.case_id == case_id]
+        return sorted(notifications, key=lambda item: item.created_at, reverse=True)
+
     def reset(self) -> None:
         with self._lock:
             if self.path.exists():
@@ -189,11 +223,13 @@ class LocalJsonCaseStore(CaseStore):
         markdown_reports = raw.get("markdown_reports")
         snapshots = raw.get("snapshots")
         alerts = raw.get("alerts")
+        notifications = raw.get("notifications")
         return {
             "cases": cases if isinstance(cases, dict) else {},
             "markdown_reports": markdown_reports if isinstance(markdown_reports, dict) else {},
             "snapshots": snapshots if isinstance(snapshots, dict) else {},
             "alerts": alerts if isinstance(alerts, dict) else {},
+            "notifications": notifications if isinstance(notifications, dict) else {},
         }
 
     def _write_data(self, data: dict[str, Any]) -> None:
@@ -206,7 +242,7 @@ class LocalJsonCaseStore(CaseStore):
 
 
 def _empty_data() -> dict[str, Any]:
-    return {"cases": {}, "markdown_reports": {}, "snapshots": {}, "alerts": {}}
+    return {"cases": {}, "markdown_reports": {}, "snapshots": {}, "alerts": {}, "notifications": {}}
 
 
 def _case_to_json(case: AnalysisCaseDetail) -> dict[str, Any]:

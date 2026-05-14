@@ -12,6 +12,7 @@ from app.schemas.case import (
     MarkdownExportResponse,
 )
 from app.schemas.common import RiskLevel
+from app.schemas.notification import NotificationOutboxItem
 from app.schemas.report import PublicOpinionReport
 from app.schemas.scheduler import MonitoringScheduleConfig
 from app.schemas.visualization import VisualizationResponse
@@ -138,6 +139,21 @@ class CaseRepository:
     def list_all_alert_events(self) -> list[AlertEvent]:
         return self.store.list_all_alert_events()
 
+    def save_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem:
+        return self.store.save_notification(notification)
+
+    def get_notification(self, notification_id: str) -> NotificationOutboxItem | None:
+        return self.store.get_notification(notification_id)
+
+    def update_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem | None:
+        return self.store.update_notification(notification)
+
+    def list_notifications(self) -> list[NotificationOutboxItem]:
+        return self.store.list_notifications()
+
+    def list_case_notifications(self, case_id: str) -> list[NotificationOutboxItem]:
+        return self.store.list_case_notifications(case_id)
+
     def reset(self) -> None:
         self.store.reset()
 
@@ -152,6 +168,12 @@ class CaseRepository:
                 timestamps.append(snapshot.created_at)
             for alert in self.store.list_case_alerts(case.case_id):
                 timestamps.append(alert.created_at)
+        for notification in self.store.list_notifications():
+            timestamps.append(notification.created_at)
+            if notification.read_at:
+                timestamps.append(notification.read_at)
+            if notification.simulated_sent_at:
+                timestamps.append(notification.simulated_sent_at)
         latest = max(_ensure_aware(timestamp) for timestamp in timestamps)
         return latest + timedelta(minutes=1)
 
