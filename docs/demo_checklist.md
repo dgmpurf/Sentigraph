@@ -2,6 +2,8 @@
 
 Use this checklist for the current v0.3 case-based, mock-first desktop web MVP demo.
 
+Latest final v0.3 case-flow validation: 2026-05-14. Backend tests passed with `44 passed in 0.48s`, frontend production build passed in 7.83s, and API smoke checks passed for creating a case, running mock V1.5 analysis, exporting Markdown, validating Markdown content, confirming platform behavior, and confirming the existing health/platform/keyword/crawl/analysis/visualization/summary/recommendation endpoints still return 200. Browser QA passed at 1440x960 through a Chrome headless CDP fallback after the in-app Browser connection timed out.
+
 Important constraints:
 
 - Do not enable real crawlers.
@@ -225,9 +227,9 @@ Expected result:
 
 ## 10. Browser QA Smoke Result
 
-Latest local browser QA pass: 2026-05-14, v0.3 case flow.
+Latest local browser QA pass: 2026-05-14, final v0.3 case flow.
 
-Validated with a 1440x960 desktop browser viewport through local Playwright + Chromium after the in-app Browser runtime timed out:
+Validated with a 1440x960 desktop browser viewport through Chrome headless CDP fallback after the in-app Browser connection timed out:
 
 - Dashboard renders V1.5 risk model, top-risk topics, real crisis risk, and manipulation risk.
 - Keyword Search shows Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao as mock-selectable choices.
@@ -236,6 +238,8 @@ Validated with a 1440x960 desktop browser viewport through local Playwright + Ch
 - Running a mock analysis returns to Dashboard with refreshed V1.5 mock data.
 - Cases page shows the completed case with title, keyword, selected platforms, risk score, risk level, updated time, and status.
 - Summary Report can copy the suggested public response, copy the completed case as Markdown, and download a `.md` file.
+- Suggested public response copy wrote 111 characters to the browser clipboard.
+- Markdown copy wrote 1820 characters to the browser clipboard and included the case title plus `v1_5_topic_risk_mvp`.
 - Analysis Result displays topic-risk score, risk explanation, and driver labels.
 - Summary Report displays the Chinese structured report and the suggested public response copy button works.
 - Risk Monitor displays real-crisis risk, manipulation/repeated-script risk, and top risk drivers.
