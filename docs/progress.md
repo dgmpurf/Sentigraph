@@ -60,6 +60,8 @@ Latest v0.3 stabilization QA update: the case management and Markdown export flo
 
 Latest platform adapter foundation update: added a safe shared platform adapter interface, adapter factory, and Reddit adapter scaffold. Reddit defaults to mock mode and falls back to local mock data when `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, or `REDDIT_USER_AGENT` are missing. Optional real mode is explicit only and is not connected to the current case flow or mock dashboard. Adapter outputs normalize into existing `RawPost` and `RawComment` schemas, with mocked Reddit response tests covering normalization and factory registration. Backend tests passed with `44 passed in 0.42s`; frontend build was not rerun because no frontend files changed.
 
+Latest platform adapter revalidation update: re-read the required project docs and rechecked the adapter scaffold. The active interface remains `search_posts`, `fetch_comments`, `normalize_post`, and `normalize_comment`; Reddit remains mock-first with credential-gated optional real mode and local mock fallback. Backend tests passed with `44 passed in 0.41s`; frontend build was not rerun because this task did not change frontend files.
+
 ## 2. Completed MVP Steps
 
 - Created backend FastAPI structure under `backend/app`.
