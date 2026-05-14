@@ -26,6 +26,16 @@ class RateLimitPolicy:
     requests_per_minute: int = 60
 
 
+@dataclass(frozen=True)
+class AdapterHealth:
+    platform_id: str
+    mode: AdapterMode
+    ok: bool
+    real_mode_available: bool
+    message: str
+    fallback_reason: str = ""
+
+
 class BasePlatformAdapter(ABC):
     """Common interface for safe public platform adapters.
 
@@ -69,6 +79,28 @@ class BasePlatformAdapter(ABC):
     @abstractmethod
     def normalize_comment(self, raw: Mapping[str, Any]) -> RawComment:
         """Normalize a platform-native comment payload into RawComment."""
+
+    def health_check(self) -> AdapterHealth:
+        """Return a lightweight adapter status without contacting private data sources."""
+
+        return AdapterHealth(
+            platform_id=self.platform_id,
+            mode=self.mode,
+            ok=True,
+            real_mode_available=self.supports_real_mode(),
+            message=f"{self.display_name} adapter is available in {self.mode} mode.",
+        )
+
+    def supports_real_mode(self) -> bool:
+        """Whether this adapter can currently use a real public API integration."""
+
+        return False
+
+    @classmethod
+    def get_required_credentials(cls) -> tuple[str, ...]:
+        """Return environment variable names required for real mode."""
+
+        return ()
 
     def clamp_limit(self, limit: int, *, default: int, maximum: int) -> int:
         if not isinstance(limit, int) or limit <= 0:

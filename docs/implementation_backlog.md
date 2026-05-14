@@ -161,7 +161,7 @@ Acceptance:
 
 Goal: prepare real adapters without implementing crawlers yet.
 
-Status: foundation implemented for the safe Reddit scaffold.
+Status: foundation implemented and QA-stabilized for the safe Reddit scaffold.
 
 Scope:
 
@@ -177,6 +177,27 @@ Acceptance:
 - no bypass behavior
 - outputs normalize into `RawPost` and `RawComment`
 - missing credentials fall back to mock mode
+
+### Mock-only Crawl Adapter Bridge
+
+Goal: connect `POST /api/v1/crawl/start` to the adapter factory in mock mode only, without enabling real Reddit mode.
+
+Status: next recommended implementation task.
+
+Scope:
+
+- call `get_adapter("reddit")` only in mock mode when Reddit is selected
+- keep existing crawl response shape stable
+- attach or log normalized mock `RawPost` / `RawComment` counts for future pipeline integration
+- keep official API planned platforms as placeholders
+- keep crawler-later platforms disabled
+
+Acceptance:
+
+- no real Reddit API calls
+- no credentials required
+- old mock crawl behavior remains backward-compatible
+- backend tests cover Reddit-selected crawl start and unknown/inactive platform handling
 
 ### Reddit Real Adapter Planning
 

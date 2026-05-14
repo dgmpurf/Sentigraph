@@ -22,6 +22,10 @@ def get_platform_adapter(platform_id: str, *, mode: AdapterMode = "mock") -> Bas
     return adapter_class(mode=mode)
 
 
+def get_adapter(platform_id: str, *, mode: AdapterMode = "mock") -> BasePlatformAdapter:
+    return get_platform_adapter(platform_id, mode=mode)
+
+
 def has_platform_adapter(platform_id: str) -> bool:
     return platform_id.strip().lower() in ADAPTER_REGISTRY
 

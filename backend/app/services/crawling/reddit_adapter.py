@@ -10,10 +10,20 @@ from typing import Any, Mapping, Protocol
 from urllib import parse, request
 
 from app.schemas.comment import RawComment, RawPost
-from app.services.crawling.base_adapter import AdapterMode, BasePlatformAdapter, PlatformAdapterError
+from app.services.crawling.base_adapter import (
+    AdapterHealth,
+    AdapterMode,
+    BasePlatformAdapter,
+    PlatformAdapterError,
+)
 
 
 MOCK_DATA_DIR = Path(__file__).resolve().parents[4] / "mock_data"
+REDDIT_REQUIRED_CREDENTIALS = (
+    "REDDIT_CLIENT_ID",
+    "REDDIT_CLIENT_SECRET",
+    "REDDIT_USER_AGENT",
+)
 
 
 class RedditHttpClient(Protocol):
@@ -54,14 +64,16 @@ class RedditAdapter(BasePlatformAdapter):
     def __init__(
         self,
         *,
-        mode: AdapterMode = "mock",
+        mode: AdapterMode | None = None,
         credentials: RedditCredentials | None = None,
         http_client: RedditHttpClient | None = None,
     ) -> None:
+        requested_mode = _adapter_mode_from_env() if mode is None else _normalize_adapter_mode(mode)
+        self.requested_mode: AdapterMode = requested_mode
         self.credentials = credentials or RedditCredentials.from_env()
         self.fallback_reason = ""
-        effective_mode: AdapterMode = "real" if mode == "real" and self.credentials else "mock"
-        if mode == "real" and not self.credentials:
+        effective_mode: AdapterMode = "real" if requested_mode == "real" and self.credentials else "mock"
+        if requested_mode == "real" and not self.credentials:
             self.fallback_reason = "missing_reddit_credentials"
         super().__init__(mode=effective_mode)
         self.http_client = http_client or (
@@ -70,7 +82,31 @@ class RedditAdapter(BasePlatformAdapter):
 
     @property
     def real_mode_available(self) -> bool:
-        return self.mode == "real" and self.credentials is not None and self.http_client is not None
+        return self.mode == "real" and self.supports_real_mode() and self.http_client is not None
+
+    def health_check(self) -> AdapterHealth:
+        if self.mode == "real":
+            message = "Reddit adapter real mode is configured for public API access."
+        elif self.requested_mode == "real" and self.fallback_reason:
+            message = "Reddit adapter requested real mode but is using mock data because credentials are missing."
+        else:
+            message = "Reddit adapter mock mode is active."
+
+        return AdapterHealth(
+            platform_id=self.platform_id,
+            mode=self.mode,
+            ok=True,
+            real_mode_available=self.supports_real_mode(),
+            message=message,
+            fallback_reason=self.fallback_reason,
+        )
+
+    def supports_real_mode(self) -> bool:
+        return self.credentials is not None
+
+    @classmethod
+    def get_required_credentials(cls) -> tuple[str, ...]:
+        return REDDIT_REQUIRED_CREDENTIALS
 
     def search_posts(
         self,
@@ -322,3 +358,11 @@ def _normalize_sort(sort: str) -> str:
     allowed = {"relevance", "hot", "new", "top", "comments"}
     normalized = str(sort or "relevance").lower()
     return normalized if normalized in allowed else "relevance"
+
+
+def _adapter_mode_from_env() -> AdapterMode:
+    return _normalize_adapter_mode(os.getenv("REDDIT_ADAPTER_MODE", "mock"))
+
+
+def _normalize_adapter_mode(mode: str) -> AdapterMode:
+    return "real" if str(mode or "mock").strip().lower() == "real" else "mock"

@@ -202,6 +202,14 @@ V2 设计已在 `docs/algorithm_design.md` 和 `docs/risk_model_roadmap.md` 中�
 
 V2 目前只是文档和占位设计，尚未完整实现，也未接管当前 scoring behavior。
 
+Current mock pipeline/report responses also expose the implemented V1.5 topic-risk layer:
+
+```text
+v1_5_topic_risk_mvp
+```
+
+V1.5 is deterministic and offline. It adds `topic_risks`, `top_risk_topics`, `overall_risk`, `real_crisis_risk`, and `manipulation_risk` while keeping the old V1 `risk_score` and `risk_level` fields backward-compatible.
+
 ## 7. Tech Stack
 
 Backend:

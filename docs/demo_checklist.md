@@ -2,7 +2,7 @@
 
 Use this checklist for the current v0.3 case-based, mock-first desktop web MVP demo.
 
-Latest final v0.3 case-flow validation: 2026-05-14. Backend tests passed with `44 passed in 0.48s`, frontend production build passed in 7.83s, and API smoke checks passed for creating a case, running mock V1.5 analysis, exporting Markdown, validating Markdown content, confirming platform behavior, and confirming the existing health/platform/keyword/crawl/analysis/visualization/summary/recommendation endpoints still return 200. Browser QA passed at 1440x960 through a Chrome headless CDP fallback after the in-app Browser connection timed out.
+Latest v0.4 adapter-foundation validation: 2026-05-14. Backend tests passed with `47 passed in 0.42s`, frontend production build passed in 7.68s, and API smoke checks passed for health, platform registry, crawl start, case create/list/detail/run, Markdown export, visualization, summary, recommendation, analysis result, V1.5 topic-risk fields, and the Reddit mock adapter. The Vite Ant Design/ECharts vendor chunk warning remains non-blocking.
 
 Important constraints:
 
@@ -114,6 +114,22 @@ Expected result:
 - Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao are visible as mock-selectable.
 - Crawler-later platforms are visible but disabled.
 - YouTube is not active and is marked optional future if shown.
+
+## 4.5 Optional Reddit Mock Adapter Smoke Check
+
+This checks the backend adapter scaffold directly. It should stay offline and should not require Reddit credentials.
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph\backend"
+..\.venv\Scripts\python.exe -c "from app.services.crawling.adapter_factory import get_adapter; a=get_adapter('reddit'); posts=a.search_posts('Tesla', limit=2); comments=a.fetch_comments(posts[0].post_id, limit=2); print(a.health_check()); print(len(posts), len(comments), posts[0].platform, comments[0].platform)"
+```
+
+Expected result:
+
+- Adapter mode is `mock`.
+- Health check is OK.
+- The command prints at least one normalized Reddit post/comment from local mock data.
+- No real Reddit API call is made.
 
 ## 5. Run Mock Analysis
 

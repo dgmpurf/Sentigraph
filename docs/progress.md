@@ -66,6 +66,34 @@ Latest case management and Markdown export revalidation update: re-read the requ
 
 Latest v0.3 case-flow stabilization QA update: completed a full stabilization pass for lightweight case management and Markdown export. API smoke checks passed for all case endpoints, old MVP endpoints, Markdown report content, V1.5 topic-risk fields, 9 mock-selectable platforms, crawler-later disabled state, and YouTube inactive state. Backend tests passed with `44 passed in 0.48s`; frontend production build passed in 7.83s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser QA at 1440x960 passed through a Chrome headless CDP fallback after the in-app Browser connection timed out: Dashboard, Keyword Search, Cases, Analysis Result, Summary Report, Risk Monitor, and Propagation Graph rendered; create/run case worked; suggested public response copy worked; Markdown copy worked; no relevant console errors or `[object Object]` rendering were observed.
 
+Latest Reddit adapter contract update: the shared platform adapter interface now includes `health_check`, `supports_real_mode`, and `get_required_credentials` in addition to search/fetch/normalize methods. `get_adapter("reddit")` is available as a factory alias, `.env.example` documents `REDDIT_ADAPTER_MODE=mock`, and the Reddit adapter can read that mode while still falling back to local mock data if credentials are missing. Backend tests passed with `46 passed in 0.50s`; frontend build was not rerun because no frontend files changed.
+
+Latest platform adapter QA update: completed a stabilization pass for the shared adapter foundation and Reddit mock scaffold. Verified the adapter files exist, `.env.example` contains the Reddit placeholders plus `REDDIT_ADAPTER_MODE=mock`, Reddit defaults to mock mode, missing credentials do not crash, `get_adapter("reddit")` returns `RedditAdapter`, unknown/planned/crawler-later platforms raise safe adapter errors, and normalized mock output validates as `RawPost`/`RawComment`. API smoke checks passed for health, platforms, crawl start, cases list/create/run, Markdown export, visualization, summary, and recommendation endpoints. Backend tests passed with `47 passed in 0.43s`; frontend build was not needed because no frontend files changed.
+
+Latest long maintenance pass: completed the requested six-phase safe maintenance run. Phase 1 audit found the project skeleton, V1.5 topic-risk backend, frontend V1.5 display, case management, Markdown export, platform registry, Reddit adapter foundation, demo checklist, and README to be complete for the mock-first MVP. Phase 2 confirmed case creation/list/detail/run plus Markdown export still work. Phase 3 confirmed Reddit mock adapter defaults to offline mock mode and no planned/crawler-later platform is activated as an adapter. Phase 4 confirmed frontend production build passes; the existing Ant Design/ECharts vendor chunk warning remains non-blocking. Phase 5 confirmed backend tests pass with `47 passed in 0.42s` and API smoke checks pass for old MVP and case/report endpoints. Phase 6 updated docs for the v0.4 checkpoint and kept real Reddit mode out of scope.
+
+Maintenance status audit:
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Project skeleton | complete | Backend, frontend, docs, mock data, tests, and local scripts are present. |
+| V1.5 topic-risk backend | complete | `v1_5_topic_risk_mvp` fields appear in analysis, visualization, summary, recommendation, and case run outputs. |
+| Frontend V1.5 display | complete | Dashboard, AnalysisResult, RiskMonitor, and SummaryReport consume V1.5 fields; production build passes. |
+| Case management | complete | In-memory case APIs and frontend case flow are present; persistence remains future work. |
+| Markdown export | complete | Completed cases export/copy Markdown with report sections and risk metadata. |
+| Platform registry | complete | 9 mock-selectable platforms are active; crawler-later and YouTube remain inactive. |
+| Reddit adapter foundation | complete for mock scaffold | Adapter contract, factory, mock fallback, credential placeholders, and tests are present. Real mode remains future. |
+| Demo checklist | complete | Includes v0.4 validation and optional Reddit mock adapter smoke check. |
+| README accuracy | complete with caveat | Run/API instructions remain usable; README now notes V1.5 mock topic-risk outputs. Some existing Chinese text displays garbled in the current terminal encoding. |
+
+Recommended release checkpoint:
+
+- Checkpoint name: Sentigraph v0.4 adapter foundation.
+- Suggested git tag: `v0.4-adapter-foundation`.
+- Completed capabilities: mock-first V1.5 topic-risk pipeline, Chinese structured reports, lightweight in-memory cases, Markdown export, platform registry, Reddit mock adapter scaffold, and full backend/frontend local validation.
+- Known non-blocking issues: case storage is still in-memory per backend process; Vite still reports large vendor chunks for Ant Design and ECharts; browser QA may require Playwright/Chrome fallback if the in-app Browser runtime times out.
+- Next recommended task: implement a mock-only crawl service bridge that can call the adapter factory for Reddit mock data without enabling real Reddit mode.
+
 ## 2. Completed MVP Steps
 
 - Created backend FastAPI structure under `backend/app`.
@@ -318,12 +346,16 @@ npm.cmd --prefix frontend run build
 - Latest backend validation after case management and Markdown export passed with `40 passed in 0.41s`.
 - Latest backend validation after v0.3 stabilization QA passed with `40 passed in 0.43s`.
 - Latest backend validation after platform adapter foundation and Reddit scaffold passed with `44 passed in 0.42s`.
+- Latest backend validation after Reddit adapter contract refinement passed with `46 passed in 0.50s`.
+- Latest backend validation after platform adapter QA passed with `47 passed in 0.43s`.
+- Latest backend validation after the long maintenance pass passed with `47 passed in 0.42s`.
 - Frontend dependency installation passes with `npm.cmd run frontend:install`, which runs `cd frontend && npm install`; the latest install completed with dependencies already up to date.
 - Avoid using `npm.cmd --prefix frontend install` for installation on npm 10.9.2; it can incorrectly link the parent package into `frontend` as `sentigraph: file:..`.
 - Frontend production build passes with `npm.cmd run build` from `frontend`; the latest MVP stabilization Vite build completed in 7.73s.
 - Latest frontend validation after V1.5 display work passed with `npm.cmd run build`. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
 - Latest frontend validation after case management and Markdown export passed with `npm.cmd run build` in 7.55s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
 - Latest frontend validation after v0.3 stabilization QA passed with `npm.cmd run build` in 7.71s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
+- Latest frontend validation after the long maintenance pass passed with `npm.cmd run build` in 7.68s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
 - Frontend build was not rerun for the platform adapter scaffold because no frontend files changed.
 - No blocking environment, dependency, import, path, or test issue was found in the latest MVP stabilization pass.
 - README validation passed after the README update: all README-listed API endpoints exist in FastAPI, the Windows run commands are still valid, and no README command correction was needed.
@@ -360,6 +392,7 @@ Set-Location ..
 - YouTube is not active in the MVP and is marked as optional future.
 - Reddit adapter scaffold is available but defaults to mock mode; missing credentials intentionally fall back to local mock data.
 - Reddit real mode requires `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`, and remains opt-in and disconnected from current product flows.
+- Before real Reddit mode, add fixture-backed real-mode tests, explicit opt-in product behavior, rate-limit/error UX, and a compliance checklist. Keep `REDDIT_ADAPTER_MODE=mock` for local demos.
 - The legacy V1 static scoring module remains for factor/radar compatibility; the current active mock pipeline/report risk model is `v1_5_topic_risk_mvp`.
 - V1.5 topic-level risk (`v1_5_topic_risk_mvp`) is now implemented for mock pipeline visualization/report outputs.
 - V1.5 topic-level risk (`v1_5_topic_risk_mvp`) is now implemented for mock pipeline analysis, visualization, summary, and recommendation outputs.

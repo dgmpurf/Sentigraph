@@ -237,6 +237,8 @@ Current adapter foundation status:
 - Shared adapter interface scaffold exists under `backend/app/services/crawling/base_adapter.py`.
 - Adapter factory exists under `backend/app/services/crawling/adapter_factory.py`.
 - Reddit adapter scaffold exists under `backend/app/services/crawling/reddit_adapter.py`.
+- Adapter interface includes `search_posts`, `fetch_comments`, `normalize_post`, `normalize_comment`, `health_check`, `supports_real_mode`, and `get_required_credentials`.
+- Adapter factory exposes `get_adapter("reddit")` and `get_platform_adapter("reddit")`.
 - Reddit defaults to mock mode and falls back to mock data whenever credentials are missing.
 - The current case flow remains mock-first and does not automatically call real Reddit APIs.
 - Adapter outputs must normalize into `RawPost` and `RawComment` schemas.
@@ -244,6 +246,7 @@ Current adapter foundation status:
 Reddit real-mode requirements for a future task:
 
 - Configure `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` outside the repository.
+- Keep `REDDIT_ADAPTER_MODE=mock` unless a caller explicitly needs credential-backed real mode.
 - Use official Reddit API access only.
 - Add conservative rate-limit, retry, error reporting, and fixture-based tests before connecting it to product flows.
 - Keep real mode opt-in until compliance, quota, and UX behavior are reviewed.

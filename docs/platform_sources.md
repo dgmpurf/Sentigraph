@@ -59,7 +59,25 @@ Future real Reddit mode credentials:
 REDDIT_CLIENT_ID
 REDDIT_CLIENT_SECRET
 REDDIT_USER_AGENT
+REDDIT_ADAPTER_MODE=mock
 ```
+
+Adapter contract:
+
+- `search_posts(keyword, limit, sort, date_range)`
+- `fetch_comments(post_id, limit)`
+- `normalize_post(raw)`
+- `normalize_comment(raw)`
+- `health_check()`
+- `supports_real_mode()`
+- `get_required_credentials()`
+
+Factory behavior:
+
+- `get_adapter("reddit")` and `get_platform_adapter("reddit")` return the Reddit adapter.
+- Unknown platforms return a safe adapter registration error.
+- Official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
+- Crawler-later platforms remain inactive for real collection.
 
 Safety constraints:
 
