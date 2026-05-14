@@ -421,6 +421,14 @@ body {
   line-height: 1.45;
 }
 
+.cases-panel .ant-table-thead > tr > th {
+  background: rgba(66, 245, 215, 0.06) !important;
+}
+
+.active-case-row td {
+  background: rgba(66, 245, 215, 0.08) !important;
+}
+
 .conflict-copy p {
   margin-bottom: 6px;
 }

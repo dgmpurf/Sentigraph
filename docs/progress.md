@@ -54,6 +54,12 @@ Latest frontend V1.5 API alignment update: the frontend API client now normalize
 
 Latest browser QA and demo polish update: a 1440x900 desktop browser smoke test passed for Dashboard, Keyword Search, Analysis Result, Summary Report, Risk Monitor, and Propagation Graph. The mock analysis flow was exercised from Keyword Search back to Dashboard, V1.5 fields displayed correctly across pages, the Chinese structured report rendered, the suggested public response copy button wrote report text to the browser clipboard, crawler-later platforms were visible as disabled/future items, and YouTube remained inactive. Small polish fixes were added: Summary Report risk badge text no longer wraps the raw risk enum, copy buttons now have stable QA selectors, and `frontend/index.html` includes a local favicon to avoid the browser favicon 404. Backend tests passed with `34 passed in 0.38s`; frontend build passed in 7.64s with the existing non-blocking Vite vendor chunk warning. The in-app Browser runtime still timed out, so QA used a local Playwright + Chrome fallback.
 
+Latest case management and Markdown export update: Sentigraph now has lightweight in-memory analysis case management for the mock MVP. New backend endpoints support creating cases, listing cases, retrieving case details, running the existing offline V1.5 mock pipeline for a case, and exporting a Chinese public opinion report as Markdown. The frontend now includes a Cases page, Keyword Search creates and runs a case, the header shows the current case, Summary Report can copy/download Markdown for the selected completed case, and the existing Dashboard, AnalysisResult, RiskMonitor, PropagationGraph, and Chinese report pages continue to work. Backend tests passed with `40 passed in 0.41s`; frontend build passed in 7.55s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser QA via local Playwright + Chrome passed for create case -> run mock analysis -> Cases list -> open report -> copy Markdown -> download `.md` -> V1.5 page navigation, with no console errors.
+
+Latest v0.3 stabilization QA update: the case management and Markdown export flow was revalidated end to end without product code changes. Backend tests passed with `40 passed in 0.43s`, frontend production build passed in 7.71s, API smoke checks passed for all new case endpoints plus the existing platform, visualization, summary, recommendation, and analysis endpoints, and browser QA passed at a 1440x960 desktop viewport. The browser flow verified Keyword Search -> create/run case -> Dashboard -> Cases -> Summary Report -> copy suggested public response -> copy Markdown -> download `.md` -> AnalysisResult -> RiskMonitor -> PropagationGraph, with no relevant console errors. The in-app Browser runtime still timed out, so this QA pass used temporary Playwright + Chromium tooling outside the repository; no project dependency files were changed.
+
+Latest platform adapter foundation update: added a safe shared platform adapter interface, adapter factory, and Reddit adapter scaffold. Reddit defaults to mock mode and falls back to local mock data when `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, or `REDDIT_USER_AGENT` are missing. Optional real mode is explicit only and is not connected to the current case flow or mock dashboard. Adapter outputs normalize into existing `RawPost` and `RawComment` schemas, with mocked Reddit response tests covering normalization and factory registration. Backend tests passed with `44 passed in 0.42s`; frontend build was not rerun because no frontend files changed.
+
 ## 2. Completed MVP Steps
 
 - Created backend FastAPI structure under `backend/app`.
@@ -116,8 +122,21 @@ Latest browser QA and demo polish update: a 1440x900 desktop browser smoke test 
 - Added `risk_model_version` to backend visualization/report responses and `risk_level_label` to normalized report responses without changing active scoring behavior.
 - Added a safe documented V2 placeholder module for topic-cluster dynamic risk; it returns inactive/empty deterministic output.
 - Added `docs/demo_checklist.md` as the step-by-step local MVP demo checklist.
+- Added lightweight case-based mock MVP flow:
+  - `GET /api/v1/cases`
+  - `POST /api/v1/cases`
+  - `GET /api/v1/cases/{case_id}`
+  - `POST /api/v1/cases/{case_id}/run`
+  - `GET /api/v1/cases/{case_id}/report/markdown`
+- Added a frontend Cases page and connected Keyword Search to create and run mock analysis cases.
+- Added Markdown report copy/download from Summary Report for completed cases.
 - Added `backend/app/services/mock_pipeline.py` to run the offline mock pipeline end to end from `mock_data/raw_comments.json`.
 - Updated analysis, visualization, and propagation mock service methods to use pipeline-generated outputs where available.
+- Added safe platform adapter foundation modules for future real-data work:
+  - `backend/app/services/crawling/base_adapter.py`
+  - `backend/app/services/crawling/adapter_factory.py`
+  - `backend/app/services/crawling/reddit_adapter.py`
+- Added a Reddit adapter scaffold with default mock fallback, optional credential-gated real mode, rate-limit/retry placeholders, and schema normalization into `RawPost` and `RawComment`.
 - Added `backend/app/services/recommendation/report_builder.py` for deterministic template-based public opinion reports.
 - Updated `POST /api/v1/summary/generate` and `POST /api/v1/recommendation/generate` to use the report builder while preserving their existing response schemas.
 - Added `backend/app/schemas/report.py` as the normalized public opinion report schema.
@@ -150,11 +169,17 @@ Backend:
 - `backend/app/api/v1/api.py` - API router registration.
 - `backend/app/api/v1/routes/` - Route handlers for health, keyword expansion, crawl, analysis, visualization, summary, recommendation, propagation, and alerts.
 - `backend/app/api/v1/routes/platforms.py` - Route handler for the platform registry endpoint.
+- `backend/app/api/v1/routes/cases.py` - Case management and Markdown export route handlers.
 - `backend/app/schemas/` - Pydantic request and response schemas.
+- `backend/app/schemas/case.py` - Lightweight analysis case and Markdown export schemas.
 - `backend/app/schemas/report.py` - Normalized public opinion report schema and report language enum.
 - `backend/app/schemas/platform.py` - Platform registry response schemas.
 - `backend/app/services/mock_service.py` - Mock API response service now backed by the deterministic mock pipeline/report builder where possible.
+- `backend/app/services/case_store.py` - Deterministic in-memory analysis case store and Markdown report exporter for the mock MVP.
+- `backend/app/services/crawling/base_adapter.py` - Shared adapter interface and safe utility helpers for future public platform adapters.
+- `backend/app/services/crawling/adapter_factory.py` - Adapter registry/factory; currently registers the Reddit scaffold.
 - `backend/app/services/crawling/platform_registry.py` - Platform source registry defining mock-selectable MVP, official API planned, future real adapter candidate, crawler-later, and optional future platforms.
+- `backend/app/services/crawling/reddit_adapter.py` - Reddit adapter scaffold with mock fallback and optional credential-gated official API client path.
 - `backend/app/services/mock_pipeline.py` - Offline mock pipeline that loads raw comments, runs analysis services, builds propagation, risk, and visualization inputs.
 - `backend/app/services/preprocessing/text_cleaner.py` - Rule-based text normalization, language detection, and duplicate fingerprinting.
 - `backend/app/services/preprocessing/duplicate_detector.py` - Exact hash and similarity duplicate grouping while preserving author-level clean comments.
@@ -173,7 +198,9 @@ Backend:
 - `backend/app/tests/test_scoring_and_visualization_services.py` - Tests for risk scoring, visualization builder, and MongoDB-safe key conversion.
 - `backend/app/tests/test_topic_risk_score.py` - Tests for V1.5 topic risk range, level mapping, missing-input fallbacks, aggregation, and report integration.
 - `backend/app/tests/test_report_builder.py` - Tests for deterministic offline report generation and summary/recommendation endpoints.
+- `backend/app/tests/test_cases.py` - Tests for case creation, listing, running, detail retrieval, Markdown export, and old endpoint compatibility.
 - `backend/app/tests/test_platform_registry.py` - Tests for platform registry categories and endpoint contract.
+- `backend/app/tests/test_reddit_adapter.py` - Tests for Reddit adapter mock fallback, mocked response normalization, optional real-mode client injection, and adapter factory registration.
 - `backend/requirements.txt` - Backend dependencies.
 
 Frontend:
@@ -184,6 +211,7 @@ Frontend:
 - `frontend/src/components/charts/` - ECharts chart components.
 - `frontend/src/components/report/PublicOpinionReport.jsx` - Export-friendly Chinese public opinion report renderer using normalized summary/recommendation fields.
 - `frontend/src/pages/` - Dashboard and feature pages.
+- `frontend/src/pages/Cases.jsx` - Lightweight case list and case action page.
 - `frontend/src/styles/global.css` - Desktop dashboard styling.
 - `frontend/src/utils/reportModel.js` - Frontend report model mapper for summary, recommendation, analysis, visualization, optional risk model metadata, and topic risk fallbacks.
 - `frontend/src/utils/clipboard.js` - Shared browser clipboard helper for copying suggested response text.
@@ -281,10 +309,16 @@ npm.cmd --prefix frontend run build
 - Backend tests pass locally in the root `.venv`: latest MVP stabilization validation `28 passed in 0.40s`.
 - Latest backend validation after frontend V1.5 display work passed with `33 passed in 0.35s`.
 - Latest backend validation after completing analysis-response V1.5 fields passed with `34 passed in 0.40s`.
+- Latest backend validation after case management and Markdown export passed with `40 passed in 0.41s`.
+- Latest backend validation after v0.3 stabilization QA passed with `40 passed in 0.43s`.
+- Latest backend validation after platform adapter foundation and Reddit scaffold passed with `44 passed in 0.42s`.
 - Frontend dependency installation passes with `npm.cmd run frontend:install`, which runs `cd frontend && npm install`; the latest install completed with dependencies already up to date.
 - Avoid using `npm.cmd --prefix frontend install` for installation on npm 10.9.2; it can incorrectly link the parent package into `frontend` as `sentigraph: file:..`.
 - Frontend production build passes with `npm.cmd run build` from `frontend`; the latest MVP stabilization Vite build completed in 7.73s.
 - Latest frontend validation after V1.5 display work passed with `npm.cmd run build`. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
+- Latest frontend validation after case management and Markdown export passed with `npm.cmd run build` in 7.55s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
+- Latest frontend validation after v0.3 stabilization QA passed with `npm.cmd run build` in 7.71s. The Vite large chunk warning for Ant Design/ECharts vendor chunks remains non-blocking.
+- Frontend build was not rerun for the platform adapter scaffold because no frontend files changed.
 - No blocking environment, dependency, import, path, or test issue was found in the latest MVP stabilization pass.
 - README validation passed after the README update: all README-listed API endpoints exist in FastAPI, the Windows run commands are still valid, and no README command correction was needed.
 - API smoke validation passed: summary/recommendation return normalized Chinese `zh-CN` report fields, and `GET /api/v1/platforms` returns the full 17-platform registry.
@@ -295,6 +329,10 @@ npm.cmd --prefix frontend run build
 - Vite still reports a large chunk warning for Ant Design and ECharts vendor chunks. Safe manual chunking reduced the app chunk from roughly 2.4 MB to roughly 226 KB, but deeper lazy loading would require a broader frontend refactor and should be handled separately.
 - The latest `npm install` emitted an npm audit endpoint retirement notice. Previous audit output reported 2 moderate vulnerabilities; they were not force-fixed because `npm audit fix --force` may introduce breaking dependency changes.
 - Rendered browser QA passed through a local Playwright + Chrome fallback at 1440x900. The in-app Browser runtime still timed out during connection, so future Codex browser sessions may need the same fallback until that runtime is stable.
+- Case-flow browser QA passed through local Playwright + Chrome: create case, run mock analysis, open the Cases page, open Summary Report, copy Markdown, download `.md`, and navigate to AnalysisResult, RiskMonitor, and PropagationGraph with no console errors.
+- v0.3 browser QA passed through temporary Playwright + Chromium tooling at 1440x960: create case, run mock analysis, verify platform roadmap, open report, copy suggested public response, copy Markdown, download `.md`, and navigate through Dashboard, Cases, AnalysisResult, RiskMonitor, and PropagationGraph with no relevant console errors.
+- v0.3 API smoke validation passed for `GET /api/v1/cases`, `POST /api/v1/cases`, `GET /api/v1/cases/{case_id}`, `POST /api/v1/cases/{case_id}/run`, `GET /api/v1/cases/{case_id}/report/markdown`, `GET /api/v1/platforms`, `POST /api/v1/visualization/data`, `POST /api/v1/summary/generate`, `POST /api/v1/recommendation/generate`, and `GET /api/v1/analysis/{project_id}`.
+- Case storage is currently in-memory per backend process. Restarting the FastAPI server clears created cases; this is intentional for the mock MVP and should be replaced by local JSON or database persistence in a later phase.
 - If npm reports a stale dependency or `extraneous` error after earlier local installs, remove generated dependencies and install again:
 
 ```powershell
@@ -314,7 +352,9 @@ Set-Location ..
 - The previous frontend only showed Weibo because the backend registry had only `weibo` marked `enabled_in_mvp=true`, and `frontend/src/App.jsx` filtered platform options only by that field. This has been fixed by adding `selectable_for_mock` and marking Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao as safe mock-selectable platforms.
 - Crawler-later platforms remain visible but disabled with the note `Future crawler integration`. YouTube is not active in the MVP and is marked as optional future.
 - YouTube is not active in the MVP and is marked as optional future.
-- Current active risk model is `v1_static_mvp`.
+- Reddit adapter scaffold is available but defaults to mock mode; missing credentials intentionally fall back to local mock data.
+- Reddit real mode requires `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`, and remains opt-in and disconnected from current product flows.
+- The legacy V1 static scoring module remains for factor/radar compatibility; the current active mock pipeline/report risk model is `v1_5_topic_risk_mvp`.
 - V1.5 topic-level risk (`v1_5_topic_risk_mvp`) is now implemented for mock pipeline visualization/report outputs.
 - V1.5 topic-level risk (`v1_5_topic_risk_mvp`) is now implemented for mock pipeline analysis, visualization, summary, and recommendation outputs.
 - V2 topic-cluster dynamic risk is planned but not implemented yet.
@@ -341,21 +381,22 @@ Audit date: 2026-05-14.
 | PropagationGraph page | complete for MVP | `frontend/src/pages/PropagationGraph.jsx` and `PropagationGraphChart.jsx`; smoke check returned 6 nodes and 3 edges. | Real graph metrics and NetworkX-backed propagation builder are future work. |
 | README accuracy | complete with minor caveat | README endpoints match routes in `backend/app/api/v1/api.py`; Windows commands are consistent with root `requirements.txt` and scripts. | Keep README updated after schema changes; production-readiness is correctly not claimed. |
 | Algorithm docs | complete for V1.5 | `docs/algorithm_design.md` and `docs/risk_model_roadmap.md` document V1 active, V1.5 implemented as a practical topic-risk bridge, and V2 planned for later. | Frontend should surface V1.5 topic-risk explanations more directly; do not start full V2 yet. |
-| Backend tests | complete | `.\.venv\Scripts\python.exe -m pytest` passed with `33 passed in 0.46s`. | Add tests as new features land. |
-| Frontend build | complete | `npm.cmd run build` in `frontend` passed in 7.73s. | Vite large chunk warning remains for Ant Design and ECharts vendor chunks; the app chunk is now smaller after safe manual chunking. |
+| Backend tests | complete | `.\.venv\Scripts\python.exe -m pytest` passed with `40 passed in 0.41s`. | Add tests as new features land. |
+| Frontend build | complete | `npm.cmd run build` in `frontend` passed in 7.55s. | Vite large chunk warning remains for Ant Design and ECharts vendor chunks; the app chunk is now smaller after safe manual chunking. |
 
 Overall audit conclusion: MVP 0 through MVP 4 are complete enough for the mock-first desktop prototype. The project should not move to real crawlers or real platform APIs yet. The compatibility/metadata and interactive browser QA tasks are complete for the local demo baseline.
 
 ## 7. Next Recommended Task
 
-Recommended next implementation task: add saved analysis case state for the mock MVP so a user can create/select a case and keep keyword/platform/report context across pages.
+Recommended next implementation task: add fixture-backed Reddit adapter integration tests and a mock-only crawl service bridge that can call the adapter factory without enabling live Reddit requests. If demo continuity is more important, add simple local JSON persistence for cases first.
 
 Suggested scope:
 
 - Do not enable V2 scoring yet.
 - Do not replace V1/V1.5 with full V2 during the next task.
-- Keep case storage mock/local first; do not add real database persistence yet.
-- Add a small recent-case or current-case surface in the desktop header/sidebar.
-- Preserve the current mock pipeline and V1.5 report APIs.
-- Re-run the browser checklist in `docs/demo_checklist.md` after the case-state work.
+- Keep the current mock pipeline and V1.5 report APIs stable.
+- If persistence is selected next, keep it local JSON first and do not add MongoDB/Redis yet.
+- If alert refinement is selected next, generate alerts from existing V1.5 risk fields without real notifications.
+- If Reddit integration is selected next, keep real mode disabled by default and use sanitized fixtures or mocked clients only.
+- Re-run the browser checklist in `docs/demo_checklist.md` after the next product-polish task.
 - Keep existing API schemas stable.

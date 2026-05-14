@@ -83,8 +83,8 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         selectable_for_mock=True,
         official_platform_url=None,
         notes=(
-            "Selectable for offline mock analysis. Reddit stays in the project as a "
-            "future real adapter candidate, but no real API call is implemented yet."
+            "Selectable for offline mock analysis. A safe Reddit adapter scaffold exists "
+            "with mock fallback by default; real mode requires explicit credentials."
         ),
     ),
     _official_mock_platform("weibo", "Weibo", "https://open.weibo.com"),

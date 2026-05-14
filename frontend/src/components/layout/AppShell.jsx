@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   FileText,
+  FolderKanban,
   Network,
   RefreshCw,
   Search,
@@ -17,6 +18,7 @@ const { Text, Title } = Typography
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={17} /> },
+  { key: 'cases', label: 'Cases', icon: <FolderKanban size={17} /> },
   { key: 'keyword', label: 'Keyword Search', icon: <Search size={17} /> },
   { key: 'analysis', label: 'Analysis Result', icon: <Activity size={17} /> },
   { key: 'propagation', label: 'Propagation Graph', icon: <Network size={17} /> },
@@ -31,6 +33,7 @@ export function AppShell({
   loading,
   onNavigate,
   onRefresh,
+  caseTitle,
   projectId,
   riskLevel,
   riskScore,
@@ -59,6 +62,7 @@ export function AppShell({
         <Header className="app-header">
           <Space size={14} wrap>
             <Tag color="cyan">Mock Mode</Tag>
+            {caseTitle ? <Tag color="geekblue">{caseTitle}</Tag> : null}
             <Text className="project-label">{projectId}</Text>
             <Tag color={riskTone(riskLevel)}>Risk {riskScore}</Tag>
             <Tag color="volcano">{alertsCount} Alerts</Tag>
@@ -79,4 +83,3 @@ export function AppShell({
     </Layout>
   )
 }
-

@@ -1,0 +1,180 @@
+import { Alert, Button, Card, Empty, Space, Table, Tag, Typography } from 'antd'
+import { FileText, PlayCircle, RefreshCw } from 'lucide-react'
+
+import { riskTone } from '../utils/formatters.js'
+
+const { Text, Title } = Typography
+
+const riskLevelLabels = {
+  low: '低风险',
+  medium: '中等风险',
+  high: '高风险',
+  critical: '严重风险',
+}
+
+const statusLabels = {
+  draft: '待运行',
+  running: '运行中',
+  completed: '已完成',
+  failed: '失败',
+}
+
+const statusColors = {
+  draft: 'default',
+  running: 'processing',
+  completed: 'success',
+  failed: 'error',
+}
+
+function formatScore(value) {
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue) ? numericValue.toFixed(1) : '-'
+}
+
+function formatDate(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+export function Cases({
+  cases = [],
+  currentCase,
+  error,
+  loading,
+  onNavigateToKeyword,
+  onOpenCaseReport,
+  onRefreshCases,
+  onRunCase,
+}) {
+  const columns = [
+    {
+      title: '案例',
+      dataIndex: 'title',
+      key: 'title',
+      width: 230,
+      render: (value, record) => (
+        <Space direction="vertical" size={2}>
+          <Text strong>{value || record.case_id}</Text>
+          <Text type="secondary">{record.case_id}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: '关键词',
+      dataIndex: 'keyword',
+      key: 'keyword',
+      width: 140,
+      render: (value) => <Tag color="cyan">{value}</Tag>,
+    },
+    {
+      title: '平台',
+      dataIndex: 'platforms',
+      key: 'platforms',
+      render: (platforms = []) => (
+        <Space wrap size={[4, 4]}>
+          {platforms.length ? platforms.map((platform) => <Tag key={platform}>{platform}</Tag>) : <Text type="secondary">默认 mock 平台</Text>}
+        </Space>
+      ),
+    },
+    {
+      title: '风险',
+      key: 'risk',
+      width: 150,
+      render: (_, record) => (
+        <Space direction="vertical" size={2}>
+          <Text strong>{formatScore(record.risk_score)}/100</Text>
+          {record.risk_level ? (
+            <Tag color={riskTone(record.risk_level)}>{riskLevelLabels[record.risk_level] || record.risk_level}</Tag>
+          ) : (
+            <Tag>未生成</Tag>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 110,
+      render: (value) => <Tag color={statusColors[value] || 'default'}>{statusLabels[value] || value}</Tag>,
+    },
+    {
+      title: '更新时间',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
+      width: 190,
+      render: formatDate,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 210,
+      render: (_, record) => (
+        <Space>
+          <Button
+            icon={<PlayCircle size={15} />}
+            loading={loading && currentCase?.case_id === record.case_id}
+            onClick={() => onRunCase(record.case_id)}
+            size="small"
+            type="primary"
+          >
+            运行
+          </Button>
+          <Button
+            disabled={record.status !== 'completed'}
+            icon={<FileText size={15} />}
+            onClick={() => onOpenCaseReport(record.case_id)}
+            size="small"
+          >
+            报告
+          </Button>
+        </Space>
+      ),
+    },
+  ]
+
+  return (
+    <div className="page-stack">
+      <div className="page-heading">
+        <div>
+          <Title level={2}>分析案例</Title>
+          <Text>管理本地 mock 舆情分析案例，保存关键词、平台、V1.5 风险结果和中文报告上下文。</Text>
+        </div>
+        <Space>
+          <Button icon={<RefreshCw size={16} />} onClick={onRefreshCases}>
+            刷新
+          </Button>
+          <Button type="primary" onClick={onNavigateToKeyword}>
+            新建案例
+          </Button>
+        </Space>
+      </div>
+
+      {error ? <Alert message="案例数据加载失败" description={error} type="error" showIcon /> : null}
+
+      <Card className="panel-card cases-panel">
+        {cases.length ? (
+          <Table
+            columns={columns}
+            dataSource={cases}
+            loading={loading && !cases.length}
+            pagination={false}
+            rowClassName={(record) => (record.case_id === currentCase?.case_id ? 'active-case-row' : '')}
+            rowKey="case_id"
+          />
+        ) : (
+          <Empty
+            description="暂无分析案例。请先在 Keyword Search 创建并运行一个 mock 案例。"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          >
+            <Button type="primary" onClick={onNavigateToKeyword}>
+              创建第一个案例
+            </Button>
+          </Empty>
+        )}
+      </Card>
+    </div>
+  )
+}

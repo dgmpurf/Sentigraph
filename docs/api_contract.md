@@ -549,7 +549,142 @@ GET /api/v1/alerts/{project_id}
 }
 ```
 
-## 10. API Rules
+## 10. Analysis Cases
+
+Case APIs are lightweight MVP endpoints for saving one mock analysis context in memory during local development. They do not require MongoDB, Redis, authentication, real crawlers, real platform APIs, or external LLM APIs.
+
+### List Cases
+
+```http
+GET /api/v1/cases
+```
+
+Response:
+
+```json
+[
+  {
+    "case_id": "case_001",
+    "project_id": "project_001",
+    "title": "Tesla 舆情分析",
+    "keyword": "Tesla",
+    "platforms": ["reddit", "weibo", "bilibili"],
+    "status": "completed",
+    "created_at": "2026-05-14T09:00:00Z",
+    "updated_at": "2026-05-14T09:02:00Z",
+    "risk_score": 52.2,
+    "risk_level": "medium",
+    "risk_model_version": "v1_5_topic_risk_mvp",
+    "report_language": "zh-CN"
+  }
+]
+```
+
+### Create Case
+
+```http
+POST /api/v1/cases
+```
+
+Request:
+
+```json
+{
+  "title": "Tesla 舆情案例",
+  "keyword": "Tesla",
+  "platforms": ["reddit", "weibo", "bilibili"],
+  "report_language": "zh-CN"
+}
+```
+
+Response:
+
+```json
+{
+  "case_id": "case_001",
+  "project_id": "project_001",
+  "title": "Tesla 舆情案例",
+  "keyword": "Tesla",
+  "platforms": ["reddit", "weibo", "bilibili"],
+  "status": "draft",
+  "analysis_result": null,
+  "visualization_data": null,
+  "report": null,
+  "markdown_available": false
+}
+```
+
+### Get Case Detail
+
+```http
+GET /api/v1/cases/{case_id}
+```
+
+Response contains the same metadata as Create Case. After a run, `analysis_result`, `visualization_data`, `report`, and `markdown_available` are populated.
+
+### Run Case
+
+```http
+POST /api/v1/cases/{case_id}/run
+```
+
+Response:
+
+```json
+{
+  "case_id": "case_001",
+  "project_id": "project_001",
+  "status": "completed",
+  "risk_score": 52.2,
+  "risk_level": "medium",
+  "risk_model_version": "v1_5_topic_risk_mvp",
+  "analysis_result": {
+    "project_id": "project_001",
+    "risk_model_version": "v1_5_topic_risk_mvp",
+    "topic_risks": []
+  },
+  "visualization_data": {
+    "project_id": "project_001",
+    "risk_model_version": "v1_5_topic_risk_mvp",
+    "top_risk_topics": []
+  },
+  "report": {
+    "project_id": "project_001",
+    "report_language": "zh-CN",
+    "risk_model_version": "v1_5_topic_risk_mvp",
+    "overall_summary": "..."
+  },
+  "markdown_available": true
+}
+```
+
+Important:
+
+- `POST /api/v1/cases/{case_id}/run` uses the same deterministic offline mock pipeline as the existing analysis, visualization, summary, and recommendation APIs.
+- Running a case must not trigger real crawlers or real platform APIs.
+- The response keeps V1.5 topic-risk fields inside `analysis_result`, `visualization_data`, and `report` where available.
+
+### Export Markdown Report
+
+```http
+GET /api/v1/cases/{case_id}/report/markdown
+```
+
+Response:
+
+```json
+{
+  "case_id": "case_001",
+  "project_id": "project_001",
+  "filename": "Tesla_舆情案例_case_001.md",
+  "markdown": "# Tesla 舆情案例\n\n## 舆情总览\n...",
+  "generated_at": "2026-05-14T09:03:00Z"
+}
+```
+
+The Markdown report includes title, keyword, selected platforms, risk score, risk level, risk model version, overall summary, key findings, top risk topics, representative comments, suspected bot/repeated-script signals, recommended actions, and suggested public response.
+
+## 11. API Rules
 
 1. Every endpoint should return JSON.
 2. Use Pydantic schemas for all request and response bodies.

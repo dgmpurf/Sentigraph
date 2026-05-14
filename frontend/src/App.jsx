@@ -3,19 +3,23 @@ import { motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
+  createAnalysisCase,
   expandKeywords,
   generateRecommendation,
   generateSummary,
+  getAnalysisCase,
   getAlerts,
   getAnalysisResult,
+  getCaseMarkdownReport,
   getPlatforms,
   getPropagation,
   getVisualizationData,
-  runAnalysis,
-  startCrawl,
+  listAnalysisCases,
+  runAnalysisCase,
 } from './api/sentigraphApi.js'
 import { AppShell } from './components/layout/AppShell.jsx'
 import { AnalysisResult } from './pages/AnalysisResult.jsx'
+import { Cases } from './pages/Cases.jsx'
 import { Dashboard } from './pages/Dashboard.jsx'
 import { KeywordSearch } from './pages/KeywordSearch.jsx'
 import { PropagationGraph } from './pages/PropagationGraph.jsx'
@@ -47,7 +51,6 @@ const FALLBACK_PLATFORM_OPTIONS = [
   { label: 'Douban', value: 'douban' },
   { label: 'Toutiao', value: 'toutiao' },
 ]
-const ALL_ANALYSIS_TYPES = ['sentiment', 'topic', 'bot', 'ai_generated', 'propagation', 'risk']
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
@@ -60,6 +63,10 @@ function App() {
   const [recommendation, setRecommendation] = useState(null)
   const [propagation, setPropagation] = useState(null)
   const [platformRegistry, setPlatformRegistry] = useState([])
+  const [cases, setCases] = useState([])
+  const [currentCase, setCurrentCase] = useState(null)
+  const [markdownReport, setMarkdownReport] = useState(null)
+  const [markdownLoading, setMarkdownLoading] = useState(false)
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -77,6 +84,32 @@ function App() {
     () => platformOptions.map((platform) => platform.value),
     [platformOptions],
   )
+
+  const applyCaseDetail = useCallback((caseDetail) => {
+    if (!caseDetail) return
+    setCurrentCase(caseDetail)
+    setProjectId(caseDetail.project_id || DEFAULT_PROJECT_ID)
+    setKeyword(caseDetail.keyword || 'Tesla')
+    setMarkdownReport(null)
+
+    if (caseDetail.analysis_result) {
+      setAnalysis(caseDetail.analysis_result)
+    }
+    if (caseDetail.visualization_data) {
+      setVisualization(caseDetail.visualization_data)
+      setPropagation(null)
+    }
+    if (caseDetail.report) {
+      setSummary(caseDetail.report)
+      setRecommendation(caseDetail.report)
+    }
+  }, [])
+
+  const refreshCases = useCallback(async () => {
+    const caseList = await listAnalysisCases()
+    setCases(caseList)
+    return caseList
+  }, [])
 
   const loadProjectData = useCallback(async (nextProjectId = DEFAULT_PROJECT_ID) => {
     setLoading(true)
@@ -125,6 +158,24 @@ function App() {
 
   useEffect(() => {
     let isMounted = true
+    listAnalysisCases()
+      .then((caseList) => {
+        if (isMounted) {
+          setCases(caseList)
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setCases([])
+        }
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
     getPlatforms()
       .then((registry) => {
         if (isMounted) {
@@ -145,36 +196,91 @@ function App() {
     setLoading(true)
     setError('')
     try {
-      const dateRange = formValues.date_range || DEFAULT_DATE_RANGE
       const selectedPlatforms = formValues.platforms?.length ? formValues.platforms : activeMvpPlatforms
-      const [keywordData, crawlData] = await Promise.all([
-        expandKeywords({
-          keyword: formValues.keyword,
-          platforms: selectedPlatforms,
-          language: formValues.language,
-        }),
-        startCrawl({
-          keyword: formValues.keyword,
-          platforms: selectedPlatforms,
-          limit: formValues.limit,
-          date_range: dateRange,
-        }),
-      ])
-      await runAnalysis({
-        project_id: crawlData.project_id,
-        analysis_types: ALL_ANALYSIS_TYPES,
+      const keywordData = await expandKeywords({
+        keyword: formValues.keyword,
+        platforms: selectedPlatforms,
+        language: formValues.language,
       })
+      const caseDetail = await createAnalysisCase({
+        title: formValues.title,
+        keyword: formValues.keyword,
+        platforms: selectedPlatforms,
+        report_language: DEFAULT_REPORT_LANGUAGE,
+      })
+      const completedCase = await runAnalysisCase(caseDetail.case_id)
       setKeyword(formValues.keyword)
       setExpandedKeywords(keywordData)
-      setProjectId(crawlData.project_id)
-      await loadProjectData(crawlData.project_id)
+      applyCaseDetail(completedCase)
+      await refreshCases()
+      const alertsData = await getAlerts(completedCase.project_id)
+      setAlerts(alertsData.alerts || [])
       setActivePage('dashboard')
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to start mock analysis.')
+      setError(requestError?.message || 'Unable to create and run mock analysis case.')
     } finally {
       setLoading(false)
     }
-  }, [activeMvpPlatforms, loadProjectData])
+  }, [activeMvpPlatforms, applyCaseDetail, refreshCases])
+
+  const handleRunCase = useCallback(async (caseId, nextPage = 'dashboard') => {
+    setLoading(true)
+    setError('')
+    try {
+      const completedCase = await runAnalysisCase(caseId)
+      applyCaseDetail(completedCase)
+      await refreshCases()
+      const alertsData = await getAlerts(completedCase.project_id)
+      setAlerts(alertsData.alerts || [])
+      setActivePage(nextPage)
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to run mock analysis case.')
+    } finally {
+      setLoading(false)
+    }
+  }, [applyCaseDetail, refreshCases])
+
+  const handleOpenCaseReport = useCallback(async (caseId) => {
+    setLoading(true)
+    setError('')
+    try {
+      const caseDetail = await getAnalysisCase(caseId)
+      applyCaseDetail(caseDetail)
+      const alertsData = await getAlerts(caseDetail.project_id)
+      setAlerts(alertsData.alerts || [])
+      setActivePage('summary')
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to open the selected case report.')
+    } finally {
+      setLoading(false)
+    }
+  }, [applyCaseDetail])
+
+  const handleGetMarkdownReport = useCallback(async () => {
+    if (!currentCase?.case_id) {
+      throw new Error('No analysis case is currently selected.')
+    }
+    if (markdownReport?.case_id === currentCase.case_id) {
+      return markdownReport
+    }
+
+    setMarkdownLoading(true)
+    try {
+      const report = await getCaseMarkdownReport(currentCase.case_id)
+      setMarkdownReport(report)
+      return report
+    } finally {
+      setMarkdownLoading(false)
+    }
+  }, [currentCase, markdownReport])
+
+  const handleRefreshCurrent = useCallback(() => {
+    if (currentCase?.case_id) {
+      handleRunCase(currentCase.case_id, activePage)
+      return
+    }
+    loadProjectData(projectId)
+  }, [activePage, currentCase, handleRunCase, loadProjectData, projectId])
 
   const appTheme = useMemo(
     () => ({
@@ -207,10 +313,19 @@ function App() {
   const pageProps = {
     alerts,
     analysis,
+    cases,
+    currentCase,
     error,
     expandedKeywords,
     keyword,
     loading,
+    markdownLoading,
+    markdownReport,
+    onGetMarkdownReport: handleGetMarkdownReport,
+    onNavigateToKeyword: () => setActivePage('keyword'),
+    onOpenCaseReport: handleOpenCaseReport,
+    onRefreshCases: refreshCases,
+    onRunCase: handleRunCase,
     onStartAnalysis: handleStartAnalysis,
     platformOptions,
     platformRegistry,
@@ -223,6 +338,7 @@ function App() {
 
   const currentPage = {
     dashboard: <Dashboard {...pageProps} />,
+    cases: <Cases {...pageProps} />,
     keyword: <KeywordSearch {...pageProps} />,
     analysis: <AnalysisResult {...pageProps} />,
     propagation: <PropagationGraph {...pageProps} />,
@@ -239,9 +355,10 @@ function App() {
         <AppShell
           activePage={activePage}
           alertsCount={alerts.length}
+          caseTitle={currentCase?.title}
           loading={loading}
           onNavigate={setActivePage}
-          onRefresh={() => loadProjectData(projectId)}
+          onRefresh={handleRefreshCurrent}
           projectId={projectId}
           riskLevel={riskLevel}
           riskScore={riskScore}

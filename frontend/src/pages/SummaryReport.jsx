@@ -1,7 +1,8 @@
-import { Alert, Card, Col, Empty, Row, Skeleton, Space, Statistic, Tag, Typography } from 'antd'
-import { Bot, FileText, ShieldAlert, Siren, Target } from 'lucide-react'
+import { Alert, App as AntApp, Button, Card, Col, Empty, Row, Skeleton, Space, Statistic, Tag, Typography } from 'antd'
+import { Bot, ClipboardCopy, Download, FileText, ShieldAlert, Siren, Target } from 'lucide-react'
 
 import { PublicOpinionReport } from '../components/report/PublicOpinionReport.jsx'
+import { copyTextToClipboard } from '../utils/clipboard.js'
 import { formatPercent, riskTone } from '../utils/formatters.js'
 import { buildPublicOpinionReportModel, hasReportContent } from '../utils/reportModel.js'
 
@@ -12,7 +13,19 @@ function scoreText(value) {
   return Number.isFinite(numericValue) ? numericValue.toFixed(1) : '0.0'
 }
 
-export function SummaryReport({ analysis, error, loading, recommendation, summary, visualization }) {
+export function SummaryReport({
+  analysis,
+  currentCase,
+  error,
+  loading,
+  markdownLoading,
+  markdownReport,
+  onGetMarkdownReport,
+  recommendation,
+  summary,
+  visualization,
+}) {
+  const { message } = AntApp.useApp()
   const report = buildPublicOpinionReportModel({ analysis, recommendation, summary, visualization })
   const hasBackendReportData = Boolean(summary || recommendation)
   const hasContent = hasReportContent(report) && hasBackendReportData
@@ -22,6 +35,42 @@ export function SummaryReport({ analysis, error, loading, recommendation, summar
     analysis?.bot_score?.suspected_bot_comment_ratio ??
     0
   const overallRisk = report.overallRisk ?? report.riskScore ?? 0
+
+  const copyMarkdown = async () => {
+    try {
+      const exportData = markdownReport || (await onGetMarkdownReport?.())
+      const copied = await copyTextToClipboard(exportData?.markdown || '')
+      if (copied) {
+        message.success('Markdown 报告已复制')
+        return
+      }
+      message.warning('暂无可复制的 Markdown 报告')
+    } catch (copyError) {
+      message.error(copyError?.message || '暂时无法复制 Markdown 报告')
+    }
+  }
+
+  const downloadMarkdown = async () => {
+    try {
+      const exportData = markdownReport || (await onGetMarkdownReport?.())
+      if (!exportData?.markdown) {
+        message.warning('暂无可下载的 Markdown 报告')
+        return
+      }
+      const blob = new Blob([exportData.markdown], { type: 'text/markdown;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = exportData.filename || 'sentigraph_report.md'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      message.success('Markdown 报告已生成')
+    } catch (downloadError) {
+      message.error(downloadError?.message || '暂时无法下载 Markdown 报告')
+    }
+  }
 
   return (
     <div className="page-stack">
@@ -36,11 +85,33 @@ export function SummaryReport({ analysis, error, loading, recommendation, summar
             </Tag>
             <Tag color="geekblue">{report.reportLanguage}</Tag>
             {report.riskModelVersion ? <Tag color="blue">{report.riskModelVersion}</Tag> : null}
+            {currentCase?.case_id ? <Tag color="purple">{currentCase.case_id}</Tag> : null}
           </Space>
         </div>
-        <Tag color={riskTone(report.riskLevel)} className="large-tag">
-          {report.riskLevelLabel}
-        </Tag>
+        <Space align="end" direction="vertical" size={8}>
+          <Tag color={riskTone(report.riskLevel)} className="large-tag">
+            {report.riskLevelLabel}
+          </Tag>
+          <Space>
+            <Button
+              disabled={!currentCase?.case_id || !hasContent}
+              icon={<ClipboardCopy size={16} />}
+              loading={markdownLoading}
+              onClick={copyMarkdown}
+            >
+              复制 Markdown
+            </Button>
+            <Button
+              disabled={!currentCase?.case_id || !hasContent}
+              icon={<Download size={16} />}
+              loading={markdownLoading}
+              onClick={downloadMarkdown}
+              type="primary"
+            >
+              下载 .md
+            </Button>
+          </Space>
+        </Space>
       </div>
 
       {error ? <Alert message="报告数据加载失败" description={error} type="error" showIcon /> : null}

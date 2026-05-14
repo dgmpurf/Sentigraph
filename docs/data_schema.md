@@ -37,6 +37,86 @@ disabled_or_optional_future
 
 Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-only and must not trigger real crawlers or real platform APIs.
 
+## 0.5 Analysis Case
+
+Analysis cases are lightweight MVP objects used to preserve one mock analysis context across pages. Current storage is in-memory/local-process only. MongoDB/Redis persistence remains future work.
+
+### AnalysisCaseCreateRequest
+
+```json
+{
+  "title": "Tesla 舆情案例",
+  "keyword": "Tesla",
+  "platforms": ["reddit", "weibo", "bilibili"],
+  "report_language": "zh-CN"
+}
+```
+
+### AnalysisCaseListItem
+
+```json
+{
+  "case_id": "case_001",
+  "project_id": "project_001",
+  "title": "Tesla 舆情案例",
+  "keyword": "Tesla",
+  "platforms": ["reddit", "weibo", "bilibili"],
+  "status": "completed",
+  "created_at": "2026-05-14T09:00:00Z",
+  "updated_at": "2026-05-14T09:02:00Z",
+  "risk_score": 52.2,
+  "risk_level": "medium",
+  "risk_model_version": "v1_5_topic_risk_mvp",
+  "report_language": "zh-CN"
+}
+```
+
+Allowed case statuses:
+
+```text
+draft
+running
+completed
+failed
+```
+
+### AnalysisCaseDetail
+
+```json
+{
+  "case_id": "case_001",
+  "project_id": "project_001",
+  "title": "Tesla 舆情案例",
+  "keyword": "Tesla",
+  "platforms": ["reddit", "weibo", "bilibili"],
+  "status": "completed",
+  "analysis_result": {},
+  "visualization_data": {},
+  "report": {},
+  "markdown_available": true
+}
+```
+
+Rules:
+
+- `analysis_result` uses the existing `AnalysisResultResponse` schema.
+- `visualization_data` uses the existing `VisualizationResponse` schema.
+- `report` uses the normalized `PublicOpinionReport` schema.
+- The MVP case store is deterministic and does not require a database.
+- Case creation and case run must remain mock-first and must not call real platform APIs or crawlers.
+
+### MarkdownExportResponse
+
+```json
+{
+  "case_id": "case_001",
+  "project_id": "project_001",
+  "filename": "Tesla_舆情案例_case_001.md",
+  "markdown": "# Tesla 舆情案例\n\n## 舆情总览\n...",
+  "generated_at": "2026-05-14T09:03:00Z"
+}
+```
+
 ## 1. Keyword Expansion
 
 ### KeywordExpandRequest

@@ -13,6 +13,34 @@ export async function getPlatforms() {
   return data
 }
 
+export async function listAnalysisCases() {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases`)
+  return Array.isArray(data) ? data : []
+}
+
+export async function createAnalysisCase(payload) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases`, {
+    report_language: DEFAULT_REPORT_LANGUAGE,
+    ...payload,
+  })
+  return normalizeCaseDetail(data)
+}
+
+export async function getAnalysisCase(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}`)
+  return normalizeCaseDetail(data)
+}
+
+export async function runAnalysisCase(caseId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/run`)
+  return normalizeCaseDetail(data)
+}
+
+export async function getCaseMarkdownReport(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/report/markdown`)
+  return data
+}
+
 export async function startCrawl(payload) {
   const { data } = await apiClient.post(`${API_PREFIX}/crawl/start`, payload)
   return data
@@ -81,6 +109,16 @@ function normalizeRiskExtension(data) {
     real_crisis_risk: normalizeOptionalScore(data.real_crisis_risk),
     manipulation_risk: normalizeOptionalScore(data.manipulation_risk),
     risk_explanation: typeof data.risk_explanation === 'string' ? data.risk_explanation : '',
+  }
+}
+
+function normalizeCaseDetail(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    analysis_result: normalizeRiskExtension(data.analysis_result),
+    visualization_data: normalizeRiskExtension(data.visualization_data),
+    report: normalizeRiskExtension(data.report),
   }
 }
 

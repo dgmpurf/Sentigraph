@@ -232,6 +232,22 @@ Goal:
 
 Add real platform adapters after the registry, compliance model, and mock pipeline are stable.
 
+Current adapter foundation status:
+
+- Shared adapter interface scaffold exists under `backend/app/services/crawling/base_adapter.py`.
+- Adapter factory exists under `backend/app/services/crawling/adapter_factory.py`.
+- Reddit adapter scaffold exists under `backend/app/services/crawling/reddit_adapter.py`.
+- Reddit defaults to mock mode and falls back to mock data whenever credentials are missing.
+- The current case flow remains mock-first and does not automatically call real Reddit APIs.
+- Adapter outputs must normalize into `RawPost` and `RawComment` schemas.
+
+Reddit real-mode requirements for a future task:
+
+- Configure `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` outside the repository.
+- Use official Reddit API access only.
+- Add conservative rate-limit, retry, error reporting, and fixture-based tests before connecting it to product flows.
+- Keep real mode opt-in until compliance, quota, and UX behavior are reviewed.
+
 Suggested order:
 
 1. Weibo

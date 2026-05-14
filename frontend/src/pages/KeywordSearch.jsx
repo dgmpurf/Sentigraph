@@ -125,6 +125,7 @@ export function KeywordSearch({
 
   const handleFinish = (values) => {
     onStartAnalysis({
+      title: values.title,
       keyword: values.keyword,
       platforms: values.platforms,
       language: values.language,
@@ -149,6 +150,9 @@ export function KeywordSearch({
           onFinish={handleFinish}
         >
           <div className="form-grid">
+            <Form.Item label="Case Title" name="title">
+              <Input size="large" placeholder="Optional, for example Tesla product risk watch" />
+            </Form.Item>
             <Form.Item
               label="Keyword"
               name="keyword"
@@ -182,7 +186,7 @@ export function KeywordSearch({
             </Form.Item>
           </div>
           <Button type="primary" htmlType="submit" icon={<Search size={17} />} loading={loading} size="large">
-            Start Mock Analysis
+            Create Case & Run Mock Analysis
           </Button>
         </Form>
       </Card>

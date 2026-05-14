@@ -1,2 +1,1 @@
-"""Crawling services and platform adapters."""
-
+"""Crawling services and safe platform adapter scaffolds."""

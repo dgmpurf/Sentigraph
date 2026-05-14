@@ -39,7 +39,35 @@ These platforms should be integrated through official API programs when credenti
 
 | platform_id | display_name | MVP status | notes |
 | --- | --- | --- | --- |
-| `reddit` | Reddit | mock-selectable placeholder | Reddit stays visible and selectable for mock analysis. A real adapter may be planned later after compliance and API design review. |
+| `reddit` | Reddit | mock-selectable with adapter scaffold | Reddit stays visible and selectable for mock analysis. A safe adapter foundation now exists, but it defaults to local mock data and does not require credentials. |
+
+### Reddit adapter scaffold
+
+The first real-data preparation step is a shared platform adapter interface plus a Reddit adapter scaffold.
+
+Current behavior:
+
+- Default mode is `mock`.
+- If Reddit credentials are missing, the adapter falls back to local mock data from `mock_data/raw_comments.json`.
+- Mock mode normalizes local Reddit-like comments into the same `RawPost` and `RawComment` schemas used by the rest of Sentigraph.
+- Real mode is only available when credentials are explicitly configured and a caller intentionally requests `mode="real"`.
+- The current case flow and mock dashboard do not automatically trigger real Reddit API calls.
+
+Future real Reddit mode credentials:
+
+```text
+REDDIT_CLIENT_ID
+REDDIT_CLIENT_SECRET
+REDDIT_USER_AGENT
+```
+
+Safety constraints:
+
+- Use the official Reddit API path only.
+- Do not implement login bypass, captcha bypass, anti-bot evasion, or private data collection.
+- Do not store Reddit credentials in the repository.
+- Add fixture-first tests before expanding real-mode behavior.
+- Rate-limit and retry handling should stay conservative and transparent.
 
 ## crawler_later
 

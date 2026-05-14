@@ -108,6 +108,8 @@ Acceptance:
 
 Goal: make the demo feel like a case-based product.
 
+Status: completed for the lightweight mock MVP with in-memory backend storage and a frontend Cases page.
+
 Scope:
 
 - mock case model
@@ -123,6 +125,8 @@ Acceptance:
 ### Report Export Preparation
 
 Goal: make reports easier to share.
+
+Status: completed for Markdown copy/download. PDF export remains future work.
 
 Scope:
 
@@ -157,6 +161,8 @@ Acceptance:
 
 Goal: prepare real adapters without implementing crawlers yet.
 
+Status: foundation implemented for the safe Reddit scaffold.
+
 Scope:
 
 - shared platform adapter interface
@@ -169,10 +175,14 @@ Acceptance:
 - no real platform calls
 - no API keys required
 - no bypass behavior
+- outputs normalize into `RawPost` and `RawComment`
+- missing credentials fall back to mock mode
 
 ### Reddit Real Adapter Planning
 
 Goal: define the first practical real-data candidate.
+
+Status: scaffold implemented; live product flow is still disabled.
 
 Scope:
 
@@ -180,11 +190,13 @@ Scope:
 - compliance constraints
 - fixture schema
 - adapter tests with recorded/sanitized fixtures only
+- optional real mode using `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`
 
 Acceptance:
 
 - implementation plan exists before any live call
 - credentials remain outside the repository
+- current case/mock analysis flow remains offline unless a future task explicitly enables real mode
 
 ## P4: Future Advanced Algorithm
 

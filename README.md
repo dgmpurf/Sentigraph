@@ -35,6 +35,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - 模板化 summary/recommendation/report builder。
 - normalized Chinese public opinion report API。
 - Summary Report 和 Analysis Result 页面已接入后端中文结构化报告。
+- 轻量分析案例管理：可创建本地 mock 案例、运行 V1.5 mock 分析、查看案例列表并导出 Markdown 报告。
 - backend pytest 与 frontend build 已在本地验证通过。
 
 当前没有实现：
@@ -52,6 +53,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 
 - 关键词输入与 mock 关键词扩展。
 - mock 平台选择与 mock 分析流程。
+- 本地内存型 analysis case 管理与 Markdown 报告复制/下载。
 - 后端平台 registry，区分 mock-selectable、official API planned、crawler-later、optional future。
 - 后端 deterministic mock analysis pipeline。
 - 情绪分析、话题聚类、重复话术/疑似水军信号、风险评分。
@@ -302,6 +304,11 @@ Base path:
 - `POST /api/v1/visualization/data`
 - `POST /api/v1/summary/generate`
 - `POST /api/v1/recommendation/generate`
+- `GET /api/v1/cases`
+- `POST /api/v1/cases`
+- `GET /api/v1/cases/{case_id}`
+- `POST /api/v1/cases/{case_id}/run`
+- `GET /api/v1/cases/{case_id}/report/markdown`
 
 其他已实现 mock endpoints：
 
