@@ -19,6 +19,10 @@ from app.services.crawling.base_adapter import (
 
 
 MOCK_DATA_DIR = Path(__file__).resolve().parents[4] / "mock_data"
+MOCK_POST_LIMIT = 100
+MOCK_COMMENT_LIMIT = 500
+REAL_POST_LIMIT = 25
+REAL_COMMENT_LIMIT = 100
 REDDIT_REQUIRED_CREDENTIALS = (
     "REDDIT_CLIENT_ID",
     "REDDIT_CLIENT_SECRET",
@@ -68,12 +72,18 @@ class RedditAdapter(BasePlatformAdapter):
         credentials: RedditCredentials | None = None,
         http_client: RedditHttpClient | None = None,
     ) -> None:
-        requested_mode = _adapter_mode_from_env() if mode is None else _normalize_adapter_mode(mode)
+        self.env_mode: AdapterMode = _adapter_mode_from_env()
+        requested_mode = self.env_mode if mode is None else _normalize_adapter_mode(mode)
         self.requested_mode: AdapterMode = requested_mode
         self.credentials = credentials or RedditCredentials.from_env()
         self.fallback_reason = ""
-        effective_mode: AdapterMode = "real" if requested_mode == "real" and self.credentials else "mock"
-        if requested_mode == "real" and not self.credentials:
+        env_allows_real = self.env_mode == "real"
+        effective_mode: AdapterMode = (
+            "real" if requested_mode == "real" and env_allows_real and self.credentials else "mock"
+        )
+        if requested_mode == "real" and not env_allows_real:
+            self.fallback_reason = "reddit_adapter_mode_not_real"
+        elif requested_mode == "real" and not self.credentials:
             self.fallback_reason = "missing_reddit_credentials"
         super().__init__(mode=effective_mode)
         self.http_client = http_client or (
@@ -82,12 +92,23 @@ class RedditAdapter(BasePlatformAdapter):
 
     @property
     def real_mode_available(self) -> bool:
-        return self.mode == "real" and self.supports_real_mode() and self.http_client is not None
+        return self.is_real_mode_enabled()
+
+    def has_required_credentials(self) -> bool:
+        return self.credentials is not None
+
+    def get_mode(self) -> AdapterMode:
+        return self.mode
+
+    def is_real_mode_enabled(self) -> bool:
+        return self.mode == "real" and self.has_required_credentials() and self.http_client is not None
 
     def health_check(self) -> AdapterHealth:
-        if self.mode == "real":
+        if self.is_real_mode_enabled():
             message = "Reddit adapter real mode is configured for public API access."
-        elif self.requested_mode == "real" and self.fallback_reason:
+        elif self.fallback_reason == "reddit_adapter_mode_not_real":
+            message = "Reddit adapter requested real mode but REDDIT_ADAPTER_MODE is not real; using mock data."
+        elif self.fallback_reason == "missing_reddit_credentials":
             message = "Reddit adapter requested real mode but is using mock data because credentials are missing."
         else:
             message = "Reddit adapter mock mode is active."
@@ -96,13 +117,25 @@ class RedditAdapter(BasePlatformAdapter):
             platform_id=self.platform_id,
             mode=self.mode,
             ok=True,
-            real_mode_available=self.supports_real_mode(),
+            real_mode_available=self.is_real_mode_enabled(),
             message=message,
             fallback_reason=self.fallback_reason,
         )
 
     def supports_real_mode(self) -> bool:
-        return self.credentials is not None
+        return self.has_required_credentials()
+
+    def get_status_metadata(self) -> dict[str, object]:
+        return {
+            "platform_id": self.platform_id,
+            "env_mode": self.env_mode,
+            "requested_mode": self.requested_mode,
+            "active_mode": self.mode,
+            "has_required_credentials": self.has_required_credentials(),
+            "real_mode_enabled": self.is_real_mode_enabled(),
+            "fallback_reason": self.fallback_reason,
+            "required_credentials": list(self.get_required_credentials()),
+        }
 
     @classmethod
     def get_required_credentials(cls) -> tuple[str, ...]:
@@ -115,8 +148,13 @@ class RedditAdapter(BasePlatformAdapter):
         sort: str = "relevance",
         date_range: dict[str, str] | None = None,
     ) -> list[RawPost]:
-        safe_limit = self.clamp_limit(limit, default=20, maximum=100)
-        if not self.real_mode_available:
+        is_real = self.is_real_mode_enabled()
+        safe_limit = self.clamp_limit(
+            limit,
+            default=20,
+            maximum=REAL_POST_LIMIT if is_real else MOCK_POST_LIMIT,
+        )
+        if not is_real:
             return self._search_mock_posts(keyword=keyword, limit=safe_limit)
 
         try:
@@ -132,8 +170,13 @@ class RedditAdapter(BasePlatformAdapter):
             return self._search_mock_posts(keyword=keyword, limit=safe_limit)
 
     def fetch_comments(self, post_id: str, limit: int = 100) -> list[RawComment]:
-        safe_limit = self.clamp_limit(limit, default=100, maximum=500)
-        if not self.real_mode_available:
+        is_real = self.is_real_mode_enabled()
+        safe_limit = self.clamp_limit(
+            limit,
+            default=100,
+            maximum=REAL_COMMENT_LIMIT if is_real else MOCK_COMMENT_LIMIT,
+        )
+        if not is_real:
             return self._fetch_mock_comments(post_id=post_id, limit=safe_limit)
 
         try:

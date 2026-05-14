@@ -91,6 +91,7 @@ def test_base_adapter_contract_includes_safe_adapter_operations() -> None:
 
 
 def test_reddit_adapter_defaults_to_mock_mode_without_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REDDIT_ADAPTER_MODE", "real")
     monkeypatch.delenv("REDDIT_CLIENT_ID", raising=False)
     monkeypatch.delenv("REDDIT_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("REDDIT_USER_AGENT", raising=False)
@@ -109,6 +110,56 @@ def test_reddit_adapter_defaults_to_mock_mode_without_credentials(monkeypatch: p
     assert all(comment.platform == "reddit" for comment in comments)
 
 
+def test_reddit_adapter_constructor_real_mode_requires_env_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REDDIT_ADAPTER_MODE", "mock")
+
+    adapter = RedditAdapter(
+        mode="real",
+        credentials=RedditCredentials(
+            client_id="client",
+            client_secret="secret",
+            user_agent="sentigraph-test",
+        ),
+        http_client=FakeRedditClient(),
+    )
+    posts = adapter.search_posts("Tesla", limit=1, sort="new")
+    metadata = adapter.get_status_metadata()
+
+    assert adapter.mode == "mock"
+    assert adapter.get_mode() == "mock"
+    assert adapter.has_required_credentials() is True
+    assert adapter.supports_real_mode() is True
+    assert adapter.is_real_mode_enabled() is False
+    assert adapter.fallback_reason == "reddit_adapter_mode_not_real"
+    assert metadata["env_mode"] == "mock"
+    assert metadata["requested_mode"] == "real"
+    assert metadata["active_mode"] == "mock"
+    assert metadata["real_mode_enabled"] is False
+    assert posts[0].post_id != "t3_abc123"
+    assert posts[0].raw_data["mode"] == "mock"
+
+
+def test_reddit_adapter_env_mock_mode_stays_mock_with_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REDDIT_ADAPTER_MODE", "mock")
+    monkeypatch.setenv("REDDIT_CLIENT_ID", "client")
+    monkeypatch.setenv("REDDIT_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("REDDIT_USER_AGENT", "sentigraph-test")
+
+    adapter = RedditAdapter()
+    metadata = adapter.get_status_metadata()
+
+    assert adapter.get_mode() == "mock"
+    assert adapter.has_required_credentials() is True
+    assert adapter.supports_real_mode() is True
+    assert adapter.is_real_mode_enabled() is False
+    assert adapter.health_check().real_mode_available is False
+    assert metadata["env_mode"] == "mock"
+    assert metadata["requested_mode"] == "mock"
+    assert metadata["active_mode"] == "mock"
+    assert metadata["has_required_credentials"] is True
+    assert metadata["real_mode_enabled"] is False
+
+
 def test_reddit_adapter_uses_env_mode_and_falls_back_without_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REDDIT_ADAPTER_MODE", "real")
     monkeypatch.delenv("REDDIT_CLIENT_ID", raising=False)
@@ -120,6 +171,9 @@ def test_reddit_adapter_uses_env_mode_and_falls_back_without_credentials(monkeyp
 
     assert adapter.requested_mode == "real"
     assert adapter.mode == "mock"
+    assert adapter.get_mode() == "mock"
+    assert adapter.has_required_credentials() is False
+    assert adapter.is_real_mode_enabled() is False
     assert adapter.supports_real_mode() is False
     assert adapter.get_required_credentials() == REDDIT_REQUIRED_CREDENTIALS
     assert isinstance(health, AdapterHealth)
@@ -154,7 +208,11 @@ def test_reddit_adapter_normalizes_mocked_reddit_payloads() -> None:
     assert comment.url == "https://www.reddit.com/r/test/comments/abc123/comment123/"
 
 
-def test_reddit_adapter_real_mode_uses_mocked_client_when_credentials_exist() -> None:
+def test_reddit_adapter_real_mode_uses_mocked_client_when_credentials_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REDDIT_ADAPTER_MODE", "real")
+
     adapter = RedditAdapter(
         mode="real",
         credentials=RedditCredentials(
@@ -169,12 +227,62 @@ def test_reddit_adapter_real_mode_uses_mocked_client_when_credentials_exist() ->
     comments = adapter.fetch_comments(posts[0].post_id, limit=1)
 
     assert adapter.mode == "real"
+    assert adapter.get_mode() == "real"
     assert adapter.real_mode_available is True
+    assert adapter.has_required_credentials() is True
+    assert adapter.is_real_mode_enabled() is True
     assert adapter.supports_real_mode() is True
     assert adapter.health_check().real_mode_available is True
+    assert adapter.get_status_metadata()["env_mode"] == "real"
+    assert adapter.get_status_metadata()["real_mode_enabled"] is True
     assert posts[0].post_id == "t3_abc123"
     assert comments[0].post_id == "t3_abc123"
     assert comments[0].content == "This is a public Reddit comment."
+
+
+def test_reddit_adapter_env_real_mode_uses_mocked_client_with_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REDDIT_ADAPTER_MODE", "real")
+
+    adapter = RedditAdapter(
+        credentials=RedditCredentials(
+            client_id="client",
+            client_secret="secret",
+            user_agent="sentigraph-test",
+        ),
+        http_client=FakeRedditClient(),
+    )
+
+    posts = adapter.search_posts("Tesla", limit=1, sort="new")
+
+    assert adapter.env_mode == "real"
+    assert adapter.requested_mode == "real"
+    assert adapter.get_mode() == "real"
+    assert adapter.is_real_mode_enabled() is True
+    assert posts[0].post_id == "t3_abc123"
+
+
+def test_reddit_real_mode_clamps_limits_with_mocked_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REDDIT_ADAPTER_MODE", "real")
+
+    adapter = RedditAdapter(
+        mode="real",
+        credentials=RedditCredentials(
+            client_id="client",
+            client_secret="secret",
+            user_agent="sentigraph-test",
+        ),
+        http_client=FakeRedditClient(),
+    )
+
+    posts = adapter.search_posts("Tesla", limit=999, sort="new")
+    comments = adapter.fetch_comments("t3_abc123", limit=999)
+
+    assert len(posts) == 1
+    assert len(comments) == 1
+    assert isinstance(posts[0], RawPost)
+    assert isinstance(comments[0], RawComment)
 
 
 def test_adapter_factory_registers_reddit_only_for_now() -> None:

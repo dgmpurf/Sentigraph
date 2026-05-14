@@ -72,6 +72,12 @@ Latest platform adapter QA update: completed a stabilization pass for the shared
 
 Latest long maintenance pass: completed the requested six-phase safe maintenance run. Phase 1 audit found the project skeleton, V1.5 topic-risk backend, frontend V1.5 display, case management, Markdown export, platform registry, Reddit adapter foundation, demo checklist, and README to be complete for the mock-first MVP. Phase 2 confirmed case creation/list/detail/run plus Markdown export still work. Phase 3 confirmed Reddit mock adapter defaults to offline mock mode and no planned/crawler-later platform is activated as an adapter. Phase 4 confirmed frontend production build passes; the existing Ant Design/ECharts vendor chunk warning remains non-blocking. Phase 5 confirmed backend tests pass with `47 passed in 0.42s` and API smoke checks pass for old MVP and case/report endpoints. Phase 6 updated docs for the v0.4 checkpoint and kept real Reddit mode out of scope.
 
+Latest Reddit minimal real-mode update: the Reddit adapter now exposes explicit mode/status helpers (`has_required_credentials()`, `get_mode()`, `is_real_mode_enabled()`, and `get_status_metadata()`) and keeps `REDDIT_ADAPTER_MODE=mock` as the safe default. Optional real mode is enabled only when `REDDIT_ADAPTER_MODE=real` and all three Reddit credentials are present. Missing credentials fall back to mock mode without crashing. Real-mode search and comments continue to use the lightweight official Reddit HTTP path with conservative request limits, while tests use mocked clients and make no network calls. Targeted Reddit adapter tests passed with `9 passed in 0.14s`.
+
+Latest Reddit real-mode hardening update: tightened the Reddit adapter so a code-level `mode="real"` request cannot enable live Reddit access unless the environment gate is also `REDDIT_ADAPTER_MODE=real` and all required credentials are present. Adapter status metadata now includes `env_mode` alongside requested and active modes. Targeted Reddit adapter tests passed with `11 passed in 0.12s`, and full backend validation passed with `51 passed in 0.43s`. Frontend build was not rerun because no frontend files changed.
+
+Latest v0.5 Reddit real-mode QA update: revalidated the minimal Reddit real-mode integration without enabling live product flows. `REDDIT_ADAPTER_MODE=mock` remains the default, missing credentials fall back to mock mode, and real mode requires `REDDIT_ADAPTER_MODE=real`, all three Reddit credentials, and an explicit code-level real-mode request. Targeted Reddit adapter tests passed with `11 passed in 0.09s`; full backend tests passed with `51 passed in 0.41s`; API smoke checks passed for health, platform registry, crawl start, case create/run, V1.5 topic-risk output, Chinese report, Markdown export, visualization, summary, and recommendation. Frontend build was not rerun because no frontend files changed. Recommended checkpoint tag: `v0.5-reddit-real-mode-qa`.
+
 Maintenance status audit:
 
 | Area | Status | Notes |
@@ -349,6 +355,9 @@ npm.cmd --prefix frontend run build
 - Latest backend validation after Reddit adapter contract refinement passed with `46 passed in 0.50s`.
 - Latest backend validation after platform adapter QA passed with `47 passed in 0.43s`.
 - Latest backend validation after the long maintenance pass passed with `47 passed in 0.42s`.
+- Latest targeted Reddit adapter validation after minimal real-mode helper updates passed with `9 passed in 0.14s`.
+- Latest backend validation after Reddit real-mode hardening passed with `51 passed in 0.43s`; targeted Reddit adapter validation passed with `11 passed in 0.12s`.
+- Latest v0.5 Reddit real-mode QA passed with full backend validation `51 passed in 0.41s`, targeted Reddit adapter validation `11 passed in 0.09s`, and API smoke checks for old MVP and case/report endpoints.
 - Frontend dependency installation passes with `npm.cmd run frontend:install`, which runs `cd frontend && npm install`; the latest install completed with dependencies already up to date.
 - Avoid using `npm.cmd --prefix frontend install` for installation on npm 10.9.2; it can incorrectly link the parent package into `frontend` as `sentigraph: file:..`.
 - Frontend production build passes with `npm.cmd run build` from `frontend`; the latest MVP stabilization Vite build completed in 7.73s.
@@ -391,7 +400,8 @@ Set-Location ..
 - Crawler-later platforms remain visible but disabled with the note `Future crawler integration`. YouTube is not active in the MVP and is marked as optional future.
 - YouTube is not active in the MVP and is marked as optional future.
 - Reddit adapter scaffold is available but defaults to mock mode; missing credentials intentionally fall back to local mock data.
-- Reddit real mode requires `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`, and remains opt-in and disconnected from current product flows.
+- Reddit real mode requires `REDDIT_ADAPTER_MODE=real`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`, and remains opt-in and disconnected from current product flows.
+- Reddit real mode also requires an explicit code-level real-mode request such as `get_adapter("reddit", mode="real")`; default product and factory paths remain mock-first.
 - Before real Reddit mode, add fixture-backed real-mode tests, explicit opt-in product behavior, rate-limit/error UX, and a compliance checklist. Keep `REDDIT_ADAPTER_MODE=mock` for local demos.
 - The legacy V1 static scoring module remains for factor/radar compatibility; the current active mock pipeline/report risk model is `v1_5_topic_risk_mvp`.
 - V1.5 topic-level risk (`v1_5_topic_risk_mvp`) is now implemented for mock pipeline visualization/report outputs.
@@ -427,7 +437,7 @@ Overall audit conclusion: MVP 0 through MVP 4 are complete enough for the mock-f
 
 ## 7. Next Recommended Task
 
-Recommended next implementation task: add fixture-backed Reddit adapter integration tests and a mock-only crawl service bridge that can call the adapter factory without enabling live Reddit requests. If demo continuity is more important, add simple local JSON persistence for cases first.
+Recommended next implementation task: add a mock-only crawl service bridge that can call the adapter factory in safe mock mode for Reddit-selected crawl starts without enabling live Reddit requests. If demo continuity is more important, add simple local JSON persistence for cases first.
 
 Suggested scope:
 

@@ -141,6 +141,21 @@ Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real ada
 
 YouTube 不是当前 MVP active platform，不在当前 roadmap 中优先实现，只作为 optional future source 保留。
 
+### Optional Reddit Real Adapter
+
+Reddit remains mock-selectable by default. The backend adapter also has an optional real mode for future adapter testing, but it is not required for the MVP and is not automatically used by the case flow or dashboard.
+
+To enable it later, configure credentials outside the repository:
+
+```cmd
+set REDDIT_ADAPTER_MODE=real
+set REDDIT_CLIENT_ID=your_client_id
+set REDDIT_CLIENT_SECRET=your_client_secret
+set REDDIT_USER_AGENT=sentigraph-dev
+```
+
+The code path must also explicitly request real adapter mode, for example through `get_adapter("reddit", mode="real")` or `RedditAdapter(mode="real")`. If any credential is missing, or if `REDDIT_ADAPTER_MODE` is not `real`, the adapter falls back to local mock data. Tests do not require credentials and do not make real Reddit network calls.
+
 ## 5. Architecture
 
 当前架构是前后端分离的 mock-first Web MVP：

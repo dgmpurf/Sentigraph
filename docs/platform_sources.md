@@ -2,7 +2,7 @@
 
 Sentigraph now prioritizes Chinese public opinion platforms for future source integration while keeping Reddit visible in the project as a future real adapter candidate.
 
-The current MVP remains mock-first. No real crawler, real third-party API call, API key, login bypass, captcha bypass, anti-bot evasion, paywall bypass, or private data collection is implemented in this phase.
+The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, or private data collection is implemented in this phase. Reddit has an optional credential-gated real adapter mode for backend adapter testing, but it is disabled by default and is not automatically used by the case flow or dashboard.
 
 ## MVP mock-selectable platforms
 
@@ -39,7 +39,7 @@ These platforms should be integrated through official API programs when credenti
 
 | platform_id | display_name | MVP status | notes |
 | --- | --- | --- | --- |
-| `reddit` | Reddit | mock-selectable with adapter scaffold | Reddit stays visible and selectable for mock analysis. A safe adapter foundation now exists, but it defaults to local mock data and does not require credentials. |
+| `reddit` | Reddit | mock-selectable with optional real adapter mode | Reddit stays visible and selectable for mock analysis. The adapter defaults to local mock data and does not require credentials. Optional real mode is available only when explicitly configured. |
 
 ### Reddit adapter scaffold
 
@@ -47,10 +47,13 @@ The first real-data preparation step is a shared platform adapter interface plus
 
 Current behavior:
 
-- Default mode is `mock`.
+- Default mode is `mock` through `REDDIT_ADAPTER_MODE=mock`.
 - If Reddit credentials are missing, the adapter falls back to local mock data from `mock_data/raw_comments.json`.
 - Mock mode normalizes local Reddit-like comments into the same `RawPost` and `RawComment` schemas used by the rest of Sentigraph.
-- Real mode is only available when credentials are explicitly configured and a caller intentionally requests `mode="real"`.
+- Real mode is only available when `REDDIT_ADAPTER_MODE=real`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` are all configured.
+- Passing a code-level `mode="real"` request is not enough by itself; the environment gate must also be `REDDIT_ADAPTER_MODE=real`.
+- Real mode has conservative request limits and falls back to mock data on credential/config/request errors.
+- Adapter status is visible through `health_check()` and `get_status_metadata()`, including environment mode, requested mode, active mode, credential presence, and fallback reason.
 - The current case flow and mock dashboard do not automatically trigger real Reddit API calls.
 
 Future real Reddit mode credentials:
@@ -59,7 +62,7 @@ Future real Reddit mode credentials:
 REDDIT_CLIENT_ID
 REDDIT_CLIENT_SECRET
 REDDIT_USER_AGENT
-REDDIT_ADAPTER_MODE=mock
+REDDIT_ADAPTER_MODE=real
 ```
 
 Adapter contract:

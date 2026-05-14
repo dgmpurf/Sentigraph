@@ -203,7 +203,7 @@ Acceptance:
 
 Goal: define the first practical real-data candidate.
 
-Status: scaffold implemented; live product flow is still disabled.
+Status: minimal optional real-mode path implemented behind explicit credentials; live product flow is still disabled.
 
 Scope:
 
@@ -212,12 +212,14 @@ Scope:
 - fixture schema
 - adapter tests with recorded/sanitized fixtures only
 - optional real mode using `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`
+- helper/status methods: `has_required_credentials()`, `get_mode()`, `is_real_mode_enabled()`, and `get_status_metadata()`
 
 Acceptance:
 
 - implementation plan exists before any live call
 - credentials remain outside the repository
 - current case/mock analysis flow remains offline unless a future task explicitly enables real mode
+- tests use mocked Reddit responses and do not make network calls
 
 ## P4: Future Advanced Algorithm
 
