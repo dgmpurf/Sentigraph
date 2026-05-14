@@ -2,7 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.common import RiskLevel, TaskStatus
+from app.schemas.common import RISK_MODEL_VERSION, RiskLevel, TaskStatus
+from app.schemas.risk import TopicRiskScore
 
 
 AnalysisType = Literal["sentiment", "topic", "bot", "ai_generated", "propagation", "risk"]
@@ -90,4 +91,12 @@ class AnalysisResultResponse(BaseModel):
     sentiment_results: list[SentimentResult] = Field(default_factory=list)
     ai_generated: list[AIGeneratedDetection] = Field(default_factory=list)
     bot_accounts: list[BotScore] = Field(default_factory=list)
-
+    risk_model_version: str = RISK_MODEL_VERSION
+    topic_risks: list[TopicRiskScore] = Field(default_factory=list)
+    top_risk_topics: list[TopicRiskScore] = Field(default_factory=list)
+    max_topic_risk: float | None = None
+    average_topic_risk: float | None = None
+    overall_risk: float | None = None
+    real_crisis_risk: float | None = None
+    manipulation_risk: float | None = None
+    risk_explanation: str | None = None

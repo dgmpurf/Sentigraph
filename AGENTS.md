@@ -60,7 +60,7 @@ The system should support users such as:
 13. MongoDB document keys must always be strings.
 14. Do not directly render JavaScript objects in React.
 15. Use mock data first before implementing real crawlers.
-16. Implement real platform adapters one by one, starting with Reddit.
+16. Implement real platform adapters one by one, prioritizing Chinese public opinion platforms and official APIs first.
 
 ## 4. Development Order
 
@@ -93,7 +93,7 @@ Do not try to build the whole project at once.
 
 ### Phase 6
 
-- Implement real platform adapters one by one, starting with Reddit.
+- Implement real platform adapters one by one, prioritizing Chinese public opinion platforms and official APIs first.
 
 ### Phase 7
 

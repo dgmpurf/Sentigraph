@@ -8,7 +8,12 @@ from app.schemas.analysis import (
 )
 from app.schemas.comment import CleanComment, RawComment
 from app.schemas.propagation import PropagationEdge, PropagationMetrics, PropagationNode, PropagationResponse
-from app.services.scoring.risk_score import calculate_risk_score
+from app.services.scoring.risk_score import RISK_MODEL_VERSION, calculate_risk_score
+from app.services.scoring.topic_dynamic_risk import (
+    DYNAMIC_RISK_MODEL_VERSION,
+    build_topic_dynamic_risk_placeholder,
+    is_v2_topic_dynamic_available,
+)
 from app.services.visualization.chart_data_builder import (
     build_visualization_response,
     ensure_mongodb_safe_keys,
@@ -148,6 +153,13 @@ def test_risk_score_returns_schema_compatible_level_and_factors() -> None:
     assert result.explanation
 
 
+def test_risk_model_version_placeholders_are_stable() -> None:
+    assert RISK_MODEL_VERSION == "v1_static_mvp"
+    assert DYNAMIC_RISK_MODEL_VERSION == "v2_topic_dynamic_planned"
+    assert is_v2_topic_dynamic_available() is False
+    assert build_topic_dynamic_risk_placeholder([]) == []
+
+
 def test_chart_data_builder_outputs_visualization_schema() -> None:
     analysis = _analysis_result()
     risk_result = calculate_risk_score(
@@ -169,6 +181,7 @@ def test_chart_data_builder_outputs_visualization_schema() -> None:
     )
 
     assert visualization.project_id == "project_001"
+    assert visualization.risk_model_version == RISK_MODEL_VERSION
     assert visualization.sentiment_trend[0].negative == 3
     assert visualization.heatmap[0].platform == "reddit"
     assert visualization.propagation_graph.nodes[0].node_id == "post_001"
@@ -181,4 +194,3 @@ def test_ensure_mongodb_safe_keys_coerces_nested_keys_to_strings() -> None:
 
     assert result == {"1": {"nested": [{"2": "value"}]}}
     assert all(isinstance(key, str) for key in result.keys())
-

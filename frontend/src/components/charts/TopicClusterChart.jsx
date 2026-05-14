@@ -3,10 +3,17 @@ import ReactECharts from 'echarts-for-react'
 import { ChartFrame } from './ChartFrame.jsx'
 
 export function TopicClusterChart({ data = [] }) {
+  const topics = [...data].sort((left, right) => (right.value || 0) - (left.value || 0))
   const option = {
-    color: ['#8bff72'],
-    tooltip: { trigger: 'axis' },
-    grid: { left: 88, right: 20, top: 18, bottom: 28 },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const item = params?.[0]?.data
+        if (!item) return ''
+        return `${item.name}<br/>Volume: ${item.value}<br/>Sentiment: ${item.sentiment}`
+      },
+    },
+    grid: { left: 118, right: 28, top: 18, bottom: 28 },
     xAxis: {
       type: 'value',
       axisLabel: { color: '#9aa6bf' },
@@ -14,17 +21,30 @@ export function TopicClusterChart({ data = [] }) {
     },
     yAxis: {
       type: 'category',
-      data: data.map((item) => item.name),
-      axisLabel: { color: '#c9d4ea', overflow: 'truncate', width: 112 },
+      data: topics.map((item) => item.name),
+      axisLabel: { color: '#c9d4ea', overflow: 'truncate', width: 142 },
       axisLine: { lineStyle: { color: '#283043' } },
     },
     series: [
       {
         type: 'bar',
-        data: data.map((item) => item.value ?? 0),
+        data: topics.map((item) => {
+          const sentiment = Number(item.sentiment_score ?? 0)
+          return {
+            value: item.value ?? 0,
+            name: item.name,
+            sentiment: sentiment.toFixed(2),
+            itemStyle: {
+              color: sentiment < -0.2 ? '#ff5d8f' : sentiment > 0.2 ? '#54f5a8' : '#f5c44b',
+              borderRadius: [0, 6, 6, 0],
+            },
+          }
+        }),
         barWidth: 18,
-        itemStyle: {
-          borderRadius: [0, 6, 6, 0],
+        label: {
+          show: true,
+          position: 'right',
+          color: '#c9d4ea',
         },
       },
     ],

@@ -8,6 +8,7 @@ import {
   generateSummary,
   getAlerts,
   getAnalysisResult,
+  getPlatforms,
   getPropagation,
   getVisualizationData,
   runAnalysis,
@@ -23,7 +24,29 @@ import { SummaryReport } from './pages/SummaryReport.jsx'
 
 const DEFAULT_PROJECT_ID = 'project_001'
 const DEFAULT_DATE_RANGE = { start: '2026-05-01', end: '2026-05-13' }
-const DEFAULT_PLATFORMS = ['reddit', 'weibo']
+const DEFAULT_REPORT_LANGUAGE = 'zh-CN'
+const DEFAULT_PLATFORMS = [
+  'reddit',
+  'weibo',
+  'bilibili',
+  'douyin',
+  'kuaishou',
+  'xiaohongshu',
+  'zhihu',
+  'douban',
+  'toutiao',
+]
+const FALLBACK_PLATFORM_OPTIONS = [
+  { label: 'Reddit', value: 'reddit' },
+  { label: 'Weibo', value: 'weibo' },
+  { label: 'Bilibili', value: 'bilibili' },
+  { label: 'Douyin', value: 'douyin' },
+  { label: 'Kuaishou', value: 'kuaishou' },
+  { label: 'Xiaohongshu', value: 'xiaohongshu' },
+  { label: 'Zhihu', value: 'zhihu' },
+  { label: 'Douban', value: 'douban' },
+  { label: 'Toutiao', value: 'toutiao' },
+]
 const ALL_ANALYSIS_TYPES = ['sentiment', 'topic', 'bot', 'ai_generated', 'propagation', 'risk']
 
 function App() {
@@ -36,25 +59,50 @@ function App() {
   const [summary, setSummary] = useState(null)
   const [recommendation, setRecommendation] = useState(null)
   const [propagation, setPropagation] = useState(null)
+  const [platformRegistry, setPlatformRegistry] = useState([])
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const platformOptions = useMemo(() => {
+    const enabledPlatforms = platformRegistry.filter((platform) => platform.selectable_for_mock)
+    if (!enabledPlatforms.length) return FALLBACK_PLATFORM_OPTIONS
+    return enabledPlatforms.map((platform) => ({
+      label: platform.display_name,
+      value: platform.platform_id,
+    }))
+  }, [platformRegistry])
+
+  const activeMvpPlatforms = useMemo(
+    () => platformOptions.map((platform) => platform.value),
+    [platformOptions],
+  )
 
   const loadProjectData = useCallback(async (nextProjectId = DEFAULT_PROJECT_ID) => {
     setLoading(true)
     setError('')
     try {
+      const selectedPlatforms = activeMvpPlatforms.length ? activeMvpPlatforms : DEFAULT_PLATFORMS
       const request = {
         project_id: nextProjectId,
         date_range: DEFAULT_DATE_RANGE,
-        platforms: DEFAULT_PLATFORMS,
+        platforms: selectedPlatforms,
       }
       const [analysisData, visualizationData, summaryData, recommendationData, propagationData, alertsData] =
         await Promise.all([
           getAnalysisResult(nextProjectId),
           getVisualizationData(request),
-          generateSummary({ project_id: nextProjectId, include_representative_comments: true }),
-          generateRecommendation({ project_id: nextProjectId, user_type: 'brand', tone: 'professional' }),
+          generateSummary({
+            project_id: nextProjectId,
+            include_representative_comments: true,
+            report_language: DEFAULT_REPORT_LANGUAGE,
+          }),
+          generateRecommendation({
+            project_id: nextProjectId,
+            user_type: 'brand',
+            tone: 'professional',
+            report_language: DEFAULT_REPORT_LANGUAGE,
+          }),
           getPropagation(nextProjectId),
           getAlerts(nextProjectId),
         ])
@@ -69,26 +117,45 @@ function App() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [activeMvpPlatforms])
 
   useEffect(() => {
     loadProjectData(DEFAULT_PROJECT_ID)
   }, [loadProjectData])
+
+  useEffect(() => {
+    let isMounted = true
+    getPlatforms()
+      .then((registry) => {
+        if (isMounted) {
+          setPlatformRegistry(registry.platforms || [])
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setPlatformRegistry([])
+        }
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   const handleStartAnalysis = useCallback(async (formValues) => {
     setLoading(true)
     setError('')
     try {
       const dateRange = formValues.date_range || DEFAULT_DATE_RANGE
+      const selectedPlatforms = formValues.platforms?.length ? formValues.platforms : activeMvpPlatforms
       const [keywordData, crawlData] = await Promise.all([
         expandKeywords({
           keyword: formValues.keyword,
-          platforms: formValues.platforms,
+          platforms: selectedPlatforms,
           language: formValues.language,
         }),
         startCrawl({
           keyword: formValues.keyword,
-          platforms: formValues.platforms,
+          platforms: selectedPlatforms,
           limit: formValues.limit,
           date_range: dateRange,
         }),
@@ -107,7 +174,7 @@ function App() {
     } finally {
       setLoading(false)
     }
-  }, [loadProjectData])
+  }, [activeMvpPlatforms, loadProjectData])
 
   const appTheme = useMemo(
     () => ({
@@ -140,10 +207,14 @@ function App() {
   const pageProps = {
     alerts,
     analysis,
+    error,
     expandedKeywords,
     keyword,
     loading,
     onStartAnalysis: handleStartAnalysis,
+    platformOptions,
+    platformRegistry,
+    initialPlatforms: activeMvpPlatforms,
     propagation,
     recommendation,
     summary,

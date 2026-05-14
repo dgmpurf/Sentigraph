@@ -84,25 +84,21 @@ def generate_mock_summary(payload: SummaryGenerateRequest) -> SummaryGenerateRes
         raw_comments=pipeline.raw_comments,
         propagation=pipeline.propagation,
         risk_result=pipeline.risk_result,
+        topic_risk_result=pipeline.topic_risk_result,
     )
     report = build_public_opinion_report(
         pipeline.analysis,
         visualization=visualization,
         propagation=pipeline.propagation,
         risk_factors=pipeline.risk_result.factors,
+        topic_risk_result=pipeline.topic_risk_result,
         representative_comments=_pipeline_representative_comments(pipeline),
         include_representative_comments=payload.include_representative_comments,
-    )
-    key_findings = (
-        report.main_risk_factors
-        + [f"Negative topic: {topic}" for topic in report.top_negative_topics]
-        + report.suspected_bot_signals
+        report_language=payload.report_language,
     )
     return SummaryGenerateResponse(
-        project_id=payload.project_id,
+        **report.model_dump(),
         summary=report.overall_summary,
-        key_findings=key_findings[:8],
-        representative_comments=report.representative_comments,
     )
 
 
@@ -115,20 +111,23 @@ def generate_mock_recommendation(payload: RecommendationRequest) -> Recommendati
         raw_comments=pipeline.raw_comments,
         propagation=pipeline.propagation,
         risk_result=pipeline.risk_result,
+        topic_risk_result=pipeline.topic_risk_result,
     )
     report = build_public_opinion_report(
         pipeline.analysis,
         visualization=visualization,
         propagation=pipeline.propagation,
         risk_factors=pipeline.risk_result.factors,
+        topic_risk_result=pipeline.topic_risk_result,
         representative_comments=_pipeline_representative_comments(pipeline),
         user_type=payload.user_type,
         tone=payload.tone,
+        report_language=payload.report_language,
     )
     return RecommendationResponse(
+        **report.model_dump(),
         summary=report.overall_summary,
         main_risks=report.main_risk_factors + report.suspected_bot_signals,
-        recommended_actions=report.recommended_actions,
         suggested_response=report.suggested_public_response,
     )
 

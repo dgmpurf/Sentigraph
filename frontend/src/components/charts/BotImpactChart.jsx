@@ -5,8 +5,9 @@ import { ChartFrame } from './ChartFrame.jsx'
 
 export function BotImpactChart({ data }) {
   const suspected = Math.max(0, Math.min(1, data?.suspected_bot_comment_ratio ?? 0))
+  const accountRatio = Math.max(0, Math.min(1, data?.suspected_bot_ratio ?? 0))
   const option = {
-    color: ['#ff5d8f', '#283043'],
+    color: ['#ff5d8f', '#42f5d7', '#283043'],
     tooltip: {
       formatter: '{b}: {d}%',
     },
@@ -20,7 +21,7 @@ export function BotImpactChart({ data }) {
           formatter: '{b}\n{d}%',
         },
         data: [
-          { value: suspected, name: 'Suspected' },
+          { value: suspected, name: 'Repeated comments' },
           { value: Math.max(0, 1 - suspected), name: 'Other' },
         ],
       },
@@ -31,10 +32,12 @@ export function BotImpactChart({ data }) {
         left: 'center',
         top: 'center',
         style: {
-          text: formatPercent(suspected),
+          text: `${formatPercent(suspected)}\ncomments\n${formatPercent(accountRatio)} accounts`,
           fill: '#f4f7fb',
-          fontSize: 28,
+          fontSize: 16,
           fontWeight: 700,
+          align: 'center',
+          lineHeight: 21,
         },
       },
     ],

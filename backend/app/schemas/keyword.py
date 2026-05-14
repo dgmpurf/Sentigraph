@@ -11,4 +11,3 @@ class KeywordExpandResponse(BaseModel):
     original_keyword: str
     expanded_keywords: list[str]
     search_queries: list[str]
-

@@ -164,6 +164,15 @@ body {
   background: rgba(17, 19, 26, 0.88);
 }
 
+.report-risk-badge {
+  min-width: 164px;
+}
+
+.report-risk-badge .ant-typography {
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
 .risk-score-lockup span,
 .report-risk-badge span {
   display: block;
@@ -246,7 +255,111 @@ body {
 }
 
 .alert-tile {
-  border-color: rgba(255, 93, 143, 0.24);
+  min-height: 118px;
+  padding: 14px;
+  border: 1px solid rgba(255, 93, 143, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 93, 143, 0.06);
+}
+
+.summary-signal-card {
+  border-color: rgba(66, 245, 215, 0.24);
+}
+
+.dashboard-summary-copy {
+  margin-bottom: 0 !important;
+  color: #c9d4ea;
+  font-size: 15px;
+  line-height: 1.76;
+}
+
+.compact-factor-list .ant-list-item {
+  padding: 7px 0;
+}
+
+.topic-risk-list .ant-list-item,
+.topic-risk-card-list .ant-list-item,
+.report-topic-risk-list .ant-list-item {
+  padding: 8px 0;
+}
+
+.topic-risk-card,
+.report-topic-risk-item {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid rgba(154, 166, 191, 0.18);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.34);
+}
+
+.topic-risk-card.risk-high,
+.topic-risk-card.risk-critical,
+.report-topic-risk-item.risk-high,
+.report-topic-risk-item.risk-critical {
+  border-color: rgba(255, 93, 143, 0.5);
+  background: rgba(255, 93, 143, 0.06);
+}
+
+.topic-risk-card.risk-medium,
+.report-topic-risk-item.risk-medium {
+  border-color: rgba(245, 196, 75, 0.42);
+  background: rgba(245, 196, 75, 0.05);
+}
+
+.topic-risk-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  color: #9aa6bf;
+  font-size: 12px;
+}
+
+.topic-risk-explanation {
+  margin-bottom: 0 !important;
+  color: #c9d4ea;
+  line-height: 1.68;
+}
+
+.platform-distribution-list .ant-list-item,
+.trend-insight-list .ant-list-item {
+  padding: 6px 0;
+}
+
+.trend-explanation-card {
+  border-color: rgba(66, 245, 215, 0.26);
+}
+
+.insight-tile,
+.edge-tile,
+.central-node-card {
+  min-height: 78px;
+  padding: 12px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.28);
+}
+
+.insight-tile {
+  display: flex;
+  align-items: center;
+}
+
+.central-node-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.graph-guidance-alert {
+  border-color: rgba(66, 245, 215, 0.28);
+  background: rgba(66, 245, 215, 0.06);
+}
+
+.graph-stat-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .form-panel {
@@ -268,6 +381,44 @@ body {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 18px;
+}
+
+.platform-roadmap-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.platform-group {
+  min-height: 172px;
+  padding: 14px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.24);
+}
+
+.platform-group-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.platform-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.platform-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.platform-note {
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .conflict-copy p {
@@ -303,12 +454,56 @@ body {
   color: #c9d4ea;
 }
 
+.report-source-strip {
+  margin-top: 10px;
+}
+
+.report-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.report-meta-grid > div {
+  display: flex;
+  min-height: 74px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.report-meta-grid .ant-typography {
+  overflow-wrap: anywhere;
+}
+
 .report-section {
   min-height: 230px;
   padding: 16px;
   border: 1px solid rgba(154, 166, 191, 0.16);
   border-radius: 8px;
   background: rgba(8, 9, 13, 0.28);
+}
+
+.report-overview-section {
+  min-height: 132px;
+}
+
+.report-topic-risk-section {
+  min-height: 220px;
+  border-color: rgba(255, 93, 143, 0.28);
+}
+
+.report-overview-copy {
+  max-width: 1080px;
+  margin-bottom: 0 !important;
+  color: #c9d4ea;
+  font-size: 15px;
+  line-height: 1.8;
 }
 
 .report-section-title {
@@ -360,6 +555,36 @@ body {
   border-radius: 8px;
   background: rgba(66, 245, 215, 0.06);
   color: #e9fff9;
+}
+
+.compact-response-draft {
+  min-height: 172px;
+  margin-bottom: 0 !important;
+}
+
+.insight-card {
+  min-height: 210px;
+}
+
+.insight-card p {
+  color: #c9d4ea;
+  line-height: 1.75;
+}
+
+.analysis-report-card .ant-list-item {
+  padding: 7px 0;
+}
+
+.analysis-report-summary {
+  margin-bottom: 0 !important;
+  color: #c9d4ea;
+}
+
+.topic-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .node-copy {

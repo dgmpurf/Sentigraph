@@ -10,6 +10,7 @@ from typing import Any
 from app.schemas.analysis import AnalysisResultResponse, ConflictResult, SentimentResult
 from app.schemas.comment import CleanComment, RawComment
 from app.schemas.propagation import PropagationEdge, PropagationMetrics, PropagationNode, PropagationResponse
+from app.schemas.risk import TopicRiskScoreResult
 from app.schemas.visualization import VisualizationResponse
 from app.services.bot_detection.bot_score_service import calculate_bot_scores
 from app.services.nlp.sentiment_analyzer import SentimentAnalyzer
@@ -17,6 +18,7 @@ from app.services.nlp.topic_clusterer import TopicClusterer
 from app.services.preprocessing.duplicate_detector import detect_duplicate_groups
 from app.services.preprocessing.user_aggregator import aggregate_users
 from app.services.scoring.risk_score import RiskScoreResult, calculate_risk_score
+from app.services.scoring.topic_risk_score import calculate_topic_risk_score
 from app.services.visualization.chart_data_builder import build_visualization_response
 
 
@@ -32,6 +34,7 @@ class MockPipelineResult:
     analysis: AnalysisResultResponse
     propagation: PropagationResponse
     risk_result: RiskScoreResult
+    topic_risk_result: TopicRiskScoreResult
 
 
 def build_mock_pipeline(
@@ -60,17 +63,40 @@ def build_mock_pipeline(
         propagation_speed=propagation.metrics.propagation_speed,
         trend_shift=trend_shift,
     )
+    topic_risk_result = calculate_topic_risk_score(
+        topics,
+        clean_comments=clean_comments,
+        sentiment_results=sentiment_results,
+        bot_accounts=bot_accounts,
+        bot_impact=bot_impact,
+        propagation=propagation,
+        raw_comments=raw_comments,
+    )
     analysis = AnalysisResultResponse(
         project_id=project_id,
-        summary=_build_analysis_summary(risk_result.risk.risk_level, topics),
+        summary=_build_analysis_summary(topic_risk_result.risk_level, topics),
         sentiment=sentiment_summary,
         topics=topics,
         conflicts=conflicts,
         bot_score=bot_impact,
-        risk=risk_result.risk,
+        risk=risk_result.risk.model_copy(
+            update={
+                "risk_score": int(round(topic_risk_result.overall_risk)),
+                "risk_level": topic_risk_result.risk_level,
+            }
+        ),
         sentiment_results=sentiment_results,
         ai_generated=[],
         bot_accounts=bot_accounts,
+        risk_model_version=topic_risk_result.risk_model_version,
+        topic_risks=topic_risk_result.topic_risks,
+        top_risk_topics=topic_risk_result.top_risk_topics,
+        max_topic_risk=topic_risk_result.max_topic_risk,
+        average_topic_risk=topic_risk_result.average_topic_risk,
+        overall_risk=topic_risk_result.overall_risk,
+        real_crisis_risk=topic_risk_result.real_crisis_risk,
+        manipulation_risk=topic_risk_result.manipulation_risk,
+        risk_explanation=topic_risk_result.risk_explanation,
     )
 
     return MockPipelineResult(
@@ -81,6 +107,7 @@ def build_mock_pipeline(
         analysis=analysis,
         propagation=propagation,
         risk_result=risk_result,
+        topic_risk_result=topic_risk_result,
     )
 
 
@@ -97,6 +124,7 @@ def build_pipeline_visualization(
         raw_comments=pipeline.raw_comments,
         propagation=pipeline.propagation,
         risk_result=pipeline.risk_result,
+        topic_risk_result=pipeline.topic_risk_result,
     )
 
 

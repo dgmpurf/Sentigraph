@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from app.schemas.analysis import BotImpactSummary, ConflictResult, RiskBrief, SentimentSummary, TopicCluster
+from app.schemas.common import RISK_MODEL_VERSION
 
 
 @dataclass(frozen=True)
@@ -76,4 +77,3 @@ def _explanation(factors: RiskFactors) -> str:
     if factors.bot_impact_score >= 0.3:
         return "Bot-like amplification is the main driver of risk."
     return "Risk remains limited in the current rule-based mock scoring."
-

@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field
 
-from app.schemas.common import DateRange, RiskLevel
+from app.schemas.common import RISK_MODEL_VERSION, DateRange, RiskLevel
 from app.schemas.propagation import PropagationEdge, PropagationNode
+from app.schemas.risk import TopicRiskScore
 
 
 class VisualizationDataRequest(BaseModel):
@@ -51,10 +52,18 @@ class VisualizationResponse(BaseModel):
     project_id: str
     risk_score: int
     risk_level: RiskLevel
+    risk_model_version: str = RISK_MODEL_VERSION
     sentiment_trend: list[SentimentTrendPoint]
     risk_radar: RiskRadar
     heatmap: list[HeatmapPoint]
     propagation_graph: VisualizationGraph
     topic_clusters: list[VisualizationTopicCluster]
     bot_impact: BotImpactVisualization
-
+    topic_risks: list[TopicRiskScore] = Field(default_factory=list)
+    top_risk_topics: list[TopicRiskScore] = Field(default_factory=list)
+    max_topic_risk: float | None = None
+    average_topic_risk: float | None = None
+    overall_risk: float | None = None
+    real_crisis_risk: float | None = None
+    manipulation_risk: float | None = None
+    risk_explanation: str | None = None

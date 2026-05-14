@@ -3,7 +3,9 @@ from typing import Any
 
 from app.schemas.analysis import AnalysisResultResponse, SentimentResult
 from app.schemas.comment import CleanComment, RawComment
+from app.schemas.common import RISK_MODEL_VERSION
 from app.schemas.propagation import PropagationEdge, PropagationNode, PropagationResponse
+from app.schemas.risk import TopicRiskScoreResult
 from app.schemas.visualization import (
     BotImpactVisualization,
     HeatmapPoint,
@@ -24,14 +26,28 @@ def build_visualization_response(
     raw_comments: list[RawComment] | None = None,
     propagation: PropagationResponse | None = None,
     risk_result: RiskScoreResult | None = None,
+    topic_risk_result: TopicRiskScoreResult | None = None,
 ) -> VisualizationResponse:
-    risk_score = risk_result.risk.risk_score if risk_result else analysis.risk.risk_score
-    risk_level = risk_result.risk.risk_level if risk_result else analysis.risk.risk_level
+    risk_score = (
+        int(round(topic_risk_result.overall_risk))
+        if topic_risk_result
+        else risk_result.risk.risk_score
+        if risk_result
+        else analysis.risk.risk_score
+    )
+    risk_level = (
+        topic_risk_result.risk_level
+        if topic_risk_result
+        else risk_result.risk.risk_level
+        if risk_result
+        else analysis.risk.risk_level
+    )
 
     return VisualizationResponse(
         project_id=project_id,
         risk_score=risk_score,
         risk_level=risk_level,
+        risk_model_version=topic_risk_result.risk_model_version if topic_risk_result else RISK_MODEL_VERSION,
         sentiment_trend=build_sentiment_trend(clean_comments or [], analysis.sentiment_results),
         risk_radar=build_risk_radar(analysis, risk_result),
         heatmap=build_heatmap(raw_comments or []),
@@ -45,6 +61,14 @@ def build_visualization_response(
             for topic in analysis.topics
         ],
         bot_impact=BotImpactVisualization(**analysis.bot_score.model_dump()),
+        topic_risks=topic_risk_result.topic_risks if topic_risk_result else [],
+        top_risk_topics=topic_risk_result.top_risk_topics if topic_risk_result else [],
+        max_topic_risk=topic_risk_result.max_topic_risk if topic_risk_result else None,
+        average_topic_risk=topic_risk_result.average_topic_risk if topic_risk_result else None,
+        overall_risk=topic_risk_result.overall_risk if topic_risk_result else None,
+        real_crisis_risk=topic_risk_result.real_crisis_risk if topic_risk_result else None,
+        manipulation_risk=topic_risk_result.manipulation_risk if topic_risk_result else None,
+        risk_explanation=topic_risk_result.risk_explanation if topic_risk_result else None,
     )
 
 
@@ -114,4 +138,3 @@ def ensure_mongodb_safe_keys(value: Any) -> Any:
     if isinstance(value, list):
         return [ensure_mongodb_safe_keys(item) for item in value]
     return value
-

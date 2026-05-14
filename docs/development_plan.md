@@ -160,28 +160,44 @@ Tasks:
 8. Implement `response_template_generator.py`.
 9. Add summary and recommendation frontend display.
 
-## MVP 7: Real Reddit Adapter
+Risk model versioning:
+
+- Current active backend model: `v1_static_mvp`.
+- Maintain `docs/algorithm_design.md` for the public opinion risk algorithm design.
+- Maintain `docs/risk_model_roadmap.md` for V1/V2 migration planning.
+- V2 topic-cluster dynamic risk is planned, but not implemented yet.
+- Do not change active scoring behavior without an explicit migration task and tests.
+
+## MVP 7: Platform Source Integration Roadmap
 
 Goal:
 
-Add the first real public-data platform adapter.
+Prepare official API integrations and future public-page parser work while keeping the MVP mock-first.
 
 Tasks:
 
-1. Implement `reddit_adapter.py`.
-2. Use Reddit public API or PRAW if credentials are available.
-3. Normalize Reddit posts/comments into the unified schema.
-4. Add rate limit handling.
-5. Add retry logic.
-6. Add tests with mocked Reddit responses.
-7. If no credentials exist, fallback to mock data.
+1. Maintain `docs/platform_sources.md`.
+2. Maintain the backend platform registry exposed by `GET /api/v1/platforms`.
+3. Keep active MVP platform choices limited to mock-capable sources.
+4. Keep Reddit visible and mock-selectable as a future real adapter candidate.
+5. Prioritize Chinese public opinion platforms for official API planning.
+6. Plan official API integrations for Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao.
+7. Plan crawler-later public-page parsers for Hupu, Baidu Tieba, Tianya, NGA, Maimai, The Paper / Pengpai News, and Jiemian News.
+8. Keep YouTube disabled or optional future, not active in the MVP.
 
 Do not implement:
 
+- real third-party API calls
+- real crawlers
+- API key requirements
 - login bypass
 - captcha bypass
 - private data scraping
 - anti-bot evasion
+
+Crawler maintenance note:
+
+If a public webpage structure changes, an LLM may be used in a future phase to analyze sanitized public HTML fixtures and suggest selector updates. This must never be used to bypass login, captcha, paywalls, anti-bot systems, rate limits, or private data access.
 
 ## MVP 8: Incremental Monitoring and Alerts
 
@@ -214,19 +230,24 @@ if two consecutive shifts exceed threshold:
 
 Goal:
 
-Add additional platform adapters.
+Add real platform adapters after the registry, compliance model, and mock pipeline are stable.
 
 Suggested order:
 
-1. Reddit
-2. YouTube
-3. Bilibili
-4. Zhihu
-5. Weibo
-6. TikTok
-7. Twitter/X
+1. Weibo
+2. Bilibili
+3. Douyin
+4. Kuaishou
+5. Xiaohongshu
+6. Zhihu
+7. Douban
+8. Toutiao
+
+Reddit remains a visible future real adapter candidate and can be reviewed in parallel after the shared adapter interface and compliance checklist are stable.
 
 Each adapter must normalize output into the same RawPost and RawComment schema.
+
+YouTube remains optional future and is not part of active MVP platform selection.
 
 ## Recommended First Codex Task
 
