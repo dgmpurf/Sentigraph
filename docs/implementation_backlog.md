@@ -313,7 +313,7 @@ Acceptance:
 
 Goal: prepare a safe framework for public-source parsers without implementing scraping now.
 
-Status: scaffolded for four fixture-only parsers plus an optional The Paper live pilot.
+Status: scaffolded for five fixture-only parsers plus an optional The Paper live pilot.
 
 Scope:
 
@@ -333,12 +333,15 @@ Implemented:
 - Jiemian News / 界面新闻 (`jiemian`) `fixture_only` parser scaffold
 - Hupu / HuPu (`hupu`) `fixture_only` parser scaffold for forum-style thread/reply fixtures
 - Baidu Tieba / 百度贴吧 (`tieba`) `fixture_only` parser scaffold for forum-style thread/reply fixtures
-- `/api/v1/crawl/start` public parser fallback metadata for explicit `the_paper`, `jiemian`, `hupu`, and `tieba` requests
+- NGA (`nga`) `fixture_only` parser scaffold for forum-style thread/reply fixtures
+- `/api/v1/crawl/start` public parser fallback metadata for explicit `the_paper`, `jiemian`, `hupu`, `tieba`, and `nga` requests
 - Jiemian comments are documented as `comments_unavailable_without_login_or_dynamic_loading` and are not parsed in the fixture.
 - Hupu visible fixture replies are normalized to `RawComment` with author, created time, parent id when present, and light/upvote count.
 - Hupu fixture parser QA is stabilized for profile loading, thread/reply extraction, schema validation, safe missing-selector failure, `/crawl/start` metadata, and regressions for The Paper, Jiemian, Reddit mock/API-pending behavior, and old case/report/monitoring/scheduler/notification flows.
 - Tieba visible fixture replies are normalized to `RawComment` with author, created time, parent id when present, like count, and floor number in `RawComment.raw_data.floor_number`.
 - Tieba fixture parser QA is stabilized for profile loading, thread/reply extraction, schema validation, safe missing-selector failure, `/crawl/start` metadata, forced fixture-only behavior when the global The Paper live-pilot flag is enabled, and regressions for The Paper, Jiemian, Hupu, Reddit mock/API-pending behavior, and old case/report/monitoring/scheduler/notification flows.
+- NGA visible fixture replies are normalized to `RawComment` with author, created time, parent id when present, like count, and floor number in `RawComment.raw_data.floor_number`.
+- NGA fixture parser QA is stabilized for profile loading, thread/reply extraction, schema validation, safe missing-selector failure, `/crawl/start` metadata, forced fixture-only behavior when the global The Paper live-pilot flag is enabled, and regressions for The Paper, Jiemian, Hupu, Tieba, Reddit mock/API-pending behavior, and old case/report/monitoring/scheduler/notification flows.
 - Optional The Paper local live public-page fetch pilot behind `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`, with fixture/mock fallback as the default.
 
 Safety constraints:
@@ -349,7 +352,7 @@ Safety constraints:
 
 Next parser tasks:
 
-- Add additional sanitized fixture variants for The Paper, Jiemian, Hupu, and Tieba.
+- Add additional sanitized fixture variants for The Paper, Jiemian, Hupu, Tieba, and NGA.
 - Add a selector-drift QA matrix for missing title, content, author/source, created time, and permalink fields.
 - Add a mocked test matrix for The Paper live pilot status categories if new failure categories are introduced.
 - Add fixture-only parser scaffolds for the next candidate only after the current fixture QA matrix is stable.

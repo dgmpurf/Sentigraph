@@ -203,7 +203,7 @@ If a public webpage structure changes, an LLM may be used in a future phase to a
 Current public parser foundation:
 
 - `backend/app/services/crawling/public_parser/` contains a compliant parser framework scaffold.
-- The Paper / Pengpai News (`the_paper`), Jiemian News / 界面新闻 (`jiemian`), Hupu / HuPu (`hupu`), and Baidu Tieba / 百度贴吧 (`tieba`) are fixture-only public parser scaffolds.
+- The Paper / Pengpai News (`the_paper`), Jiemian News / 界面新闻 (`jiemian`), Hupu / HuPu (`hupu`), Baidu Tieba / 百度贴吧 (`tieba`), and NGA (`nga`) are fixture-only public parser scaffolds.
 - Live public fetch is controlled by `PUBLIC_PARSER_LIVE_FETCH_ENABLED=false` by default.
 - The Paper has an optional local live public-page fetch pilot behind the same disabled-by-default flag. It must keep fixture fallback and must not bypass login, captcha, cookies, robots/profile policy, or private data boundaries.
 - Public parser adapters must not use browser cookies, accounts, private pages, proxy rotation, captcha bypass, login bypass, or anti-bot evasion.

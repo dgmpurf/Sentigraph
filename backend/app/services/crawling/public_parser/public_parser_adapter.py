@@ -137,6 +137,11 @@ class TiebaPublicParserAdapter(PublicParserPlatformAdapter):
     display_name = "Baidu Tieba / 百度贴吧"
 
 
+class NgaPublicParserAdapter(PublicParserPlatformAdapter):
+    platform_id = "nga"
+    display_name = "NGA"
+
+
 class JiemianPublicParserAdapter(PublicParserPlatformAdapter):
     platform_id = "jiemian"
     display_name = "Jiemian News / 界面新闻"

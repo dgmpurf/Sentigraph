@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.services.crawling.public_parser.public_parser_adapter import (
     HupuPublicParserAdapter,
     JiemianPublicParserAdapter,
+    NgaPublicParserAdapter,
     PublicParserPlatformAdapter,
     ThePaperPublicParserAdapter,
     TiebaPublicParserAdapter,
@@ -13,6 +14,7 @@ from app.services.crawling.public_parser.selector_profile import get_profile_ids
 PUBLIC_PARSER_ADAPTERS = {
     HupuPublicParserAdapter.platform_id: HupuPublicParserAdapter,
     JiemianPublicParserAdapter.platform_id: JiemianPublicParserAdapter,
+    NgaPublicParserAdapter.platform_id: NgaPublicParserAdapter,
     ThePaperPublicParserAdapter.platform_id: ThePaperPublicParserAdapter,
     TiebaPublicParserAdapter.platform_id: TiebaPublicParserAdapter,
 }

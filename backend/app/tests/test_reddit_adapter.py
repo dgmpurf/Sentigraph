@@ -15,6 +15,7 @@ from app.services.crawling.base_adapter import AdapterHealth, BasePlatformAdapte
 from app.services.crawling.public_parser.public_parser_adapter import (
     HupuPublicParserAdapter,
     JiemianPublicParserAdapter,
+    NgaPublicParserAdapter,
     ThePaperPublicParserAdapter,
     TiebaPublicParserAdapter,
 )
@@ -311,19 +312,22 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     jiemian_adapter = get_adapter("jiemian")
     hupu_adapter = get_adapter("hupu")
     tieba_adapter = get_adapter("tieba")
+    nga_adapter = get_adapter("nga")
 
     assert has_platform_adapter("reddit") is True
     assert has_platform_adapter("the_paper") is True
     assert has_platform_adapter("jiemian") is True
     assert has_platform_adapter("hupu") is True
     assert has_platform_adapter("tieba") is True
-    assert get_supported_adapter_ids() == ["hupu", "jiemian", "reddit", "the_paper", "tieba"]
+    assert has_platform_adapter("nga") is True
+    assert get_supported_adapter_ids() == ["hupu", "jiemian", "nga", "reddit", "the_paper", "tieba"]
     assert isinstance(adapter, RedditAdapter)
     assert isinstance(alias_adapter, RedditAdapter)
     assert isinstance(public_parser_adapter, ThePaperPublicParserAdapter)
     assert isinstance(jiemian_adapter, JiemianPublicParserAdapter)
     assert isinstance(hupu_adapter, HupuPublicParserAdapter)
     assert isinstance(tieba_adapter, TiebaPublicParserAdapter)
+    assert isinstance(nga_adapter, NgaPublicParserAdapter)
     assert adapter.mode == "mock"
     assert alias_adapter.mode == "mock"
 
@@ -335,7 +339,7 @@ def test_adapter_factory_does_not_activate_planned_or_crawler_later_platforms() 
     inactive_adapter_platforms = [
         platform.platform_id
         for platform in get_platform_registry()
-        if platform.platform_id not in {"reddit", "the_paper", "jiemian", "hupu", "tieba"}
+        if platform.platform_id not in {"reddit", "the_paper", "jiemian", "hupu", "tieba", "nga"}
     ]
 
     assert inactive_adapter_platforms
