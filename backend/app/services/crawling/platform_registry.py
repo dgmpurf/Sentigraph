@@ -161,7 +161,7 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
     _public_parser_scaffold_platform("tieba", "Baidu Tieba / 百度贴吧"),
     _crawler_later_platform("tianya", "Tianya"),
     _public_parser_scaffold_platform("nga", "NGA"),
-    _crawler_later_platform("maimai", "Maimai"),
+    _public_parser_scaffold_platform("maimai", "Maimai / 脉脉"),
     _public_parser_scaffold_platform("the_paper", "The Paper / Pengpai News"),
     _public_parser_scaffold_platform("jiemian", "Jiemian News / 界面新闻"),
     PlatformRegistryItem(

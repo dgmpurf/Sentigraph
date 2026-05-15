@@ -17,6 +17,7 @@ FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "public_parser"
 FIXTURE_PATH = FIXTURE_DIR / "the_paper_article.html"
 JIEMIAN_FIXTURE_PATH = FIXTURE_DIR / "jiemian_article.html"
 HUPU_FIXTURE_PATH = FIXTURE_DIR / "hupu_thread.html"
+MAIMAI_FIXTURE_PATH = FIXTURE_DIR / "maimai_post.html"
 TIEBA_FIXTURE_PATH = FIXTURE_DIR / "tieba_thread.html"
 NGA_FIXTURE_PATH = FIXTURE_DIR / "nga_thread.html"
 
@@ -31,6 +32,10 @@ def _jiemian_fixture_html() -> str:
 
 def _hupu_fixture_html() -> str:
     return HUPU_FIXTURE_PATH.read_text(encoding="utf-8")
+
+
+def _maimai_fixture_html() -> str:
+    return MAIMAI_FIXTURE_PATH.read_text(encoding="utf-8")
 
 
 def _tieba_fixture_html() -> str:
@@ -85,6 +90,18 @@ def test_selector_profile_loads_hupu_profile() -> None:
     assert profile.comment_selector == ".reply-item"
     assert profile.comment_content_selector == ".reply-content"
     assert "forum-style Hupu threads" in profile.notes
+
+
+def test_selector_profile_loads_maimai_profile() -> None:
+    profile = load_selector_profile("maimai")
+
+    assert profile.platform_id == "maimai"
+    assert profile.display_name == "Maimai / 脉脉"
+    assert profile.status == "fixture_only"
+    assert profile.search_url_template is None
+    assert profile.comment_selector == ".comment-item"
+    assert profile.comment_content_selector == ".comment-content"
+    assert "workplace and industry discussion" in profile.notes
 
 
 def test_selector_profile_loads_tieba_profile() -> None:
@@ -209,6 +226,46 @@ def test_hupu_public_parser_extracts_thread_and_visible_replies_from_fixture() -
     assert second_comment.comment_id == "hupu_reply_002"
     assert second_comment.parent_id == "hupu_reply_001"
     assert second_comment.like_count == 11
+
+
+def test_maimai_public_parser_extracts_post_and_visible_replies_from_fixture() -> None:
+    profile = load_selector_profile("maimai")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.parse_html(_maimai_fixture_html(), source_url=profile.fixture_url, keyword="Tesla")
+
+    assert result.metadata["schema_valid"] is True
+    assert result.metadata["parser_status"] == "fixture_only"
+    assert len(result.posts) == 1
+    assert len(result.comments) == 2
+    post = result.posts[0]
+    assert isinstance(post, RawPost)
+    assert post.platform == "maimai"
+    assert post.title == "Tesla workplace discussion on Maimai"
+    assert "workplace and industry discussion" in post.content
+    assert post.author_name == "maimai_public_source"
+    assert post.created_at == "2026-05-15T14:00:00Z"
+    assert post.like_count == 93
+    assert post.reply_count == 2
+    assert post.url == profile.fixture_url
+
+    first_comment = result.comments[0]
+    second_comment = result.comments[1]
+    assert isinstance(first_comment, RawComment)
+    assert first_comment.platform == "maimai"
+    assert first_comment.post_id == post.post_id
+    assert first_comment.comment_id == "maimai_reply_001"
+    assert first_comment.parent_id is None
+    assert first_comment.author_name == "maimai_user_alpha"
+    assert "service workflow" in first_comment.content
+    assert first_comment.created_at == "2026-05-15T14:09:00Z"
+    assert first_comment.like_count == 16
+    assert second_comment.comment_id == "maimai_reply_002"
+    assert second_comment.parent_id == "maimai_reply_001"
+    assert second_comment.like_count == 9
 
 
 def test_tieba_public_parser_extracts_thread_and_visible_replies_from_fixture() -> None:
@@ -392,6 +449,31 @@ def test_hupu_missing_selectors_fail_safely() -> None:
     )
 
     result = parser.parse_html(_hupu_fixture_html(), source_url="https://bbs.hupu.com/thread-broken", keyword="Tesla")
+
+    assert result.posts == []
+    assert result.comments == []
+    assert result.metadata["fallback_used"] is True
+    assert result.metadata["fallback_reason_category"] == "selector_missing"
+
+
+def test_maimai_missing_selectors_fail_safely() -> None:
+    profile = SelectorProfile(
+        platform_id="maimai_broken",
+        display_name="Maimai Broken",
+        base_url="https://maimai.cn",
+        allowed_public_paths=["/"],
+        article_selector="article.maimai-post",
+        title_selector=".missing-title",
+        content_selector=".missing-content",
+        comment_selector=".comment-item",
+        status="fixture_only",
+    )
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.parse_html(_maimai_fixture_html(), source_url="https://maimai.cn/web/broken", keyword="Tesla")
 
     assert result.posts == []
     assert result.comments == []
@@ -621,6 +703,47 @@ def test_hupu_public_parser_search_uses_fixture_thread_when_live_disabled() -> N
     assert result.posts[0].platform == "hupu"
     assert result.posts[0].title == "Tesla service discussion on Hupu"
     assert result.comments[0].comment_id == "hupu_reply_001"
+
+
+def test_maimai_public_parser_search_uses_fixture_post_when_live_disabled() -> None:
+    profile = load_selector_profile("maimai")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.search_public_pages("Tesla", limit=10)
+
+    assert result.metadata["live_fetch_enabled"] is False
+    assert result.metadata["fallback_used"] is True
+    assert result.metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert result.metadata["post_count"] == 1
+    assert result.metadata["comment_count"] == 2
+    assert result.metadata["schema_valid"] is True
+    assert len(result.posts) == 1
+    assert len(result.comments) == 2
+    assert result.posts[0].platform == "maimai"
+    assert result.posts[0].title == "Tesla workplace discussion on Maimai"
+    assert result.comments[0].comment_id == "maimai_reply_001"
+
+
+def test_maimai_public_parser_remains_fixture_only_when_global_live_fetch_enabled() -> None:
+    profile = load_selector_profile("maimai")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=True, rate_limit_seconds=0),
+    )
+
+    result = parser.search_public_pages("Tesla", limit=10)
+
+    assert parser.fetcher.live_fetch_enabled is False
+    assert result.metadata["live_fetch_enabled"] is False
+    assert result.metadata["live_fetch_attempted"] is False
+    assert result.metadata["live_fetch_allowed"] is False
+    assert result.metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert result.metadata["fetch_status"] == "disabled"
+    assert len(result.posts) == 1
+    assert len(result.comments) == 2
 
 
 def test_tieba_public_parser_search_uses_fixture_thread_when_live_disabled() -> None:

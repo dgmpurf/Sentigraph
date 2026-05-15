@@ -11,7 +11,7 @@ from app.services.crawling.public_parser.parser_status_service import preview_pu
 client = TestClient(app)
 
 
-PUBLIC_PARSER_IDS = {"the_paper", "jiemian", "hupu", "tieba", "nga"}
+PUBLIC_PARSER_IDS = {"the_paper", "jiemian", "hupu", "maimai", "tieba", "nga"}
 
 
 def test_public_parser_status_endpoint_returns_all_fixture_sources(monkeypatch) -> None:
@@ -23,7 +23,7 @@ def test_public_parser_status_endpoint_returns_all_fixture_sources(monkeypatch) 
     body = response.json()
     parsers = {item["platform_id"]: item for item in body["parsers"]}
 
-    assert body["total"] == 5
+    assert body["total"] == 6
     assert set(parsers) == PUBLIC_PARSER_IDS
     assert body["live_fetch_enabled_default"] is False
     for platform_id, item in parsers.items():
@@ -39,6 +39,7 @@ def test_public_parser_status_endpoint_returns_all_fixture_sources(monkeypatch) 
         assert item["notes"]
 
     assert parsers["hupu"]["comments_supported"] is True
+    assert parsers["maimai"]["comments_supported"] is True
     assert parsers["tieba"]["comments_supported"] is True
     assert parsers["nga"]["comments_supported"] is True
     assert parsers["the_paper"]["comments_supported"] is False
@@ -51,6 +52,7 @@ def test_public_parser_status_endpoint_returns_all_fixture_sources(monkeypatch) 
         ("the_paper", 0),
         ("jiemian", 0),
         ("hupu", 2),
+        ("maimai", 2),
         ("tieba", 3),
         ("nga", 3),
     ],
@@ -134,6 +136,7 @@ def test_public_parser_status_live_flag_only_marks_live_capable_profile(monkeypa
     assert parsers["the_paper"]["live_fetch_enabled"] is True
     assert parsers["jiemian"]["live_fetch_enabled"] is False
     assert parsers["hupu"]["live_fetch_enabled"] is False
+    assert parsers["maimai"]["live_fetch_enabled"] is False
     assert parsers["tieba"]["live_fetch_enabled"] is False
     assert parsers["nga"]["live_fetch_enabled"] is False
 
@@ -176,6 +179,29 @@ def test_public_parser_preview_live_requested_for_fixture_only_platform_stays_fi
     assert "live_fetch_disabled" in body["warnings"]
     assert body["post_count"] == 1
     assert body["comment_count"] == 2
+
+
+def test_public_parser_preview_works_for_maimai(monkeypatch) -> None:
+    monkeypatch.setenv("PUBLIC_PARSER_LIVE_FETCH_ENABLED", "false")
+
+    response = client.post(
+        "/api/v1/public-parsers/preview",
+        json={"platform": "maimai", "limit": 3, "use_live_fetch": False},
+    )
+
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["platform"] == "maimai"
+    assert body["parser_status"] == "fixture_only"
+    assert body["live_fetch_enabled"] is False
+    assert body["fallback_reason_category"] == "fixture_preview"
+    assert body["post_count"] == 1
+    assert body["comment_count"] == 2
+    assert body["raw_post_schema_valid"] is True
+    assert body["raw_comment_schema_valid"] is True
+    assert body["sample_posts"][0]["platform"] == "maimai"
+    assert body["sample_comments"][0]["platform"] == "maimai"
 
 
 def test_public_parser_preview_service_validates_raw_schemas(monkeypatch) -> None:

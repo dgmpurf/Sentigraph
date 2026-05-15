@@ -26,6 +26,7 @@ _FIXTURE_FILE_BY_PLATFORM = {
     "the_paper": "the_paper_article.html",
     "jiemian": "jiemian_article.html",
     "hupu": "hupu_thread.html",
+    "maimai": "maimai_post.html",
     "tieba": "tieba_thread.html",
     "nga": "nga_thread.html",
 }

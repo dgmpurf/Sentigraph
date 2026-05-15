@@ -142,6 +142,11 @@ class NgaPublicParserAdapter(PublicParserPlatformAdapter):
     display_name = "NGA"
 
 
+class MaimaiPublicParserAdapter(PublicParserPlatformAdapter):
+    platform_id = "maimai"
+    display_name = "Maimai / 脉脉"
+
+
 class JiemianPublicParserAdapter(PublicParserPlatformAdapter):
     platform_id = "jiemian"
     display_name = "Jiemian News / 界面新闻"

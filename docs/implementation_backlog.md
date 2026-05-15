@@ -313,7 +313,7 @@ Acceptance:
 
 Goal: prepare a safe framework for public-source parsers without implementing scraping now.
 
-Status: scaffolded for five fixture-only parsers plus an optional The Paper live pilot.
+Status: scaffolded for six fixture-only parsers plus an optional The Paper live pilot.
 
 Scope:
 
@@ -332,18 +332,20 @@ Implemented:
 - The Paper / Pengpai News (`the_paper`) `fixture_only` parser scaffold
 - Jiemian News / 界面新闻 (`jiemian`) `fixture_only` parser scaffold
 - Hupu / HuPu (`hupu`) `fixture_only` parser scaffold for forum-style thread/reply fixtures
+- Maimai / 脉脉 (`maimai`) `fixture_only` parser scaffold for workplace and industry discussion fixtures
 - Baidu Tieba / 百度贴吧 (`tieba`) `fixture_only` parser scaffold for forum-style thread/reply fixtures
 - NGA (`nga`) `fixture_only` parser scaffold for forum-style thread/reply fixtures
-- `/api/v1/crawl/start` public parser fallback metadata for explicit `the_paper`, `jiemian`, `hupu`, `tieba`, and `nga` requests
+- `/api/v1/crawl/start` public parser fallback metadata for explicit `the_paper`, `jiemian`, `hupu`, `maimai`, `tieba`, and `nga` requests
 - unified public parser diagnostics endpoints:
   - `GET /api/v1/public-parsers/status`
   - `POST /api/v1/public-parsers/preview`
 - frontend `公开页面解析` page with sidebar navigation, status table, fixture-safe preview buttons, sample post/comment cards, schema validation flags, and no live-fetch enable control
-- deterministic fixture preview for The Paper, Jiemian, Hupu, Tieba, and NGA with sample `RawPost` / `RawComment` items and schema validation flags
-- status/preview QA stabilized for all five parser sources, unknown-platform failure, disabled-live fallback, and fixture-only behavior when the global live-pilot flag is enabled
+- deterministic fixture preview for The Paper, Jiemian, Hupu, Maimai, Tieba, and NGA with sample `RawPost` / `RawComment` items and schema validation flags
+- status/preview QA stabilized for all six parser sources, unknown-platform failure, disabled-live fallback, and fixture-only behavior when the global live-pilot flag is enabled
 - Jiemian comments are documented as `comments_unavailable_without_login_or_dynamic_loading` and are not parsed in the fixture.
 - Hupu visible fixture replies are normalized to `RawComment` with author, created time, parent id when present, and light/upvote count.
 - Hupu fixture parser QA is stabilized for profile loading, thread/reply extraction, schema validation, safe missing-selector failure, `/crawl/start` metadata, and regressions for The Paper, Jiemian, Reddit mock/API-pending behavior, and old case/report/monitoring/scheduler/notification flows.
+- Maimai fixture parser QA is stabilized for profile loading, post/reply extraction, schema validation, safe missing-selector failure, `/crawl/start` metadata, public parser status, public parser preview, Public Parser Status frontend dynamic listing behavior, fixture-only behavior when the global The Paper live-pilot flag is enabled, and regressions for The Paper, Jiemian, Hupu, Tieba, NGA, Reddit mock/API-pending behavior, and old case/report/monitoring/scheduler/notification flows.
 - Tieba visible fixture replies are normalized to `RawComment` with author, created time, parent id when present, like count, and floor number in `RawComment.raw_data.floor_number`.
 - Tieba fixture parser QA is stabilized for profile loading, thread/reply extraction, schema validation, safe missing-selector failure, `/crawl/start` metadata, forced fixture-only behavior when the global The Paper live-pilot flag is enabled, and regressions for The Paper, Jiemian, Hupu, Reddit mock/API-pending behavior, and old case/report/monitoring/scheduler/notification flows.
 - NGA visible fixture replies are normalized to `RawComment` with author, created time, parent id when present, like count, and floor number in `RawComment.raw_data.floor_number`.
@@ -358,7 +360,7 @@ Safety constraints:
 
 Next parser tasks:
 
-- Add additional sanitized fixture variants for The Paper, Jiemian, Hupu, Tieba, and NGA.
+- Add additional sanitized fixture variants for The Paper, Jiemian, Hupu, Maimai, Tieba, and NGA.
 - Add selector drift preview fixtures for alternate article/thread layouts per platform.
 - Add additional browser QA screenshots for the Public Parser Status page at 1440px after the in-app browser tooling is available.
 - Add a selector-drift QA matrix for missing title, content, author/source, created time, and permalink fields.

@@ -15,6 +15,7 @@ from app.services.crawling.base_adapter import AdapterHealth, BasePlatformAdapte
 from app.services.crawling.public_parser.public_parser_adapter import (
     HupuPublicParserAdapter,
     JiemianPublicParserAdapter,
+    MaimaiPublicParserAdapter,
     NgaPublicParserAdapter,
     ThePaperPublicParserAdapter,
     TiebaPublicParserAdapter,
@@ -311,6 +312,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     public_parser_adapter = get_adapter("the_paper")
     jiemian_adapter = get_adapter("jiemian")
     hupu_adapter = get_adapter("hupu")
+    maimai_adapter = get_adapter("maimai")
     tieba_adapter = get_adapter("tieba")
     nga_adapter = get_adapter("nga")
 
@@ -318,14 +320,16 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     assert has_platform_adapter("the_paper") is True
     assert has_platform_adapter("jiemian") is True
     assert has_platform_adapter("hupu") is True
+    assert has_platform_adapter("maimai") is True
     assert has_platform_adapter("tieba") is True
     assert has_platform_adapter("nga") is True
-    assert get_supported_adapter_ids() == ["hupu", "jiemian", "nga", "reddit", "the_paper", "tieba"]
+    assert get_supported_adapter_ids() == ["hupu", "jiemian", "maimai", "nga", "reddit", "the_paper", "tieba"]
     assert isinstance(adapter, RedditAdapter)
     assert isinstance(alias_adapter, RedditAdapter)
     assert isinstance(public_parser_adapter, ThePaperPublicParserAdapter)
     assert isinstance(jiemian_adapter, JiemianPublicParserAdapter)
     assert isinstance(hupu_adapter, HupuPublicParserAdapter)
+    assert isinstance(maimai_adapter, MaimaiPublicParserAdapter)
     assert isinstance(tieba_adapter, TiebaPublicParserAdapter)
     assert isinstance(nga_adapter, NgaPublicParserAdapter)
     assert adapter.mode == "mock"
@@ -339,7 +343,7 @@ def test_adapter_factory_does_not_activate_planned_or_crawler_later_platforms() 
     inactive_adapter_platforms = [
         platform.platform_id
         for platform in get_platform_registry()
-        if platform.platform_id not in {"reddit", "the_paper", "jiemian", "hupu", "tieba", "nga"}
+        if platform.platform_id not in {"reddit", "the_paper", "jiemian", "hupu", "maimai", "tieba", "nga"}
     ]
 
     assert inactive_adapter_platforms

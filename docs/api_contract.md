@@ -199,7 +199,7 @@ Response:
       "rate_limit_seconds": 3.0
     }
   ],
-  "total": 5,
+  "total": 6,
   "live_fetch_enabled_default": false
 }
 ```
@@ -210,6 +210,7 @@ Current public parser platforms:
 the_paper
 jiemian
 hupu
+maimai
 tieba
 nga
 ```
@@ -399,11 +400,12 @@ Important:
 - Reddit mock mode returns normalized `RawPost` and `RawComment` items in `raw_posts` and `raw_comments`.
 - Reddit real API mode is disabled while Reddit approval is pending. If Reddit is selected, the endpoint returns normalized mock data and safe approval/fallback metadata.
 - Public-page scraping is not implemented and must not be used to bypass Reddit API approval.
-- When `platforms` explicitly contains a registered public-parser scaffold such as `the_paper`, `jiemian`, `hupu`, `tieba`, or `nga`, the endpoint calls the public parser adapter through `adapter_factory.get_adapter(platform_id)`.
-- The Paper, Jiemian, Hupu, Tieba, and NGA public parsers currently run in `fixture_only` mode and return safe fixture/mock `RawPost` data by default.
+- When `platforms` explicitly contains a registered public-parser scaffold such as `the_paper`, `jiemian`, `hupu`, `maimai`, `tieba`, or `nga`, the endpoint calls the public parser adapter through `adapter_factory.get_adapter(platform_id)`.
+- The Paper, Jiemian, Hupu, Maimai, Tieba, and NGA public parsers currently run in `fixture_only` mode and return safe fixture/mock `RawPost` data by default.
 - The Paper has an optional local live public-page fetch pilot only when `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`. Jiemian remains fixture-only in this phase.
 - The Paper live pilot checks robots/profile policy first, uses low request limits and timeout, sends no cookies or authorization headers, performs no login or captcha handling, uses no proxy rotation, and falls back to fixture/mock data on unclear policy, blocked access, network errors, selector errors, or parsing failures.
 - Jiemian fixture output currently includes title, content, source/author label, created time, and permalink. Comments are not parsed because public comments are unavailable without login or dynamic loading in the fixture: `comments_unavailable_without_login_or_dynamic_loading`.
+- Maimai fixture output currently includes post title, main post content, source/author label, created time, permalink, interaction count, reply count, and visible fixture replies normalized as `RawComment`. Maimai live fetch remains disabled.
 - Hupu fixture output currently includes thread title, main post content, source/author, created time, permalink, light/upvote count, reply count, and visible fixture replies normalized to `RawComment`.
 - Tieba fixture output currently includes thread title, main post content, source/author, created time, permalink, like/upvote count, reply count, and visible fixture replies normalized to `RawComment`; floor numbers are stored in `RawComment.raw_data.floor_number`.
 - NGA fixture output currently includes thread title, main post content, source/author, created time, permalink, like/upvote count, reply count, and visible fixture replies normalized to `RawComment`; floor numbers are stored in `RawComment.raw_data.floor_number`.

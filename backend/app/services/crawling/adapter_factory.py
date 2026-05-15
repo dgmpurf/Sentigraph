@@ -6,6 +6,7 @@ from app.services.crawling.base_adapter import AdapterMode, BasePlatformAdapter,
 from app.services.crawling.public_parser.public_parser_adapter import (
     HupuPublicParserAdapter,
     JiemianPublicParserAdapter,
+    MaimaiPublicParserAdapter,
     NgaPublicParserAdapter,
     ThePaperPublicParserAdapter,
     TiebaPublicParserAdapter,
@@ -19,6 +20,7 @@ AdapterClass: TypeAlias = type[BasePlatformAdapter]
 ADAPTER_REGISTRY: dict[str, AdapterClass] = {
     HupuPublicParserAdapter.platform_id: HupuPublicParserAdapter,
     JiemianPublicParserAdapter.platform_id: JiemianPublicParserAdapter,
+    MaimaiPublicParserAdapter.platform_id: MaimaiPublicParserAdapter,
     NgaPublicParserAdapter.platform_id: NgaPublicParserAdapter,
     RedditAdapter.platform_id: RedditAdapter,
     ThePaperPublicParserAdapter.platform_id: ThePaperPublicParserAdapter,

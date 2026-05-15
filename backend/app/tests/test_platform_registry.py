@@ -68,6 +68,13 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["nga"].selectable_for_mock is False
     assert by_id["nga"].selectable_for_real is False
     assert "Public-page parser scaffold" in by_id["nga"].notes
+    assert by_id["maimai"].category == CRAWLER_LATER
+    assert by_id["maimai"].source_type == "public_page_parser"
+    assert by_id["maimai"].status == "fixture_only"
+    assert by_id["maimai"].mock_available is True
+    assert by_id["maimai"].selectable_for_mock is False
+    assert by_id["maimai"].selectable_for_real is False
+    assert "Public-page parser scaffold" in by_id["maimai"].notes
     assert by_id["the_paper"].category == CRAWLER_LATER
     assert by_id["the_paper"].source_type == "public_page_parser"
     assert by_id["the_paper"].status == "fixture_only"

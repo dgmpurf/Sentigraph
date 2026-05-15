@@ -18,9 +18,11 @@ Latest Tieba public parser validation: 2026-05-15. Focused parser/crawl/registry
 
 Latest NGA public parser QA validation: 2026-05-15. Focused parser/crawl/registry/adapter tests passed with `65 passed in 0.78s`; full backend validation passed with `155 passed in 3.01s`. NGA remains fixture-only and live fetch remains disabled, including when the global The Paper live-pilot flag is enabled. The smoke command in section 4.6 should return one NGA `RawPost`, three visible fixture `RawComment` replies, `parser_status=fixture_only`, `live_fetch_enabled=false`, `fallback_reason_category=live_fetch_disabled`, schema flags set to true, and floor numbers in `raw_data.floor_number`.
 
-Latest public parser status/preview QA validation: 2026-05-15. Focused status/preview tests passed with `12 passed in 1.6s`; full backend validation passed with `167 passed in 3.23s`. `GET /api/v1/public-parsers/status` returns The Paper, Jiemian, Hupu, Tieba, and NGA with fixture/profile availability and comment-support flags. `POST /api/v1/public-parsers/preview` returns fixture-first `RawPost` / `RawComment` samples and schema validation flags. Preview does not attempt live fetch unless both the request and global configuration opt in; live public fetching remains disabled by default.
+Latest public parser status/preview QA validation: 2026-05-15. Focused status/preview tests passed with `12 passed in 1.6s`; full backend validation passed with `167 passed in 3.23s`. `GET /api/v1/public-parsers/status` returns The Paper, Jiemian, Hupu, Maimai, Tieba, and NGA with fixture/profile availability and comment-support flags. `POST /api/v1/public-parsers/preview` returns fixture-first `RawPost` / `RawComment` samples and schema validation flags. Preview does not attempt live fetch unless both the request and global configuration opt in; live public fetching remains disabled by default.
 
-Latest Public Parser Status frontend QA validation: 2026-05-15. The `公开页面解析` sidebar page was rechecked for route wiring, parser status loading, fixture preview, empty/error states, and no-live-fetch frontend behavior. The parser table now includes an inline `备注` column so every row shows platform notes. Frontend production build passed in 7.65s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Local API checks confirmed all five parser profiles return `live_fetch_enabled=false`, preview works for `the_paper`, `jiemian`, `hupu`, `tieba`, and `nga`, and preview requests from the frontend code always pass `use_live_fetch=false`.
+Latest Maimai public parser QA validation: 2026-05-15. Focused parser/crawl/registry/adapter/status tests passed with `86 passed in 0.88s`; full backend validation passed with `176 passed in 3.29s`. Maimai remains fixture-only and live fetch remains disabled, including when the global The Paper live-pilot flag is enabled. The smoke command in section 4.6 should return one Maimai `RawPost`, two visible fixture `RawComment` replies, `parser_status=fixture_only`, `live_fetch_enabled=false`, `fallback_reason_category=live_fetch_disabled`, and schema flags set to true.
+
+Latest Public Parser Status frontend QA validation: 2026-05-15. The `公开页面解析` sidebar page was rechecked for route wiring, parser status loading, fixture preview, empty/error states, and no-live-fetch frontend behavior. The parser table now includes an inline `备注` column so every row shows platform notes. Frontend production build passed in 7.65s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The page loads parser rows dynamically, so Maimai appears through the backend status endpoint without adding a live-fetch control; preview requests from the frontend code always pass `use_live_fetch=false`.
 
 Latest v0.4 adapter-foundation validation: 2026-05-14. Backend tests passed with `47 passed in 0.42s`, frontend production build passed in 7.68s, and API smoke checks passed for health, platform registry, crawl start, case create/list/detail/run, Markdown export, visualization, summary, recommendation, analysis result, V1.5 topic-risk fields, and the Reddit mock adapter. The Vite Ant Design/ECharts vendor chunk warning remains non-blocking.
 
@@ -256,6 +258,14 @@ $body = @{ keyword = "Tesla"; platforms = @("hupu"); limit = 3 } | ConvertTo-Jso
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
 ```
 
+PowerShell check for Maimai / 脉脉:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+$body = @{ keyword = "Tesla"; platforms = @("maimai"); limit = 3 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
+```
+
 PowerShell check for Baidu Tieba:
 
 ```powershell
@@ -279,9 +289,10 @@ Expected result:
 - `live_fetch_enabled` is `false`.
 - `fallback_reason_category` is `live_fetch_disabled`.
 - `schema_valid`, `raw_post_schema_valid`, and `raw_comment_schema_valid` are `true`.
-- The Paper, Jiemian, Hupu, Tieba, and NGA return fixture/mock `RawPost` items.
+- The Paper, Jiemian, Hupu, Maimai, Tieba, and NGA return fixture/mock `RawPost` items.
 - Jiemian returns no comments; this is documented as `comments_unavailable_without_login_or_dynamic_loading`.
 - Hupu returns visible fixture replies as `RawComment` items with author/content/date/light-count fields when present in the fixture.
+- Maimai returns visible fixture replies as `RawComment` items with author/content/date/like-count fields when present in the fixture.
 - Tieba returns visible fixture replies as `RawComment` items with author/content/date/like-count fields and `raw_data.floor_number` when present in the fixture.
 - NGA returns visible fixture replies as `RawComment` items with author/content/date/like-count fields and `raw_data.floor_number` when present in the fixture.
 - No real public-page fetch, cookies, login, captcha handling, proxy rotation, private data access, Reddit scraping, platform API call, or external LLM call occurs.
@@ -307,8 +318,8 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/public-parsers
 
 Expected result:
 
-- Status includes `the_paper`, `jiemian`, `hupu`, `tieba`, and `nga`.
-- `fixture_available=true` and `profile_available=true` for all five current parser scaffolds.
+- Status includes `the_paper`, `jiemian`, `hupu`, `maimai`, `tieba`, and `nga`.
+- `fixture_available=true` and `profile_available=true` for all six current parser scaffolds.
 - Preview returns sample `RawPost` data and visible fixture `RawComment` data where supported.
 - `raw_post_schema_valid=true` and `raw_comment_schema_valid=true`.
 - `live_fetch_enabled=false` by default.
@@ -318,9 +329,9 @@ Frontend page check:
 1. Start the backend and frontend.
 2. Open `http://127.0.0.1:5173`.
 3. Click the sidebar item `公开页面解析`.
-4. Confirm the parser table lists `the_paper`, `jiemian`, `hupu`, `tieba`, and `nga`.
+4. Confirm the parser table lists `the_paper`, `jiemian`, `hupu`, `maimai`, `tieba`, and `nga`.
 5. Confirm every parser row shows platform id, display name, source type, parser status, Fixture/Profile availability, Live Fetch status, comments support, safe limit, request interval, and notes.
-6. Click `预览` for `the_paper`, `jiemian`, `hupu`, `tieba`, and `nga`.
+6. Click `预览` for `the_paper`, `jiemian`, `hupu`, `maimai`, `tieba`, and `nga`.
 
 Expected frontend result:
 
