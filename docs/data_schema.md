@@ -69,6 +69,78 @@ Only `selectable_for_mock=true` platforms should appear in active MVP frontend s
 }
 ```
 
+## 0.1 Public Parser Status and Preview
+
+Public parser status and preview schemas are used for safe developer diagnostics around fixture-only public-page parser scaffolds. They are not production crawlers and must remain mock/fixture-first unless a separate live-fetch pilot is explicitly enabled.
+
+### PublicParserStatusItem
+
+```json
+{
+  "platform_id": "hupu",
+  "display_name": "Hupu / HuPu",
+  "source_type": "public_page_parser",
+  "parser_status": "fixture_only",
+  "live_fetch_enabled": false,
+  "fixture_available": true,
+  "profile_available": true,
+  "comments_supported": true,
+  "last_test_status": "fixture_available",
+  "notes": "Fixture-only public parser scaffold for forum-style Hupu threads.",
+  "safe_limit": 3,
+  "rate_limit_seconds": 3.0
+}
+```
+
+### PublicParserStatusResponse
+
+```json
+{
+  "parsers": [],
+  "total": 5,
+  "live_fetch_enabled_default": false
+}
+```
+
+### PublicParserPreviewRequest
+
+```json
+{
+  "platform": "hupu",
+  "limit": 3,
+  "use_live_fetch": false
+}
+```
+
+### PublicParserPreviewResponse
+
+```json
+{
+  "platform": "hupu",
+  "source_type": "public_page_parser",
+  "parser_status": "fixture_only",
+  "live_fetch_enabled": false,
+  "live_fetch_attempted": false,
+  "fallback_used": true,
+  "fallback_reason_category": "fixture_preview",
+  "post_count": 1,
+  "comment_count": 2,
+  "raw_post_schema_valid": true,
+  "raw_comment_schema_valid": true,
+  "sample_posts": [],
+  "sample_comments": [],
+  "warnings": []
+}
+```
+
+Rules:
+
+- `sample_posts` uses the existing `RawPost` schema.
+- `sample_comments` uses the existing `RawComment` schema.
+- `limit` is clamped by the backend safe preview limit, currently `3`.
+- `warnings` may include `live_fetch_disabled`, `comments_unavailable_without_login_or_dynamic_loading`, or `no_sample_posts`.
+- Preview responses must not include credentials, browser cookies, private data, hidden authenticated content, or raw secrets.
+
 ## 0.5 Analysis Case
 
 Analysis cases are lightweight MVP objects used to preserve one mock analysis context across pages. Current default storage is a project-local JSON file through the case repository/storage abstraction. MongoDB persistence is available as an optional v1.0 backend, while Redis remains future work.

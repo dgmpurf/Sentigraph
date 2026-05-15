@@ -10,6 +10,7 @@ from app.api.v1.routes import (
     notifications,
     platforms,
     propagation,
+    public_parsers,
     recommendation,
     scheduler,
     summary,
@@ -20,6 +21,7 @@ api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(keywords.router, prefix="/keywords", tags=["keywords"])
 api_router.include_router(platforms.router, prefix="/platforms", tags=["platforms"])
+api_router.include_router(public_parsers.router, prefix="/public-parsers", tags=["public-parsers"])
 api_router.include_router(cases.router, prefix="/cases", tags=["cases"])
 api_router.include_router(crawl.router, prefix="/crawl", tags=["crawl"])
 api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])

@@ -1,10 +1,10 @@
-# Sentigraph Local Demo Checklist
+﻿# Sentigraph Local Demo Checklist
 
 Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
 
 Latest pre-v1.0 hardening validation: 2026-05-15. Backend tests passed with `92 passed in 2.82s`. Frontend production build passed in 7.75s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke check passed with `26 passed, 0 failed` against a temporary local backend and temporary project-local JSON store. New local demo utilities are available for safe runtime data reset, deterministic demo seeding, and local API smoke validation. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, Reddit credential, MongoDB, Redis, or external LLM call is made.
 
-Latest v0.9 notification QA validation: 2026-05-14. Backend tests passed with `90 passed in 2.34s`. Frontend production build passed in 7.61s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Isolated API smoke checks confirmed alert events create local `in_app` notification outbox items, notifications can be listed by case or globally, `标记已读` sets `read_at`, `模拟发送` sets `simulated_sent_at`, and `模拟发送待处理通知` updates all pending local notifications. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, or external LLM call is made.
+Latest v0.9 notification QA validation: 2026-05-14. Backend tests passed with `90 passed in 2.34s`. Frontend production build passed in 7.61s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Isolated API smoke checks confirmed alert events create local `in_app` notification outbox items, notifications can be listed by case or globally, `鏍囪宸茶` sets `read_at`, `妯℃嫙鍙戦€乣 sets `simulated_sent_at`, and `妯℃嫙鍙戦€佸緟澶勭悊閫氱煡` updates all pending local notifications. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, or external LLM call is made.
 
 Latest v0.8 scheduler QA validation: 2026-05-14. Backend tests passed with `81 passed in 1.76s`. Frontend production build passed in 7.46s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks confirmed enabling monitoring, `GET /api/v1/scheduler/status`, `POST /api/v1/scheduler/run-due`, disabled/not-due cases being skipped, case-specific alert thresholds, snapshot/alert persistence, disabling monitoring, and the old `monitor/run` endpoint. The scheduler foundation is manual only; no background worker starts by default.
 
@@ -17,6 +17,8 @@ Latest Hupu public parser QA validation: 2026-05-15. Focused parser/crawl/regist
 Latest Tieba public parser validation: 2026-05-15. Focused parser/crawl/registry/adapter tests passed with `58 passed in 0.98s`; full backend validation passed with `148 passed in 2.84s`. Tieba remains fixture-only and live fetch remains disabled, including when the global The Paper live-pilot flag is enabled. The smoke command in section 4.6 should return one Tieba `RawPost`, three visible fixture `RawComment` replies, `parser_status=fixture_only`, `live_fetch_enabled=false`, `fallback_reason_category=live_fetch_disabled`, schema flags set to true, and floor numbers in `raw_data.floor_number`.
 
 Latest NGA public parser QA validation: 2026-05-15. Focused parser/crawl/registry/adapter tests passed with `65 passed in 0.78s`; full backend validation passed with `155 passed in 3.01s`. NGA remains fixture-only and live fetch remains disabled, including when the global The Paper live-pilot flag is enabled. The smoke command in section 4.6 should return one NGA `RawPost`, three visible fixture `RawComment` replies, `parser_status=fixture_only`, `live_fetch_enabled=false`, `fallback_reason_category=live_fetch_disabled`, schema flags set to true, and floor numbers in `raw_data.floor_number`.
+
+Latest public parser status/preview QA validation: 2026-05-15. Focused status/preview tests passed with `12 passed in 1.6s`; full backend validation passed with `167 passed in 3.23s`. `GET /api/v1/public-parsers/status` returns The Paper, Jiemian, Hupu, Tieba, and NGA with fixture/profile availability and comment-support flags. `POST /api/v1/public-parsers/preview` returns fixture-first `RawPost` / `RawComment` samples and schema validation flags. Preview does not attempt live fetch unless both the request and global configuration opt in; live public fetching remains disabled by default.
 
 Latest v0.4 adapter-foundation validation: 2026-05-14. Backend tests passed with `47 passed in 0.42s`, frontend production build passed in 7.68s, and API smoke checks passed for health, platform registry, crawl start, case create/list/detail/run, Markdown export, visualization, summary, recommendation, analysis result, V1.5 topic-risk fields, and the Reddit mock adapter. The Vite Ant Design/ECharts vendor chunk warning remains non-blocking.
 
@@ -35,14 +37,14 @@ These helper scripts are safe local-development tools. They only operate inside 
 Dry-run local runtime data reset:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 python scripts\reset_local_data.py
 ```
 
 Actually reset local runtime JSON data:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 python scripts\reset_local_data.py --yes
 ```
 
@@ -55,7 +57,7 @@ Expected result:
 Seed deterministic demo cases:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 python scripts\seed_demo_cases.py --reset-first
 ```
 
@@ -68,7 +70,7 @@ Expected result:
 Run the local API smoke check after starting the backend:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
 ```
 
@@ -84,7 +86,7 @@ The default demo still uses local JSON. MongoDB is optional and should only be e
 Start backend with local JSON mode:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 set CASE_STORE_BACKEND=local_json
 python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
 ```
@@ -92,7 +94,7 @@ python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --por
 Start backend with optional MongoDB mode:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 set CASE_STORE_BACKEND=mongodb
 set MONGODB_URI=mongodb://localhost:27017
 set MONGODB_DATABASE=sentigraph
@@ -110,7 +112,7 @@ Expected result:
 Open PowerShell or CMD:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 .venv\Scripts\activate
 python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
 ```
@@ -136,7 +138,7 @@ Expected result:
 Open another PowerShell or CMD:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\frontend"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph\frontend"
 npm install
 npm run dev
 ```
@@ -153,7 +155,7 @@ Open Cases or Keyword Search.
 
 From Keyword Search:
 
-1. Enter an optional case title, for example `Tesla 舆情案例`.
+1. Enter an optional case title, for example `Tesla 鑸嗘儏妗堜緥`.
 2. Enter keyword `Tesla`.
 3. Select mock-enabled platforms such as Reddit, Weibo, and Bilibili.
 4. Click `Create Case & Run Mock Analysis`.
@@ -213,7 +215,7 @@ Expected result:
 This checks the backend adapter scaffold directly. It should stay offline and should not require Reddit credentials.
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\backend"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph\backend"
 ..\.venv\Scripts\python.exe -c "from app.services.crawling.adapter_factory import get_adapter; a=get_adapter('reddit'); posts=a.search_posts('Tesla', limit=2); comments=a.fetch_comments(posts[0].post_id, limit=2); print(a.health_check()); print(len(posts), len(comments), posts[0].platform, comments[0].platform)"
 ```
 
@@ -231,7 +233,7 @@ This checks the fixture-only public-page parser scaffolds. It must stay offline 
 PowerShell check for The Paper / Pengpai News:
 
 ```powershell
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 $body = @{ keyword = "Tesla"; platforms = @("the_paper"); limit = 3 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
 ```
@@ -239,7 +241,7 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -
 PowerShell check for Jiemian News:
 
 ```powershell
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 $body = @{ keyword = "Tesla"; platforms = @("jiemian"); limit = 3 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
 ```
@@ -247,7 +249,7 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -
 PowerShell check for Hupu / HuPu:
 
 ```powershell
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 $body = @{ keyword = "Tesla"; platforms = @("hupu"); limit = 3 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
 ```
@@ -255,7 +257,7 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -
 PowerShell check for Baidu Tieba:
 
 ```powershell
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 $body = @{ keyword = "Tesla"; platforms = @("tieba"); limit = 3 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
 ```
@@ -263,7 +265,7 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -
 PowerShell check for NGA:
 
 ```powershell
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 $body = @{ keyword = "Tesla"; platforms = @("nga"); limit = 3 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
 ```
@@ -282,6 +284,33 @@ Expected result:
 - NGA returns visible fixture replies as `RawComment` items with author/content/date/like-count fields and `raw_data.floor_number` when present in the fixture.
 - No real public-page fetch, cookies, login, captcha handling, proxy rotation, private data access, Reddit scraping, platform API call, or external LLM call occurs.
 
+## 4.6.1 Public Parser Status and Preview
+
+This checks the unified public parser diagnostics layer. It remains fixture-first and should not enable live public fetching.
+
+List all parser sources:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/public-parsers/status" | ConvertTo-Json -Depth 8
+```
+
+Preview one fixture parser:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+$body = @{ platform = "hupu"; limit = 3; use_live_fetch = $false } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/public-parsers/preview" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
+```
+
+Expected result:
+
+- Status includes `the_paper`, `jiemian`, `hupu`, `tieba`, and `nga`.
+- `fixture_available=true` and `profile_available=true` for all five current parser scaffolds.
+- Preview returns sample `RawPost` data and visible fixture `RawComment` data where supported.
+- `raw_post_schema_valid=true` and `raw_comment_schema_valid=true`.
+- `live_fetch_enabled=false` by default.
+
 ## 4.7 Optional The Paper Live Public-Page Fetch Pilot
 
 This is a local-only pilot and is disabled by default. Use it only for one tiny manual check against a public The Paper article page. Do not use accounts, cookies, browser profiles, captcha handling, proxy rotation, or private/authenticated pages.
@@ -291,7 +320,7 @@ Latest QA validation: automated tests use mocked network responses only. The tes
 Confirm the default safe mode before enabling the pilot:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 set PUBLIC_PARSER_LIVE_FETCH_ENABLED=false
 python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
 ```
@@ -299,7 +328,7 @@ python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --por
 In another terminal:
 
 ```powershell
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 $body = @{ keyword = "Tesla"; platforms = @("the_paper"); limit = 1 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
 ```
@@ -309,7 +338,7 @@ Expected default result: `live_fetch_enabled=false`, `live_fetch_attempted=false
 Start the backend with live public parser fetch explicitly enabled:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 set PUBLIC_PARSER_LIVE_FETCH_ENABLED=true
 set PUBLIC_PARSER_RATE_LIMIT_SECONDS=3
 set PUBLIC_PARSER_USER_AGENT=sentigraph-public-parser-dev
@@ -319,7 +348,7 @@ python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --por
 In a second PowerShell window, run one small request. Replace `<the_paper_article_id>` with the public id from a The Paper URL such as `newsDetail_forward_<the_paper_article_id>`:
 
 ```powershell
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 $body = @{ keyword = "<the_paper_article_id>"; platforms = @("the_paper"); limit = 1 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
 ```
@@ -336,7 +365,7 @@ Expected result:
 After the pilot, restart the backend with live fetch disabled:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 set PUBLIC_PARSER_LIVE_FETCH_ENABLED=false
 python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
 ```
@@ -384,7 +413,7 @@ Expected result:
 
 - Report language is `zh-CN`.
 - Raw `risk_level` remains an English enum.
-- `risk_level_label` displays Chinese labels such as `高风险`.
+- `risk_level_label` displays Chinese labels such as `楂橀闄ー.
 - `risk_model_version` displays `v1_5_topic_risk_mvp` for the current V1.5 mock pipeline.
 - Representative comments stay in their original language.
 
@@ -404,8 +433,8 @@ Expected result:
 
 In Summary Report for a completed case:
 
-1. Click `复制 Markdown` to copy the Markdown report.
-2. Click `下载 .md` to download the Markdown report file.
+1. Click `澶嶅埗 Markdown` to copy the Markdown report.
+2. Click `涓嬭浇 .md` to download the Markdown report file.
 
 Expected result:
 
@@ -421,7 +450,7 @@ After creating and running one case:
 1. Confirm the local runtime store exists:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 dir backend\data
 ```
 
@@ -445,7 +474,7 @@ Expected result:
 Safe reset:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 del backend\data\cases.json
 ```
 
@@ -503,12 +532,12 @@ Expected result:
 With a completed case selected:
 
 1. Open Risk Monitor.
-2. Find `监控配置`.
-3. Click `启用监控`.
-4. Confirm the status changes to `监控已到期` or `监控已启用`.
-5. Click `运行到期监控任务`.
-6. Confirm a new snapshot appears, alerts update if thresholds are crossed, and `下次检查` advances by the configured interval.
-7. Click `暂停监控` if you want to stop future manual run-due checks for this case.
+2. Find `鐩戞帶閰嶇疆`.
+3. Click `鍚敤鐩戞帶`.
+4. Confirm the status changes to `鐩戞帶宸插埌鏈焋 or `鐩戞帶宸插惎鐢╜.
+5. Click `杩愯鍒版湡鐩戞帶浠诲姟`.
+6. Confirm a new snapshot appears, alerts update if thresholds are crossed, and `涓嬫妫€鏌 advances by the configured interval.
+7. Click `鏆傚仠鐩戞帶` if you want to stop future manual run-due checks for this case.
 
 Backend smoke commands:
 
@@ -531,12 +560,12 @@ Expected result:
 With a completed case selected:
 
 1. Open Risk Monitor.
-2. Click `Run Mock Monitoring Check`, or enable monitoring and click `运行到期监控任务`.
+2. Click `Run Mock Monitoring Check`, or enable monitoring and click `杩愯鍒版湡鐩戞帶浠诲姟`.
 3. Confirm alert events appear.
-4. Confirm the `通知中心` card shows notification level, linked case id, message, read/unread state, and simulated send state.
-5. Click `标记已读` on one notification.
-6. Click `模拟发送` on one notification.
-7. Click `模拟发送待处理通知` to update all pending local notifications.
+4. Confirm the `閫氱煡涓績` card shows notification level, linked case id, message, read/unread state, and simulated send state.
+5. Click `鏍囪宸茶` on one notification.
+6. Click `妯℃嫙鍙戦€乣 on one notification.
+7. Click `妯℃嫙鍙戦€佸緟澶勭悊閫氱煡` to update all pending local notifications.
 
 Backend smoke commands:
 
@@ -576,10 +605,10 @@ Validated by backend tests, frontend production build, source-level RiskMonitor 
 
 - Open a completed case.
 - Open Risk Monitor.
-- Click `启用监控`.
-- Click `运行到期监控任务`.
-- Confirm a new snapshot appears and `下次检查` advances.
-- Click `暂停监控`.
+- Click `鍚敤鐩戞帶`.
+- Click `杩愯鍒版湡鐩戞帶浠诲姟`.
+- Confirm a new snapshot appears and `涓嬫妫€鏌 advances.
+- Click `鏆傚仠鐩戞帶`.
 - Run due jobs again and confirm the disabled case does not create another snapshot.
 
 Latest v0.7 monitoring QA pass: 2026-05-14.
@@ -617,7 +646,7 @@ Validated with a 1440x960 desktop browser viewport through Chrome headless CDP f
 Backend tests:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
 .venv\Scripts\activate
 python -m pytest
 ```
@@ -625,7 +654,7 @@ python -m pytest
 Frontend build:
 
 ```cmd
-cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\frontend"
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph\frontend"
 npm run build
 ```
 

@@ -335,6 +335,11 @@ Implemented:
 - Baidu Tieba / 百度贴吧 (`tieba`) `fixture_only` parser scaffold for forum-style thread/reply fixtures
 - NGA (`nga`) `fixture_only` parser scaffold for forum-style thread/reply fixtures
 - `/api/v1/crawl/start` public parser fallback metadata for explicit `the_paper`, `jiemian`, `hupu`, `tieba`, and `nga` requests
+- unified public parser diagnostics endpoints:
+  - `GET /api/v1/public-parsers/status`
+  - `POST /api/v1/public-parsers/preview`
+- deterministic fixture preview for The Paper, Jiemian, Hupu, Tieba, and NGA with sample `RawPost` / `RawComment` items and schema validation flags
+- status/preview QA stabilized for all five parser sources, unknown-platform failure, disabled-live fallback, and fixture-only behavior when the global live-pilot flag is enabled
 - Jiemian comments are documented as `comments_unavailable_without_login_or_dynamic_loading` and are not parsed in the fixture.
 - Hupu visible fixture replies are normalized to `RawComment` with author, created time, parent id when present, and light/upvote count.
 - Hupu fixture parser QA is stabilized for profile loading, thread/reply extraction, schema validation, safe missing-selector failure, `/crawl/start` metadata, and regressions for The Paper, Jiemian, Reddit mock/API-pending behavior, and old case/report/monitoring/scheduler/notification flows.
@@ -353,6 +358,8 @@ Safety constraints:
 Next parser tasks:
 
 - Add additional sanitized fixture variants for The Paper, Jiemian, Hupu, Tieba, and NGA.
+- Add selector drift preview fixtures for alternate article/thread layouts per platform.
+- Add a small frontend-only Public Parser Status page or Settings card after backend diagnostics stay stable.
 - Add a selector-drift QA matrix for missing title, content, author/source, created time, and permalink fields.
 - Add a mocked test matrix for The Paper live pilot status categories if new failure categories are introduced.
 - Add fixture-only parser scaffolds for the next candidate only after the current fixture QA matrix is stable.

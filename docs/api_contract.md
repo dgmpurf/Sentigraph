@@ -169,6 +169,95 @@ Important:
 - Crawler-later platforms are visible for roadmap planning but never real-selectable in the MVP.
 - YouTube remains disabled or optional future.
 
+## 0.2 Public Parser Status and Preview
+
+These endpoints expose safe developer diagnostics for the compliant public-page parser scaffolds. They do not require credentials and do not call real platform APIs or external LLM services.
+
+### Parser Status
+
+```http
+GET /api/v1/public-parsers/status
+```
+
+Response:
+
+```json
+{
+  "parsers": [
+    {
+      "platform_id": "hupu",
+      "display_name": "Hupu / HuPu",
+      "source_type": "public_page_parser",
+      "parser_status": "fixture_only",
+      "live_fetch_enabled": false,
+      "fixture_available": true,
+      "profile_available": true,
+      "comments_supported": true,
+      "last_test_status": "fixture_available",
+      "notes": "Fixture-only public parser scaffold for forum-style Hupu threads.",
+      "safe_limit": 3,
+      "rate_limit_seconds": 3.0
+    }
+  ],
+  "total": 5,
+  "live_fetch_enabled_default": false
+}
+```
+
+Current public parser platforms:
+
+```text
+the_paper
+jiemian
+hupu
+tieba
+nga
+```
+
+### Parser Preview
+
+```http
+POST /api/v1/public-parsers/preview
+```
+
+Request:
+
+```json
+{
+  "platform": "hupu",
+  "limit": 3,
+  "use_live_fetch": false
+}
+```
+
+Response:
+
+```json
+{
+  "platform": "hupu",
+  "source_type": "public_page_parser",
+  "parser_status": "fixture_only",
+  "live_fetch_enabled": false,
+  "live_fetch_attempted": false,
+  "fallback_used": true,
+  "fallback_reason_category": "fixture_preview",
+  "post_count": 1,
+  "comment_count": 2,
+  "raw_post_schema_valid": true,
+  "raw_comment_schema_valid": true,
+  "sample_posts": [],
+  "sample_comments": [],
+  "warnings": []
+}
+```
+
+Important:
+
+- Preview is fixture-first and deterministic.
+- Default preview does not perform live public-page fetches.
+- If `use_live_fetch=true` but live fetch is disabled by configuration or not supported by the platform, the endpoint returns fixture preview data with a `live_fetch_disabled` warning.
+- Public parser previews must not use login, cookies, captcha handling, anti-bot evasion, proxy rotation, hidden APIs, private data, Reddit scraping, platform APIs, or external LLM calls.
+
 ## 1. Keyword Expansion
 
 ### Endpoint
