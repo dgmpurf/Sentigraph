@@ -1,6 +1,6 @@
 # Sentigraph Progress
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
 
 ## 1. Current Project Status
 
@@ -15,6 +15,21 @@ keyword input -> mock pipeline analysis -> backend report/visualization APIs -> 
 ```
 
 Real crawlers, real OpenAI/LLM calls, real database persistence, and complex ML models have not been implemented yet. The MVP remains runnable offline with mock data and deterministic rule/template logic.
+
+Latest pre-v1.0 hardening update: completed the overnight hardening pass for the v0.9 mock MVP before MongoDB work. Added safe local developer utilities for resetting ignored runtime JSON data, seeding deterministic demo cases, and running an API smoke check against a local backend. Added focused tests for the reset/seed utilities, a frontend error boundary, a not-found fallback, route-level lazy loading, Chinese risk label consistency in the app shell, and stable QA selectors on notification/report copy actions. Backend validation passed with `92 passed in 2.82s`; frontend production build passed in 7.75s; API smoke check passed with `26 passed, 0 failed` against a temporary local backend and temporary project-local JSON store. The Vite large chunk warning remains for Ant Design and ECharts vendor chunks, but route-level page chunks are now split and the warning is non-blocking.
+
+Pre-v1.0 phase status:
+
+| Phase | Status | Result |
+| --- | --- | --- |
+| Phase 1: v0.9 notification and alert regression QA | complete | API smoke verified health, platforms, keyword/crawl/analysis, cases, Markdown export, monitor/run, alerts, scheduler, notifications, and outbox endpoints. |
+| Phase 2: Local demo data tools | complete | Added `scripts/reset_local_data.py` and `scripts/seed_demo_cases.py`; reset is dry-run by default and preserves `backend/data/.gitkeep`. |
+| Phase 3: API smoke test script | complete | Added `scripts/api_smoke_check.py`; it requires a running local backend and does not call external APIs or require Reddit credentials. |
+| Phase 4: Frontend polish and robustness | complete | Added `ErrorBoundary`, `NotFound`, route-level lazy loading, Chinese risk labels, and stable QA selectors. |
+| Phase 5: Test coverage hardening | complete | Added script-level tests for safe local reset/seed behavior; full backend suite passed. |
+| Phase 6: Documentation cleanup | complete | Added pre-v1.0 notes, demo commands, release notes, and kept MongoDB as the next major task. |
+
+Recommended next v1.0 task: implement an optional MongoDB-backed case store behind the existing repository/storage interface while keeping `local_json` as the default backend. Add config, indexes/schema documentation, migration/export/backfill tests, and preserve the current case/report/monitoring/scheduler/notification API contracts.
 
 Latest local environment validation on Windows on 2026-05-14 passed: required repository folders are present, ignore rules cover local environment/cache/build outputs, backend dependencies install in the repository-root `.venv`, backend tests pass, frontend dependencies install, and the frontend production build completes.
 

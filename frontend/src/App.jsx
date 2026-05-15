@@ -1,6 +1,6 @@
 import { Alert, App as AntApp, ConfigProvider, Spin, theme } from 'antd'
 import { motion } from 'framer-motion'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
   createAnalysisCase,
@@ -31,13 +31,8 @@ import {
   simulateSendPendingNotifications,
 } from './api/sentigraphApi.js'
 import { AppShell } from './components/layout/AppShell.jsx'
-import { AnalysisResult } from './pages/AnalysisResult.jsx'
-import { Cases } from './pages/Cases.jsx'
-import { Dashboard } from './pages/Dashboard.jsx'
-import { KeywordSearch } from './pages/KeywordSearch.jsx'
-import { PropagationGraph } from './pages/PropagationGraph.jsx'
-import { RiskMonitor } from './pages/RiskMonitor.jsx'
-import { SummaryReport } from './pages/SummaryReport.jsx'
+import { ErrorBoundary } from './components/layout/ErrorBoundary.jsx'
+import { NotFound } from './pages/NotFound.jsx'
 
 const DEFAULT_PROJECT_ID = 'project_001'
 const DEFAULT_DATE_RANGE = { start: '2026-05-01', end: '2026-05-13' }
@@ -64,6 +59,18 @@ const FALLBACK_PLATFORM_OPTIONS = [
   { label: 'Douban', value: 'douban' },
   { label: 'Toutiao', value: 'toutiao' },
 ]
+
+function lazyNamed(importer, exportName) {
+  return lazy(() => importer().then((module) => ({ default: module[exportName] })))
+}
+
+const Dashboard = lazyNamed(() => import('./pages/Dashboard.jsx'), 'Dashboard')
+const Cases = lazyNamed(() => import('./pages/Cases.jsx'), 'Cases')
+const KeywordSearch = lazyNamed(() => import('./pages/KeywordSearch.jsx'), 'KeywordSearch')
+const AnalysisResult = lazyNamed(() => import('./pages/AnalysisResult.jsx'), 'AnalysisResult')
+const PropagationGraph = lazyNamed(() => import('./pages/PropagationGraph.jsx'), 'PropagationGraph')
+const RiskMonitor = lazyNamed(() => import('./pages/RiskMonitor.jsx'), 'RiskMonitor')
+const SummaryReport = lazyNamed(() => import('./pages/SummaryReport.jsx'), 'SummaryReport')
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
@@ -572,7 +579,7 @@ function App() {
     propagation: <PropagationGraph {...pageProps} />,
     risk: <RiskMonitor {...pageProps} />,
     summary: <SummaryReport {...pageProps} />,
-  }[activePage]
+  }[activePage] || <NotFound activePage={activePage} onNavigate={setActivePage} />
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0
   const riskLevel = visualization?.risk_level ?? analysis?.risk?.risk_level ?? 'low'
@@ -599,7 +606,9 @@ function App() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.22, ease: 'easeOut' }}
             >
-              {currentPage}
+              <ErrorBoundary resetKey={activePage} onReset={() => setActivePage('dashboard')}>
+                <Suspense fallback={<Spin spinning tip="Loading page" />}>{currentPage}</Suspense>
+              </ErrorBoundary>
             </motion.div>
           </Spin>
         </AppShell>

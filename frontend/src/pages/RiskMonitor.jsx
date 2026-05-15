@@ -506,6 +506,7 @@ export function RiskMonitor({
             </Paragraph>
             <Space wrap style={{ marginBottom: 12 }}>
               <Button
+                data-testid="notification-send-pending-button"
                 icon={<Send size={15} />}
                 loading={notificationLoading}
                 onClick={onSimulateSendPendingNotifications}
@@ -536,6 +537,7 @@ export function RiskMonitor({
                       </Text>
                       <Space wrap>
                         <Button
+                          data-testid="notification-mark-read-button"
                           disabled={Boolean(item.read_at)}
                           icon={<CheckCircle size={15} />}
                           loading={notificationLoading}
@@ -545,6 +547,7 @@ export function RiskMonitor({
                           标记已读
                         </Button>
                         <Button
+                          data-testid="notification-simulate-send-button"
                           disabled={item.status === 'simulated_sent'}
                           icon={<Send size={15} />}
                           loading={notificationLoading}

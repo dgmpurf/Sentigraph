@@ -2,6 +2,8 @@
 
 Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
 
+Latest pre-v1.0 hardening validation: 2026-05-15. Backend tests passed with `92 passed in 2.82s`. Frontend production build passed in 7.75s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke check passed with `26 passed, 0 failed` against a temporary local backend and temporary project-local JSON store. New local demo utilities are available for safe runtime data reset, deterministic demo seeding, and local API smoke validation. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, Reddit credential, MongoDB, Redis, or external LLM call is made.
+
 Latest v0.9 notification QA validation: 2026-05-14. Backend tests passed with `90 passed in 2.34s`. Frontend production build passed in 7.61s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Isolated API smoke checks confirmed alert events create local `in_app` notification outbox items, notifications can be listed by case or globally, `标记已读` sets `read_at`, `模拟发送` sets `simulated_sent_at`, and `模拟发送待处理通知` updates all pending local notifications. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, or external LLM call is made.
 
 Latest v0.8 scheduler QA validation: 2026-05-14. Backend tests passed with `81 passed in 1.76s`. Frontend production build passed in 7.46s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks confirmed enabling monitoring, `GET /api/v1/scheduler/status`, `POST /api/v1/scheduler/run-due`, disabled/not-due cases being skipped, case-specific alert thresholds, snapshot/alert persistence, disabling monitoring, and the old `monitor/run` endpoint. The scheduler foundation is manual only; no background worker starts by default.
@@ -19,6 +21,55 @@ Important constraints:
 - Do not call OpenAI or external LLM APIs.
 - Use the offline mock pipeline only.
 - Test on a desktop browser around 1440px width.
+
+## 0. Pre-v1.0 Local Demo Data Tools
+
+These helper scripts are safe local-development tools. They only operate inside the repository and do not call external APIs.
+
+Dry-run local runtime data reset:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\reset_local_data.py
+```
+
+Actually reset local runtime JSON data:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\reset_local_data.py --yes
+```
+
+Expected result:
+
+- Deletes only ignored runtime JSON files under `backend\data\*.json` and `backend\data\*.json.tmp`.
+- Preserves `backend\data\.gitkeep`.
+- Does not delete source files, docs, schemas, mock fixtures, or `.env`.
+
+Seed deterministic demo cases:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\seed_demo_cases.py --reset-first
+```
+
+Expected result:
+
+- Creates two deterministic demo cases.
+- One case is completed with mock analysis, V1.5 topic risks, Chinese report, Markdown export data, snapshots, alerts, scheduler state, and local in-app notifications.
+- One case remains a draft/demo watch case.
+
+Run the local API smoke check after starting the backend:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
+```
+
+Expected result:
+
+- Health, platforms, keyword/crawl/analysis, case run, Markdown export, monitoring, scheduler, alerts, notifications, and report endpoints pass.
+- The script prints a clear pass/fail summary and exits nonzero on failure.
 
 ## 1. Start Backend
 

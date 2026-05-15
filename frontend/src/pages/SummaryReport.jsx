@@ -94,6 +94,7 @@ export function SummaryReport({
           </Tag>
           <Space>
             <Button
+              data-testid="summary-copy-markdown-button"
               disabled={!currentCase?.case_id || !hasContent}
               icon={<ClipboardCopy size={16} />}
               loading={markdownLoading}
@@ -102,6 +103,7 @@ export function SummaryReport({
               复制 Markdown
             </Button>
             <Button
+              data-testid="summary-download-markdown-button"
               disabled={!currentCase?.case_id || !hasContent}
               icon={<Download size={16} />}
               loading={markdownLoading}

@@ -338,6 +338,42 @@ npm run frontend:dev
 npm run frontend:build
 ```
 
+### Pre-v1.0 Local Demo Utilities
+
+These commands are optional local helpers for the mock MVP. They operate only on project-local runtime/demo data and do not call external APIs.
+
+Dry-run local data reset:
+
+```cmd
+python scripts\reset_local_data.py
+```
+
+Actually reset local runtime JSON data:
+
+```cmd
+python scripts\reset_local_data.py --yes
+```
+
+Seed deterministic demo cases:
+
+```cmd
+python scripts\seed_demo_cases.py --reset-first
+```
+
+Run the local API smoke check after the backend is running:
+
+```cmd
+python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
+```
+
+Equivalent root npm helper scripts are also available:
+
+```cmd
+npm run data:reset
+npm run data:seed
+npm run api:smoke
+```
+
 ## 9. API Overview
 
 Base path:

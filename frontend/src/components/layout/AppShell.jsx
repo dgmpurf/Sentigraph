@@ -26,6 +26,13 @@ const navItems = [
   { key: 'summary', label: 'Summary Report', icon: <FileText size={17} /> },
 ]
 
+const riskLevelLabels = {
+  low: '低风险',
+  medium: '中等风险',
+  high: '高风险',
+  critical: '严重风险',
+}
+
 export function AppShell({
   activePage,
   alertsCount,
@@ -64,7 +71,9 @@ export function AppShell({
             <Tag color="cyan">Mock Mode</Tag>
             {caseTitle ? <Tag color="geekblue">{caseTitle}</Tag> : null}
             <Text className="project-label">{projectId}</Text>
-            <Tag color={riskTone(riskLevel)}>Risk {riskScore}</Tag>
+            <Tag color={riskTone(riskLevel)}>
+              风险 {riskScore} · {riskLevelLabels[riskLevel] || riskLevel}
+            </Tag>
             <Tag color="volcano">{alertsCount} Alerts</Tag>
           </Space>
           <Tooltip title="Refresh mock analysis">

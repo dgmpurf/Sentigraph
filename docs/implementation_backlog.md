@@ -1,8 +1,45 @@
 # Sentigraph Implementation Backlog
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
+
+## Completed Pre-v1.0 Hardening Items
+
+### Local Demo Data Utilities
+
+Status: implemented and validated on 2026-05-15.
+
+Completed:
+
+- `scripts/reset_local_data.py` safely resets project-local runtime JSON files and preserves `backend/data/.gitkeep`.
+- `scripts/seed_demo_cases.py` creates deterministic demo cases, including one completed case with analysis, V1.5 topic risks, Chinese report, Markdown export data, snapshots, alerts, scheduler state, and notifications.
+- `scripts/api_smoke_check.py` validates the local backend API flow without external services or Reddit credentials.
+- Root `package.json` exposes helper commands: `data:reset`, `data:seed`, and `api:smoke`.
+- Focused pytest coverage verifies reset/seed safety with temporary stores.
+
+Acceptance:
+
+- full backend tests passed with `92 passed in 2.82s`
+- frontend production build passed in 7.75s
+- local API smoke check passed with `26 passed, 0 failed`
+- no MongoDB, Redis, real crawler, real platform API, external LLM, or real notification service was introduced
+
+### Frontend Robustness Polish
+
+Status: implemented and validated by production build on 2026-05-15.
+
+Completed:
+
+- global page-level `ErrorBoundary`
+- not-found fallback page
+- route-level lazy loading with `Suspense`
+- Chinese risk labels in the top app shell
+- stable QA selectors for notification/report copy and send actions
+
+Known non-blocking issue:
+
+- Vite still warns about large Ant Design and ECharts vendor chunks. The app/page chunks are split, and the warning is not blocking the local demo. Deeper vendor modularization can be revisited later if startup performance becomes a real user issue.
 
 ## P0: Demo Stabilization
 
@@ -265,3 +302,28 @@ Acceptance:
 
 - V2 remains inactive until evaluated
 - API migration is planned before exposure
+
+## P5: v1.0 Persistence Upgrade
+
+### MongoDB Store Behind Existing Repository Interface
+
+Goal: add optional MongoDB-backed persistence without breaking the current local JSON demo flow.
+
+Status: next major task. Not implemented yet.
+
+Scope:
+
+- keep `CASE_STORE_BACKEND=local_json` as the default for local/offline demo usage
+- add an optional `mongo` backend behind the existing case repository/storage interface
+- persist cases, reports, snapshots, alerts, scheduler config/state, and notifications
+- document MongoDB connection settings in `.env.example` without committing secrets
+- add indexes/schema notes for case id, updated time, alert level, notification status, and scheduler due time
+- add migration/export/backfill strategy from local JSON to MongoDB
+- add tests using mocked or isolated MongoDB-compatible fixtures; do not require MongoDB for the default test suite unless explicitly configured
+
+Acceptance:
+
+- current API contracts remain backward-compatible
+- local JSON tests keep passing without MongoDB installed
+- MongoDB path is optional and explicitly configured
+- reset/seed/smoke tooling remains safe for local development
