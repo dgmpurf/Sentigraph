@@ -158,7 +158,7 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
     _official_mock_platform("douban", "Douban", "https://developers.douban.com"),
     _official_mock_platform("toutiao", "Toutiao", "https://open.toutiao.com"),
     _public_parser_scaffold_platform("hupu", "Hupu / 虎扑"),
-    _crawler_later_platform("baidu_tieba", "Baidu Tieba"),
+    _public_parser_scaffold_platform("tieba", "Baidu Tieba / 百度贴吧"),
     _crawler_later_platform("tianya", "Tianya"),
     _crawler_later_platform("nga", "NGA"),
     _crawler_later_platform("maimai", "Maimai"),

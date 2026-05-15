@@ -117,25 +117,28 @@ Safety constraints:
 
 ## Compliant Public-Source Parser Framework
 
-Some crawler-later platforms may eventually require public-page parsers for publicly available pages. The framework foundation is now scaffolded under `backend/app/services/crawling/public_parser/`, with The Paper / Pengpai News (`the_paper`) and Jiemian News / 界面新闻 (`jiemian`) as fixture-only parser scaffolds.
+Some crawler-later platforms may eventually require public-page parsers for publicly available pages. The framework foundation is now scaffolded under `backend/app/services/crawling/public_parser/`, with The Paper / Pengpai News (`the_paper`), Jiemian News / 界面新闻 (`jiemian`), Hupu / HuPu (`hupu`), and Baidu Tieba / 百度贴吧 (`tieba`) as fixture-only parser scaffolds.
 
 Hupu / HuPu (`hupu`) is now included as a fixture-only forum-style public parser scaffold.
+Baidu Tieba / 百度贴吧 (`tieba`) is now included as a fixture-only forum-style public parser scaffold.
 
 Current status:
 
 - Public parser framework: scaffolded.
-- Fixture profiles: `the_paper`, `jiemian`, `hupu`.
+- Fixture profiles: `the_paper`, `jiemian`, `hupu`, `tieba`.
 - Parser mode: `fixture_only`.
 - Live public fetch: disabled by default through `PUBLIC_PARSER_LIVE_FETCH_ENABLED=false`.
 - The Paper / Pengpai News has an optional local live public-page fetch pilot. It is used only when `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`; otherwise fixture/mock fallback remains the default.
 - The Paper live pilot uses the public parser fetcher, robots/profile checks, low request rate, timeout, no cookies, no login, no captcha handling, no proxy rotation, and safe fixture fallback on unclear/blocked/network/selector failures.
 - The Paper live pilot expects a public The Paper article id as the `keyword` so the profile can build a public article URL. It is not a general search crawler.
 - The Paper live pilot QA is fixture/mocked-network based. Automated tests verify disabled default behavior, robots-blocked fallback before page fetch, network-error fallback, selector-error fallback, mocked valid HTML parsing, and safe headers without cookies or authorization.
-- `/api/v1/crawl/start` may return fixture/mock public parser data for `the_paper`, `jiemian`, or `hupu` when explicitly requested, with safe parser metadata.
-- Fixture QA status: all three parser profiles load, fixture extraction validates against `RawPost`, missing selectors fail safely, and `/api/v1/crawl/start` returns safe parser metadata for each scaffolded platform.
+- `/api/v1/crawl/start` may return fixture/mock public parser data for `the_paper`, `jiemian`, `hupu`, or `tieba` when explicitly requested, with safe parser metadata.
+- Fixture QA status: all four parser profiles load, fixture extraction validates against `RawPost`, missing selectors fail safely, and `/api/v1/crawl/start` returns safe parser metadata for each scaffolded platform.
 - Jiemian fixture extraction currently covers article title, content, source/author label, created time, and permalink. Comments are not parsed because the fixture does not expose public comments without login or dynamic loading: `comments_unavailable_without_login_or_dynamic_loading`.
 - Hupu fixture extraction currently covers thread title, main post content, author/source, created time, permalink, light/upvote count, reply count, and visible fixture replies normalized as `RawComment`. Hupu live fetch remains disabled.
 - Latest Hupu QA confirms `platforms=["hupu"]` returns fixture-only public parser metadata, one normalized thread `RawPost`, two visible fixture reply `RawComment` items, and valid schema flags without any live public fetch.
+- Tieba fixture extraction currently covers thread title, main post content, author/source, created time, permalink, like/upvote count, reply count, and visible fixture replies normalized as `RawComment`; floor numbers are stored in `RawComment.raw_data.floor_number`. Tieba live fetch remains disabled.
+- Latest Tieba QA confirms `platforms=["tieba"]` returns fixture-only public parser metadata, one normalized thread `RawPost`, three visible fixture reply `RawComment` items, floor numbers in `raw_data.floor_number`, and valid schema flags. Tieba remains fixture-only even when the global The Paper live-pilot flag is enabled.
 - Frontend active MVP selectors should still keep crawler-later platforms disabled unless a later task explicitly promotes one.
 
 Framework constraints:
@@ -154,7 +157,7 @@ These platforms are not selectable for real crawling in the MVP. They are visibl
 | platform_id | display_name | future source approach |
 | --- | --- | --- |
 | `hupu` | Hupu / HuPu | `fixture_only` public-page parser scaffold; `comments=fixture_public_only` |
-| `baidu_tieba` | Baidu Tieba | public-page parser later |
+| `tieba` | Baidu Tieba / 百度贴吧 | `fixture_only` public-page parser scaffold; `comments=fixture_public_only`; floor number stored in `RawComment.raw_data.floor_number` |
 | `tianya` | Tianya | public-page parser later |
 | `nga` | NGA | public-page parser later |
 | `maimai` | Maimai | public-page parser later |

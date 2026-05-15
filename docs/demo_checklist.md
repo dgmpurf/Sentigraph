@@ -14,6 +14,8 @@ Latest v0.6 persistence validation: 2026-05-14. Backend tests passed with `55 pa
 
 Latest Hupu public parser QA validation: 2026-05-15. Focused parser/crawl/registry/adapter and old-flow tests passed with `99 passed in 2.52s`; full backend validation passed with `141 passed in 2.78s`. Hupu remains fixture-only and live fetch remains disabled. The smoke command in section 4.6 should return one Hupu `RawPost`, two visible fixture `RawComment` replies, `parser_status=fixture_only`, `live_fetch_enabled=false`, `fallback_reason_category=live_fetch_disabled`, and schema flags set to true.
 
+Latest Tieba public parser validation: 2026-05-15. Focused parser/crawl/registry/adapter tests passed with `58 passed in 0.98s`; full backend validation passed with `148 passed in 2.84s`. Tieba remains fixture-only and live fetch remains disabled, including when the global The Paper live-pilot flag is enabled. The smoke command in section 4.6 should return one Tieba `RawPost`, three visible fixture `RawComment` replies, `parser_status=fixture_only`, `live_fetch_enabled=false`, `fallback_reason_category=live_fetch_disabled`, schema flags set to true, and floor numbers in `raw_data.floor_number`.
+
 Latest v0.4 adapter-foundation validation: 2026-05-14. Backend tests passed with `47 passed in 0.42s`, frontend production build passed in 7.68s, and API smoke checks passed for health, platform registry, crawl start, case create/list/detail/run, Markdown export, visualization, summary, recommendation, analysis result, V1.5 topic-risk fields, and the Reddit mock adapter. The Vite Ant Design/ECharts vendor chunk warning remains non-blocking.
 
 Important constraints:
@@ -248,6 +250,14 @@ $body = @{ keyword = "Tesla"; platforms = @("hupu"); limit = 3 } | ConvertTo-Jso
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
 ```
 
+PowerShell check for Baidu Tieba:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+$body = @{ keyword = "Tesla"; platforms = @("tieba"); limit = 3 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
+```
+
 Expected result:
 
 - `platform_metadata[0].source_type` is `public_page_parser`.
@@ -255,9 +265,10 @@ Expected result:
 - `live_fetch_enabled` is `false`.
 - `fallback_reason_category` is `live_fetch_disabled`.
 - `schema_valid`, `raw_post_schema_valid`, and `raw_comment_schema_valid` are `true`.
-- The Paper, Jiemian, and Hupu return fixture/mock `RawPost` items.
+- The Paper, Jiemian, Hupu, and Tieba return fixture/mock `RawPost` items.
 - Jiemian returns no comments; this is documented as `comments_unavailable_without_login_or_dynamic_loading`.
 - Hupu returns visible fixture replies as `RawComment` items with author/content/date/light-count fields when present in the fixture.
+- Tieba returns visible fixture replies as `RawComment` items with author/content/date/like-count fields and `raw_data.floor_number` when present in the fixture.
 - No real public-page fetch, cookies, login, captcha handling, proxy rotation, private data access, Reddit scraping, platform API call, or external LLM call occurs.
 
 ## 4.7 Optional The Paper Live Public-Page Fetch Pilot

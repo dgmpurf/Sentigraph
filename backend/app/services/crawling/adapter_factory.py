@@ -7,6 +7,7 @@ from app.services.crawling.public_parser.public_parser_adapter import (
     HupuPublicParserAdapter,
     JiemianPublicParserAdapter,
     ThePaperPublicParserAdapter,
+    TiebaPublicParserAdapter,
 )
 from app.services.crawling.reddit_adapter import RedditAdapter
 
@@ -19,6 +20,7 @@ ADAPTER_REGISTRY: dict[str, AdapterClass] = {
     JiemianPublicParserAdapter.platform_id: JiemianPublicParserAdapter,
     RedditAdapter.platform_id: RedditAdapter,
     ThePaperPublicParserAdapter.platform_id: ThePaperPublicParserAdapter,
+    TiebaPublicParserAdapter.platform_id: TiebaPublicParserAdapter,
 }
 
 

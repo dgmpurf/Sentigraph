@@ -43,6 +43,14 @@ class BasePublicParser:
         self.fetcher = fetcher or PublicFetcher.from_env(
             default_rate_limit_seconds=profile.rate_limit_seconds
         )
+        if self.fetcher.live_fetch_enabled and not self.profile.search_url_template:
+            self.fetcher = PublicFetcher(
+                live_fetch_enabled=False,
+                rate_limit_seconds=self.fetcher.rate_limit_seconds,
+                user_agent=self.fetcher.user_agent,
+                timeout_seconds=self.fetcher.timeout_seconds,
+                max_retries=self.fetcher.max_retries,
+            )
 
     def search_public_pages(self, keyword: str, *, limit: int = 10) -> PublicParserResult:
         safe_limit = _clamp_limit(limit, default=3, maximum=5)
@@ -266,6 +274,11 @@ class BasePublicParser:
                     if self.profile.comment_like_selector
                     else ""
                 )
+                floor_number = (
+                    extract_first_text_from_node(comment_node, self.profile.comment_floor_selector)
+                    if self.profile.comment_floor_selector
+                    else ""
+                )
                 comments.append(
                     self._build_comment(
                         post_id=post_id,
@@ -277,6 +290,7 @@ class BasePublicParser:
                         author_name=author_name,
                         created_at=created_at,
                         like_count=like_count,
+                        floor_number=floor_number,
                     )
                 )
             return comments
@@ -336,8 +350,17 @@ class BasePublicParser:
         author_name: str = "public_commenter",
         created_at: str = "2026-05-15T00:00:00Z",
         like_count: int = 0,
+        floor_number: str | None = None,
     ) -> RawComment:
         comment_id = normalize_text(comment_id) or self._stable_id(post_id, content, str(index))
+        raw_data = {
+            "mode": "public_parser_fixture",
+            "source_type": self.source_type,
+            "parser_status": self.profile.status,
+        }
+        normalized_floor_number = normalize_text(floor_number)
+        if normalized_floor_number:
+            raw_data["floor_number"] = normalized_floor_number
         return RawComment(
             platform=self.profile.platform_id,
             post_id=post_id,
@@ -351,11 +374,7 @@ class BasePublicParser:
             share_count=0,
             created_at=normalize_text(created_at) or "2026-05-15T00:00:00Z",
             url=source_url,
-            raw_data={
-                "mode": "public_parser_fixture",
-                "source_type": self.source_type,
-                "parser_status": self.profile.status,
-            },
+            raw_data=raw_data,
         )
 
     def _parse_fixture_html_if_available(self, *, keyword: str, limit: int) -> PublicParserResult:

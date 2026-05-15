@@ -29,6 +29,7 @@ class SelectorProfile(BaseModel):
     comment_author_selector: str | None = None
     comment_created_at_selector: str | None = None
     comment_like_selector: str | None = None
+    comment_floor_selector: str | None = None
     next_page_selector: str | None = None
     rate_limit_seconds: float = 3.0
     notes: str = ""

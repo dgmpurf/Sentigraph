@@ -538,6 +538,66 @@ def test_crawl_start_hupu_uses_public_parser_fixture_fallback(monkeypatch) -> No
     assert all(comment["platform"] == "hupu" for comment in body["raw_comments"])
 
 
+def test_crawl_start_tieba_uses_public_parser_fixture_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("PUBLIC_PARSER_LIVE_FETCH_ENABLED", "false")
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["tieba"], "limit": 100},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert metadata["platform"] == "tieba"
+    assert metadata["source_type"] == "public_page_parser"
+    assert metadata["parser_status"] == "fixture_only"
+    assert metadata["live_fetch_enabled"] is False
+    assert metadata["live_fetch_attempted"] is False
+    assert metadata["live_fetch_allowed"] is False
+    assert metadata["fallback_used"] is True
+    assert metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert metadata["fetch_status"] == "disabled"
+    assert metadata["real_mode_blocked_reason"] == "live_fetch_disabled"
+    assert metadata["schema_valid"] is True
+    assert metadata["raw_post_schema_valid"] is True
+    assert metadata["raw_comment_schema_valid"] is True
+    assert metadata["post_count"] == 1
+    assert metadata["comment_count"] == 3
+    assert body["raw_posts"][0]["platform"] == "tieba"
+    assert body["raw_posts"][0]["title"] == "Tesla service discussion on Baidu Tieba"
+    assert len(body["raw_comments"]) == 3
+    assert all(comment["platform"] == "tieba" for comment in body["raw_comments"])
+    assert body["raw_comments"][0]["raw_data"]["floor_number"] == "1F"
+
+
+def test_crawl_start_tieba_stays_fixture_only_when_global_live_fetch_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("PUBLIC_PARSER_LIVE_FETCH_ENABLED", "true")
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["tieba"], "limit": 100},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert metadata["platform"] == "tieba"
+    assert metadata["parser_status"] == "fixture_only"
+    assert metadata["live_fetch_enabled"] is False
+    assert metadata["live_fetch_attempted"] is False
+    assert metadata["live_fetch_allowed"] is False
+    assert metadata["fallback_used"] is True
+    assert metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert metadata["fetch_status"] == "disabled"
+    assert metadata["post_count"] == 1
+    assert metadata["comment_count"] == 3
+    assert body["raw_posts"][0]["platform"] == "tieba"
+    assert body["raw_comments"][0]["raw_data"]["floor_number"] == "1F"
+
+
 def test_crawl_start_mixed_reddit_and_public_parser_returns_both_metadata(monkeypatch) -> None:
     monkeypatch.setenv("REDDIT_ADAPTER_MODE", "mock")
     monkeypatch.setenv("PUBLIC_PARSER_LIVE_FETCH_ENABLED", "false")

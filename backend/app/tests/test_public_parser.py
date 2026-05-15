@@ -17,6 +17,7 @@ FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "public_parser"
 FIXTURE_PATH = FIXTURE_DIR / "the_paper_article.html"
 JIEMIAN_FIXTURE_PATH = FIXTURE_DIR / "jiemian_article.html"
 HUPU_FIXTURE_PATH = FIXTURE_DIR / "hupu_thread.html"
+TIEBA_FIXTURE_PATH = FIXTURE_DIR / "tieba_thread.html"
 
 
 def _fixture_html() -> str:
@@ -29,6 +30,10 @@ def _jiemian_fixture_html() -> str:
 
 def _hupu_fixture_html() -> str:
     return HUPU_FIXTURE_PATH.read_text(encoding="utf-8")
+
+
+def _tieba_fixture_html() -> str:
+    return TIEBA_FIXTURE_PATH.read_text(encoding="utf-8")
 
 
 class FakeLiveFetcher:
@@ -75,6 +80,19 @@ def test_selector_profile_loads_hupu_profile() -> None:
     assert profile.comment_selector == ".reply-item"
     assert profile.comment_content_selector == ".reply-content"
     assert "forum-style Hupu threads" in profile.notes
+
+
+def test_selector_profile_loads_tieba_profile() -> None:
+    profile = load_selector_profile("tieba")
+
+    assert profile.platform_id == "tieba"
+    assert profile.display_name.startswith("Baidu Tieba")
+    assert profile.status == "fixture_only"
+    assert profile.search_url_template is None
+    assert profile.comment_selector == ".reply-item"
+    assert profile.comment_content_selector == ".reply-content"
+    assert profile.comment_floor_selector == ".reply-floor"
+    assert "forum-style threads" in profile.notes
 
 
 def test_html_cleaner_extracts_fixture_title_content_and_comments() -> None:
@@ -175,6 +193,50 @@ def test_hupu_public_parser_extracts_thread_and_visible_replies_from_fixture() -
     assert second_comment.like_count == 11
 
 
+def test_tieba_public_parser_extracts_thread_and_visible_replies_from_fixture() -> None:
+    profile = load_selector_profile("tieba")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.parse_html(_tieba_fixture_html(), source_url=profile.fixture_url, keyword="Tesla")
+
+    assert result.metadata["schema_valid"] is True
+    assert result.metadata["parser_status"] == "fixture_only"
+    assert len(result.posts) == 1
+    assert len(result.comments) == 3
+    post = result.posts[0]
+    assert isinstance(post, RawPost)
+    assert post.platform == "tieba"
+    assert post.title == "Tesla service discussion on Baidu Tieba"
+    assert "customer service dispute" in post.content
+    assert post.author_name == "tieba_fixture_author"
+    assert post.created_at == "2026-05-15T12:00:00Z"
+    assert post.like_count == 76
+    assert post.reply_count == 3
+    assert post.url == profile.fixture_url
+
+    first_comment = result.comments[0]
+    second_comment = result.comments[1]
+    third_comment = result.comments[2]
+    assert isinstance(first_comment, RawComment)
+    assert first_comment.platform == "tieba"
+    assert first_comment.post_id == post.post_id
+    assert first_comment.comment_id == "tieba_reply_001"
+    assert first_comment.parent_id is None
+    assert first_comment.author_name == "tieba_user_alpha"
+    assert "factual timeline" in first_comment.content
+    assert first_comment.created_at == "2026-05-15T12:08:00Z"
+    assert first_comment.like_count == 18
+    assert first_comment.raw_data["floor_number"] == "1F"
+    assert second_comment.comment_id == "tieba_reply_002"
+    assert second_comment.parent_id == "tieba_reply_001"
+    assert second_comment.raw_data["floor_number"] == "2F"
+    assert third_comment.comment_id == "tieba_reply_003"
+    assert third_comment.raw_data["floor_number"] == "3F"
+
+
 def test_public_parser_can_extract_comments_when_profile_allows_public_comments() -> None:
     profile = SelectorProfile(
         platform_id="test_public",
@@ -268,6 +330,31 @@ def test_hupu_missing_selectors_fail_safely() -> None:
     )
 
     result = parser.parse_html(_hupu_fixture_html(), source_url="https://bbs.hupu.com/thread-broken", keyword="Tesla")
+
+    assert result.posts == []
+    assert result.comments == []
+    assert result.metadata["fallback_used"] is True
+    assert result.metadata["fallback_reason_category"] == "selector_missing"
+
+
+def test_tieba_missing_selectors_fail_safely() -> None:
+    profile = SelectorProfile(
+        platform_id="tieba_broken",
+        display_name="Tieba Broken",
+        base_url="https://tieba.baidu.com",
+        allowed_public_paths=["/p/"],
+        article_selector="article.thread",
+        title_selector=".missing-title",
+        content_selector=".missing-content",
+        comment_selector=".reply-item",
+        status="fixture_only",
+    )
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.parse_html(_tieba_fixture_html(), source_url="https://tieba.baidu.com/p/broken", keyword="Tesla")
 
     assert result.posts == []
     assert result.comments == []
@@ -447,6 +534,48 @@ def test_hupu_public_parser_search_uses_fixture_thread_when_live_disabled() -> N
     assert result.posts[0].platform == "hupu"
     assert result.posts[0].title == "Tesla service discussion on Hupu"
     assert result.comments[0].comment_id == "hupu_reply_001"
+
+
+def test_tieba_public_parser_search_uses_fixture_thread_when_live_disabled() -> None:
+    profile = load_selector_profile("tieba")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.search_public_pages("Tesla", limit=10)
+
+    assert result.metadata["live_fetch_enabled"] is False
+    assert result.metadata["fallback_used"] is True
+    assert result.metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert result.metadata["post_count"] == 1
+    assert result.metadata["comment_count"] == 3
+    assert result.metadata["schema_valid"] is True
+    assert len(result.posts) == 1
+    assert len(result.comments) == 3
+    assert result.posts[0].platform == "tieba"
+    assert result.posts[0].title == "Tesla service discussion on Baidu Tieba"
+    assert result.comments[0].comment_id == "tieba_reply_001"
+    assert result.comments[0].raw_data["floor_number"] == "1F"
+
+
+def test_tieba_public_parser_remains_fixture_only_when_global_live_fetch_enabled() -> None:
+    profile = load_selector_profile("tieba")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=True, rate_limit_seconds=0),
+    )
+
+    result = parser.search_public_pages("Tesla", limit=10)
+
+    assert parser.fetcher.live_fetch_enabled is False
+    assert result.metadata["live_fetch_enabled"] is False
+    assert result.metadata["live_fetch_attempted"] is False
+    assert result.metadata["live_fetch_allowed"] is False
+    assert result.metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert result.metadata["fetch_status"] == "disabled"
+    assert len(result.posts) == 1
+    assert len(result.comments) == 3
 
 
 def test_the_paper_live_enabled_robots_blocked_falls_back_to_fixture_mock() -> None:

@@ -54,6 +54,13 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["hupu"].selectable_for_mock is False
     assert by_id["hupu"].selectable_for_real is False
     assert "Public-page parser scaffold" in by_id["hupu"].notes
+    assert by_id["tieba"].category == CRAWLER_LATER
+    assert by_id["tieba"].source_type == "public_page_parser"
+    assert by_id["tieba"].status == "fixture_only"
+    assert by_id["tieba"].mock_available is True
+    assert by_id["tieba"].selectable_for_mock is False
+    assert by_id["tieba"].selectable_for_real is False
+    assert "Public-page parser scaffold" in by_id["tieba"].notes
     assert by_id["the_paper"].category == CRAWLER_LATER
     assert by_id["the_paper"].source_type == "public_page_parser"
     assert by_id["the_paper"].status == "fixture_only"
@@ -86,7 +93,7 @@ def test_platform_registry_endpoint_contract() -> None:
         "douban",
         "toutiao",
         "hupu",
-        "baidu_tieba",
+        "tieba",
         "tianya",
         "nga",
         "maimai",

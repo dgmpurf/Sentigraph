@@ -525,7 +525,7 @@ Rules:
 
 ### Public Parser Metadata Extension
 
-`POST /api/v1/crawl/start` may include public-parser metadata when a scaffolded public-page parser such as `the_paper`, `jiemian`, or `hupu` is explicitly requested.
+`POST /api/v1/crawl/start` may include public-parser metadata when a scaffolded public-page parser such as `the_paper`, `jiemian`, `hupu`, or `tieba` is explicitly requested.
 
 ```json
 {
@@ -560,6 +560,7 @@ Rules:
 - The Paper has an optional local live public-page fetch pilot when `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`; fixture/mock fallback remains the default.
 - Jiemian fixture output currently normalizes title, content, source/author label, created time, and permalink into `RawPost`. Comments remain unavailable because the fixture does not expose public comments without login or dynamic loading: `comments_unavailable_without_login_or_dynamic_loading`.
 - Hupu fixture output normalizes a public fixture thread into `RawPost` and visible fixture replies into `RawComment`, including author, content, created time, parent id when present, and light/upvote count when present.
+- Tieba fixture output normalizes a public fixture thread into `RawPost` and visible fixture replies into `RawComment`, including author, content, created time, parent id when present, like count when present, and forum floor number in `RawComment.raw_data.floor_number`.
 - Parser code must not use login, cookies, captcha bypass, anti-bot evasion, proxy rotation, private messages, hidden data, or authentication-gated pages.
 
 ## 2. Raw Post
