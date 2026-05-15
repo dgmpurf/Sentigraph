@@ -15,7 +15,7 @@ import {
   getCaseMonitoringConfig,
   getCaseMarkdownReport,
   getNotificationOutboxStatus,
-  getPlatforms,
+  getPlatformStatus,
   getPropagation,
   getSchedulerStatus,
   getVisualizationData,
@@ -101,7 +101,7 @@ function App() {
   const [error, setError] = useState('')
 
   const platformOptions = useMemo(() => {
-    const enabledPlatforms = platformRegistry.filter((platform) => platform.selectable_for_mock)
+    const enabledPlatforms = platformRegistry.filter((platform) => platform.selectable_for_mock && platform.mock_available)
     if (!enabledPlatforms.length) return FALLBACK_PLATFORM_OPTIONS
     return enabledPlatforms.map((platform) => ({
       label: platform.display_name,
@@ -245,7 +245,7 @@ function App() {
 
   useEffect(() => {
     let isMounted = true
-    getPlatforms()
+    getPlatformStatus()
       .then((registry) => {
         if (isMounted) {
           setPlatformRegistry(registry.platforms || [])

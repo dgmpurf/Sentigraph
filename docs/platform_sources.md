@@ -2,7 +2,29 @@
 
 Sentigraph now prioritizes Chinese public opinion platforms for future source integration while keeping Reddit visible in the project as a future real adapter candidate.
 
-The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, or private data collection is implemented in this phase. Reddit has an optional credential-gated real adapter mode for backend adapter testing, but it is disabled by default and is not automatically used by the case flow or dashboard.
+The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. `POST /api/v1/crawl/start` routes Reddit requests through the adapter layer and returns local mock Reddit data with safe status metadata while approval is pending.
+
+## Data-source readiness layer
+
+Sentigraph exposes platform readiness through `GET /api/v1/platforms/status`. The status layer is safe for frontend display and contains only non-secret metadata:
+
+- `mock_available`
+- `real_mode_available`
+- `api_approval_required`
+- `api_approval_status`
+- `credentials_required`
+- `credentials_present` as present/missing booleans only
+- `enabled_in_mvp`
+- `selectable_for_mock`
+- `selectable_for_real`
+
+Current global status:
+
+- Reddit: `api_pending`; mock mode available; real API mode disabled until Reddit approval is granted.
+- Reddit scraping: not implemented and not used to bypass API approval.
+- Official API planned platforms: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao.
+- Crawler-later platforms: Hupu, Baidu Tieba, Tianya, NGA, Maimai, The Paper / Pengpai News, Jiemian News.
+- YouTube: `disabled_or_optional_future`.
 
 ## MVP mock-selectable platforms
 
@@ -39,7 +61,7 @@ These platforms should be integrated through official API programs when credenti
 
 | platform_id | display_name | MVP status | notes |
 | --- | --- | --- | --- |
-| `reddit` | Reddit | mock-selectable with optional real adapter mode | Reddit stays visible and selectable for mock analysis. The adapter defaults to local mock data and does not require credentials. Optional real mode is available only when explicitly configured. |
+| `reddit` | Reddit | `api_pending`; mock-selectable | Reddit stays visible and selectable for mock analysis. The adapter defaults to local mock data and does not require credentials. Real API mode is disabled until Reddit approval is granted. |
 
 ### Reddit adapter scaffold
 
@@ -50,13 +72,15 @@ Current behavior:
 - Default mode is `mock` through `REDDIT_ADAPTER_MODE=mock`.
 - If Reddit credentials are missing, the adapter falls back to local mock data from `mock_data/raw_comments.json`.
 - Mock mode normalizes local Reddit-like comments into the same `RawPost` and `RawComment` schemas used by the rest of Sentigraph.
-- Real mode is only available when `REDDIT_ADAPTER_MODE=real`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` are all configured.
-- Passing a code-level `mode="real"` request is not enough by itself; the environment gate must also be `REDDIT_ADAPTER_MODE=real`.
-- Real mode has conservative request limits and falls back to mock data on credential/config/request errors.
-- Adapter status is visible through `health_check()` and `get_status_metadata()`, including environment mode, requested mode, active mode, credential presence, and fallback reason.
-- The current case flow and mock dashboard do not automatically trigger real Reddit API calls.
+- Real API mode is disabled while Reddit API approval is pending, even if `REDDIT_ADAPTER_MODE=real` and credentials are present.
+- Passing a code-level `mode="real"` request is not enough by itself; the approval gate, environment gate, and credentials must all allow real mode before any real API client can be initialized.
+- PRAW remains the planned official Reddit API dependency for later approved real mode, but the current adapter must not call Reddit while status is `api_pending`.
+- Public-page scraping is not implemented and must not be used to bypass Reddit API approval.
+- Adapter status is visible through `health_check()` and `get_status_metadata()`, including environment mode, requested mode, active mode, credential presence, fallback reason, `mock_available`, `api_pending`, and `real_mode_disabled`.
+- `POST /api/v1/crawl/start` uses `adapter_factory.get_adapter("reddit")` when Reddit is selected and returns safe adapter metadata plus normalized `RawPost` / `RawComment` mock fallback data. Safe diagnostics include only real-mode reached status, dependency availability, exception class name, sanitized error category, and approval/fallback flags.
+- The current case flow and mock dashboard remain mock-first and do not require real Reddit credentials.
 
-Future real Reddit mode credentials:
+Future real Reddit mode credentials after approval:
 
 ```text
 REDDIT_CLIENT_ID
@@ -84,11 +108,34 @@ Factory behavior:
 
 Safety constraints:
 
-- Use the official Reddit API path only.
+- Use the official Reddit API path only after approval is granted.
+- Do not use public-page scraping to bypass API approval.
 - Do not implement login bypass, captcha bypass, anti-bot evasion, or private data collection.
 - Do not store Reddit credentials in the repository.
 - Add fixture-first tests before expanding real-mode behavior.
 - Rate-limit and retry handling should stay conservative and transparent.
+
+## Compliant Public-Source Parser Framework
+
+Some crawler-later platforms may eventually require public-page parsers for publicly available pages. The framework foundation is now scaffolded under `backend/app/services/crawling/public_parser/`, with The Paper / Pengpai News (`the_paper`) as the first fixture-only parser scaffold.
+
+Current status:
+
+- Public parser framework: scaffolded.
+- First profile: `the_paper`.
+- First parser mode: `fixture_only`.
+- Live public fetch: disabled by default through `PUBLIC_PARSER_LIVE_FETCH_ENABLED=false`.
+- `/api/v1/crawl/start` may return fixture/mock public parser data for `the_paper` when explicitly requested, with safe parser metadata.
+- Frontend active MVP selectors should still keep crawler-later platforms disabled unless a later task explicitly promotes one.
+
+Framework constraints:
+
+- Parse only publicly available pages that do not require login, cookies, paywall access, captcha bypass, or anti-bot evasion.
+- Use sanitized public HTML fixtures for selector development and tests.
+- Keep selector profiles versioned, reviewed, and covered by deterministic tests.
+- Do not use proxy rotation, private data collection, browser profiles, tokens, cookies, hidden APIs, or scraped private messages.
+- Use LLM assistance only for analyzing sanitized public fixtures and suggesting selector updates, never for bypassing access controls or platform approval.
+- Keep each platform behind an explicit compliance review before activation.
 
 ## crawler_later
 
@@ -101,7 +148,7 @@ These platforms are not selectable for real crawling in the MVP. They are visibl
 | `tianya` | Tianya | public-page parser later |
 | `nga` | NGA | public-page parser later |
 | `maimai` | Maimai | public-page parser later |
-| `the_paper` | The Paper / Pengpai News | public-page parser later |
+| `the_paper` | The Paper / Pengpai News | `fixture_only` public-page parser scaffold |
 | `jiemian` | Jiemian News | public-page parser later |
 
 Crawler-later work should be handled in a future phase using public-page parsers and selector profiles. Each parser must normalize public posts/comments into the common Sentigraph schema and must include tests with sanitized fixture HTML.

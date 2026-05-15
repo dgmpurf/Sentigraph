@@ -71,6 +71,34 @@ Expected result:
 - Health, platforms, keyword/crawl/analysis, case run, Markdown export, monitoring, scheduler, alerts, notifications, and report endpoints pass.
 - The script prints a clear pass/fail summary and exits nonzero on failure.
 
+## 0.5 Optional MongoDB Persistence Check
+
+The default demo still uses local JSON. MongoDB is optional and should only be enabled when a local development MongoDB server is already running.
+
+Start backend with local JSON mode:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+set CASE_STORE_BACKEND=local_json
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+Start backend with optional MongoDB mode:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+set CASE_STORE_BACKEND=mongodb
+set MONGODB_URI=mongodb://localhost:27017
+set MONGODB_DATABASE=sentigraph
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+Expected result:
+
+- MongoDB mode uses the same case/report/monitoring/scheduler/notification APIs.
+- If MongoDB is not reachable, backend startup reports a configuration error.
+- No real crawler, real platform API, external LLM, or real notification delivery is triggered.
+
 ## 1. Start Backend
 
 Open PowerShell or CMD:

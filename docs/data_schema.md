@@ -18,11 +18,24 @@ MongoDB document keys must always be strings.
   "display_name": "Reddit",
   "category": "future_real_adapter_candidate",
   "source_type": "mock_data_future_adapter_placeholder",
-  "status": "mock_selectable_future_adapter_candidate",
+  "status": "api_pending",
   "enabled_in_mvp": true,
   "selectable_for_mock": true,
+  "mock_available": true,
+  "real_mode_available": false,
+  "api_approval_required": true,
+  "api_approval_status": "api_pending",
+  "credentials_required": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
+  "credentials_present": {
+    "REDDIT_CLIENT_ID": false,
+    "REDDIT_CLIENT_SECRET": false,
+    "REDDIT_USER_AGENT": false
+  },
+  "api_pending": true,
+  "real_mode_disabled": true,
+  "selectable_for_real": false,
   "official_platform_url": null,
-  "notes": "Selectable for offline mock analysis. Reddit stays in the project as a future real adapter candidate, but no real API call is implemented yet."
+  "notes": "Selectable for offline mock analysis. Reddit API approval is pending, so real API mode is disabled and public-page scraping is not used as a bypass."
 }
 ```
 
@@ -35,11 +48,30 @@ crawler_later
 disabled_or_optional_future
 ```
 
-Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-only and must not trigger real crawlers or real platform APIs.
+Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-only and must not trigger real crawlers or real platform APIs. `mock_available`, `real_mode_available`, `api_approval_required`, `api_approval_status`, `credentials_required`, `credentials_present`, `api_pending`, `real_mode_disabled`, and `selectable_for_real` are safe status fields for frontend/backend diagnostics. `credentials_present` must contain only booleans and must never expose credential values. Reddit currently has `mock_available=true`, `api_approval_status="api_pending"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`.
+
+### PlatformStatusResponse
+
+```json
+{
+  "platforms": [],
+  "active_mvp_platforms": ["reddit", "weibo", "bilibili", "douyin", "kuaishou", "xiaohongshu", "zhihu", "douban", "toutiao"],
+  "mock_selectable_platforms": ["reddit", "weibo", "bilibili", "douyin", "kuaishou", "xiaohongshu", "zhihu", "douban", "toutiao"],
+  "real_selectable_platforms": [],
+  "summary": {
+    "total_platforms": 17,
+    "mock_selectable_count": 9,
+    "real_selectable_count": 0,
+    "api_pending_count": 9,
+    "disabled_count": 8,
+    "crawler_later_count": 7
+  }
+}
+```
 
 ## 0.5 Analysis Case
 
-Analysis cases are lightweight MVP objects used to preserve one mock analysis context across pages. Current default storage is a project-local JSON file through the case repository/storage abstraction. MongoDB/Redis persistence remains future work.
+Analysis cases are lightweight MVP objects used to preserve one mock analysis context across pages. Current default storage is a project-local JSON file through the case repository/storage abstraction. MongoDB persistence is available as an optional v1.0 backend, while Redis remains future work.
 
 Persistence defaults:
 
@@ -47,6 +79,45 @@ Persistence defaults:
 - `CASE_STORE_PATH=backend/data/cases.json`
 - Runtime JSON data is ignored by git with `backend/data/*.json` and `backend/data/*.json.tmp`.
 - `backend/data/.gitkeep` keeps the runtime data directory in the repository.
+
+Optional MongoDB persistence:
+
+- `CASE_STORE_BACKEND=mongodb`
+- `MONGODB_URI=mongodb://localhost:27017`
+- `MONGODB_DATABASE=sentigraph`
+- MongoDB mode is opt-in only and is not required for the default test suite.
+- If MongoDB mode is selected but the connection cannot be opened, backend startup raises a clear configuration error instead of silently losing data.
+- Stored documents must be generated from Pydantic JSON-mode dumps so datetime fields remain consistent with local JSON behavior.
+- Nested dictionary keys must be converted to MongoDB-safe strings; dotted keys are normalized and leading `$` keys are prefixed.
+
+MongoDB collections used by the optional store:
+
+```text
+analysis_cases
+markdown_reports
+analysis_snapshots
+alert_events
+notification_outbox
+```
+
+Recommended indexes:
+
+```text
+analysis_cases.case_id unique
+analysis_cases.created_at
+analysis_cases.updated_at
+markdown_reports.case_id unique
+analysis_snapshots.snapshot_id unique
+analysis_snapshots.case_id
+analysis_snapshots.created_at
+alert_events.alert_id unique
+alert_events.case_id
+alert_events.created_at
+notification_outbox.notification_id unique
+notification_outbox.case_id
+notification_outbox.created_at
+notification_outbox.status
+```
 
 ### AnalysisCaseCreateRequest
 
@@ -356,6 +427,128 @@ Rules:
   ]
 }
 ```
+
+## 1.5 Crawl Start Response
+
+`POST /api/v1/crawl/start` remains backward compatible with the original mock response and may include adapter output metadata when Reddit is selected.
+
+```json
+{
+  "project_id": "project_001",
+  "crawl_task_id": "crawl_task_001",
+  "status": "queued",
+  "message": "Crawl task queued with platform adapter metadata. Mock-first fallback remains enabled.",
+  "platform_metadata": [
+    {
+      "platform": "reddit",
+      "adapter_mode": "mock",
+      "source_type": null,
+      "parser_status": null,
+      "live_fetch_enabled": false,
+      "fallback_used": false,
+      "fallback_reason_category": null,
+      "mock_available": true,
+      "real_mode_available": false,
+      "api_approval_required": true,
+      "api_approval_status": "api_pending",
+      "api_pending": true,
+      "real_mode_disabled": true,
+      "selectable_for_real": false,
+      "real_mode_blocked_reason": "mock_only",
+      "real_mode_reached": false,
+      "dependency_available": true,
+      "exception_class": null,
+      "sanitized_error_category": null,
+      "post_count": 3,
+      "comment_count": 3,
+      "schema_valid": true,
+      "raw_post_schema_valid": true,
+      "raw_comment_schema_valid": true
+    }
+  ],
+  "raw_posts": [
+    {
+      "platform": "reddit",
+      "post_id": "reddit_mock_post_001",
+      "author_id": "reddit_user_001",
+      "author_name": "reddit_user",
+      "title": "Tesla quality discussion",
+      "content": "Mock Reddit public post content.",
+      "like_count": 42,
+      "reply_count": 3,
+      "share_count": 0,
+      "created_at": "2026-05-15T00:00:00Z",
+      "url": "https://www.reddit.com/r/test/comments/reddit_mock_post_001/",
+      "raw_data": {
+        "mode": "mock"
+      }
+    }
+  ],
+  "raw_comments": [
+    {
+      "platform": "reddit",
+      "post_id": "reddit_mock_post_001",
+      "comment_id": "reddit_mock_comment_001",
+      "parent_id": null,
+      "author_id": "reddit_commenter_001",
+      "author_name": "reddit_commenter",
+      "content": "Mock Reddit public comment content.",
+      "like_count": 8,
+      "reply_count": 0,
+      "share_count": 0,
+      "created_at": "2026-05-15T00:01:00Z",
+      "url": "https://www.reddit.com/r/test/comments/reddit_mock_post_001/comment/",
+      "raw_data": {
+        "mode": "mock"
+      }
+    }
+  ]
+}
+```
+
+Rules:
+
+- `platform_metadata` records safe adapter status only; it must not include credentials, tokens, or request secrets.
+- `adapter_mode` is `mock` or `real`.
+- `fallback_reason_category` and `sanitized_error_category` may be `api_pending`, `dependency_error`, `auth_error`, `network_error`, `parsing_error`, `config_error`, `adapter_error`, or `null`.
+- `exception_class` is a safe exception class name only and must not include exception messages, request payloads, tokens, or credentials.
+- `real_mode_reached` indicates whether the real adapter path was reached.
+- `dependency_available` indicates whether required real-mode dependencies such as PRAW are importable.
+- `mock_available`, `api_pending`, and `real_mode_disabled` communicate safe adapter/source status without exposing credentials. Reddit real API mode stays disabled while approval is pending.
+- `real_mode_available`, `api_approval_required`, `api_approval_status`, `selectable_for_real`, and `real_mode_blocked_reason` describe why a real source path is or is not usable. Current valid blocked reasons include `api_pending`, `disabled`, `mock_only`, `credentials_missing`, and `approval_required`.
+- `raw_posts` uses the `RawPost` schema.
+- `raw_comments` uses the `RawComment` schema.
+- Official API planned platforms remain mock-only. Crawler-later platforms remain disabled for real crawling.
+
+### Public Parser Metadata Extension
+
+`POST /api/v1/crawl/start` may include public-parser metadata when a scaffolded public-page parser such as `the_paper` is explicitly requested.
+
+```json
+{
+  "platform": "the_paper",
+  "adapter_mode": "mock",
+  "source_type": "public_page_parser",
+  "parser_status": "fixture_only",
+  "live_fetch_enabled": false,
+  "fallback_used": true,
+  "fallback_reason_category": "live_fetch_disabled",
+  "post_count": 3,
+  "comment_count": 0,
+  "schema_valid": true,
+  "raw_post_schema_valid": true,
+  "raw_comment_schema_valid": true
+}
+```
+
+Rules:
+
+- `source_type="public_page_parser"` identifies the compliant public-page parser framework.
+- `parser_status` may be `fixture_only`, `disabled`, `scaffolded`, or a future reviewed status such as `live_public_enabled`.
+- `live_fetch_enabled` defaults to false and must remain false unless explicitly enabled for local testing.
+- Public parser fallback categories may include `fixture_only`, `live_fetch_disabled`, `selector_missing`, `robots_disallowed`, `robots_unavailable_or_unclear`, `path_not_allowed_by_profile`, `http_error`, or `network_error`.
+- Public parser outputs must validate against `RawPost` / `RawComment`.
+- Parser code must not use login, cookies, captcha bypass, anti-bot evasion, proxy rotation, private messages, hidden data, or authentication-gated pages.
 
 ## 2. Raw Post
 

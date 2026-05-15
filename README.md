@@ -110,7 +110,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - Douban
 - Toutiao
 
-Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real adapter candidate。
+Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real adapter candidate；真实 Reddit API 状态为 `api_pending`，审批通过前不会调用真实 API。
 
 ### Official API Planned
 
@@ -147,11 +147,13 @@ Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real ada
 
 YouTube 不是当前 MVP active platform，不在当前 roadmap 中优先实现，只作为 optional future source 保留。
 
-### Optional Reddit Real Adapter
+### Optional Reddit Adapter Status
 
-Reddit remains mock-selectable by default. The backend adapter also has an optional real mode for future adapter testing, but it is not required for the MVP and is not automatically used by the case flow or dashboard.
+Reddit remains mock-selectable by default. `POST /api/v1/crawl/start` routes Reddit selections through the platform adapter layer, but mock mode remains the default and no Reddit credentials are required for normal MVP usage, tests, case flow, or dashboard demos.
 
-To enable it later, configure credentials outside the repository:
+Current status: Reddit API approval is pending. Real API mode is disabled until approval is granted, even if local credentials and `REDDIT_ADAPTER_MODE=real` are present. Public-page scraping is not implemented and must not be used to bypass Reddit API approval.
+
+After approval, credentials should be configured outside the repository:
 
 ```cmd
 set REDDIT_ADAPTER_MODE=real
@@ -160,7 +162,9 @@ set REDDIT_CLIENT_SECRET=your_client_secret
 set REDDIT_USER_AGENT=sentigraph-dev
 ```
 
-The code path must also explicitly request real adapter mode, for example through `get_adapter("reddit", mode="real")` or `RedditAdapter(mode="real")`. If any credential is missing, or if `REDDIT_ADAPTER_MODE` is not `real`, the adapter falls back to local mock data. Tests do not require credentials and do not make real Reddit network calls.
+For local development, the backend also loads a repository-root `.env` file on startup. `.env` is ignored by git and must not be committed.
+
+Future approved real mode is planned through PRAW only when `REDDIT_ADAPTER_MODE=real`, all required Reddit credentials are present, and the adapter approval gate is enabled. Until then, the adapter falls back to local mock data and returns only safe category-level fallback metadata such as `api_pending`. Tests do not require credentials and do not make real Reddit network calls.
 
 ### Local Case Persistence
 
@@ -183,7 +187,33 @@ set CASE_STORE_BACKEND=local_json
 set CASE_STORE_PATH=backend/data/cases.json
 ```
 
-MongoDB/Redis storage remains a future TODO behind the same repository interface.
+### Optional MongoDB Persistence
+
+MongoDB persistence is available as an optional v1.0 backend behind the same case repository interface. The default remains `local_json`, so normal local development and tests do not require MongoDB.
+
+To enable MongoDB mode later:
+
+```cmd
+set CASE_STORE_BACKEND=mongodb
+set MONGODB_URI=mongodb://localhost:27017
+set MONGODB_DATABASE=sentigraph
+```
+
+Then start the backend normally:
+
+```cmd
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+MongoDB mode stores cases, reports, Markdown exports, monitoring snapshots, alerts, scheduler config/state, and notification outbox items in MongoDB collections. If `CASE_STORE_BACKEND=mongodb` is selected and the connection cannot be opened, the backend raises a clear configuration error instead of silently losing data.
+
+For local development, reset MongoDB demo data only from the selected development database:
+
+```cmd
+mongosh "mongodb://localhost:27017/sentigraph" --eval "db.dropDatabase()"
+```
+
+Redis storage remains a future TODO.
 
 ## 5. Architecture
 
@@ -386,6 +416,7 @@ Base path:
 
 - `GET /api/v1/health`
 - `GET /api/v1/platforms`
+- `GET /api/v1/platforms/status`
 - `POST /api/v1/keywords/expand`
 - `POST /api/v1/crawl/start`
 - `POST /api/v1/analysis/run`
@@ -447,7 +478,7 @@ Additional v0.9 constraint: notification MVP is local-only. Do not send real ema
 - MVP 2: structured report builder。
 - MVP 3: frontend report pages。
 - MVP 4: visualization refinement。
-- MVP 5: Reddit real adapter。
+- MVP 5: Reddit API approval and future real adapter。
 - MVP 6: official API integrations。
 - MVP 7: crawler-later platforms。
 - MVP 8: advanced V2 dynamic risk model。

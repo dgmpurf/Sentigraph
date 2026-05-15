@@ -1,7 +1,11 @@
 from fastapi import APIRouter
 
-from app.schemas.platform import PlatformRegistryResponse
-from app.services.crawling.platform_registry import get_active_mvp_platform_ids, get_platform_registry
+from app.schemas.platform import PlatformRegistryResponse, PlatformStatusResponse
+from app.services.crawling.platform_registry import (
+    get_active_mvp_platform_ids,
+    get_platform_registry,
+    get_platform_status_response,
+)
 
 router = APIRouter()
 
@@ -12,3 +16,8 @@ def list_platforms() -> PlatformRegistryResponse:
         platforms=get_platform_registry(),
         active_mvp_platforms=get_active_mvp_platform_ids(),
     )
+
+
+@router.get("/status", response_model=PlatformStatusResponse)
+def list_platform_status() -> PlatformStatusResponse:
+    return get_platform_status_response()

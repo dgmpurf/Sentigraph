@@ -1,0 +1,285 @@
+from __future__ import annotations
+
+import hashlib
+import urllib.parse
+from dataclasses import dataclass, field
+from typing import Any
+
+from pydantic import ValidationError
+
+from app.schemas.comment import RawComment, RawPost
+from app.services.crawling.public_parser.html_cleaner import (
+    extract_all_text,
+    extract_first_text,
+    normalize_text,
+)
+from app.services.crawling.public_parser.public_fetcher import PublicFetcher
+from app.services.crawling.public_parser.selector_profile import SelectorProfile
+
+
+@dataclass(frozen=True)
+class PublicParserResult:
+    posts: list[RawPost] = field(default_factory=list)
+    comments: list[RawComment] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class BasePublicParser:
+    """Fixture-first public page parser.
+
+    The parser extracts public article-like pages with selector profiles. It
+    never handles authentication, cookies, captcha flows, private messages, or
+    hidden data.
+    """
+
+    source_type = "public_page_parser"
+
+    def __init__(self, profile: SelectorProfile, *, fetcher: PublicFetcher | None = None) -> None:
+        self.profile = profile
+        self.fetcher = fetcher or PublicFetcher.from_env(
+            default_rate_limit_seconds=profile.rate_limit_seconds
+        )
+
+    def search_public_pages(self, keyword: str, *, limit: int = 10) -> PublicParserResult:
+        safe_limit = _clamp_limit(limit, default=3, maximum=5)
+        if not self.fetcher.live_fetch_enabled or not self.profile.search_url_template:
+            posts = self.mock_posts(keyword, limit=safe_limit)
+            return PublicParserResult(
+                posts=posts,
+                comments=[],
+                metadata=self._metadata(
+                    fallback_used=True,
+                    fallback_reason_category=(
+                        "live_fetch_disabled"
+                        if not self.fetcher.live_fetch_enabled
+                        else "fixture_only"
+                    ),
+                    post_count=len(posts),
+                    comment_count=0,
+                    schema_valid=self._schema_valid(posts, []),
+                ),
+            )
+
+        search_url = self.profile.search_url_template.format(
+            keyword=urllib.parse.quote_plus(keyword),
+            limit=safe_limit,
+        )
+        fetch_result = self.fetcher.fetch(search_url, self.profile)
+        if not fetch_result.ok or not fetch_result.html:
+            posts = self.mock_posts(keyword, limit=safe_limit)
+            return PublicParserResult(
+                posts=posts,
+                comments=[],
+                metadata=self._metadata(
+                    fallback_used=True,
+                    fallback_reason_category=fetch_result.fallback_reason_category or "fetch_failed",
+                    post_count=len(posts),
+                    comment_count=0,
+                    schema_valid=self._schema_valid(posts, []),
+                ),
+            )
+        return self.parse_html(fetch_result.html, source_url=search_url, keyword=keyword, limit=safe_limit)
+
+    def parse_html(
+        self,
+        document: str,
+        *,
+        source_url: str | None = None,
+        keyword: str = "",
+        limit: int = 10,
+    ) -> PublicParserResult:
+        title = extract_first_text(document, self.profile.title_selector)
+        content = extract_first_text(document, self.profile.content_selector)
+        if not title or not content:
+            return PublicParserResult(
+                posts=[],
+                comments=[],
+                metadata=self._metadata(
+                    fallback_used=True,
+                    fallback_reason_category="selector_missing",
+                    post_count=0,
+                    comment_count=0,
+                    schema_valid=True,
+                ),
+            )
+
+        author_name = extract_first_text(document, self.profile.author_selector) or "public_source"
+        created_at = (
+            extract_first_text(document, self.profile.created_at_selector)
+            or "2026-05-15T00:00:00Z"
+        )
+        source_url = source_url or self.profile.fixture_url or self.profile.base_url
+        post = self._build_post(
+            title=title,
+            content=content,
+            author_name=author_name,
+            created_at=created_at,
+            source_url=source_url,
+            keyword=keyword,
+        )
+        comments = self._extract_comments(document, post.post_id, source_url=source_url, limit=limit)
+        return PublicParserResult(
+            posts=[post],
+            comments=comments,
+            metadata=self._metadata(
+                fallback_used=False,
+                fallback_reason_category=None,
+                post_count=1,
+                comment_count=len(comments),
+                schema_valid=self._schema_valid([post], comments),
+            ),
+        )
+
+    def mock_posts(self, keyword: str, *, limit: int = 3) -> list[RawPost]:
+        safe_limit = _clamp_limit(limit, default=1, maximum=5)
+        posts: list[RawPost] = []
+        normalized_keyword = normalize_text(keyword) or "public opinion"
+        for index in range(1, safe_limit + 1):
+            title = f"{self.profile.display_name} fixture topic: {normalized_keyword}"
+            content = (
+                f"Fixture-only public-page parser scaffold for {self.profile.display_name}. "
+                "Live fetching is disabled by default and no login, cookies, captcha bypass, "
+                "anti-bot evasion, proxy rotation, or private data access is used."
+            )
+            source_url = self.profile.fixture_url or self.profile.base_url
+            post_id = self._stable_id("mock", normalized_keyword, str(index))
+            posts.append(
+                RawPost(
+                    platform=self.profile.platform_id,
+                    post_id=post_id,
+                    author_id=f"{self.profile.platform_id}_public_source",
+                    author_name=self.profile.display_name,
+                    title=title,
+                    content=content,
+                    like_count=0,
+                    reply_count=0,
+                    share_count=0,
+                    created_at="2026-05-15T00:00:00Z",
+                    url=source_url,
+                    raw_data={
+                        "mode": "fixture",
+                        "source_type": self.source_type,
+                        "parser_status": self.profile.status,
+                    },
+                )
+            )
+        return posts
+
+    def _extract_comments(
+        self,
+        document: str,
+        post_id: str,
+        *,
+        source_url: str,
+        limit: int,
+    ) -> list[RawComment]:
+        if not self.profile.comment_selector:
+            return []
+        comments: list[RawComment] = []
+        for index, content in enumerate(extract_all_text(document, self.profile.comment_selector, limit=limit), start=1):
+            comments.append(
+                self._build_comment(
+                    post_id=post_id,
+                    content=content,
+                    source_url=source_url,
+                    index=index,
+                )
+            )
+        return comments
+
+    def _build_post(
+        self,
+        *,
+        title: str,
+        content: str,
+        author_name: str,
+        created_at: str,
+        source_url: str,
+        keyword: str,
+    ) -> RawPost:
+        post_id = self._stable_id(source_url, title, content[:80])
+        return RawPost(
+            platform=self.profile.platform_id,
+            post_id=post_id,
+            author_id=f"{self.profile.platform_id}_public_author",
+            author_name=normalize_text(author_name) or "public_source",
+            title=normalize_text(title),
+            content=normalize_text(content),
+            like_count=0,
+            reply_count=0,
+            share_count=0,
+            created_at=normalize_text(created_at) or "2026-05-15T00:00:00Z",
+            url=source_url,
+            raw_data={
+                "mode": "public_parser_fixture" if not self.fetcher.live_fetch_enabled else "public_parser_live",
+                "source_type": self.source_type,
+                "parser_status": self.profile.status,
+                "keyword": normalize_text(keyword),
+            },
+        )
+
+    def _build_comment(self, *, post_id: str, content: str, source_url: str, index: int) -> RawComment:
+        comment_id = self._stable_id(post_id, content, str(index))
+        return RawComment(
+            platform=self.profile.platform_id,
+            post_id=post_id,
+            comment_id=comment_id,
+            parent_id=None,
+            author_id=f"{self.profile.platform_id}_public_commenter",
+            author_name="public_commenter",
+            content=normalize_text(content),
+            like_count=0,
+            reply_count=0,
+            share_count=0,
+            created_at="2026-05-15T00:00:00Z",
+            url=source_url,
+            raw_data={
+                "mode": "public_parser_fixture",
+                "source_type": self.source_type,
+                "parser_status": self.profile.status,
+            },
+        )
+
+    def _metadata(
+        self,
+        *,
+        fallback_used: bool,
+        fallback_reason_category: str | None,
+        post_count: int,
+        comment_count: int,
+        schema_valid: bool,
+    ) -> dict[str, Any]:
+        return {
+            "platform": self.profile.platform_id,
+            "source_type": self.source_type,
+            "parser_status": self.profile.status,
+            "live_fetch_enabled": self.fetcher.live_fetch_enabled,
+            "fallback_used": fallback_used,
+            "fallback_reason_category": fallback_reason_category,
+            "post_count": post_count,
+            "comment_count": comment_count,
+            "schema_valid": schema_valid,
+            "raw_post_schema_valid": schema_valid,
+            "raw_comment_schema_valid": schema_valid,
+        }
+
+    def _schema_valid(self, posts: list[RawPost], comments: list[RawComment]) -> bool:
+        try:
+            for post in posts:
+                RawPost.model_validate(post.model_dump(mode="json"))
+            for comment in comments:
+                RawComment.model_validate(comment.model_dump(mode="json"))
+        except ValidationError:
+            return False
+        return True
+
+    def _stable_id(self, *parts: str) -> str:
+        digest = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:12]
+        return f"{self.profile.platform_id}_{digest}"
+
+
+def _clamp_limit(limit: int, *, default: int, maximum: int) -> int:
+    if not isinstance(limit, int) or limit <= 0:
+        return default
+    return min(limit, maximum)
+

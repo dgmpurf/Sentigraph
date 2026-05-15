@@ -2,6 +2,11 @@ import os
 
 from pydantic import BaseModel
 
+from app.core.environment import load_project_env
+
+
+load_project_env()
+
 
 class Settings(BaseModel):
     app_name: str = "Sentigraph"

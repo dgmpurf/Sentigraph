@@ -161,8 +161,9 @@ Acceptance:
 
 Follow-up:
 
-- Add MongoDB/Redis-backed stores later behind the existing case repository/storage interface.
+- MongoDB optional store is now implemented behind the existing case repository/storage interface.
 - Add migration/backup behavior before production-style deployments.
+- Keep Redis-backed caching/queue storage as future work.
 
 ### Report Export Preparation
 
@@ -220,6 +221,27 @@ Follow-up:
 
 ## P3: Real Data Integration Preparation
 
+### Data-source Readiness and Access Status Layer
+
+Goal: make every platform's collection readiness explicit before enabling real data access.
+
+Status: implemented for the mock-first MVP.
+
+Scope:
+
+- expose `GET /api/v1/platforms/status`
+- keep `GET /api/v1/platforms` backward-compatible
+- show mock availability, real-mode availability, API approval status, credential presence booleans, and real selectability
+- keep Reddit `api_pending` and real mode disabled until approval
+- keep crawler-later platforms visible but not real-selectable
+
+Acceptance:
+
+- no credential values are exposed
+- no real platform APIs are called
+- frontend platform display shows Chinese readiness labels
+- `/crawl/start` keeps Reddit mock fallback while approval is pending
+
 ### Adapter Contracts
 
 Goal: prepare real adapters without implementing crawlers yet.
@@ -241,32 +263,35 @@ Acceptance:
 - outputs normalize into `RawPost` and `RawComment`
 - missing credentials fall back to mock mode
 
-### Mock-only Crawl Adapter Bridge
+### Crawl Adapter Bridge
 
-Goal: connect `POST /api/v1/crawl/start` to the adapter factory in mock mode only, without enabling real Reddit mode.
+Goal: connect `POST /api/v1/crawl/start` to the adapter factory for Reddit while preserving mock-first fallback behavior.
 
-Status: next recommended implementation task.
+Status: implemented for Reddit with safe fallback metadata.
 
 Scope:
 
-- call `get_adapter("reddit")` only in mock mode when Reddit is selected
-- keep existing crawl response shape stable
-- attach or log normalized mock `RawPost` / `RawComment` counts for future pipeline integration
+- call `get_adapter("reddit")` when Reddit is selected
+- keep existing crawl response fields backward-compatible
+- return normalized mock `RawPost` / `RawComment` items in mock mode or fallback mode
+- include safe platform metadata with adapter mode, fallback status, coarse fallback category, and schema validation booleans
 - keep official API planned platforms as placeholders
 - keep crawler-later platforms disabled
 
 Acceptance:
 
-- no real Reddit API calls
-- no credentials required
+- default mode performs no real Reddit API calls
+- no credentials required for mock mode or tests
+- Reddit real API mode is disabled while API approval is pending
+- approval/config/dependency/auth/network/adapter states fall back to mock data without exposing secrets
 - old mock crawl behavior remains backward-compatible
-- backend tests cover Reddit-selected crawl start and unknown/inactive platform handling
+- backend tests cover Reddit-selected crawl start, mock mode, API-pending fallback, missing credentials fallback, and non-Reddit mock behavior
 
 ### Reddit Real Adapter Planning
 
 Goal: define the first practical real-data candidate.
 
-Status: minimal optional real-mode path implemented behind explicit credentials; live product flow is still disabled.
+Status: `api_pending`. Mock mode is available; real API mode is disabled until Reddit approval is granted.
 
 Scope:
 
@@ -274,15 +299,67 @@ Scope:
 - compliance constraints
 - fixture schema
 - adapter tests with recorded/sanitized fixtures only
-- optional real mode using `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`
+- future optional real mode using `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` after approval
 - helper/status methods: `has_required_credentials()`, `get_mode()`, `is_real_mode_enabled()`, and `get_status_metadata()`
 
 Acceptance:
 
-- implementation plan exists before any live call
+- Reddit API approval remains pending before any live call
 - credentials remain outside the repository
-- current case/mock analysis flow remains offline unless a future task explicitly enables real mode
+- current case/mock analysis flow remains offline; `/crawl/start` returns mock Reddit data while approval is pending
 - tests use mocked Reddit responses and do not make network calls
+
+### Future Compliant Public-Source Parser Framework
+
+Goal: prepare a safe framework for public-source parsers without implementing scraping now.
+
+Status: scaffolded for the first fixture-only parser.
+
+Scope:
+
+- sanitized public HTML fixture format
+- selector profile structure and versioning
+- compliance checklist per source
+- normalization to `RawPost` / `RawComment`
+- deterministic parser tests with no external network calls
+
+Implemented:
+
+- `backend/app/services/crawling/public_parser/` framework package
+- JSON selector profile loading
+- simple deterministic HTML selector extraction for fixture tests
+- conservative fetcher/robots helpers with live fetch disabled by default
+- The Paper / Pengpai News (`the_paper`) `fixture_only` parser scaffold
+- `/api/v1/crawl/start` public parser fallback metadata for explicit `the_paper` requests
+
+Safety constraints:
+
+- do not use Reddit public-page scraping to bypass Reddit API approval
+- do not use browser cookies, login bypass, captcha bypass, anti-bot evasion, proxy rotation, paywall bypass, hidden APIs, or private data access
+- do not activate crawler-later platforms until compliance review, fixtures, selector tests, and explicit product requirements are ready
+
+### Official API Application Packages
+
+Goal: prepare future official API applications without implementing API calls yet.
+
+Status: planned.
+
+Near-term candidates:
+
+- Weibo
+- Bilibili
+
+Scope:
+
+- document platform purpose, data minimization plan, callback/redirect needs if any, rate-limit expectations, and compliance notes
+- list required app credentials and permissions without storing values in the repository
+- prepare mock/fixture parity tests before any live API call
+
+Safety constraints:
+
+- no bypass behavior
+- no private data collection
+- no real API calls until approval, credentials, permission scopes, and rate limits are reviewed
 
 ## P4: Future Advanced Algorithm
 
@@ -309,7 +386,7 @@ Acceptance:
 
 Goal: add optional MongoDB-backed persistence without breaking the current local JSON demo flow.
 
-Status: next major task. Not implemented yet.
+Status: implemented as an optional v1.0 persistence backend.
 
 Scope:
 
@@ -327,3 +404,18 @@ Acceptance:
 - local JSON tests keep passing without MongoDB installed
 - MongoDB path is optional and explicitly configured
 - reset/seed/smoke tooling remains safe for local development
+
+Implemented:
+
+- `MongoDbCaseStore` implements the existing `CaseStore` interface.
+- `create_case_store_from_env()` selects `local_json` by default and `mongodb` only when `CASE_STORE_BACKEND=mongodb`.
+- `.env.example` documents `MONGODB_URI` and `MONGODB_DATABASE`.
+- MongoDB store unit tests use fake client/database objects and do not require a real MongoDB server.
+- Default backend tests still run with local JSON.
+
+Future production hardening:
+
+- optional real MongoDB integration tests behind an explicit environment flag
+- migration/export/import tooling from local JSON into MongoDB
+- deployment-specific connection pooling, timeout, and backup guidance
+- operational indexes review after real dataset shape is known

@@ -14,7 +14,21 @@ The current MVP flow is:
 keyword input -> mock pipeline analysis -> backend report/visualization APIs -> desktop dashboard
 ```
 
-Real crawlers, real OpenAI/LLM calls, real database persistence, and complex ML models have not been implemented yet. The MVP remains runnable offline with mock data and deterministic rule/template logic.
+Real crawlers, real OpenAI/LLM calls, production database hardening, and complex ML models have not been implemented yet. The MVP remains runnable offline with mock data and deterministic rule/template logic.
+
+Latest data-source readiness layer update: added a safe platform access status layer so all sources expose mock availability, real-mode availability, API approval status, credential presence booleans, and real selectability. `GET /api/v1/platforms/status` now returns readiness metadata for all platforms without exposing credential values. Reddit remains `api_pending`: mock mode is available, real Reddit API mode is disabled until approval, and public-page scraping is not implemented or used as a bypass. Keyword Search now displays Chinese readiness labels such as `Mock 可用`, `API 待审批`, `官方 API 规划中`, `未来公开页面解析`, and `暂不启用`. `/crawl/start` continues to return normalized mock Reddit data while approval is pending. Targeted readiness tests passed with `24 passed in 0.65s`; full backend validation passed with `114 passed in 2.56s`; frontend production build passed in 7.65s with the existing non-blocking Ant Design/ECharts vendor chunk warning.
+
+Latest public-page parser framework update: added a compliant public-page parser scaffold under `backend/app/services/crawling/public_parser/`. The first site scaffold is The Paper / Pengpai News (`the_paper`) with a JSON selector profile and fixture-first parser tests. Live public fetching is disabled by default with `PUBLIC_PARSER_LIVE_FETCH_ENABLED=false`; the fetcher uses a polite user-agent, conservative rate limits, robots/profile checks, no cookies, no login, no captcha handling, no proxy rotation, and no private data access. `POST /api/v1/crawl/start` now routes explicit `the_paper` requests through `adapter_factory.get_adapter("the_paper")` and returns fixture/mock `RawPost` data plus safe metadata (`source_type`, `parser_status`, `live_fetch_enabled`, fallback category, and schema validation flags). Reddit scraping remains not implemented and must not be used to bypass Reddit API approval. Targeted parser/crawl/adapter/platform tests passed with `33 passed in 1.33s`; full backend validation passed with `123 passed in 2.45s`. Frontend build was not run because no frontend files changed.
+
+Public parser revalidation update: rechecked the public-page parser foundation and adapter wiring without product-code changes. Full backend validation passed with `123 passed in 2.96s`; frontend build was not run because no frontend files changed.
+
+Latest Reddit API approval status update: Reddit is now explicitly marked `api_pending` across the platform registry, API/data docs, adapter metadata, and implementation backlog. Reddit mock mode remains available and `/api/v1/crawl/start` continues to return normalized mock Reddit `RawPost` / `RawComment` data. Real Reddit API mode is disabled until Reddit approval is granted, even if local credentials and `REDDIT_ADAPTER_MODE=real` are present. Public-page scraping is not implemented and must not be used to bypass API approval. Targeted Reddit approval-gate tests passed with `21 passed in 0.58s`; full backend validation passed with `111 passed in 2.63s`; frontend build was not rerun because no frontend files changed.
+
+Latest v1.0 MongoDB persistence update: added optional MongoDB persistence behind the existing `CaseStore` abstraction while keeping `local_json` as the default backend. `MongoDbCaseStore` stores analysis cases, analysis results, V1.5 topic-risk output, Chinese reports, Markdown reports, snapshots, alerts, scheduler config/state, and notification outbox items in separate MongoDB collections. `create_case_store_from_env()` selects MongoDB only when `CASE_STORE_BACKEND=mongodb`; normal tests and local development continue to use `CASE_STORE_BACKEND=local_json`. MongoDB connection settings are documented in `.env.example` as `MONGODB_URI=mongodb://localhost:27017` and `MONGODB_DATABASE=sentigraph`. If MongoDB mode is selected and the connection cannot be opened, the backend raises a clear configuration error rather than silently falling back. Added fake MongoDB unit tests so no real MongoDB server is required for the default suite. Backend validation passed with `99 passed in 2.39s`; local-json API smoke check passed with `26 passed, 0 failed`; frontend build was not run because no frontend files changed.
+
+Latest Reddit environment loading fix: backend startup now loads the repository-root `.env` through `python-dotenv` using a fixed path, without overriding existing environment variables. `reddit_adapter` also performs the same one-time project `.env` load for direct adapter usage. Added safe diagnostics that report only `REDDIT_ADAPTER_MODE` and present/missing status for Reddit credentials, never credential values. `.env` remains ignored by git. Targeted tests passed with `21 passed in 0.46s`; full backend validation passed with `109 passed in 24.96s`.
+
+Latest Reddit real-mode diagnostic update: the Reddit real-mode client now uses PRAW as the optional official API dependency and records safe diagnostics only: `real_mode_reached`, `dependency_available`, `exception_class`, and `sanitized_error_category`. Fallback categories are now separated into `dependency_error`, `auth_error`, `network_error`, `parsing_error`, `config_error`, and `adapter_error`. A tiny local smoke check with `keyword=Tesla` and `limit=3` reached real mode, confirmed PRAW dependency availability, and safely categorized the live failure as `auth_error` with exception class `ResponseException`; fallback mock data remained schema-valid. Targeted tests passed with `23 passed in 0.60s`; full backend validation passed with `111 passed in 4.44s`.
 
 Latest pre-v1.0 hardening update: completed the overnight hardening pass for the v0.9 mock MVP before MongoDB work. Added safe local developer utilities for resetting ignored runtime JSON data, seeding deterministic demo cases, and running an API smoke check against a local backend. Added focused tests for the reset/seed utilities, a frontend error boundary, a not-found fallback, route-level lazy loading, Chinese risk label consistency in the app shell, and stable QA selectors on notification/report copy actions. Backend validation passed with `92 passed in 2.82s`; frontend production build passed in 7.75s; API smoke check passed with `26 passed, 0 failed` against a temporary local backend and temporary project-local JSON store. The Vite large chunk warning remains for Ant Design and ECharts vendor chunks, but route-level page chunks are now split and the warning is non-blocking.
 
@@ -394,6 +408,8 @@ npm.cmd --prefix frontend run build
 - Latest targeted Reddit adapter validation after minimal real-mode helper updates passed with `9 passed in 0.14s`.
 - Latest backend validation after Reddit real-mode hardening passed with `51 passed in 0.43s`; targeted Reddit adapter validation passed with `11 passed in 0.12s`.
 - Latest v0.5 Reddit real-mode QA passed with full backend validation `51 passed in 0.41s`, targeted Reddit adapter validation `11 passed in 0.09s`, and API smoke checks for old MVP and case/report endpoints.
+- Latest Reddit API approval status update passed with full backend validation `111 passed in 2.63s`; real Reddit API mode is disabled while `api_pending`, and `/crawl/start` continues to return mock Reddit data.
+- Latest data-source readiness layer validation passed with full backend validation `114 passed in 2.56s`; frontend build passed in 7.65s with the existing non-blocking vendor chunk warning.
 - Latest backend validation after local JSON case persistence passed with `54 passed in 0.53s`.
 - Latest backend validation after v0.6 persistence QA passed with `55 passed in 0.51s`.
 - Latest backend validation after v0.7 monitoring foundation passed with `65 passed in 1.04s`.
@@ -450,10 +466,12 @@ Set-Location ..
 - The previous frontend only showed Weibo because the backend registry had only `weibo` marked `enabled_in_mvp=true`, and `frontend/src/App.jsx` filtered platform options only by that field. This has been fixed by adding `selectable_for_mock` and marking Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao as safe mock-selectable platforms.
 - Crawler-later platforms remain visible but disabled with the note `Future crawler integration`. YouTube is not active in the MVP and is marked as optional future.
 - YouTube is not active in the MVP and is marked as optional future.
-- Reddit adapter scaffold is available but defaults to mock mode; missing credentials intentionally fall back to local mock data.
-- Reddit real mode requires `REDDIT_ADAPTER_MODE=real`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`, and remains opt-in and disconnected from current product flows.
-- Reddit real mode also requires an explicit code-level real-mode request such as `get_adapter("reddit", mode="real")`; default product and factory paths remain mock-first.
-- Before real Reddit mode, add fixture-backed real-mode tests, explicit opt-in product behavior, rate-limit/error UX, and a compliance checklist. Keep `REDDIT_ADAPTER_MODE=mock` for local demos.
+- Reddit adapter scaffold is available and defaults to mock mode; mock mode intentionally falls back to local mock data.
+- Reddit real API mode is currently `api_pending` and disabled until Reddit approval is granted, even if `REDDIT_ADAPTER_MODE=real` and credentials are present.
+- `POST /api/v1/crawl/start` now routes Reddit selections through `adapter_factory.get_adapter("reddit")`; default local demos still use `REDDIT_ADAPTER_MODE=mock`.
+- While approval is pending, `crawl/start` returns normalized mock Reddit data with safe metadata: `mock_available=true`, `api_pending=true`, and `real_mode_disabled=true`.
+- Public-page scraping for Reddit is not implemented and must not be used to bypass API approval.
+- Before expanding Reddit real mode further, obtain/confirm Reddit API approval, keep tests fixture-first, and preserve safe mock fallback.
 - The legacy V1 static scoring module remains for factor/radar compatibility; the current active mock pipeline/report risk model is `v1_5_topic_risk_mvp`.
 - V1.5 topic-level risk (`v1_5_topic_risk_mvp`) is now implemented for mock pipeline visualization/report outputs.
 - V1.5 topic-level risk (`v1_5_topic_risk_mvp`) is now implemented for mock pipeline analysis, visualization, summary, and recommendation outputs.
@@ -486,17 +504,42 @@ Audit date: 2026-05-14.
 
 Overall audit conclusion: MVP 0 through the v0.9 notification foundation are complete enough for the mock-first desktop prototype. The project should not move to real crawlers or broad real platform APIs yet. Browser QA should cover the scheduler and notification controls before a public demo.
 
+## 6.1 Crawl Adapter Bridge Update
+
+Update date: 2026-05-15.
+
+Status: complete for the safe Reddit bridge.
+
+What changed:
+
+- `POST /api/v1/crawl/start` now uses the platform adapter layer when `platforms` contains `reddit`.
+- Reddit mock mode returns normalized `RawPost` and `RawComment` items and adapter metadata.
+- Reddit real API mode is disabled while API approval is pending and falls back to mock data with `api_pending` metadata.
+- Safe response metadata includes `platform`, `adapter_mode`, `fallback_used`, `fallback_reason_category`, `mock_available`, `api_pending`, `real_mode_disabled`, post/comment counts, and schema validation booleans.
+- Official API planned platforms still use mock behavior. Crawler-later platforms are not activated.
+
+Validation:
+
+- Backend tests passed: `111 passed in 4.44s`.
+- No frontend code changed, so frontend build was not required for this task.
+
+Known limitations:
+
+- `crawl/start` does not expose a detailed real Reddit error message by design; only safe category-level fallback metadata is returned.
+- Non-Reddit platforms still use the previous mock-first behavior and do not have adapter output yet.
+- Case runs still use the deterministic mock pipeline rather than live crawl results.
+
 ## 7. Next Recommended Task
 
-Recommended next implementation task: run one manual or stable-runtime browser click-through for the v0.9 RiskMonitor notification controls before any public demo, then add a mock-only crawl service bridge that can call the adapter factory in safe mock mode for Reddit-selected crawl starts without enabling live Reddit requests.
+Recommended next platform parser task: add a second fixture-only public parser profile for Jiemian News or expand The Paper tests with more sanitized article fixture variants. Keep live fetch disabled by default, keep crawler-later platforms non-selectable for real collection, and require fixture tests plus compliance notes before any parser is promoted beyond scaffold status.
 
 Suggested scope:
 
 - Do not enable V2 scoring yet.
 - Do not replace V1/V1.5 with full V2 during the next task.
 - Keep the current mock pipeline and V1.5 report APIs stable.
-- Future persistence work should add MongoDB/Redis as optional stores behind the existing repository interface; do not require them for local demos.
 - If alert refinement continues next, keep it manual/mock-only. Notification delivery must remain local simulation only until explicit external-channel configuration and tests are added.
-- If Reddit integration is selected next, keep real mode disabled by default and use sanitized fixtures or mocked clients only.
+- If Reddit integration is selected next, keep real API mode disabled until approval is granted and use sanitized fixtures or mocked clients only.
+- If public parser work continues, do not implement login bypass, captcha bypass, proxy rotation, cookies, private data scraping, or Reddit scraping.
 - Re-run the browser checklist in `docs/demo_checklist.md` after the next product-polish task.
 - Keep existing API schemas stable.

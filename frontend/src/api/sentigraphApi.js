@@ -13,6 +13,11 @@ export async function getPlatforms() {
   return data
 }
 
+export async function getPlatformStatus() {
+  const { data } = await apiClient.get(`${API_PREFIX}/platforms/status`)
+  return data
+}
+
 export async function listAnalysisCases() {
   const { data } = await apiClient.get(`${API_PREFIX}/cases`)
   return Array.isArray(data) ? data : []

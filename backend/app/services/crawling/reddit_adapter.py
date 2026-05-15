@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import base64
+import importlib
 import json
 import os
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol
-from urllib import parse, request
 
+from app.core.environment import load_project_env
 from app.schemas.comment import RawComment, RawPost
 from app.services.crawling.base_adapter import (
     AdapterHealth,
@@ -17,6 +16,8 @@ from app.services.crawling.base_adapter import (
     PlatformAdapterError,
 )
 
+
+load_project_env()
 
 MOCK_DATA_DIR = Path(__file__).resolve().parents[4] / "mock_data"
 MOCK_POST_LIMIT = 100
@@ -28,6 +29,27 @@ REDDIT_REQUIRED_CREDENTIALS = (
     "REDDIT_CLIENT_SECRET",
     "REDDIT_USER_AGENT",
 )
+REDDIT_API_APPROVAL_STATUS = "api_pending"
+
+
+class RedditRealModeError(PlatformAdapterError):
+    category = "adapter_error"
+
+
+class RedditDependencyError(RedditRealModeError):
+    category = "dependency_error"
+
+
+class RedditAuthError(RedditRealModeError):
+    category = "auth_error"
+
+
+class RedditNetworkError(RedditRealModeError):
+    category = "network_error"
+
+
+class RedditParsingError(RedditRealModeError):
+    category = "parsing_error"
 
 
 class RedditHttpClient(Protocol):
@@ -77,18 +99,41 @@ class RedditAdapter(BasePlatformAdapter):
         self.requested_mode: AdapterMode = requested_mode
         self.credentials = credentials or RedditCredentials.from_env()
         self.fallback_reason = ""
+        self.real_mode_reached = False
+        self.dependency_available = _is_praw_available()
+        self.exception_class: str | None = None
+        self.sanitized_error_category: str | None = None
+        self.mock_available = True
+        self.api_pending = _reddit_api_approval_status() == "api_pending"
+        self.real_mode_disabled = self.api_pending
+        self.api_approval_required = True
+        self.api_approval_status = REDDIT_API_APPROVAL_STATUS
+        self.selectable_for_real = False
         env_allows_real = self.env_mode == "real"
         effective_mode: AdapterMode = (
-            "real" if requested_mode == "real" and env_allows_real and self.credentials else "mock"
+            "real"
+            if requested_mode == "real"
+            and env_allows_real
+            and self.credentials
+            and not self.real_mode_disabled
+            else "mock"
         )
         if requested_mode == "real" and not env_allows_real:
             self.fallback_reason = "reddit_adapter_mode_not_real"
         elif requested_mode == "real" and not self.credentials:
             self.fallback_reason = "missing_reddit_credentials"
+        elif requested_mode == "real" and self.real_mode_disabled:
+            self.fallback_reason = "reddit_api_approval_pending"
         super().__init__(mode=effective_mode)
-        self.http_client = http_client or (
-            _OfficialRedditClient(self.credentials) if self.mode == "real" and self.credentials else None
-        )
+        self.http_client = http_client
+        if self.http_client is None and self.mode == "real" and self.credentials:
+            try:
+                self.http_client = _OfficialRedditClient(self.credentials)
+                self.dependency_available = True
+            except Exception as exc:
+                self._record_real_mode_exception(exc)
+                self.mode = "mock"
+                self.http_client = None
 
     @property
     def real_mode_available(self) -> bool:
@@ -101,7 +146,12 @@ class RedditAdapter(BasePlatformAdapter):
         return self.mode
 
     def is_real_mode_enabled(self) -> bool:
-        return self.mode == "real" and self.has_required_credentials() and self.http_client is not None
+        return (
+            self.mode == "real"
+            and self.has_required_credentials()
+            and self.http_client is not None
+            and not self.real_mode_disabled
+        )
 
     def health_check(self) -> AdapterHealth:
         if self.is_real_mode_enabled():
@@ -110,6 +160,8 @@ class RedditAdapter(BasePlatformAdapter):
             message = "Reddit adapter requested real mode but REDDIT_ADAPTER_MODE is not real; using mock data."
         elif self.fallback_reason == "missing_reddit_credentials":
             message = "Reddit adapter requested real mode but is using mock data because credentials are missing."
+        elif self.fallback_reason == "reddit_api_approval_pending":
+            message = "Reddit API approval is pending; real API mode is disabled and mock data is active."
         else:
             message = "Reddit adapter mock mode is active."
 
@@ -123,7 +175,7 @@ class RedditAdapter(BasePlatformAdapter):
         )
 
     def supports_real_mode(self) -> bool:
-        return self.has_required_credentials()
+        return self.has_required_credentials() and self.dependency_available and not self.real_mode_disabled
 
     def get_status_metadata(self) -> dict[str, object]:
         return {
@@ -135,6 +187,20 @@ class RedditAdapter(BasePlatformAdapter):
             "real_mode_enabled": self.is_real_mode_enabled(),
             "fallback_reason": self.fallback_reason,
             "required_credentials": list(self.get_required_credentials()),
+            "real_mode_reached": self.real_mode_reached,
+            "dependency_available": self.dependency_available,
+            "exception_class": self.exception_class,
+            "sanitized_error_category": self.sanitized_error_category,
+            "mock_available": self.mock_available,
+            "real_mode_available": self.is_real_mode_enabled(),
+            "api_approval_required": self.api_approval_required,
+            "api_approval_status": self.api_approval_status,
+            "api_pending": self.api_pending,
+            "real_mode_disabled": self.real_mode_disabled,
+            "selectable_for_real": self.selectable_for_real,
+            "approval_status": REDDIT_API_APPROVAL_STATUS,
+            "praw_installed": _is_praw_available(),
+            "praw_required": True,
         }
 
     @classmethod
@@ -158,6 +224,7 @@ class RedditAdapter(BasePlatformAdapter):
             return self._search_mock_posts(keyword=keyword, limit=safe_limit)
 
         try:
+            self.real_mode_reached = True
             raw_posts = self.http_client.search_posts(
                 keyword,
                 limit=safe_limit,
@@ -166,7 +233,7 @@ class RedditAdapter(BasePlatformAdapter):
             )
             return [self.normalize_post(raw) for raw in raw_posts[:safe_limit]]
         except Exception as exc:  # pragma: no cover - defensive fallback for live mode only
-            self.fallback_reason = f"real_mode_error:{exc.__class__.__name__}"
+            self._record_real_mode_exception(exc)
             return self._search_mock_posts(keyword=keyword, limit=safe_limit)
 
     def fetch_comments(self, post_id: str, limit: int = 100) -> list[RawComment]:
@@ -180,10 +247,11 @@ class RedditAdapter(BasePlatformAdapter):
             return self._fetch_mock_comments(post_id=post_id, limit=safe_limit)
 
         try:
+            self.real_mode_reached = True
             raw_comments = self.http_client.fetch_comments(post_id, limit=safe_limit)
             return [self.normalize_comment(raw) for raw in raw_comments[:safe_limit]]
         except Exception as exc:  # pragma: no cover - defensive fallback for live mode only
-            self.fallback_reason = f"real_mode_error:{exc.__class__.__name__}"
+            self._record_real_mode_exception(exc)
             return self._fetch_mock_comments(post_id=post_id, limit=safe_limit)
 
     def normalize_post(self, raw: Mapping[str, Any]) -> RawPost:
@@ -275,16 +343,22 @@ class RedditAdapter(BasePlatformAdapter):
         matched = [comment for comment in comments if comment.post_id == normalized_post_id]
         return (matched or comments)[:limit]
 
+    def _record_real_mode_exception(self, exc: Exception) -> None:
+        category = _real_mode_error_category(exc)
+        safe_exception = exc.__cause__ or exc
+        self.sanitized_error_category = category
+        self.exception_class = safe_exception.__class__.__name__
+        self.fallback_reason = f"{category}:{self.exception_class}"
+        if category == "dependency_error":
+            self.dependency_available = False
+
 
 class _OfficialRedditClient:
-    """Small official API client used only when credentials are explicitly configured."""
-
-    token_url = "https://www.reddit.com/api/v1/access_token"
-    api_base = "https://oauth.reddit.com"
+    """Small PRAW-backed API client used only when credentials are explicitly configured."""
 
     def __init__(self, credentials: RedditCredentials) -> None:
         self.credentials = credentials
-        self._access_token: str | None = None
+        self.reddit = _build_praw_reddit(credentials)
 
     def search_posts(
         self,
@@ -295,54 +369,26 @@ class _OfficialRedditClient:
         date_range: dict[str, str] | None = None,
     ) -> list[Mapping[str, Any]]:
         del date_range  # Reddit API time filters will be added after fixture validation.
-        query = parse.urlencode({"q": keyword, "limit": limit, "sort": sort, "type": "link"})
-        payload = self._get_json(f"{self.api_base}/search?{query}")
-        return _children(payload)
+        try:
+            submissions = self.reddit.subreddit("all").search(
+                keyword,
+                sort=sort,
+                limit=limit,
+                params={"type": "link"},
+            )
+            return [_submission_to_mapping(submission) for submission in submissions]
+        except Exception as exc:
+            raise _typed_reddit_exception(exc) from exc
 
     def fetch_comments(self, post_id: str, *, limit: int) -> list[Mapping[str, Any]]:
         clean_post_id = post_id.removeprefix("t3_")
-        query = parse.urlencode({"limit": limit, "sort": "confidence"})
-        payload = self._get_json(f"{self.api_base}/comments/{clean_post_id}?{query}")
-        if isinstance(payload, list) and len(payload) > 1:
-            return _children(payload[1])
-        return []
-
-    def _get_json(self, url: str) -> Any:
-        headers = {
-            "Authorization": f"Bearer {self._token()}",
-            "User-Agent": self.credentials.user_agent,
-        }
-        return self._request_json(request.Request(url, headers=headers))
-
-    def _token(self) -> str:
-        if self._access_token:
-            return self._access_token
-
-        auth = f"{self.credentials.client_id}:{self.credentials.client_secret}".encode("utf-8")
-        headers = {
-            "Authorization": f"Basic {base64.b64encode(auth).decode('ascii')}",
-            "User-Agent": self.credentials.user_agent,
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-        body = parse.urlencode({"grant_type": "client_credentials"}).encode("utf-8")
-        payload = self._request_json(request.Request(self.token_url, data=body, headers=headers, method="POST"))
-        token = payload.get("access_token") if isinstance(payload, Mapping) else None
-        if not token:
-            raise PlatformAdapterError("Reddit token response did not include access_token.")
-        self._access_token = str(token)
-        return self._access_token
-
-    def _request_json(self, req: request.Request) -> Any:
-        last_error: Exception | None = None
-        for attempt in range(2):
-            try:
-                with request.urlopen(req, timeout=10) as response:
-                    return json.loads(response.read().decode("utf-8"))
-            except Exception as exc:  # pragma: no cover - live network path is not used in MVP tests
-                last_error = exc
-                if attempt == 0:
-                    time.sleep(0.25)
-        raise PlatformAdapterError("Reddit API request failed.") from last_error
+        try:
+            submission = self.reddit.submission(id=clean_post_id)
+            submission.comment_sort = "confidence"
+            submission.comments.replace_more(limit=0)
+            return [_comment_to_mapping(comment, post_id=f"t3_{clean_post_id}") for comment in submission.comments.list()[:limit]]
+        except Exception as exc:
+            raise _typed_reddit_exception(exc) from exc
 
 
 def _load_mock_reddit_comments() -> list[RawComment]:
@@ -397,6 +443,141 @@ def _count_replies(replies: Any) -> int:
     return len(_children(replies))
 
 
+def _build_praw_reddit(credentials: RedditCredentials) -> Any:
+    try:
+        praw = importlib.import_module("praw")
+    except ModuleNotFoundError as exc:
+        raise RedditDependencyError("praw_missing") from exc
+
+    try:
+        reddit = praw.Reddit(
+            client_id=credentials.client_id,
+            client_secret=credentials.client_secret,
+            user_agent=credentials.user_agent,
+            check_for_async=False,
+        )
+        reddit.read_only = True
+        return reddit
+    except Exception as exc:
+        raise _typed_reddit_exception(exc) from exc
+
+
+def _is_praw_available() -> bool:
+    try:
+        importlib.import_module("praw")
+    except ModuleNotFoundError:
+        return False
+    return True
+
+
+def _submission_to_mapping(submission: Any) -> Mapping[str, Any]:
+    try:
+        return {
+            "kind": "t3",
+            "data": {
+                "id": getattr(submission, "id", "unknown"),
+                "name": getattr(submission, "name", "") or f"t3_{getattr(submission, 'id', 'unknown')}",
+                "author": _reddit_author_name(getattr(submission, "author", None)),
+                "author_fullname": _reddit_author_fullname(getattr(submission, "author", None)),
+                "title": getattr(submission, "title", ""),
+                "selftext": getattr(submission, "selftext", ""),
+                "ups": getattr(submission, "ups", getattr(submission, "score", 0)),
+                "score": getattr(submission, "score", 0),
+                "num_comments": getattr(submission, "num_comments", 0),
+                "created_utc": getattr(submission, "created_utc", None),
+                "permalink": getattr(submission, "permalink", ""),
+                "url": getattr(submission, "url", ""),
+            },
+        }
+    except Exception as exc:
+        raise RedditParsingError("submission_mapping_failed") from exc
+
+
+def _comment_to_mapping(comment: Any, *, post_id: str) -> Mapping[str, Any]:
+    try:
+        comment_id = getattr(comment, "id", "unknown")
+        parent_id = getattr(comment, "parent_id", post_id) or post_id
+        return {
+            "kind": "t1",
+            "data": {
+                "id": comment_id,
+                "name": getattr(comment, "name", "") or f"t1_{comment_id}",
+                "link_id": post_id,
+                "parent_id": parent_id,
+                "author": _reddit_author_name(getattr(comment, "author", None)),
+                "author_fullname": _reddit_author_fullname(getattr(comment, "author", None)),
+                "body": getattr(comment, "body", ""),
+                "ups": getattr(comment, "ups", getattr(comment, "score", 0)),
+                "score": getattr(comment, "score", 0),
+                "created_utc": getattr(comment, "created_utc", None),
+                "permalink": getattr(comment, "permalink", ""),
+            },
+        }
+    except Exception as exc:
+        raise RedditParsingError("comment_mapping_failed") from exc
+
+
+def _reddit_author_name(author: Any) -> str:
+    return "unknown_reddit_author" if author is None else str(author)
+
+
+def _reddit_author_fullname(author: Any) -> str:
+    fullname = getattr(author, "fullname", None)
+    return str(fullname) if fullname else _reddit_author_name(author)
+
+
+def _typed_reddit_exception(exc: Exception) -> RedditRealModeError:
+    category = _real_mode_error_category(exc)
+    if category == "dependency_error":
+        return RedditDependencyError("reddit_dependency_error")
+    if category == "auth_error":
+        return RedditAuthError("reddit_auth_error")
+    if category == "network_error":
+        return RedditNetworkError("reddit_network_error")
+    if category == "parsing_error":
+        return RedditParsingError("reddit_parsing_error")
+    return RedditRealModeError("reddit_adapter_error")
+
+
+def _real_mode_error_category(exc: Exception) -> str:
+    if isinstance(exc, RedditRealModeError):
+        return exc.category
+
+    class_name = exc.__class__.__name__.lower()
+    module_name = exc.__class__.__module__.lower()
+    status_code = _status_code_from_exception(exc)
+
+    if "modulenotfound" in class_name or "importerror" in class_name:
+        return "dependency_error"
+    if status_code in {401, 403}:
+        return "auth_error"
+    if "oauth" in class_name or "forbidden" in class_name or "unauthorized" in class_name:
+        return "auth_error"
+    if "permission" in class_name or "auth" in class_name:
+        return "auth_error"
+    if status_code in {408, 409, 425, 429, 500, 502, 503, 504}:
+        return "network_error"
+    if "timeout" in class_name or "connection" in class_name or "request" in class_name:
+        return "network_error"
+    if "server" in class_name or "toomanyrequests" in class_name:
+        return "network_error"
+    if "jsondecode" in class_name or "decode" in class_name or "parsing" in class_name:
+        return "parsing_error"
+    if "validation" in class_name or "keyerror" in class_name or "typeerror" in class_name:
+        return "parsing_error"
+    if "prawcore" in module_name and "response" in class_name:
+        return "auth_error" if status_code in {401, 403, None} else "network_error"
+    return "adapter_error"
+
+
+def _status_code_from_exception(exc: Exception) -> int | None:
+    for candidate in (exc, getattr(exc, "response", None), getattr(exc, "__cause__", None)):
+        status_code = getattr(candidate, "status_code", None) or getattr(candidate, "status", None)
+        if isinstance(status_code, int):
+            return status_code
+    return None
+
+
 def _normalize_sort(sort: str) -> str:
     allowed = {"relevance", "hot", "new", "top", "comments"}
     normalized = str(sort or "relevance").lower()
@@ -405,6 +586,10 @@ def _normalize_sort(sort: str) -> str:
 
 def _adapter_mode_from_env() -> AdapterMode:
     return _normalize_adapter_mode(os.getenv("REDDIT_ADAPTER_MODE", "mock"))
+
+
+def _reddit_api_approval_status() -> str:
+    return REDDIT_API_APPROVAL_STATUS
 
 
 def _normalize_adapter_mode(mode: str) -> AdapterMode:

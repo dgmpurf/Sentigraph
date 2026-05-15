@@ -44,11 +44,24 @@ GET /api/v1/platforms
       "display_name": "Reddit",
       "category": "future_real_adapter_candidate",
       "source_type": "mock_data_future_adapter_placeholder",
-      "status": "mock_selectable_future_adapter_candidate",
+      "status": "api_pending",
       "enabled_in_mvp": true,
       "selectable_for_mock": true,
+      "mock_available": true,
+      "real_mode_available": false,
+      "api_approval_required": true,
+      "api_approval_status": "api_pending",
+      "credentials_required": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
+      "credentials_present": {
+        "REDDIT_CLIENT_ID": false,
+        "REDDIT_CLIENT_SECRET": false,
+        "REDDIT_USER_AGENT": false
+      },
+      "api_pending": true,
+      "real_mode_disabled": true,
+      "selectable_for_real": false,
       "official_platform_url": null,
-      "notes": "Selectable for offline mock analysis. Reddit stays in the project as a future real adapter candidate, but no real API call is implemented yet."
+      "notes": "Selectable for offline mock analysis. Reddit API approval is pending, so real API mode is disabled and public-page scraping is not used as a bypass."
     },
     {
       "platform_id": "weibo",
@@ -58,6 +71,15 @@ GET /api/v1/platforms
       "status": "mock_selectable_official_api_planned",
       "enabled_in_mvp": true,
       "selectable_for_mock": true,
+      "mock_available": true,
+      "real_mode_available": false,
+      "api_approval_required": true,
+      "api_approval_status": "planned",
+      "credentials_required": [],
+      "credentials_present": {},
+      "api_pending": true,
+      "real_mode_disabled": true,
+      "selectable_for_real": false,
       "official_platform_url": "https://open.weibo.com",
       "notes": "Selectable for offline mock analysis only. Real access is planned through the official API after credentials, permissions, and compliance review."
     }
@@ -79,10 +101,73 @@ GET /api/v1/platforms
 Important:
 
 - `selectable_for_mock=true` means the frontend may show the platform in mock-first selectors.
+- `mock_available=true` means the platform has safe local mock data behavior.
+- `real_mode_available=true` means the backend may use a real source path for that platform. In the current MVP this is false for all platforms.
+- `credentials_present` is a safe boolean map only. It must never contain credential values.
+- `api_pending=true` means any future real API path is still waiting for approval, credentials, permissions, or compliance review.
+- `real_mode_disabled=true` means the backend must not call the real platform API for that source.
 - Official API planned platforms may be selectable for mock analysis, but they must not trigger real API calls until credentials, permissions, and compliance checks are available.
-- Reddit is visible and mock-selectable as a future real adapter candidate.
+- Reddit is visible and mock-selectable as a future real adapter candidate, but its current real API status is `api_pending`.
 - Crawler-later platforms are not selectable for real crawling in the MVP.
 - YouTube is `disabled_or_optional_future` and is not an active MVP platform.
+
+### Platform Readiness Status
+
+```http
+GET /api/v1/platforms/status
+```
+
+Response:
+
+```json
+{
+  "platforms": [
+    {
+      "platform_id": "reddit",
+      "display_name": "Reddit",
+      "category": "future_real_adapter_candidate",
+      "source_type": "mock_data_future_adapter_placeholder",
+      "status": "api_pending",
+      "mock_available": true,
+      "real_mode_available": false,
+      "api_approval_required": true,
+      "api_approval_status": "api_pending",
+      "credentials_required": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
+      "credentials_present": {
+        "REDDIT_CLIENT_ID": false,
+        "REDDIT_CLIENT_SECRET": false,
+        "REDDIT_USER_AGENT": false
+      },
+      "enabled_in_mvp": true,
+      "selectable_for_mock": true,
+      "selectable_for_real": false,
+      "api_pending": true,
+      "real_mode_disabled": true,
+      "official_platform_url": null,
+      "notes": "Selectable for offline mock analysis. Reddit API approval is pending, so real API mode is disabled and public-page scraping is not used as a bypass."
+    }
+  ],
+  "active_mvp_platforms": ["reddit", "weibo", "bilibili", "douyin", "kuaishou", "xiaohongshu", "zhihu", "douban", "toutiao"],
+  "mock_selectable_platforms": ["reddit", "weibo", "bilibili", "douyin", "kuaishou", "xiaohongshu", "zhihu", "douban", "toutiao"],
+  "real_selectable_platforms": [],
+  "summary": {
+    "total_platforms": 17,
+    "mock_selectable_count": 9,
+    "real_selectable_count": 0,
+    "api_pending_count": 9,
+    "disabled_count": 8,
+    "crawler_later_count": 7
+  }
+}
+```
+
+Important:
+
+- This endpoint is safe for UI diagnostics.
+- It returns credential presence as booleans only.
+- Reddit remains `api_pending`; real API mode is disabled until approval is granted.
+- Crawler-later platforms are visible for roadmap planning but never real-selectable in the MVP.
+- YouTube remains disabled or optional future.
 
 ## 1. Keyword Expansion
 
@@ -146,7 +231,117 @@ POST /api/v1/crawl/start
   "project_id": "project_001",
   "crawl_task_id": "crawl_task_001",
   "status": "queued",
-  "message": "Crawl task created. Mock data will be used in MVP mode."
+  "message": "Crawl task queued with platform adapter metadata. Mock-first fallback remains enabled.",
+  "platform_metadata": [
+    {
+      "platform": "reddit",
+      "adapter_mode": "mock",
+      "source_type": null,
+      "parser_status": null,
+      "live_fetch_enabled": false,
+      "fallback_used": false,
+      "fallback_reason_category": null,
+      "mock_available": true,
+      "real_mode_available": false,
+      "api_approval_required": true,
+      "api_approval_status": "api_pending",
+      "api_pending": true,
+      "real_mode_disabled": true,
+      "selectable_for_real": false,
+      "real_mode_blocked_reason": "mock_only",
+      "real_mode_reached": false,
+      "dependency_available": true,
+      "exception_class": null,
+      "sanitized_error_category": null,
+      "post_count": 3,
+      "comment_count": 3,
+      "schema_valid": true,
+      "raw_post_schema_valid": true,
+      "raw_comment_schema_valid": true
+    }
+  ],
+  "raw_posts": [
+    {
+      "platform": "reddit",
+      "post_id": "reddit_mock_post_001",
+      "author_id": "reddit_user_001",
+      "author_name": "reddit_user",
+      "title": "Tesla quality discussion",
+      "content": "Mock Reddit public post content.",
+      "like_count": 42,
+      "reply_count": 3,
+      "share_count": 0,
+      "created_at": "2026-05-15T00:00:00Z",
+      "url": "https://www.reddit.com/r/test/comments/reddit_mock_post_001/",
+      "raw_data": {
+        "mode": "mock"
+      }
+    }
+  ],
+  "raw_comments": [
+    {
+      "platform": "reddit",
+      "post_id": "reddit_mock_post_001",
+      "comment_id": "reddit_mock_comment_001",
+      "parent_id": null,
+      "author_id": "reddit_commenter_001",
+      "author_name": "reddit_commenter",
+      "content": "Mock Reddit public comment content.",
+      "like_count": 8,
+      "reply_count": 0,
+      "share_count": 0,
+      "created_at": "2026-05-15T00:01:00Z",
+      "url": "https://www.reddit.com/r/test/comments/reddit_mock_post_001/comment/",
+      "raw_data": {
+        "mode": "mock"
+      }
+    }
+  ]
+}
+```
+
+Important:
+
+- `POST /api/v1/crawl/start` is still mock-first and backward compatible.
+- When `platforms` contains `reddit`, the endpoint calls the Reddit platform adapter through `adapter_factory.get_adapter("reddit")`.
+- Reddit mock mode returns normalized `RawPost` and `RawComment` items in `raw_posts` and `raw_comments`.
+- Reddit real API mode is disabled while Reddit approval is pending. If Reddit is selected, the endpoint returns normalized mock data and safe approval/fallback metadata.
+- Public-page scraping is not implemented and must not be used to bypass Reddit API approval.
+- When `platforms` explicitly contains the public-parser scaffold `the_paper`, the endpoint calls the public parser adapter through `adapter_factory.get_adapter("the_paper")`.
+- The Paper public parser currently runs in `fixture_only` mode and returns safe fixture/mock `RawPost` data by default. It does not fetch live pages unless `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true` is configured later for local testing.
+- Public parser metadata may include `source_type`, `parser_status`, `live_fetch_enabled`, `schema_valid`, `fallback_used`, and `fallback_reason_category`.
+- `fallback_reason_category` and `sanitized_error_category` are intentionally coarse and safe: `api_pending`, `dependency_error`, `auth_error`, `network_error`, `parsing_error`, `config_error`, or `adapter_error`. They must never include credentials, tokens, or secret values.
+- Public parser fallback categories may also include `fixture_only`, `live_fetch_disabled`, `selector_missing`, `robots_disallowed`, `robots_unavailable_or_unclear`, `path_not_allowed_by_profile`, or `http_error`.
+- `exception_class` is a safe class name only, for example `ResponseException` or `JSONDecodeError`; it must not include exception messages or secret-bearing request data.
+- `real_mode_reached` indicates whether the adapter reached the real API code path.
+- `dependency_available` indicates whether required adapter dependencies such as PRAW are available.
+- `real_mode_blocked_reason` may be `api_pending`, `disabled`, `mock_only`, `credentials_missing`, `approval_required`, or `null`.
+- Official API planned platforms still use the existing mock behavior. Crawler-later platforms are not activated for real crawling.
+
+Example public-parser fixture metadata:
+
+```json
+{
+  "platform": "the_paper",
+  "adapter_mode": "mock",
+  "source_type": "public_page_parser",
+  "parser_status": "fixture_only",
+  "live_fetch_enabled": false,
+  "fallback_used": true,
+  "fallback_reason_category": "live_fetch_disabled",
+  "mock_available": true,
+  "real_mode_available": false,
+  "api_approval_required": false,
+  "api_approval_status": "not_applicable",
+  "api_pending": false,
+  "real_mode_disabled": true,
+  "selectable_for_real": false,
+  "real_mode_blocked_reason": "live_fetch_disabled",
+  "post_count": 3,
+  "comment_count": 0,
+  "schema_valid": true,
+  "raw_post_schema_valid": true,
+  "raw_comment_schema_valid": true
 }
 ```
 

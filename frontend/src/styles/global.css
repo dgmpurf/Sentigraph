@@ -389,6 +389,13 @@ body {
   gap: 14px;
 }
 
+.platform-status-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
 .platform-group {
   min-height: 172px;
   padding: 14px;
@@ -419,6 +426,16 @@ body {
 .platform-note {
   font-size: 12px;
   line-height: 1.45;
+}
+
+.platform-credentials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.platform-credential {
+  font-size: 11px;
 }
 
 .cases-panel .ant-table-thead > tr > th {

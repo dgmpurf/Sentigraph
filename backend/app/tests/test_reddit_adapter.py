@@ -12,6 +12,7 @@ from app.services.crawling.adapter_factory import (
     has_platform_adapter,
 )
 from app.services.crawling.base_adapter import AdapterHealth, BasePlatformAdapter, PlatformAdapterError
+from app.services.crawling.public_parser.public_parser_adapter import ThePaperPublicParserAdapter
 from app.services.crawling.platform_registry import get_platform_registry
 from app.services.crawling.reddit_adapter import REDDIT_REQUIRED_CREDENTIALS, RedditAdapter, RedditCredentials
 
@@ -128,13 +129,15 @@ def test_reddit_adapter_constructor_real_mode_requires_env_gate(monkeypatch: pyt
     assert adapter.mode == "mock"
     assert adapter.get_mode() == "mock"
     assert adapter.has_required_credentials() is True
-    assert adapter.supports_real_mode() is True
+    assert adapter.supports_real_mode() is False
     assert adapter.is_real_mode_enabled() is False
     assert adapter.fallback_reason == "reddit_adapter_mode_not_real"
     assert metadata["env_mode"] == "mock"
     assert metadata["requested_mode"] == "real"
     assert metadata["active_mode"] == "mock"
     assert metadata["real_mode_enabled"] is False
+    assert metadata["api_pending"] is True
+    assert metadata["real_mode_disabled"] is True
     assert posts[0].post_id != "t3_abc123"
     assert posts[0].raw_data["mode"] == "mock"
 
@@ -150,7 +153,7 @@ def test_reddit_adapter_env_mock_mode_stays_mock_with_credentials(monkeypatch: p
 
     assert adapter.get_mode() == "mock"
     assert adapter.has_required_credentials() is True
-    assert adapter.supports_real_mode() is True
+    assert adapter.supports_real_mode() is False
     assert adapter.is_real_mode_enabled() is False
     assert adapter.health_check().real_mode_available is False
     assert metadata["env_mode"] == "mock"
@@ -158,6 +161,8 @@ def test_reddit_adapter_env_mock_mode_stays_mock_with_credentials(monkeypatch: p
     assert metadata["active_mode"] == "mock"
     assert metadata["has_required_credentials"] is True
     assert metadata["real_mode_enabled"] is False
+    assert metadata["api_pending"] is True
+    assert metadata["real_mode_disabled"] is True
 
 
 def test_reddit_adapter_uses_env_mode_and_falls_back_without_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,7 +213,7 @@ def test_reddit_adapter_normalizes_mocked_reddit_payloads() -> None:
     assert comment.url == "https://www.reddit.com/r/test/comments/abc123/comment123/"
 
 
-def test_reddit_adapter_real_mode_uses_mocked_client_when_credentials_exist(
+def test_reddit_adapter_real_mode_is_disabled_until_api_approval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("REDDIT_ADAPTER_MODE", "real")
@@ -225,22 +230,26 @@ def test_reddit_adapter_real_mode_uses_mocked_client_when_credentials_exist(
 
     posts = adapter.search_posts("Tesla", limit=1, sort="new")
     comments = adapter.fetch_comments(posts[0].post_id, limit=1)
+    metadata = adapter.get_status_metadata()
 
-    assert adapter.mode == "real"
-    assert adapter.get_mode() == "real"
-    assert adapter.real_mode_available is True
+    assert adapter.mode == "mock"
+    assert adapter.get_mode() == "mock"
+    assert adapter.real_mode_available is False
     assert adapter.has_required_credentials() is True
-    assert adapter.is_real_mode_enabled() is True
-    assert adapter.supports_real_mode() is True
-    assert adapter.health_check().real_mode_available is True
-    assert adapter.get_status_metadata()["env_mode"] == "real"
-    assert adapter.get_status_metadata()["real_mode_enabled"] is True
-    assert posts[0].post_id == "t3_abc123"
-    assert comments[0].post_id == "t3_abc123"
-    assert comments[0].content == "This is a public Reddit comment."
+    assert adapter.is_real_mode_enabled() is False
+    assert adapter.supports_real_mode() is False
+    assert adapter.fallback_reason == "reddit_api_approval_pending"
+    assert adapter.health_check().real_mode_available is False
+    assert metadata["env_mode"] == "real"
+    assert metadata["real_mode_enabled"] is False
+    assert metadata["api_pending"] is True
+    assert metadata["real_mode_disabled"] is True
+    assert posts[0].post_id != "t3_abc123"
+    assert posts[0].raw_data["mode"] == "mock"
+    assert comments[0].platform == "reddit"
 
 
-def test_reddit_adapter_env_real_mode_uses_mocked_client_with_credentials(
+def test_reddit_adapter_env_real_mode_falls_back_to_mock_until_api_approval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("REDDIT_ADAPTER_MODE", "real")
@@ -258,9 +267,11 @@ def test_reddit_adapter_env_real_mode_uses_mocked_client_with_credentials(
 
     assert adapter.env_mode == "real"
     assert adapter.requested_mode == "real"
-    assert adapter.get_mode() == "real"
-    assert adapter.is_real_mode_enabled() is True
-    assert posts[0].post_id == "t3_abc123"
+    assert adapter.get_mode() == "mock"
+    assert adapter.is_real_mode_enabled() is False
+    assert adapter.fallback_reason == "reddit_api_approval_pending"
+    assert posts[0].post_id != "t3_abc123"
+    assert posts[0].raw_data["mode"] == "mock"
 
 
 def test_reddit_real_mode_clamps_limits_with_mocked_client(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -279,20 +290,26 @@ def test_reddit_real_mode_clamps_limits_with_mocked_client(monkeypatch: pytest.M
     posts = adapter.search_posts("Tesla", limit=999, sort="new")
     comments = adapter.fetch_comments("t3_abc123", limit=999)
 
-    assert len(posts) == 1
-    assert len(comments) == 1
+    assert 1 <= len(posts) <= 100
+    assert 1 <= len(comments) <= 500
     assert isinstance(posts[0], RawPost)
     assert isinstance(comments[0], RawComment)
+    assert adapter.get_mode() == "mock"
+    assert adapter.fallback_reason == "reddit_api_approval_pending"
 
 
-def test_adapter_factory_registers_reddit_only_for_now() -> None:
+def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REDDIT_ADAPTER_MODE", "mock")
     adapter = get_platform_adapter("reddit")
     alias_adapter = get_adapter("Reddit")
+    public_parser_adapter = get_adapter("the_paper")
 
     assert has_platform_adapter("reddit") is True
-    assert get_supported_adapter_ids() == ["reddit"]
+    assert has_platform_adapter("the_paper") is True
+    assert get_supported_adapter_ids() == ["reddit", "the_paper"]
     assert isinstance(adapter, RedditAdapter)
     assert isinstance(alias_adapter, RedditAdapter)
+    assert isinstance(public_parser_adapter, ThePaperPublicParserAdapter)
     assert adapter.mode == "mock"
     assert alias_adapter.mode == "mock"
 
@@ -304,7 +321,7 @@ def test_adapter_factory_does_not_activate_planned_or_crawler_later_platforms() 
     inactive_adapter_platforms = [
         platform.platform_id
         for platform in get_platform_registry()
-        if platform.platform_id != "reddit"
+        if platform.platform_id not in {"reddit", "the_paper"}
     ]
 
     assert inactive_adapter_platforms

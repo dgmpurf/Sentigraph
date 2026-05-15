@@ -184,6 +184,7 @@ Tasks:
 6. Plan official API integrations for Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao.
 7. Plan crawler-later public-page parsers for Hupu, Baidu Tieba, Tianya, NGA, Maimai, The Paper / Pengpai News, and Jiemian News.
 8. Keep YouTube disabled or optional future, not active in the MVP.
+9. Keep public-page parser work fixture-first and disabled for live fetch by default until each source has a compliance review.
 
 Do not implement:
 
@@ -198,6 +199,13 @@ Do not implement:
 Crawler maintenance note:
 
 If a public webpage structure changes, an LLM may be used in a future phase to analyze sanitized public HTML fixtures and suggest selector updates. This must never be used to bypass login, captcha, paywalls, anti-bot systems, rate limits, or private data access.
+
+Current public parser foundation:
+
+- `backend/app/services/crawling/public_parser/` contains a compliant parser framework scaffold.
+- The Paper / Pengpai News (`the_paper`) is the first fixture-only public parser scaffold.
+- Live public fetch is controlled by `PUBLIC_PARSER_LIVE_FETCH_ENABLED=false` by default.
+- Public parser adapters must not use browser cookies, accounts, private pages, proxy rotation, captcha bypass, login bypass, or anti-bot evasion.
 
 ## MVP 8: Incremental Monitoring and Alerts
 
@@ -248,6 +256,7 @@ Current adapter foundation status:
 - Reddit defaults to mock mode and falls back to mock data whenever credentials are missing.
 - The current case flow remains mock-first and does not automatically call real Reddit APIs.
 - Adapter outputs must normalize into `RawPost` and `RawComment` schemas.
+- Public-page parser adapters can be registered behind the same adapter factory when they remain fixture-first or explicitly reviewed for safe public live fetching.
 
 Reddit real-mode requirements for a future task:
 

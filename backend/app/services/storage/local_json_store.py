@@ -29,10 +29,6 @@ class LocalJsonCaseStore(CaseStore):
 
     @classmethod
     def from_env(cls) -> "LocalJsonCaseStore":
-        backend = os.getenv("CASE_STORE_BACKEND", "local_json").strip().lower()
-        if backend != "local_json":
-            # Future TODO: add MongoDB/Redis-backed implementations behind CaseStore.
-            backend = "local_json"
         return cls(os.getenv("CASE_STORE_PATH") or DEFAULT_CASE_STORE_PATH)
 
     def create_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:

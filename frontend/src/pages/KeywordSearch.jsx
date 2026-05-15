@@ -54,6 +54,42 @@ function getPlatformGroups(platformRegistry) {
   }))
 }
 
+function getPlatformStatusTags(platform, groupColor) {
+  const tags = []
+  if (platform.selectable_for_mock && platform.mock_available) {
+    tags.push({ key: 'mock', color: 'green', label: 'Mock 可用' })
+  }
+  if (platform.api_pending || platform.api_approval_status === 'api_pending') {
+    tags.push({ key: 'api_pending', color: 'orange', label: 'API 待审批' })
+  }
+  if (platform.category === 'official_api_planned') {
+    tags.push({ key: 'official', color: 'blue', label: '官方 API 规划中' })
+  }
+  if (platform.category === 'crawler_later') {
+    tags.push({ key: 'crawler_later', color: 'gold', label: '未来公开页面解析' })
+  }
+  if (platform.category === 'disabled_or_optional_future' || platform.real_mode_disabled) {
+    tags.push({
+      key: 'disabled',
+      color: platform.selectable_for_mock ? 'default' : 'red',
+      label: platform.selectable_for_mock ? '真实采集关闭' : '暂不启用',
+    })
+  }
+  if (!tags.length) {
+    tags.push({ key: 'status', color: groupColor, label: platform.status || '规划中' })
+  }
+  return tags
+}
+
+function getCredentialEntries(platform) {
+  const credentialsPresent = platform.credentials_present
+  if (!credentialsPresent || typeof credentialsPresent !== 'object') return []
+  return Object.entries(credentialsPresent).map(([name, present]) => ({
+    name,
+    present: Boolean(present),
+  }))
+}
+
 function PlatformRoadmap({ platformRegistry }) {
   if (!platformRegistry?.length) {
     return (
@@ -66,13 +102,22 @@ function PlatformRoadmap({ platformRegistry }) {
     )
   }
 
+  const mockSelectableCount = platformRegistry.filter((platform) => platform.selectable_for_mock && platform.mock_available).length
+  const apiPendingCount = platformRegistry.filter((platform) => platform.api_pending || platform.api_approval_status === 'api_pending').length
+  const realSelectableCount = platformRegistry.filter((platform) => platform.selectable_for_real && platform.real_mode_available).length
+
   return (
     <Card className="panel-card">
       <div className="panel-heading">
         <div>
-          <Title level={4}>Platform Roadmap</Title>
+          <Title level={4}>Data Sources / Platform Status</Title>
           <Text type="secondary">Selection is mock-first. No real crawler or third-party API call is triggered.</Text>
         </div>
+      </div>
+      <div className="platform-status-summary">
+        <Tag color="green">Mock 可用 {mockSelectableCount}</Tag>
+        <Tag color="orange">API 待审批 {apiPendingCount}</Tag>
+        <Tag color={realSelectableCount ? 'cyan' : 'default'}>真实可选 {realSelectableCount}</Tag>
       </div>
       <div className="platform-roadmap-grid">
         {getPlatformGroups(platformRegistry).map((group) => (
@@ -87,8 +132,19 @@ function PlatformRoadmap({ platformRegistry }) {
                   <div className="platform-item" key={`${group.key}-${platform.platform_id}`}>
                     <Space size={6} wrap>
                       <Tag color={group.color}>{platform.display_name}</Tag>
-                      {platform.selectable_for_mock ? <Tag color="green">Mock selectable</Tag> : <Tag>Disabled</Tag>}
+                      {getPlatformStatusTags(platform, group.color).map((tag) => (
+                        <Tag color={tag.color} key={tag.key}>{tag.label}</Tag>
+                      ))}
                     </Space>
+                    {getCredentialEntries(platform).length ? (
+                      <div className="platform-credentials">
+                        {getCredentialEntries(platform).map((credential) => (
+                          <Text className="platform-credential" key={credential.name} type="secondary">
+                            {credential.name}: {credential.present ? '已配置' : '缺失'}
+                          </Text>
+                        ))}
+                      </div>
+                    ) : null}
                     <Text className="platform-note" type="secondary">
                       {platform.notes}
                     </Text>

@@ -1,0 +1,19 @@
+{
+  "platform_id": "the_paper",
+  "display_name": "The Paper / Pengpai News",
+  "base_url": "https://www.thepaper.cn",
+  "allowed_public_paths": ["/", "/newsDetail_forward_"],
+  "search_url_template": null,
+  "article_selector": "article",
+  "title_selector": "h1.article-title",
+  "content_selector": ".article-content",
+  "author_selector": ".article-author",
+  "created_at_selector": ".article-date",
+  "comment_selector": null,
+  "next_page_selector": null,
+  "rate_limit_seconds": 3,
+  "notes": "Fixture-only scaffold for public article parsing. Live fetch is disabled by default and must not bypass login, captcha, paywalls, anti-bot systems, or private data access.",
+  "status": "fixture_only",
+  "fixture_url": "https://www.thepaper.cn/newsDetail_forward_fixture"
+}
+

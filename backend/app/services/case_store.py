@@ -17,7 +17,7 @@ from app.services.monitoring.snapshot_builder import build_analysis_snapshot
 from app.services.notifications.notification_service import create_notifications_from_alerts
 from app.services.recommendation.report_builder import build_public_opinion_report
 from app.services.storage.base_store import CaseStore
-from app.services.storage.local_json_store import LocalJsonCaseStore
+from app.services.storage.store_factory import create_case_store_from_env
 from app.services.visualization.chart_data_builder import build_visualization_response
 
 
@@ -27,7 +27,7 @@ _CASE_REPOSITORY: CaseRepository | None = None
 def get_case_repository() -> CaseRepository:
     global _CASE_REPOSITORY
     if _CASE_REPOSITORY is None:
-        _CASE_REPOSITORY = CaseRepository(LocalJsonCaseStore.from_env())
+        _CASE_REPOSITORY = CaseRepository(create_case_store_from_env())
     return _CASE_REPOSITORY
 
 
