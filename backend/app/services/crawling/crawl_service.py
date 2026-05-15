@@ -105,8 +105,11 @@ def _crawl_reddit(payload: CrawlStartRequest) -> tuple[list[RawPost], list[RawCo
             source_type=_safe_str(adapter_status.get("source_type")),
             parser_status=_safe_str(adapter_status.get("parser_status")),
             live_fetch_enabled=bool(adapter_status.get("live_fetch_enabled", False)),
+            live_fetch_attempted=bool(adapter_status.get("live_fetch_attempted", False)),
+            live_fetch_allowed=bool(adapter_status.get("live_fetch_allowed", False)),
             fallback_used=fallback_used,
             fallback_reason_category=fallback_category,
+            fetch_status=_safe_str(adapter_status.get("fetch_status")),
             mock_available=bool(adapter_status.get("mock_available", True)),
             real_mode_available=bool(adapter_status.get("real_mode_available", False)),
             api_approval_required=bool(adapter_status.get("api_approval_required", False)),
@@ -171,6 +174,8 @@ def _crawl_public_parser(
     )
     parser_status = _safe_str(adapter_status.get("parser_status")) or "fixture_only"
     live_fetch_enabled = bool(adapter_status.get("live_fetch_enabled", False))
+    live_fetch_attempted = bool(adapter_status.get("live_fetch_attempted", False))
+    live_fetch_allowed = bool(adapter_status.get("live_fetch_allowed", False))
     schema_valid = bool(
         adapter_status.get("schema_valid", post_schema_valid and comment_schema_valid)
     )
@@ -184,8 +189,11 @@ def _crawl_public_parser(
             source_type=_safe_str(adapter_status.get("source_type")) or "public_page_parser",
             parser_status=parser_status,
             live_fetch_enabled=live_fetch_enabled,
+            live_fetch_attempted=live_fetch_attempted,
+            live_fetch_allowed=live_fetch_allowed,
             fallback_used=fallback_used or bool(adapter_status.get("fallback_used", False)),
             fallback_reason_category=fallback_category,
+            fetch_status=_safe_str(adapter_status.get("fetch_status")),
             mock_available=bool(adapter_status.get("mock_available", True)),
             real_mode_available=bool(adapter_status.get("real_mode_available", False)),
             api_approval_required=bool(adapter_status.get("api_approval_required", False)),

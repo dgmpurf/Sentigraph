@@ -8,6 +8,7 @@ from app.main import app
 from app.schemas.comment import RawComment, RawPost
 from app.services.crawling import crawl_service
 from app.services.crawling import reddit_adapter as reddit_adapter_module
+from app.services.crawling.public_parser.public_fetcher import PublicFetcher, PublicFetchResult
 from app.services.crawling.reddit_adapter import RedditAdapter, RedditCredentials, RedditDependencyError
 
 
@@ -407,14 +408,70 @@ def test_crawl_start_the_paper_uses_public_parser_fixture_fallback(monkeypatch) 
     assert metadata["source_type"] == "public_page_parser"
     assert metadata["parser_status"] == "fixture_only"
     assert metadata["live_fetch_enabled"] is False
+    assert metadata["live_fetch_attempted"] is False
+    assert metadata["live_fetch_allowed"] is False
     assert metadata["fallback_used"] is True
     assert metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert metadata["fetch_status"] == "disabled"
     assert metadata["real_mode_blocked_reason"] == "live_fetch_disabled"
     assert metadata["schema_valid"] is True
     assert metadata["raw_post_schema_valid"] is True
     assert metadata["raw_comment_schema_valid"] is True
     assert body["raw_posts"]
     assert all(post["platform"] == "the_paper" for post in body["raw_posts"])
+    assert body["raw_comments"] == []
+
+
+def test_crawl_start_the_paper_live_enabled_uses_mocked_public_fetch(monkeypatch) -> None:
+    monkeypatch.setenv("PUBLIC_PARSER_LIVE_FETCH_ENABLED", "true")
+    html = """
+    <article>
+      <h1 class="article-title">The Paper live pilot fixture</h1>
+      <div class="article-author">The Paper public source</div>
+      <time class="article-date">2026-05-15T10:00:00Z</time>
+      <section class="article-content">Public article body from a mocked live fetch.</section>
+    </article>
+    """
+
+    def fake_fetch(self: PublicFetcher, url: str, profile) -> PublicFetchResult:
+        del self, profile
+        return PublicFetchResult(
+            ok=True,
+            url=url,
+            html=html,
+            status_code=200,
+            live_fetch_enabled=True,
+            live_fetch_attempted=True,
+            live_fetch_allowed=True,
+            fetch_status="ok",
+        )
+
+    monkeypatch.setattr(PublicFetcher, "fetch", fake_fetch)
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "fixture", "platforms": ["the_paper"], "limit": 3},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert metadata["platform"] == "the_paper"
+    assert metadata["source_type"] == "public_page_parser"
+    assert metadata["parser_status"] == "fixture_only"
+    assert metadata["live_fetch_enabled"] is True
+    assert metadata["live_fetch_attempted"] is True
+    assert metadata["live_fetch_allowed"] is True
+    assert metadata["fallback_used"] is False
+    assert metadata["fallback_reason_category"] is None
+    assert metadata["fetch_status"] == "ok"
+    assert metadata["post_count"] == 1
+    assert metadata["comment_count"] == 0
+    assert metadata["schema_valid"] is True
+    assert body["raw_posts"][0]["platform"] == "the_paper"
+    assert body["raw_posts"][0]["title"] == "The Paper live pilot fixture"
+    assert body["raw_posts"][0]["raw_data"]["mode"] == "public_parser_live"
     assert body["raw_comments"] == []
 
 
@@ -434,8 +491,11 @@ def test_crawl_start_jiemian_uses_public_parser_fixture_fallback(monkeypatch) ->
     assert metadata["source_type"] == "public_page_parser"
     assert metadata["parser_status"] == "fixture_only"
     assert metadata["live_fetch_enabled"] is False
+    assert metadata["live_fetch_attempted"] is False
+    assert metadata["live_fetch_allowed"] is False
     assert metadata["fallback_used"] is True
     assert metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert metadata["fetch_status"] == "disabled"
     assert metadata["real_mode_blocked_reason"] == "live_fetch_disabled"
     assert metadata["schema_valid"] is True
     assert metadata["raw_post_schema_valid"] is True

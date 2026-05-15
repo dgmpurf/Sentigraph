@@ -249,6 +249,65 @@ Expected result:
 - Jiemian returns no comments; this is documented as `comments_unavailable_without_login_or_dynamic_loading`.
 - No real public-page fetch, cookies, login, captcha handling, proxy rotation, private data access, Reddit scraping, platform API call, or external LLM call occurs.
 
+## 4.7 Optional The Paper Live Public-Page Fetch Pilot
+
+This is a local-only pilot and is disabled by default. Use it only for one tiny manual check against a public The Paper article page. Do not use accounts, cookies, browser profiles, captcha handling, proxy rotation, or private/authenticated pages.
+
+Latest QA validation: automated tests use mocked network responses only. The tests verify the default disabled fixture/mock path, robots-blocked fallback before page fetch, network-error fallback, selector-error fallback, mocked valid public HTML parsing, and safe request headers without cookies or authorization. Backend validation passed with `136 passed in 2.75s`.
+
+Confirm the default safe mode before enabling the pilot:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+set PUBLIC_PARSER_LIVE_FETCH_ENABLED=false
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+In another terminal:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+$body = @{ keyword = "Tesla"; platforms = @("the_paper"); limit = 1 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
+```
+
+Expected default result: `live_fetch_enabled=false`, `live_fetch_attempted=false`, `fallback_used=true`, `fallback_reason_category=live_fetch_disabled`, `fetch_status=disabled`, and schema flags remain true.
+
+Start the backend with live public parser fetch explicitly enabled:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+set PUBLIC_PARSER_LIVE_FETCH_ENABLED=true
+set PUBLIC_PARSER_RATE_LIMIT_SECONDS=3
+set PUBLIC_PARSER_USER_AGENT=sentigraph-public-parser-dev
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+In a second PowerShell window, run one small request. Replace `<the_paper_article_id>` with the public id from a The Paper URL such as `newsDetail_forward_<the_paper_article_id>`:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+$body = @{ keyword = "<the_paper_article_id>"; platforms = @("the_paper"); limit = 1 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
+```
+
+Expected result:
+
+- `live_fetch_enabled` is `true`.
+- `live_fetch_attempted` shows whether the live path was reached.
+- `live_fetch_allowed` is `true` only if robots/profile policy allowed the public page fetch.
+- `fetch_status` is a safe value such as `ok`, `robots_disallowed`, `robots_unavailable_or_unclear`, `path_not_allowed_by_profile`, `network_error`, `http_error`, or `selector_missing`.
+- If anything is blocked, unclear, unavailable, or unparsable, `fallback_used` is `true` and fixture/mock `RawPost` data is returned.
+- Comments remain unavailable unless clearly visible in the public page without login.
+
+After the pilot, restart the backend with live fetch disabled:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+set PUBLIC_PARSER_LIVE_FETCH_ENABLED=false
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
 ## 5. Run Mock Analysis
 
 In Keyword Search:

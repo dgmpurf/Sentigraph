@@ -445,8 +445,11 @@ Rules:
       "source_type": null,
       "parser_status": null,
       "live_fetch_enabled": false,
+      "live_fetch_attempted": false,
+      "live_fetch_allowed": false,
       "fallback_used": false,
       "fallback_reason_category": null,
+      "fetch_status": null,
       "mock_available": true,
       "real_mode_available": false,
       "api_approval_required": true,
@@ -531,8 +534,11 @@ Rules:
   "source_type": "public_page_parser",
   "parser_status": "fixture_only",
   "live_fetch_enabled": false,
+  "live_fetch_attempted": false,
+  "live_fetch_allowed": false,
   "fallback_used": true,
   "fallback_reason_category": "live_fetch_disabled",
+  "fetch_status": "disabled",
   "post_count": 3,
   "comment_count": 0,
   "schema_valid": true,
@@ -546,8 +552,12 @@ Rules:
 - `source_type="public_page_parser"` identifies the compliant public-page parser framework.
 - `parser_status` may be `fixture_only`, `disabled`, `scaffolded`, or a future reviewed status such as `live_public_enabled`.
 - `live_fetch_enabled` defaults to false and must remain false unless explicitly enabled for local testing.
+- `live_fetch_attempted` means the parser reached the live fetch path. It stays false for the default fixture/mock fallback.
+- `live_fetch_allowed` means the robots/profile policy check allowed the fetch attempt. It stays false when policy is unclear, blocked, disallowed, or live fetch is disabled.
+- `fetch_status` is safe status metadata such as `disabled`, `ok`, `robots_disallowed`, `robots_unavailable_or_unclear`, `path_not_allowed_by_profile`, `network_error`, `http_error`, or `selector_missing`.
 - Public parser fallback categories may include `fixture_only`, `live_fetch_disabled`, `selector_missing`, `robots_disallowed`, `robots_unavailable_or_unclear`, `path_not_allowed_by_profile`, `http_error`, or `network_error`.
 - Public parser outputs must validate against `RawPost` / `RawComment`.
+- The Paper has an optional local live public-page fetch pilot when `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`; fixture/mock fallback remains the default.
 - Jiemian fixture output currently normalizes title, content, source/author label, created time, and permalink into `RawPost`. Comments remain unavailable because the fixture does not expose public comments without login or dynamic loading: `comments_unavailable_without_login_or_dynamic_loading`.
 - Parser code must not use login, cookies, captcha bypass, anti-bot evasion, proxy rotation, private messages, hidden data, or authentication-gated pages.
 

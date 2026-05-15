@@ -239,8 +239,11 @@ POST /api/v1/crawl/start
       "source_type": null,
       "parser_status": null,
       "live_fetch_enabled": false,
+      "live_fetch_attempted": false,
+      "live_fetch_allowed": false,
       "fallback_used": false,
       "fallback_reason_category": null,
+      "fetch_status": null,
       "mock_available": true,
       "real_mode_available": false,
       "api_approval_required": true,
@@ -308,9 +311,11 @@ Important:
 - Reddit real API mode is disabled while Reddit approval is pending. If Reddit is selected, the endpoint returns normalized mock data and safe approval/fallback metadata.
 - Public-page scraping is not implemented and must not be used to bypass Reddit API approval.
 - When `platforms` explicitly contains a registered public-parser scaffold such as `the_paper` or `jiemian`, the endpoint calls the public parser adapter through `adapter_factory.get_adapter(platform_id)`.
-- The Paper and Jiemian public parsers currently run in `fixture_only` mode and return safe fixture/mock `RawPost` data by default. They do not fetch live pages unless `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true` is configured later for local testing after compliance review.
+- The Paper and Jiemian public parsers currently run in `fixture_only` mode and return safe fixture/mock `RawPost` data by default.
+- The Paper has an optional local live public-page fetch pilot only when `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`. Jiemian remains fixture-only in this phase.
+- The Paper live pilot checks robots/profile policy first, uses low request limits and timeout, sends no cookies or authorization headers, performs no login or captcha handling, uses no proxy rotation, and falls back to fixture/mock data on unclear policy, blocked access, network errors, selector errors, or parsing failures.
 - Jiemian fixture output currently includes title, content, source/author label, created time, and permalink. Comments are not parsed because public comments are unavailable without login or dynamic loading in the fixture: `comments_unavailable_without_login_or_dynamic_loading`.
-- Public parser metadata may include `source_type`, `parser_status`, `live_fetch_enabled`, `schema_valid`, `fallback_used`, and `fallback_reason_category`.
+- Public parser metadata may include `source_type`, `parser_status`, `live_fetch_enabled`, `live_fetch_attempted`, `live_fetch_allowed`, `fetch_status`, `schema_valid`, `fallback_used`, and `fallback_reason_category`.
 - `fallback_reason_category` and `sanitized_error_category` are intentionally coarse and safe: `api_pending`, `dependency_error`, `auth_error`, `network_error`, `parsing_error`, `config_error`, or `adapter_error`. They must never include credentials, tokens, or secret values.
 - Public parser fallback categories may also include `fixture_only`, `live_fetch_disabled`, `selector_missing`, `robots_disallowed`, `robots_unavailable_or_unclear`, `path_not_allowed_by_profile`, or `http_error`.
 - `exception_class` is a safe class name only, for example `ResponseException` or `JSONDecodeError`; it must not include exception messages or secret-bearing request data.
@@ -328,8 +333,11 @@ Example public-parser fixture metadata:
   "source_type": "public_page_parser",
   "parser_status": "fixture_only",
   "live_fetch_enabled": false,
+  "live_fetch_attempted": false,
+  "live_fetch_allowed": false,
   "fallback_used": true,
   "fallback_reason_category": "live_fetch_disabled",
+  "fetch_status": "disabled",
   "mock_available": true,
   "real_mode_available": false,
   "api_approval_required": false,
@@ -339,6 +347,28 @@ Example public-parser fixture metadata:
   "selectable_for_real": false,
   "real_mode_blocked_reason": "live_fetch_disabled",
   "post_count": 3,
+  "comment_count": 0,
+  "schema_valid": true,
+  "raw_post_schema_valid": true,
+  "raw_comment_schema_valid": true
+}
+```
+
+Example The Paper live-pilot metadata with mocked/successful public HTML:
+
+```json
+{
+  "platform": "the_paper",
+  "adapter_mode": "mock",
+  "source_type": "public_page_parser",
+  "parser_status": "fixture_only",
+  "live_fetch_enabled": true,
+  "live_fetch_attempted": true,
+  "live_fetch_allowed": true,
+  "fallback_used": false,
+  "fallback_reason_category": null,
+  "fetch_status": "ok",
+  "post_count": 1,
   "comment_count": 0,
   "schema_valid": true,
   "raw_post_schema_valid": true,

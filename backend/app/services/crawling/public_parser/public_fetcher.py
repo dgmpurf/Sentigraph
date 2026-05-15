@@ -23,6 +23,9 @@ class PublicFetchResult:
     fallback_reason_category: str | None = None
     message: str = ""
     live_fetch_enabled: bool = False
+    live_fetch_attempted: bool = False
+    live_fetch_allowed: bool = False
+    fetch_status: str = "not_attempted"
     request_headers: dict[str, str] = field(default_factory=dict)
 
 
@@ -83,6 +86,9 @@ class PublicFetcher:
                 fallback_reason_category="live_fetch_disabled",
                 message="Live public-page fetching is disabled by configuration.",
                 live_fetch_enabled=False,
+                live_fetch_attempted=False,
+                live_fetch_allowed=False,
+                fetch_status="disabled",
                 request_headers=request_headers,
             )
 
@@ -94,6 +100,9 @@ class PublicFetcher:
                 fallback_reason_category=robots.reason,
                 message="Robots/profile policy did not allow fetching.",
                 live_fetch_enabled=True,
+                live_fetch_attempted=True,
+                live_fetch_allowed=False,
+                fetch_status=robots.reason,
                 request_headers=request_headers,
             )
 
@@ -111,6 +120,9 @@ class PublicFetcher:
                         html=html,
                         status_code=status_code,
                         live_fetch_enabled=True,
+                        live_fetch_attempted=True,
+                        live_fetch_allowed=True,
+                        fetch_status="ok",
                         request_headers=request_headers,
                     )
             except urllib.error.HTTPError as exc:
@@ -121,6 +133,9 @@ class PublicFetcher:
                     fallback_reason_category="http_error",
                     message="Public page returned an HTTP error.",
                     live_fetch_enabled=True,
+                    live_fetch_attempted=True,
+                    live_fetch_allowed=True,
+                    fetch_status="http_error",
                     request_headers=request_headers,
                 )
             except (TimeoutError, urllib.error.URLError):
@@ -131,17 +146,23 @@ class PublicFetcher:
                         fallback_reason_category="network_error",
                         message="Public page fetch failed with a network error.",
                         live_fetch_enabled=True,
+                        live_fetch_attempted=True,
+                        live_fetch_allowed=True,
+                        fetch_status="network_error",
                         request_headers=request_headers,
                     )
 
         return PublicFetchResult(
             ok=False,
             url=url,
-            fallback_reason_category="network_error",
-            message="Public page fetch failed.",
-            live_fetch_enabled=True,
-            request_headers=request_headers,
-        )
+        fallback_reason_category="network_error",
+        message="Public page fetch failed.",
+        live_fetch_enabled=True,
+        live_fetch_attempted=True,
+        live_fetch_allowed=True,
+        fetch_status="network_error",
+        request_headers=request_headers,
+    )
 
     def _respect_rate_limit(self) -> None:
         now = time.monotonic()
@@ -157,4 +178,3 @@ def _encoding_from_content_type(content_type: str) -> str:
         if part.startswith("charset="):
             return part.split("=", 1)[1] or "utf-8"
     return "utf-8"
-

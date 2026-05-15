@@ -13,7 +13,7 @@ from app.services.crawling.public_parser.html_cleaner import (
     extract_first_text,
     normalize_text,
 )
-from app.services.crawling.public_parser.public_fetcher import PublicFetcher
+from app.services.crawling.public_parser.public_fetcher import PublicFetcher, PublicFetchResult
 from app.services.crawling.public_parser.selector_profile import SelectorProfile
 
 
@@ -44,19 +44,23 @@ class BasePublicParser:
         safe_limit = _clamp_limit(limit, default=3, maximum=5)
         if not self.fetcher.live_fetch_enabled or not self.profile.search_url_template:
             posts = self.mock_posts(keyword, limit=safe_limit)
+            fallback_reason_category = (
+                "live_fetch_disabled"
+                if not self.fetcher.live_fetch_enabled
+                else "fixture_only"
+            )
             return PublicParserResult(
                 posts=posts,
                 comments=[],
                 metadata=self._metadata(
                     fallback_used=True,
-                    fallback_reason_category=(
-                        "live_fetch_disabled"
-                        if not self.fetcher.live_fetch_enabled
-                        else "fixture_only"
-                    ),
+                    fallback_reason_category=fallback_reason_category,
                     post_count=len(posts),
                     comment_count=0,
                     schema_valid=self._schema_valid(posts, []),
+                    live_fetch_attempted=False,
+                    live_fetch_allowed=False,
+                    fetch_status="disabled" if not self.fetcher.live_fetch_enabled else "fixture_only",
                 ),
             )
 
@@ -76,9 +80,33 @@ class BasePublicParser:
                     post_count=len(posts),
                     comment_count=0,
                     schema_valid=self._schema_valid(posts, []),
+                    **_fetch_metadata(fetch_result),
                 ),
             )
-        return self.parse_html(fetch_result.html, source_url=search_url, keyword=keyword, limit=safe_limit)
+        parsed = self.parse_html(
+            fetch_result.html,
+            source_url=search_url,
+            keyword=keyword,
+            limit=safe_limit,
+            metadata_extra=_fetch_metadata(fetch_result),
+        )
+        if not parsed.posts:
+            posts = self.mock_posts(keyword, limit=safe_limit)
+            metadata = dict(parsed.metadata)
+            metadata.update(
+                {
+                    "fallback_used": True,
+                    "fallback_reason_category": parsed.metadata.get("fallback_reason_category") or "selector_missing",
+                    "fetch_status": parsed.metadata.get("fallback_reason_category") or "selector_missing",
+                    "post_count": len(posts),
+                    "comment_count": 0,
+                    "schema_valid": self._schema_valid(posts, []),
+                    "raw_post_schema_valid": self._schema_valid(posts, []),
+                    "raw_comment_schema_valid": True,
+                }
+            )
+            return PublicParserResult(posts=posts, comments=[], metadata=metadata)
+        return parsed
 
     def parse_html(
         self,
@@ -87,6 +115,7 @@ class BasePublicParser:
         source_url: str | None = None,
         keyword: str = "",
         limit: int = 10,
+        metadata_extra: dict[str, Any] | None = None,
     ) -> PublicParserResult:
         title = extract_first_text(document, self.profile.title_selector)
         content = extract_first_text(document, self.profile.content_selector)
@@ -100,6 +129,7 @@ class BasePublicParser:
                     post_count=0,
                     comment_count=0,
                     schema_valid=True,
+                    **(metadata_extra or {}),
                 ),
             )
 
@@ -127,6 +157,7 @@ class BasePublicParser:
                 post_count=1,
                 comment_count=len(comments),
                 schema_valid=self._schema_valid([post], comments),
+                **(metadata_extra or {}),
             ),
         )
 
@@ -248,14 +279,20 @@ class BasePublicParser:
         post_count: int,
         comment_count: int,
         schema_valid: bool,
+        live_fetch_attempted: bool | None = None,
+        live_fetch_allowed: bool | None = None,
+        fetch_status: str | None = None,
     ) -> dict[str, Any]:
         return {
             "platform": self.profile.platform_id,
             "source_type": self.source_type,
             "parser_status": self.profile.status,
             "live_fetch_enabled": self.fetcher.live_fetch_enabled,
+            "live_fetch_attempted": bool(live_fetch_attempted) if live_fetch_attempted is not None else False,
+            "live_fetch_allowed": bool(live_fetch_allowed) if live_fetch_allowed is not None else False,
             "fallback_used": fallback_used,
             "fallback_reason_category": fallback_reason_category,
+            "fetch_status": fetch_status,
             "post_count": post_count,
             "comment_count": comment_count,
             "schema_valid": schema_valid,
@@ -283,3 +320,10 @@ def _clamp_limit(limit: int, *, default: int, maximum: int) -> int:
         return default
     return min(limit, maximum)
 
+
+def _fetch_metadata(fetch_result: PublicFetchResult) -> dict[str, Any]:
+    return {
+        "live_fetch_attempted": fetch_result.live_fetch_attempted,
+        "live_fetch_allowed": fetch_result.live_fetch_allowed,
+        "fetch_status": fetch_result.fetch_status,
+    }

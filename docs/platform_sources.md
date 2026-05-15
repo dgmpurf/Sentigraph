@@ -125,6 +125,10 @@ Current status:
 - Fixture profiles: `the_paper`, `jiemian`.
 - Parser mode: `fixture_only`.
 - Live public fetch: disabled by default through `PUBLIC_PARSER_LIVE_FETCH_ENABLED=false`.
+- The Paper / Pengpai News has an optional local live public-page fetch pilot. It is used only when `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`; otherwise fixture/mock fallback remains the default.
+- The Paper live pilot uses the public parser fetcher, robots/profile checks, low request rate, timeout, no cookies, no login, no captcha handling, no proxy rotation, and safe fixture fallback on unclear/blocked/network/selector failures.
+- The Paper live pilot expects a public The Paper article id as the `keyword` so the profile can build a public article URL. It is not a general search crawler.
+- The Paper live pilot QA is fixture/mocked-network based. Automated tests verify disabled default behavior, robots-blocked fallback before page fetch, network-error fallback, selector-error fallback, mocked valid HTML parsing, and safe headers without cookies or authorization.
 - `/api/v1/crawl/start` may return fixture/mock public parser data for `the_paper` or `jiemian` when explicitly requested, with safe parser metadata.
 - Fixture QA status: both parser profiles load, fixture extraction validates against `RawPost`, missing selectors fail safely, and `/api/v1/crawl/start` returns safe parser metadata for both platforms.
 - Jiemian fixture extraction currently covers article title, content, source/author label, created time, and permalink. Comments are not parsed because the fixture does not expose public comments without login or dynamic loading: `comments_unavailable_without_login_or_dynamic_loading`.

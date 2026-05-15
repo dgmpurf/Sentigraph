@@ -333,6 +333,7 @@ Implemented:
 - Jiemian News / 界面新闻 (`jiemian`) `fixture_only` parser scaffold
 - `/api/v1/crawl/start` public parser fallback metadata for explicit `the_paper` and `jiemian` requests
 - Jiemian comments are documented as `comments_unavailable_without_login_or_dynamic_loading` and are not parsed in the fixture.
+- Optional The Paper local live public-page fetch pilot behind `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`, with fixture/mock fallback as the default.
 
 Safety constraints:
 
@@ -344,6 +345,7 @@ Next parser tasks:
 
 - Add additional sanitized fixture variants for The Paper and Jiemian.
 - Add a selector-drift QA matrix for missing title, content, author/source, created time, and permalink fields.
+- Add a mocked test matrix for The Paper live pilot status categories if new failure categories are introduced.
 - Add fixture-only parser scaffolds for the next candidate only after the current fixture QA matrix is stable.
 - Keep live public fetching disabled until a separate compliance review and explicit local-only pilot task.
 

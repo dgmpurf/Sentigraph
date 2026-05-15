@@ -17,8 +17,11 @@ class PlatformCrawlMetadata(BaseModel):
     source_type: str | None = None
     parser_status: str | None = None
     live_fetch_enabled: bool = False
+    live_fetch_attempted: bool = False
+    live_fetch_allowed: bool = False
     fallback_used: bool = False
     fallback_reason_category: str | None = None
+    fetch_status: str | None = None
     mock_available: bool = True
     real_mode_available: bool = False
     api_approval_required: bool = False

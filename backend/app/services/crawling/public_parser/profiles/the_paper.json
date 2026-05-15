@@ -3,7 +3,7 @@
   "display_name": "The Paper / Pengpai News",
   "base_url": "https://www.thepaper.cn",
   "allowed_public_paths": ["/", "/newsDetail_forward_"],
-  "search_url_template": null,
+  "search_url_template": "https://www.thepaper.cn/newsDetail_forward_{keyword}",
   "article_selector": "article",
   "title_selector": "h1.article-title",
   "content_selector": ".article-content",
@@ -12,8 +12,7 @@
   "comment_selector": null,
   "next_page_selector": null,
   "rate_limit_seconds": 3,
-  "notes": "Fixture-only scaffold for public article parsing. Live fetch is disabled by default and must not bypass login, captcha, paywalls, anti-bot systems, or private data access.",
+  "notes": "Fixture-first scaffold for public article parsing. Optional local live public-page fetch pilot is available only when PUBLIC_PARSER_LIVE_FETCH_ENABLED=true and should use a public The Paper article id as the keyword. Live fetch is disabled by default and must not bypass login, captcha, paywalls, anti-bot systems, or private data access.",
   "status": "fixture_only",
   "fixture_url": "https://www.thepaper.cn/newsDetail_forward_fixture"
 }
-
