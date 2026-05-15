@@ -91,6 +91,23 @@ def extract_all_text(document: str, selector: str | None, *, limit: int | None =
     return filtered[:limit] if limit is not None else filtered
 
 
+def extract_first_text_from_node(node: HtmlNode, selector: str | None) -> str:
+    nodes = select_descendant_nodes(node, selector)
+    if not nodes:
+        return ""
+    return nodes[0].text_content()
+
+
+def select_descendant_nodes(node: HtmlNode, selector: str | None) -> list[HtmlNode]:
+    selector = normalize_text(selector)
+    if not selector:
+        return []
+    chain = [_parse_simple_selector(part) for part in selector.split() if part]
+    if not chain:
+        return []
+    return [child for child in _walk(node.children) if _matches_selector_chain(child, chain)]
+
+
 def select_nodes(document: str, selector: str | None) -> list[HtmlNode]:
     selector = normalize_text(selector)
     if not selector:
@@ -145,4 +162,3 @@ def _matches_simple_selector(node: HtmlNode, selector: dict[str, str | None]) ->
         classes = node.attrs.get("class", "").split()
         return class_name in classes
     return True
-

@@ -127,6 +127,11 @@ class ThePaperPublicParserAdapter(PublicParserPlatformAdapter):
     display_name = "The Paper / Pengpai News"
 
 
+class HupuPublicParserAdapter(PublicParserPlatformAdapter):
+    platform_id = "hupu"
+    display_name = "Hupu / HuPu"
+
+
 class JiemianPublicParserAdapter(PublicParserPlatformAdapter):
     platform_id = "jiemian"
     display_name = "Jiemian News / 界面新闻"

@@ -4,6 +4,7 @@ from typing import TypeAlias
 
 from app.services.crawling.base_adapter import AdapterMode, BasePlatformAdapter, PlatformAdapterError
 from app.services.crawling.public_parser.public_parser_adapter import (
+    HupuPublicParserAdapter,
     JiemianPublicParserAdapter,
     ThePaperPublicParserAdapter,
 )
@@ -14,6 +15,7 @@ AdapterClass: TypeAlias = type[BasePlatformAdapter]
 
 
 ADAPTER_REGISTRY: dict[str, AdapterClass] = {
+    HupuPublicParserAdapter.platform_id: HupuPublicParserAdapter,
     JiemianPublicParserAdapter.platform_id: JiemianPublicParserAdapter,
     RedditAdapter.platform_id: RedditAdapter,
     ThePaperPublicParserAdapter.platform_id: ThePaperPublicParserAdapter,

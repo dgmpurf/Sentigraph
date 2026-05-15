@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import urllib.parse
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
@@ -11,7 +13,9 @@ from app.schemas.comment import RawComment, RawPost
 from app.services.crawling.public_parser.html_cleaner import (
     extract_all_text,
     extract_first_text,
+    extract_first_text_from_node,
     normalize_text,
+    select_nodes,
 )
 from app.services.crawling.public_parser.public_fetcher import PublicFetcher, PublicFetchResult
 from app.services.crawling.public_parser.selector_profile import SelectorProfile
@@ -43,12 +47,38 @@ class BasePublicParser:
     def search_public_pages(self, keyword: str, *, limit: int = 10) -> PublicParserResult:
         safe_limit = _clamp_limit(limit, default=3, maximum=5)
         if not self.fetcher.live_fetch_enabled or not self.profile.search_url_template:
+            fixture_result = self._parse_fixture_html_if_available(keyword=keyword, limit=safe_limit)
             posts = self.mock_posts(keyword, limit=safe_limit)
             fallback_reason_category = (
                 "live_fetch_disabled"
                 if not self.fetcher.live_fetch_enabled
                 else "fixture_only"
             )
+            if fixture_result.posts:
+                metadata = dict(fixture_result.metadata)
+                metadata.update(
+                    self._metadata(
+                        fallback_used=True,
+                        fallback_reason_category=fallback_reason_category,
+                        post_count=len(fixture_result.posts),
+                        comment_count=len(fixture_result.comments),
+                        schema_valid=self._schema_valid(
+                            fixture_result.posts, fixture_result.comments
+                        ),
+                        live_fetch_attempted=False,
+                        live_fetch_allowed=False,
+                        fetch_status=(
+                            "disabled"
+                            if not self.fetcher.live_fetch_enabled
+                            else "fixture_only"
+                        ),
+                    )
+                )
+                return PublicParserResult(
+                    posts=fixture_result.posts,
+                    comments=fixture_result.comments,
+                    metadata=metadata,
+                )
             return PublicParserResult(
                 posts=posts,
                 comments=[],
@@ -138,6 +168,8 @@ class BasePublicParser:
             extract_first_text(document, self.profile.created_at_selector)
             or "2026-05-15T00:00:00Z"
         )
+        like_count = self._extract_count(document, self.profile.like_count_selector)
+        reply_count = self._extract_count(document, self.profile.reply_count_selector)
         source_url = source_url or self.profile.fixture_url or self.profile.base_url
         post = self._build_post(
             title=title,
@@ -146,6 +178,8 @@ class BasePublicParser:
             created_at=created_at,
             source_url=source_url,
             keyword=keyword,
+            like_count=like_count,
+            reply_count=reply_count,
         )
         comments = self._extract_comments(document, post.post_id, source_url=source_url, limit=limit)
         return PublicParserResult(
@@ -207,6 +241,45 @@ class BasePublicParser:
         if not self.profile.comment_selector:
             return []
         comments: list[RawComment] = []
+        comment_nodes = select_nodes(document, self.profile.comment_selector)[:limit]
+        if comment_nodes:
+            for index, comment_node in enumerate(comment_nodes, start=1):
+                content = (
+                    extract_first_text_from_node(comment_node, self.profile.comment_content_selector)
+                    if self.profile.comment_content_selector
+                    else comment_node.text_content()
+                )
+                if not normalize_text(content):
+                    continue
+                author_name = (
+                    extract_first_text_from_node(comment_node, self.profile.comment_author_selector)
+                    if self.profile.comment_author_selector
+                    else "public_commenter"
+                )
+                created_at = (
+                    extract_first_text_from_node(comment_node, self.profile.comment_created_at_selector)
+                    if self.profile.comment_created_at_selector
+                    else "2026-05-15T00:00:00Z"
+                )
+                like_count = self._parse_count(
+                    extract_first_text_from_node(comment_node, self.profile.comment_like_selector)
+                    if self.profile.comment_like_selector
+                    else ""
+                )
+                comments.append(
+                    self._build_comment(
+                        post_id=post_id,
+                        content=content,
+                        source_url=source_url,
+                        index=index,
+                        comment_id=comment_node.attrs.get("data-comment-id") or None,
+                        parent_id=comment_node.attrs.get("data-parent-id") or None,
+                        author_name=author_name,
+                        created_at=created_at,
+                        like_count=like_count,
+                    )
+                )
+            return comments
         for index, content in enumerate(extract_all_text(document, self.profile.comment_selector, limit=limit), start=1):
             comments.append(
                 self._build_comment(
@@ -227,6 +300,8 @@ class BasePublicParser:
         created_at: str,
         source_url: str,
         keyword: str,
+        like_count: int = 0,
+        reply_count: int = 0,
     ) -> RawPost:
         post_id = self._stable_id(source_url, title, content[:80])
         return RawPost(
@@ -236,8 +311,8 @@ class BasePublicParser:
             author_name=normalize_text(author_name) or "public_source",
             title=normalize_text(title),
             content=normalize_text(content),
-            like_count=0,
-            reply_count=0,
+            like_count=like_count,
+            reply_count=reply_count,
             share_count=0,
             created_at=normalize_text(created_at) or "2026-05-15T00:00:00Z",
             url=source_url,
@@ -249,20 +324,32 @@ class BasePublicParser:
             },
         )
 
-    def _build_comment(self, *, post_id: str, content: str, source_url: str, index: int) -> RawComment:
-        comment_id = self._stable_id(post_id, content, str(index))
+    def _build_comment(
+        self,
+        *,
+        post_id: str,
+        content: str,
+        source_url: str,
+        index: int,
+        comment_id: str | None = None,
+        parent_id: str | None = None,
+        author_name: str = "public_commenter",
+        created_at: str = "2026-05-15T00:00:00Z",
+        like_count: int = 0,
+    ) -> RawComment:
+        comment_id = normalize_text(comment_id) or self._stable_id(post_id, content, str(index))
         return RawComment(
             platform=self.profile.platform_id,
             post_id=post_id,
             comment_id=comment_id,
-            parent_id=None,
+            parent_id=normalize_text(parent_id) or None,
             author_id=f"{self.profile.platform_id}_public_commenter",
-            author_name="public_commenter",
+            author_name=normalize_text(author_name) or "public_commenter",
             content=normalize_text(content),
-            like_count=0,
+            like_count=like_count,
             reply_count=0,
             share_count=0,
-            created_at="2026-05-15T00:00:00Z",
+            created_at=normalize_text(created_at) or "2026-05-15T00:00:00Z",
             url=source_url,
             raw_data={
                 "mode": "public_parser_fixture",
@@ -270,6 +357,48 @@ class BasePublicParser:
                 "parser_status": self.profile.status,
             },
         )
+
+    def _parse_fixture_html_if_available(self, *, keyword: str, limit: int) -> PublicParserResult:
+        if not self.profile.fixture_path:
+            return PublicParserResult()
+        fixture_path = _resolve_project_path(self.profile.fixture_path)
+        if fixture_path is None or not fixture_path.exists():
+            return PublicParserResult(
+                metadata={
+                    "fallback_used": True,
+                    "fallback_reason_category": "fixture_missing",
+                }
+            )
+        try:
+            html = fixture_path.read_text(encoding="utf-8")
+        except OSError:
+            return PublicParserResult(
+                metadata={
+                    "fallback_used": True,
+                    "fallback_reason_category": "fixture_unreadable",
+                }
+            )
+        return self.parse_html(
+            html,
+            source_url=self.profile.fixture_url or self.profile.base_url,
+            keyword=keyword,
+            limit=limit,
+            metadata_extra={"fetch_status": "fixture"},
+        )
+
+    def _extract_count(self, document: str, selector: str | None) -> int:
+        if not selector:
+            return 0
+        return self._parse_count(extract_first_text(document, selector))
+
+    def _parse_count(self, value: str | None) -> int:
+        text = normalize_text(value)
+        if not text:
+            return 0
+        match = re.search(r"\d[\d,]*", text)
+        if not match:
+            return 0
+        return min(int(match.group(0).replace(",", "")), 10_000_000)
 
     def _metadata(
         self,
@@ -319,6 +448,26 @@ def _clamp_limit(limit: int, *, default: int, maximum: int) -> int:
     if not isinstance(limit, int) or limit <= 0:
         return default
     return min(limit, maximum)
+
+
+def _resolve_project_path(path_value: str) -> Path | None:
+    path = Path(path_value)
+    root = _project_root()
+    candidate = path if path.is_absolute() else root / path
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return resolved
+
+
+def _project_root() -> Path:
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / "AGENTS.md").exists():
+            return parent
+    return current.parents[5]
 
 
 def _fetch_metadata(fetch_result: PublicFetchResult) -> dict[str, Any]:

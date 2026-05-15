@@ -22,12 +22,19 @@ class SelectorProfile(BaseModel):
     content_selector: str
     author_selector: str | None = None
     created_at_selector: str | None = None
+    like_count_selector: str | None = None
+    reply_count_selector: str | None = None
     comment_selector: str | None = None
+    comment_content_selector: str | None = None
+    comment_author_selector: str | None = None
+    comment_created_at_selector: str | None = None
+    comment_like_selector: str | None = None
     next_page_selector: str | None = None
     rate_limit_seconds: float = 3.0
     notes: str = ""
     status: str = "fixture_only"
     fixture_url: str | None = None
+    fixture_path: str | None = None
 
 
 def load_selector_profile(platform_id: str, *, profiles_dir: Path | None = None) -> SelectorProfile:
@@ -54,4 +61,3 @@ def list_selector_profiles(*, profiles_dir: Path | None = None) -> list[Selector
 
 def get_profile_ids(*, profiles_dir: Path | None = None) -> list[str]:
     return [profile.platform_id for profile in list_selector_profiles(profiles_dir=profiles_dir)]
-

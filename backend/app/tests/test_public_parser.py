@@ -16,6 +16,7 @@ from app.services.crawling.public_parser.selector_profile import (
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "public_parser"
 FIXTURE_PATH = FIXTURE_DIR / "the_paper_article.html"
 JIEMIAN_FIXTURE_PATH = FIXTURE_DIR / "jiemian_article.html"
+HUPU_FIXTURE_PATH = FIXTURE_DIR / "hupu_thread.html"
 
 
 def _fixture_html() -> str:
@@ -24,6 +25,10 @@ def _fixture_html() -> str:
 
 def _jiemian_fixture_html() -> str:
     return JIEMIAN_FIXTURE_PATH.read_text(encoding="utf-8")
+
+
+def _hupu_fixture_html() -> str:
+    return HUPU_FIXTURE_PATH.read_text(encoding="utf-8")
 
 
 class FakeLiveFetcher:
@@ -58,6 +63,18 @@ def test_selector_profile_loads_jiemian_profile() -> None:
     assert profile.comment_selector is None
     assert "comments_unavailable_without_login_or_dynamic_loading" in profile.notes
     assert "comments are not parsed" in profile.notes
+
+
+def test_selector_profile_loads_hupu_profile() -> None:
+    profile = load_selector_profile("hupu")
+
+    assert profile.platform_id == "hupu"
+    assert profile.display_name.startswith("Hupu /")
+    assert profile.status == "fixture_only"
+    assert profile.search_url_template is None
+    assert profile.comment_selector == ".reply-item"
+    assert profile.comment_content_selector == ".reply-content"
+    assert "forum-style Hupu threads" in profile.notes
 
 
 def test_html_cleaner_extracts_fixture_title_content_and_comments() -> None:
@@ -116,6 +133,46 @@ def test_jiemian_public_parser_extracts_raw_post_from_fixture() -> None:
     assert post.created_at == "2026-05-15T09:30:00Z"
     assert post.url == profile.fixture_url
     assert post.raw_data["mode"] == "public_parser_fixture"
+
+
+def test_hupu_public_parser_extracts_thread_and_visible_replies_from_fixture() -> None:
+    profile = load_selector_profile("hupu")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.parse_html(_hupu_fixture_html(), source_url=profile.fixture_url, keyword="Tesla")
+
+    assert result.metadata["schema_valid"] is True
+    assert result.metadata["parser_status"] == "fixture_only"
+    assert len(result.posts) == 1
+    assert len(result.comments) == 2
+    post = result.posts[0]
+    assert isinstance(post, RawPost)
+    assert post.platform == "hupu"
+    assert post.title == "Tesla service discussion on Hupu"
+    assert "repair dispute" in post.content
+    assert post.author_name == "hupu_fixture_author"
+    assert post.created_at == "2026-05-15T11:00:00Z"
+    assert post.like_count == 128
+    assert post.reply_count == 2
+    assert post.url == profile.fixture_url
+
+    first_comment = result.comments[0]
+    second_comment = result.comments[1]
+    assert isinstance(first_comment, RawComment)
+    assert first_comment.platform == "hupu"
+    assert first_comment.post_id == post.post_id
+    assert first_comment.comment_id == "hupu_reply_001"
+    assert first_comment.parent_id is None
+    assert first_comment.author_name == "reply_user_alpha"
+    assert "repair timeline" in first_comment.content
+    assert first_comment.created_at == "2026-05-15T11:08:00Z"
+    assert first_comment.like_count == 24
+    assert second_comment.comment_id == "hupu_reply_002"
+    assert second_comment.parent_id == "hupu_reply_001"
+    assert second_comment.like_count == 11
 
 
 def test_public_parser_can_extract_comments_when_profile_allows_public_comments() -> None:
@@ -186,6 +243,31 @@ def test_jiemian_missing_selectors_fail_safely() -> None:
     )
 
     result = parser.parse_html(_jiemian_fixture_html(), source_url="https://www.jiemian.com/article/broken", keyword="Tesla")
+
+    assert result.posts == []
+    assert result.comments == []
+    assert result.metadata["fallback_used"] is True
+    assert result.metadata["fallback_reason_category"] == "selector_missing"
+
+
+def test_hupu_missing_selectors_fail_safely() -> None:
+    profile = SelectorProfile(
+        platform_id="hupu_broken",
+        display_name="Hupu Broken",
+        base_url="https://bbs.hupu.com",
+        allowed_public_paths=["/"],
+        article_selector="article.thread",
+        title_selector=".missing-title",
+        content_selector=".missing-content",
+        comment_selector=".reply-item",
+        status="fixture_only",
+    )
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.parse_html(_hupu_fixture_html(), source_url="https://bbs.hupu.com/thread-broken", keyword="Tesla")
 
     assert result.posts == []
     assert result.comments == []
@@ -343,6 +425,28 @@ def test_jiemian_public_parser_search_falls_back_to_fixture_mock_when_live_disab
     assert 1 <= len(result.posts) <= 5
     assert result.posts[0].platform == "jiemian"
     assert result.posts[0].raw_data["mode"] == "fixture"
+
+
+def test_hupu_public_parser_search_uses_fixture_thread_when_live_disabled() -> None:
+    profile = load_selector_profile("hupu")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.search_public_pages("Tesla", limit=10)
+
+    assert result.metadata["live_fetch_enabled"] is False
+    assert result.metadata["fallback_used"] is True
+    assert result.metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert result.metadata["post_count"] == 1
+    assert result.metadata["comment_count"] == 2
+    assert result.metadata["schema_valid"] is True
+    assert len(result.posts) == 1
+    assert len(result.comments) == 2
+    assert result.posts[0].platform == "hupu"
+    assert result.posts[0].title == "Tesla service discussion on Hupu"
+    assert result.comments[0].comment_id == "hupu_reply_001"
 
 
 def test_the_paper_live_enabled_robots_blocked_falls_back_to_fixture_mock() -> None:
