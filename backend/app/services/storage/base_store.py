@@ -15,9 +15,8 @@ from app.schemas.visualization import VisualizationResponse
 class CaseStore(ABC):
     """Persistence interface for Sentigraph analysis cases.
 
-    Implementations must stay local/offline for the MVP. A MongoDB-backed
-    implementation can be added later behind this interface after persistence
-    requirements and deployment constraints are clearer.
+    Local JSON remains the default MVP backend. Optional MongoDB persistence
+    must stay behind this same interface and be enabled only by configuration.
     """
 
     @abstractmethod

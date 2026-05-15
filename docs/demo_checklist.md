@@ -4,6 +4,8 @@ Use this checklist for the current v0.9 case-based, mock-first desktop web MVP d
 
 Latest pre-v1.0 hardening validation: 2026-05-15. Backend tests passed with `92 passed in 2.82s`. Frontend production build passed in 7.75s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke check passed with `26 passed, 0 failed` against a temporary local backend and temporary project-local JSON store. New local demo utilities are available for safe runtime data reset, deterministic demo seeding, and local API smoke validation. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, Reddit credential, MongoDB, Redis, or external LLM call is made.
 
+Latest optional MongoDB persistence QA validation: 2026-05-15. Focused persistence and case API tests passed with `20 passed in 1.11s`; full backend validation passed with `179 passed in 3.35s`. The default backend remains `CASE_STORE_BACKEND=local_json`; MongoDB is used only when `CASE_STORE_BACKEND=mongodb` is explicitly configured. Fake-backed tests verify MongoDB store selection, unknown-backend errors, safe connection failure errors, index creation, case/report/Markdown/snapshot/alert/notification persistence, reset behavior, and MongoDB-safe document keys without requiring a real MongoDB server.
+
 Latest v0.9 notification QA validation: 2026-05-14. Backend tests passed with `90 passed in 2.34s`. Frontend production build passed in 7.61s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Isolated API smoke checks confirmed alert events create local `in_app` notification outbox items, notifications can be listed by case or globally, `标记已读` sets `read_at`, `模拟发送` sets `simulated_sent_at`, and `模拟发送待处理通知` updates all pending local notifications. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, or external LLM call is made.
 
 Latest v0.8 scheduler QA validation: 2026-05-14. Backend tests passed with `81 passed in 1.76s`. Frontend production build passed in 7.46s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke checks confirmed enabling monitoring, `GET /api/v1/scheduler/status`, `POST /api/v1/scheduler/run-due`, disabled/not-due cases being skipped, case-specific alert thresholds, snapshot/alert persistence, disabling monitoring, and the old `monitor/run` endpoint. The scheduler foundation is manual only; no background worker starts by default.
@@ -108,7 +110,7 @@ python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --por
 Expected result:
 
 - MongoDB mode uses the same case/report/monitoring/scheduler/notification APIs.
-- If MongoDB is not reachable, backend startup reports a configuration error.
+- If MongoDB is not reachable, the first case-store access reports a configuration error.
 - No real crawler, real platform API, external LLM, or real notification delivery is triggered.
 
 ## 1. Start Backend

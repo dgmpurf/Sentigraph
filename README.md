@@ -206,7 +206,9 @@ Then start the backend normally:
 python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-MongoDB mode stores cases, reports, Markdown exports, monitoring snapshots, alerts, scheduler config/state, and notification outbox items in MongoDB collections. If `CASE_STORE_BACKEND=mongodb` is selected and the connection cannot be opened, the backend raises a clear configuration error instead of silently losing data.
+MongoDB mode stores cases, reports, Markdown exports, monitoring snapshots, alerts, scheduler config/state, and notification outbox items in MongoDB collections. If `CASE_STORE_BACKEND=mongodb` is selected and the connection cannot be opened, case-store creation raises a clear configuration error instead of silently losing data.
+
+Store selection also reads the repository-root `.env` during local development. Existing process environment variables take precedence, and `.env` must stay uncommitted.
 
 For local development, reset MongoDB demo data only from the selected development database:
 
@@ -293,7 +295,7 @@ Backend:
 - FastAPI
 - Pydantic
 - Pytest
-- MongoDB/Redis/Celery or scheduler support planned for future phases
+- Production persistence hardening, Redis/Celery, and real background scheduler support planned for future phases
 
 Frontend:
 

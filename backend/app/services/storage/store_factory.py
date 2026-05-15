@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from app.core.environment import load_project_env
 from app.services.storage.base_store import CaseStore
 from app.services.storage.local_json_store import LocalJsonCaseStore
 from app.services.storage.mongodb_store import MongoClientFactory, MongoDbCaseStore
@@ -23,6 +24,7 @@ def create_case_store_from_env(
     MongoDB. MongoDB is opt-in through `CASE_STORE_BACKEND=mongodb`.
     """
 
+    load_project_env()
     backend = os.getenv("CASE_STORE_BACKEND", "local_json").strip().lower()
     if backend in LOCAL_JSON_BACKENDS:
         return LocalJsonCaseStore(os.getenv("CASE_STORE_PATH") or None)

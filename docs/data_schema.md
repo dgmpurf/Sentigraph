@@ -158,7 +158,8 @@ Optional MongoDB persistence:
 - `MONGODB_URI=mongodb://localhost:27017`
 - `MONGODB_DATABASE=sentigraph`
 - MongoDB mode is opt-in only and is not required for the default test suite.
-- If MongoDB mode is selected but the connection cannot be opened, backend startup raises a clear configuration error instead of silently losing data.
+- If MongoDB mode is selected but the connection cannot be opened, case-store creation raises a clear configuration error instead of silently losing data.
+- Store selection loads the repository-root `.env` before reading `CASE_STORE_BACKEND`, while existing process environment variables still take precedence.
 - Stored documents must be generated from Pydantic JSON-mode dumps so datetime fields remain consistent with local JSON behavior.
 - Nested dictionary keys must be converted to MongoDB-safe strings; dotted keys are normalized and leading `$` keys are prefixed.
 

@@ -438,9 +438,11 @@ Acceptance:
 Implemented:
 
 - `MongoDbCaseStore` implements the existing `CaseStore` interface.
-- `create_case_store_from_env()` selects `local_json` by default and `mongodb` only when `CASE_STORE_BACKEND=mongodb`.
+- `create_case_store_from_env()` loads the repository-root `.env`, selects `local_json` by default, and selects `mongodb` only when `CASE_STORE_BACKEND=mongodb`.
 - `.env.example` documents `MONGODB_URI` and `MONGODB_DATABASE`.
 - MongoDB store unit tests use fake client/database objects and do not require a real MongoDB server.
+- Fake-backed tests cover clear MongoDB connection failure errors and expected indexes for cases, markdown reports, snapshots, alerts, and notification outbox collections.
+- Store factory tests cover the default local JSON backend, explicit local JSON, explicit MongoDB, missing MongoDB URI, MongoDB connection failure, and unknown backend errors.
 - Default backend tests still run with local JSON.
 
 Future production hardening:

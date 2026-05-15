@@ -45,6 +45,13 @@ def test_store_factory_uses_explicit_local_json(monkeypatch, tmp_path) -> None:
     assert store.path == store_path
 
 
+def test_store_factory_rejects_unknown_backend(monkeypatch) -> None:
+    monkeypatch.setenv("CASE_STORE_BACKEND", "mystery_store")
+
+    with pytest.raises(ValueError, match="Unsupported CASE_STORE_BACKEND='mystery_store'"):
+        create_case_store_from_env()
+
+
 def test_store_factory_uses_mongodb_when_configured(monkeypatch) -> None:
     fake_client = FakeMongoClient()
     monkeypatch.setenv("CASE_STORE_BACKEND", "mongodb")
@@ -65,6 +72,32 @@ def test_store_factory_rejects_blank_mongodb_uri(monkeypatch) -> None:
 
     with pytest.raises(MongoDbStoreConfigError, match="MONGODB_URI is required"):
         create_case_store_from_env()
+
+
+def test_store_factory_reports_mongodb_connection_failure(monkeypatch) -> None:
+    monkeypatch.setenv("CASE_STORE_BACKEND", "mongodb")
+    monkeypatch.setenv("MONGODB_URI", "mongodb://example.local:27017")
+
+    with pytest.raises(MongoDbStoreConfigError, match="Unable to connect to MongoDB"):
+        create_case_store_from_env(mongo_client_factory=lambda uri, **_: FailingMongoClient())
+
+
+def test_mongodb_store_creates_expected_indexes() -> None:
+    fake_database = FakeMongoDatabase()
+
+    MongoDbCaseStore(database=fake_database)
+
+    assert ("case_id",) in _index_args(fake_database["analysis_cases"])
+    assert ("created_at",) in _index_args(fake_database["analysis_cases"])
+    assert ("updated_at",) in _index_args(fake_database["analysis_cases"])
+    assert ("case_id",) in _index_args(fake_database["markdown_reports"])
+    assert ("snapshot_id",) in _index_args(fake_database["analysis_snapshots"])
+    assert ("case_id",) in _index_args(fake_database["analysis_snapshots"])
+    assert ("alert_id",) in _index_args(fake_database["alert_events"])
+    assert ("case_id",) in _index_args(fake_database["alert_events"])
+    assert ("notification_id",) in _index_args(fake_database["notification_outbox"])
+    assert ("case_id",) in _index_args(fake_database["notification_outbox"])
+    assert ("status",) in _index_args(fake_database["notification_outbox"])
 
 
 def test_mongodb_store_case_report_markdown_snapshot_alert_and_notification() -> None:
@@ -214,6 +247,17 @@ class FakeMongoClient:
         return self.databases[database_name]
 
 
+class FailingAdmin:
+    def command(self, command_name: str) -> dict[str, int]:
+        assert command_name == "ping"
+        raise RuntimeError("connection unavailable")
+
+
+class FailingMongoClient:
+    def __init__(self) -> None:
+        self.admin = FailingAdmin()
+
+
 class FakeMongoDatabase:
     def __init__(self) -> None:
         self.collections: dict[str, FakeMongoCollection] = {}
@@ -258,3 +302,7 @@ class FakeMongoCollection:
 
 def _matches(document: dict[str, Any], filter_query: dict[str, Any]) -> bool:
     return all(document.get(key) == value for key, value in filter_query.items())
+
+
+def _index_args(collection: FakeMongoCollection) -> set[tuple[Any, ...]]:
+    return {args for args, _kwargs in collection.indexes}
