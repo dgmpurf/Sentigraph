@@ -313,7 +313,7 @@ Acceptance:
 
 Goal: prepare a safe framework for public-source parsers without implementing scraping now.
 
-Status: scaffolded for the first fixture-only parser.
+Status: scaffolded for two fixture-only parsers.
 
 Scope:
 
@@ -330,13 +330,22 @@ Implemented:
 - simple deterministic HTML selector extraction for fixture tests
 - conservative fetcher/robots helpers with live fetch disabled by default
 - The Paper / Pengpai News (`the_paper`) `fixture_only` parser scaffold
-- `/api/v1/crawl/start` public parser fallback metadata for explicit `the_paper` requests
+- Jiemian News / 界面新闻 (`jiemian`) `fixture_only` parser scaffold
+- `/api/v1/crawl/start` public parser fallback metadata for explicit `the_paper` and `jiemian` requests
+- Jiemian comments are documented as `comments_unavailable_without_login_or_dynamic_loading` and are not parsed in the fixture.
 
 Safety constraints:
 
 - do not use Reddit public-page scraping to bypass Reddit API approval
 - do not use browser cookies, login bypass, captcha bypass, anti-bot evasion, proxy rotation, paywall bypass, hidden APIs, or private data access
 - do not activate crawler-later platforms until compliance review, fixtures, selector tests, and explicit product requirements are ready
+
+Next parser tasks:
+
+- Add additional sanitized fixture variants for The Paper and Jiemian.
+- Add a selector-drift QA matrix for missing title, content, author/source, created time, and permalink fields.
+- Add fixture-only parser scaffolds for the next candidate only after the current fixture QA matrix is stable.
+- Keep live public fetching disabled until a separate compliance review and explicit local-only pilot task.
 
 ### Official API Application Packages
 

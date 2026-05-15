@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import TypeAlias
 
 from app.services.crawling.base_adapter import AdapterMode, BasePlatformAdapter, PlatformAdapterError
-from app.services.crawling.public_parser.public_parser_adapter import ThePaperPublicParserAdapter
+from app.services.crawling.public_parser.public_parser_adapter import (
+    JiemianPublicParserAdapter,
+    ThePaperPublicParserAdapter,
+)
 from app.services.crawling.reddit_adapter import RedditAdapter
 
 
@@ -11,6 +14,7 @@ AdapterClass: TypeAlias = type[BasePlatformAdapter]
 
 
 ADAPTER_REGISTRY: dict[str, AdapterClass] = {
+    JiemianPublicParserAdapter.platform_id: JiemianPublicParserAdapter,
     RedditAdapter.platform_id: RedditAdapter,
     ThePaperPublicParserAdapter.platform_id: ThePaperPublicParserAdapter,
 }

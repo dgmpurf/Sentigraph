@@ -12,7 +12,10 @@ from app.services.crawling.adapter_factory import (
     has_platform_adapter,
 )
 from app.services.crawling.base_adapter import AdapterHealth, BasePlatformAdapter, PlatformAdapterError
-from app.services.crawling.public_parser.public_parser_adapter import ThePaperPublicParserAdapter
+from app.services.crawling.public_parser.public_parser_adapter import (
+    JiemianPublicParserAdapter,
+    ThePaperPublicParserAdapter,
+)
 from app.services.crawling.platform_registry import get_platform_registry
 from app.services.crawling.reddit_adapter import REDDIT_REQUIRED_CREDENTIALS, RedditAdapter, RedditCredentials
 
@@ -303,13 +306,16 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     adapter = get_platform_adapter("reddit")
     alias_adapter = get_adapter("Reddit")
     public_parser_adapter = get_adapter("the_paper")
+    jiemian_adapter = get_adapter("jiemian")
 
     assert has_platform_adapter("reddit") is True
     assert has_platform_adapter("the_paper") is True
-    assert get_supported_adapter_ids() == ["reddit", "the_paper"]
+    assert has_platform_adapter("jiemian") is True
+    assert get_supported_adapter_ids() == ["jiemian", "reddit", "the_paper"]
     assert isinstance(adapter, RedditAdapter)
     assert isinstance(alias_adapter, RedditAdapter)
     assert isinstance(public_parser_adapter, ThePaperPublicParserAdapter)
+    assert isinstance(jiemian_adapter, JiemianPublicParserAdapter)
     assert adapter.mode == "mock"
     assert alias_adapter.mode == "mock"
 
@@ -321,7 +327,7 @@ def test_adapter_factory_does_not_activate_planned_or_crawler_later_platforms() 
     inactive_adapter_platforms = [
         platform.platform_id
         for platform in get_platform_registry()
-        if platform.platform_id not in {"reddit", "the_paper"}
+        if platform.platform_id not in {"reddit", "the_paper", "jiemian"}
     ]
 
     assert inactive_adapter_platforms

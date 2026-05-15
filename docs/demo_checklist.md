@@ -218,6 +218,37 @@ Expected result:
 - The command prints at least one normalized Reddit post/comment from local mock data.
 - No real Reddit API call is made.
 
+## 4.6 Optional Public Parser Fixture Smoke Check
+
+This checks the fixture-only public-page parser scaffolds. It must stay offline and must not enable live public fetching.
+
+PowerShell check for The Paper / Pengpai News:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+$body = @{ keyword = "Tesla"; platforms = @("the_paper"); limit = 3 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
+```
+
+PowerShell check for Jiemian News:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+$body = @{ keyword = "Tesla"; platforms = @("jiemian"); limit = 3 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
+```
+
+Expected result:
+
+- `platform_metadata[0].source_type` is `public_page_parser`.
+- `parser_status` is `fixture_only`.
+- `live_fetch_enabled` is `false`.
+- `fallback_reason_category` is `live_fetch_disabled`.
+- `schema_valid`, `raw_post_schema_valid`, and `raw_comment_schema_valid` are `true`.
+- The Paper and Jiemian return fixture/mock `RawPost` items.
+- Jiemian returns no comments; this is documented as `comments_unavailable_without_login_or_dynamic_loading`.
+- No real public-page fetch, cookies, login, captcha handling, proxy rotation, private data access, Reddit scraping, platform API call, or external LLM call occurs.
+
 ## 5. Run Mock Analysis
 
 In Keyword Search:

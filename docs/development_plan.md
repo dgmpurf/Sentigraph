@@ -203,7 +203,7 @@ If a public webpage structure changes, an LLM may be used in a future phase to a
 Current public parser foundation:
 
 - `backend/app/services/crawling/public_parser/` contains a compliant parser framework scaffold.
-- The Paper / Pengpai News (`the_paper`) is the first fixture-only public parser scaffold.
+- The Paper / Pengpai News (`the_paper`) and Jiemian News / 界面新闻 (`jiemian`) are fixture-only public parser scaffolds.
 - Live public fetch is controlled by `PUBLIC_PARSER_LIVE_FETCH_ENABLED=false` by default.
 - Public parser adapters must not use browser cookies, accounts, private pages, proxy rotation, captcha bypass, login bypass, or anti-bot evasion.
 

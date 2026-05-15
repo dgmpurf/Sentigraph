@@ -12,11 +12,17 @@ from app.services.crawling.public_parser.selector_profile import (
 )
 
 
-FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "public_parser" / "the_paper_article.html"
+FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "public_parser"
+FIXTURE_PATH = FIXTURE_DIR / "the_paper_article.html"
+JIEMIAN_FIXTURE_PATH = FIXTURE_DIR / "jiemian_article.html"
 
 
 def _fixture_html() -> str:
     return FIXTURE_PATH.read_text(encoding="utf-8")
+
+
+def _jiemian_fixture_html() -> str:
+    return JIEMIAN_FIXTURE_PATH.read_text(encoding="utf-8")
 
 
 def test_selector_profile_loads_the_paper_profile() -> None:
@@ -26,6 +32,18 @@ def test_selector_profile_loads_the_paper_profile() -> None:
     assert profile.status == "fixture_only"
     assert profile.search_url_template is None
     assert profile.rate_limit_seconds == 3
+
+
+def test_selector_profile_loads_jiemian_profile() -> None:
+    profile = load_selector_profile("jiemian")
+
+    assert profile.platform_id == "jiemian"
+    assert profile.display_name == "Jiemian News / 界面新闻"
+    assert profile.status == "fixture_only"
+    assert profile.search_url_template is None
+    assert profile.comment_selector is None
+    assert "comments_unavailable_without_login_or_dynamic_loading" in profile.notes
+    assert "comments are not parsed" in profile.notes
 
 
 def test_html_cleaner_extracts_fixture_title_content_and_comments() -> None:
@@ -54,8 +72,36 @@ def test_public_parser_extracts_raw_post_from_fixture() -> None:
     post = result.posts[0]
     assert isinstance(post, RawPost)
     assert post.platform == "the_paper"
+    assert post.content
+    assert post.author_name != "public_source"
+    assert post.created_at == "2026-05-15T08:00:00Z"
+    assert post.url == profile.fixture_url
     assert post.title == "新能源汽车质量讨论升温"
     assert "public_parser_fixture" in post.raw_data["mode"]
+
+
+def test_jiemian_public_parser_extracts_raw_post_from_fixture() -> None:
+    profile = load_selector_profile("jiemian")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.parse_html(_jiemian_fixture_html(), source_url=profile.fixture_url, keyword="Tesla")
+
+    assert result.metadata["schema_valid"] is True
+    assert result.metadata["parser_status"] == "fixture_only"
+    assert len(result.posts) == 1
+    assert result.comments == []
+    post = result.posts[0]
+    assert isinstance(post, RawPost)
+    assert post.platform == "jiemian"
+    assert post.title == "新能源车售后服务体验引发公开讨论"
+    assert "售后响应" in post.content
+    assert post.author_name == "界面新闻 · 消费报道"
+    assert post.created_at == "2026-05-15T09:30:00Z"
+    assert post.url == profile.fixture_url
+    assert post.raw_data["mode"] == "public_parser_fixture"
 
 
 def test_public_parser_can_extract_comments_when_profile_allows_public_comments() -> None:
@@ -109,6 +155,30 @@ def test_public_parser_missing_selector_fails_safely() -> None:
     assert result.metadata["fallback_reason_category"] == "selector_missing"
 
 
+def test_jiemian_missing_selectors_fail_safely() -> None:
+    profile = SelectorProfile(
+        platform_id="jiemian_broken",
+        display_name="Jiemian Broken",
+        base_url="https://www.jiemian.com",
+        allowed_public_paths=["/"],
+        article_selector="article",
+        title_selector=".missing-title",
+        content_selector=".missing-content",
+        status="fixture_only",
+    )
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.parse_html(_jiemian_fixture_html(), source_url="https://www.jiemian.com/article/broken", keyword="Tesla")
+
+    assert result.posts == []
+    assert result.comments == []
+    assert result.metadata["fallback_used"] is True
+    assert result.metadata["fallback_reason_category"] == "selector_missing"
+
+
 def test_public_fetcher_default_request_uses_no_cookie_or_auth_headers() -> None:
     fetcher = PublicFetcher(
         live_fetch_enabled=False,
@@ -122,6 +192,18 @@ def test_public_fetcher_default_request_uses_no_cookie_or_auth_headers() -> None
     assert "user-agent" in headers
     assert "cookie" not in headers
     assert "authorization" not in headers
+
+
+def test_public_fetcher_from_env_keeps_live_fetch_disabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("PUBLIC_PARSER_LIVE_FETCH_ENABLED", raising=False)
+    monkeypatch.delenv("PUBLIC_PARSER_RATE_LIMIT_SECONDS", raising=False)
+    monkeypatch.delenv("PUBLIC_PARSER_USER_AGENT", raising=False)
+
+    fetcher = PublicFetcher.from_env()
+
+    assert fetcher.live_fetch_enabled is False
+    assert fetcher.rate_limit_seconds == 3.0
+    assert fetcher.user_agent == "sentigraph-public-parser-dev"
 
 
 def test_public_parser_search_falls_back_to_fixture_mock_when_live_disabled() -> None:
@@ -140,3 +222,19 @@ def test_public_parser_search_falls_back_to_fixture_mock_when_live_disabled() ->
     assert result.posts[0].platform == "the_paper"
     assert result.posts[0].raw_data["mode"] == "fixture"
 
+
+def test_jiemian_public_parser_search_falls_back_to_fixture_mock_when_live_disabled() -> None:
+    profile = load_selector_profile("jiemian")
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+
+    result = parser.search_public_pages("Tesla", limit=10)
+
+    assert result.metadata["live_fetch_enabled"] is False
+    assert result.metadata["fallback_used"] is True
+    assert result.metadata["fallback_reason_category"] == "live_fetch_disabled"
+    assert 1 <= len(result.posts) <= 5
+    assert result.posts[0].platform == "jiemian"
+    assert result.posts[0].raw_data["mode"] == "fixture"

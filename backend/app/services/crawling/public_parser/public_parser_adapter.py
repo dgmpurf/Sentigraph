@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, ClassVar, Mapping
 
 from app.schemas.comment import RawComment, RawPost
 from app.services.crawling.base_adapter import AdapterHealth, BasePlatformAdapter
@@ -8,9 +8,9 @@ from app.services.crawling.public_parser.base_public_parser import BasePublicPar
 from app.services.crawling.public_parser.selector_profile import load_selector_profile
 
 
-class ThePaperPublicParserAdapter(BasePlatformAdapter):
-    platform_id = "the_paper"
-    display_name = "The Paper / Pengpai News"
+class PublicParserPlatformAdapter(BasePlatformAdapter):
+    platform_id: ClassVar[str]
+    display_name: ClassVar[str]
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(mode="mock")
@@ -47,8 +47,8 @@ class ThePaperPublicParserAdapter(BasePlatformAdapter):
             return raw
         return RawPost(
             platform=self.platform_id,
-            post_id=self.safe_text(raw.get("post_id"), "the_paper_public_post"),
-            author_id=self.safe_text(raw.get("author_id"), "the_paper_public_author"),
+            post_id=self.safe_text(raw.get("post_id"), f"{self.platform_id}_public_post"),
+            author_id=self.safe_text(raw.get("author_id"), f"{self.platform_id}_public_author"),
             author_name=self.safe_text(raw.get("author_name"), self.display_name),
             title=self.safe_text(raw.get("title"), "Public article"),
             content=self.safe_text(raw.get("content"), "Public article content."),
@@ -65,10 +65,10 @@ class ThePaperPublicParserAdapter(BasePlatformAdapter):
             return raw
         return RawComment(
             platform=self.platform_id,
-            post_id=self.safe_text(raw.get("post_id"), "the_paper_public_post"),
-            comment_id=self.safe_text(raw.get("comment_id"), "the_paper_public_comment"),
+            post_id=self.safe_text(raw.get("post_id"), f"{self.platform_id}_public_post"),
+            comment_id=self.safe_text(raw.get("comment_id"), f"{self.platform_id}_public_comment"),
             parent_id=self.safe_text(raw.get("parent_id")) or None,
-            author_id=self.safe_text(raw.get("author_id"), "the_paper_public_commenter"),
+            author_id=self.safe_text(raw.get("author_id"), f"{self.platform_id}_public_commenter"),
             author_name=self.safe_text(raw.get("author_name"), "public_commenter"),
             content=self.safe_text(raw.get("content"), "Public comment content."),
             like_count=self.coerce_int(raw.get("like_count")),
@@ -86,7 +86,7 @@ class ThePaperPublicParserAdapter(BasePlatformAdapter):
             ok=True,
             real_mode_available=False,
             message=(
-                "The Paper public parser scaffold is fixture-only by default; "
+                f"{self.display_name} public parser scaffold is fixture-only by default; "
                 "live public fetching is disabled unless explicitly configured."
             ),
             fallback_reason="fixture_only",
@@ -121,3 +121,12 @@ class ThePaperPublicParserAdapter(BasePlatformAdapter):
         )
         return metadata
 
+
+class ThePaperPublicParserAdapter(PublicParserPlatformAdapter):
+    platform_id = "the_paper"
+    display_name = "The Paper / Pengpai News"
+
+
+class JiemianPublicParserAdapter(PublicParserPlatformAdapter):
+    platform_id = "jiemian"
+    display_name = "Jiemian News / 界面新闻"

@@ -307,8 +307,9 @@ Important:
 - Reddit mock mode returns normalized `RawPost` and `RawComment` items in `raw_posts` and `raw_comments`.
 - Reddit real API mode is disabled while Reddit approval is pending. If Reddit is selected, the endpoint returns normalized mock data and safe approval/fallback metadata.
 - Public-page scraping is not implemented and must not be used to bypass Reddit API approval.
-- When `platforms` explicitly contains the public-parser scaffold `the_paper`, the endpoint calls the public parser adapter through `adapter_factory.get_adapter("the_paper")`.
-- The Paper public parser currently runs in `fixture_only` mode and returns safe fixture/mock `RawPost` data by default. It does not fetch live pages unless `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true` is configured later for local testing.
+- When `platforms` explicitly contains a registered public-parser scaffold such as `the_paper` or `jiemian`, the endpoint calls the public parser adapter through `adapter_factory.get_adapter(platform_id)`.
+- The Paper and Jiemian public parsers currently run in `fixture_only` mode and return safe fixture/mock `RawPost` data by default. They do not fetch live pages unless `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true` is configured later for local testing after compliance review.
+- Jiemian fixture output currently includes title, content, source/author label, created time, and permalink. Comments are not parsed because public comments are unavailable without login or dynamic loading in the fixture: `comments_unavailable_without_login_or_dynamic_loading`.
 - Public parser metadata may include `source_type`, `parser_status`, `live_fetch_enabled`, `schema_valid`, `fallback_used`, and `fallback_reason_category`.
 - `fallback_reason_category` and `sanitized_error_category` are intentionally coarse and safe: `api_pending`, `dependency_error`, `auth_error`, `network_error`, `parsing_error`, `config_error`, or `adapter_error`. They must never include credentials, tokens, or secret values.
 - Public parser fallback categories may also include `fixture_only`, `live_fetch_disabled`, `selector_missing`, `robots_disallowed`, `robots_unavailable_or_unclear`, `path_not_allowed_by_profile`, or `http_error`.

@@ -55,6 +55,12 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["the_paper"].status == "fixture_only"
     assert by_id["the_paper"].mock_available is True
     assert by_id["the_paper"].selectable_for_real is False
+    assert by_id["jiemian"].category == CRAWLER_LATER
+    assert by_id["jiemian"].source_type == "public_page_parser"
+    assert by_id["jiemian"].status == "fixture_only"
+    assert by_id["jiemian"].mock_available is True
+    assert by_id["jiemian"].selectable_for_mock is False
+    assert by_id["jiemian"].selectable_for_real is False
     assert all(platform.platform_id != "youtube" for platform in platforms if platform.selectable_for_mock)
 
 

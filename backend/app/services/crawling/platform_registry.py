@@ -163,7 +163,7 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
     _crawler_later_platform("nga", "NGA"),
     _crawler_later_platform("maimai", "Maimai"),
     _public_parser_scaffold_platform("the_paper", "The Paper / Pengpai News"),
-    _crawler_later_platform("jiemian", "Jiemian News"),
+    _public_parser_scaffold_platform("jiemian", "Jiemian News / 界面新闻"),
     PlatformRegistryItem(
         platform_id="youtube",
         display_name="YouTube",

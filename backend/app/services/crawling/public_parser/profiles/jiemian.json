@@ -1,0 +1,18 @@
+{
+  "platform_id": "jiemian",
+  "display_name": "Jiemian News / 界面新闻",
+  "base_url": "https://www.jiemian.com",
+  "allowed_public_paths": ["/", "/article/"],
+  "search_url_template": null,
+  "article_selector": "article",
+  "title_selector": "h1.article-title",
+  "content_selector": ".article-content",
+  "author_selector": ".article-source",
+  "created_at_selector": ".article-date",
+  "comment_selector": null,
+  "next_page_selector": null,
+  "rate_limit_seconds": 3,
+  "notes": "Fixture-only scaffold for public Jiemian News article parsing. Live fetch is disabled by default. comments_unavailable_without_login_or_dynamic_loading; public comments are not parsed.",
+  "status": "fixture_only",
+  "fixture_url": "https://www.jiemian.com/article/fixture.html"
+}

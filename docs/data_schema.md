@@ -522,7 +522,7 @@ Rules:
 
 ### Public Parser Metadata Extension
 
-`POST /api/v1/crawl/start` may include public-parser metadata when a scaffolded public-page parser such as `the_paper` is explicitly requested.
+`POST /api/v1/crawl/start` may include public-parser metadata when a scaffolded public-page parser such as `the_paper` or `jiemian` is explicitly requested.
 
 ```json
 {
@@ -548,6 +548,7 @@ Rules:
 - `live_fetch_enabled` defaults to false and must remain false unless explicitly enabled for local testing.
 - Public parser fallback categories may include `fixture_only`, `live_fetch_disabled`, `selector_missing`, `robots_disallowed`, `robots_unavailable_or_unclear`, `path_not_allowed_by_profile`, `http_error`, or `network_error`.
 - Public parser outputs must validate against `RawPost` / `RawComment`.
+- Jiemian fixture output currently normalizes title, content, source/author label, created time, and permalink into `RawPost`. Comments remain unavailable because the fixture does not expose public comments without login or dynamic loading: `comments_unavailable_without_login_or_dynamic_loading`.
 - Parser code must not use login, cookies, captcha bypass, anti-bot evasion, proxy rotation, private messages, hidden data, or authentication-gated pages.
 
 ## 2. Raw Post

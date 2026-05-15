@@ -117,15 +117,17 @@ Safety constraints:
 
 ## Compliant Public-Source Parser Framework
 
-Some crawler-later platforms may eventually require public-page parsers for publicly available pages. The framework foundation is now scaffolded under `backend/app/services/crawling/public_parser/`, with The Paper / Pengpai News (`the_paper`) as the first fixture-only parser scaffold.
+Some crawler-later platforms may eventually require public-page parsers for publicly available pages. The framework foundation is now scaffolded under `backend/app/services/crawling/public_parser/`, with The Paper / Pengpai News (`the_paper`) and Jiemian News / 界面新闻 (`jiemian`) as fixture-only parser scaffolds.
 
 Current status:
 
 - Public parser framework: scaffolded.
-- First profile: `the_paper`.
-- First parser mode: `fixture_only`.
+- Fixture profiles: `the_paper`, `jiemian`.
+- Parser mode: `fixture_only`.
 - Live public fetch: disabled by default through `PUBLIC_PARSER_LIVE_FETCH_ENABLED=false`.
-- `/api/v1/crawl/start` may return fixture/mock public parser data for `the_paper` when explicitly requested, with safe parser metadata.
+- `/api/v1/crawl/start` may return fixture/mock public parser data for `the_paper` or `jiemian` when explicitly requested, with safe parser metadata.
+- Fixture QA status: both parser profiles load, fixture extraction validates against `RawPost`, missing selectors fail safely, and `/api/v1/crawl/start` returns safe parser metadata for both platforms.
+- Jiemian fixture extraction currently covers article title, content, source/author label, created time, and permalink. Comments are not parsed because the fixture does not expose public comments without login or dynamic loading: `comments_unavailable_without_login_or_dynamic_loading`.
 - Frontend active MVP selectors should still keep crawler-later platforms disabled unless a later task explicitly promotes one.
 
 Framework constraints:
@@ -149,7 +151,7 @@ These platforms are not selectable for real crawling in the MVP. They are visibl
 | `nga` | NGA | public-page parser later |
 | `maimai` | Maimai | public-page parser later |
 | `the_paper` | The Paper / Pengpai News | `fixture_only` public-page parser scaffold |
-| `jiemian` | Jiemian News | public-page parser later |
+| `jiemian` | Jiemian News / 界面新闻 | `fixture_only` public-page parser scaffold; `comments_unavailable_without_login_or_dynamic_loading` |
 
 Crawler-later work should be handled in a future phase using public-page parsers and selector profiles. Each parser must normalize public posts/comments into the common Sentigraph schema and must include tests with sanitized fixture HTML.
 
