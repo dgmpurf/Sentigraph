@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   FileText,
+  FileSearch,
   FolderKanban,
   Network,
   RefreshCw,
@@ -24,6 +25,7 @@ const navItems = [
   { key: 'propagation', label: 'Propagation Graph', icon: <Network size={17} /> },
   { key: 'risk', label: 'Risk Monitor', icon: <ShieldAlert size={17} /> },
   { key: 'summary', label: 'Summary Report', icon: <FileText size={17} /> },
+  { key: 'publicParsers', label: '公开页面解析', icon: <FileSearch size={17} /> },
 ]
 
 const riskLevelLabels = {

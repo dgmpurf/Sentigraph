@@ -617,6 +617,76 @@ body {
   color: #9aa6bf;
 }
 
+.parser-metric-card h2 {
+  margin: 4px 0 8px;
+  color: #42f5d7;
+  letter-spacing: 0;
+}
+
+.parser-status-card .ant-table-thead > tr > th {
+  background: rgba(66, 245, 215, 0.06) !important;
+}
+
+.active-parser-row td {
+  background: rgba(66, 245, 215, 0.08) !important;
+}
+
+.parser-preview-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.parser-preview-summary > div {
+  display: flex;
+  min-height: 78px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.parser-preview-card {
+  min-height: 320px;
+}
+
+.parser-sample-list .ant-list-item {
+  padding: 8px 0;
+}
+
+.parser-sample-card,
+.parser-comment-card {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.parser-comment-card {
+  border-color: rgba(66, 245, 215, 0.18);
+}
+
+.parser-sample-content {
+  margin-bottom: 0 !important;
+  color: #c9d4ea;
+  line-height: 1.68;
+}
+
+.parser-notes-card .ant-list-item {
+  padding: 10px 0;
+}
+
+.parser-table-note {
+  max-width: 240px;
+  margin-bottom: 0 !important;
+  color: #9aa6bf;
+  line-height: 1.48;
+}
+
 @media print {
   html,
   body,

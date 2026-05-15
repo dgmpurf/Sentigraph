@@ -18,6 +18,20 @@ export async function getPlatformStatus() {
   return data
 }
 
+export async function getPublicParserStatus() {
+  const { data } = await apiClient.get(`${API_PREFIX}/public-parsers/status`)
+  return normalizePublicParserStatus(data)
+}
+
+export async function previewPublicParser(platform, limit = 3, use_live_fetch = false) {
+  const { data } = await apiClient.post(`${API_PREFIX}/public-parsers/preview`, {
+    platform,
+    limit,
+    use_live_fetch,
+  })
+  return normalizePublicParserPreview(data)
+}
+
 export async function listAnalysisCases() {
   const { data } = await apiClient.get(`${API_PREFIX}/cases`)
   return Array.isArray(data) ? data : []
@@ -345,6 +359,115 @@ function normalizeMonitoringJobState(data) {
     is_due: Boolean(data.is_due),
     snapshot_count: Number(data.snapshot_count || 0),
     alert_count: Number(data.alert_count || 0),
+  }
+}
+
+function normalizePublicParserStatus(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      parsers: [],
+      total: 0,
+      live_fetch_enabled_default: false,
+    }
+  }
+  return {
+    ...data,
+    parsers: Array.isArray(data.parsers) ? data.parsers.map(normalizePublicParserStatusItem).filter(Boolean) : [],
+    total: Number(data.total || 0),
+    live_fetch_enabled_default: Boolean(data.live_fetch_enabled_default),
+  }
+}
+
+function normalizePublicParserStatusItem(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    platform_id: String(data.platform_id || ''),
+    display_name: String(data.display_name || data.platform_id || ''),
+    source_type: String(data.source_type || 'public_page_parser'),
+    parser_status: String(data.parser_status || 'unknown'),
+    live_fetch_enabled: Boolean(data.live_fetch_enabled),
+    fixture_available: Boolean(data.fixture_available),
+    profile_available: Boolean(data.profile_available),
+    comments_supported: Boolean(data.comments_supported),
+    last_test_status: data.last_test_status ? String(data.last_test_status) : null,
+    notes: String(data.notes || ''),
+    safe_limit: Number.isFinite(Number(data.safe_limit)) ? Number(data.safe_limit) : 3,
+    rate_limit_seconds: Number.isFinite(Number(data.rate_limit_seconds)) ? Number(data.rate_limit_seconds) : 3,
+  }
+}
+
+function normalizePublicParserPreview(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      platform: '',
+      source_type: 'public_page_parser',
+      parser_status: 'unknown',
+      live_fetch_enabled: false,
+      live_fetch_attempted: false,
+      fallback_used: true,
+      fallback_reason_category: null,
+      post_count: 0,
+      comment_count: 0,
+      raw_post_schema_valid: false,
+      raw_comment_schema_valid: false,
+      sample_posts: [],
+      sample_comments: [],
+      warnings: ['empty_preview_response'],
+    }
+  }
+  return {
+    ...data,
+    platform: String(data.platform || ''),
+    source_type: String(data.source_type || 'public_page_parser'),
+    parser_status: String(data.parser_status || 'unknown'),
+    live_fetch_enabled: Boolean(data.live_fetch_enabled),
+    live_fetch_attempted: Boolean(data.live_fetch_attempted),
+    fallback_used: Boolean(data.fallback_used),
+    fallback_reason_category: data.fallback_reason_category ? String(data.fallback_reason_category) : null,
+    post_count: Number(data.post_count || 0),
+    comment_count: Number(data.comment_count || 0),
+    raw_post_schema_valid: data.raw_post_schema_valid !== false,
+    raw_comment_schema_valid: data.raw_comment_schema_valid !== false,
+    sample_posts: Array.isArray(data.sample_posts) ? data.sample_posts.map(normalizeRawPostPreview).filter(Boolean) : [],
+    sample_comments: Array.isArray(data.sample_comments)
+      ? data.sample_comments.map(normalizeRawCommentPreview).filter(Boolean)
+      : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
+  }
+}
+
+function normalizeRawPostPreview(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    platform: String(data.platform || ''),
+    post_id: String(data.post_id || ''),
+    author_id: String(data.author_id || ''),
+    author_name: String(data.author_name || data.author_id || ''),
+    title: String(data.title || 'Untitled public post'),
+    content: String(data.content || ''),
+    like_count: Number(data.like_count || 0),
+    reply_count: Number(data.reply_count || 0),
+    share_count: Number(data.share_count || 0),
+    created_at: data.created_at || null,
+    url: data.url || '',
+  }
+}
+
+function normalizeRawCommentPreview(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    platform: String(data.platform || ''),
+    post_id: String(data.post_id || ''),
+    comment_id: String(data.comment_id || ''),
+    parent_id: data.parent_id ? String(data.parent_id) : null,
+    author_id: String(data.author_id || ''),
+    author_name: String(data.author_name || data.author_id || ''),
+    content: String(data.content || ''),
+    like_count: Number(data.like_count || 0),
+    reply_count: Number(data.reply_count || 0),
+    share_count: Number(data.share_count || 0),
+    created_at: data.created_at || null,
+    url: data.url || '',
   }
 }
 

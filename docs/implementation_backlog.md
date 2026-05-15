@@ -338,6 +338,7 @@ Implemented:
 - unified public parser diagnostics endpoints:
   - `GET /api/v1/public-parsers/status`
   - `POST /api/v1/public-parsers/preview`
+- frontend `公开页面解析` page with sidebar navigation, status table, fixture-safe preview buttons, sample post/comment cards, schema validation flags, and no live-fetch enable control
 - deterministic fixture preview for The Paper, Jiemian, Hupu, Tieba, and NGA with sample `RawPost` / `RawComment` items and schema validation flags
 - status/preview QA stabilized for all five parser sources, unknown-platform failure, disabled-live fallback, and fixture-only behavior when the global live-pilot flag is enabled
 - Jiemian comments are documented as `comments_unavailable_without_login_or_dynamic_loading` and are not parsed in the fixture.
@@ -359,7 +360,7 @@ Next parser tasks:
 
 - Add additional sanitized fixture variants for The Paper, Jiemian, Hupu, Tieba, and NGA.
 - Add selector drift preview fixtures for alternate article/thread layouts per platform.
-- Add a small frontend-only Public Parser Status page or Settings card after backend diagnostics stay stable.
+- Add additional browser QA screenshots for the Public Parser Status page at 1440px after the in-app browser tooling is available.
 - Add a selector-drift QA matrix for missing title, content, author/source, created time, and permalink fields.
 - Add a mocked test matrix for The Paper live pilot status categories if new failure categories are introduced.
 - Add fixture-only parser scaffolds for the next candidate only after the current fixture QA matrix is stable.
