@@ -40,6 +40,8 @@ Latest Zhihu official API adapter QA validation: 2026-05-16. Focused Zhihu/adapt
 
 Latest Douban official API adapter QA validation: 2026-05-16. Focused Douban/adapter/crawl/registry checks passed with `71 passed in 0.76s`; full backend validation passed with `261 passed in 3.29s`. Douban remains mock-first through `DOUBAN_ADAPTER_MODE=mock`; `DOUBAN_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`, returns mock data, and makes no real Douban API call. The smoke command in section 4.5.7 should return mock Douban review/group/topic-style `RawPost` items, visible-comment-style `RawComment` items, `source_type=official_api_adapter_scaffold`, `real_mode_available=false`, and schema flags set to true. GitHub Actions CI remains intentionally disabled; use local/Codex validation only.
 
+Latest Toutiao official API adapter QA validation: 2026-05-16. Full backend validation passed with `272 passed in 2.75s`. Toutiao remains mock-first through `TOUTIAO_ADAPTER_MODE=mock`; `TOUTIAO_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`, returns mock data, and makes no real Toutiao API call. The smoke command in section 4.5.8 should return mock Toutiao article/micro-headline-style `RawPost` items, visible-comment-style `RawComment` items, `source_type=official_api_adapter_scaffold`, `real_mode_available=false`, and schema flags set to true. GitHub Actions CI remains intentionally disabled; use local/Codex validation only.
+
 Latest v0.4 adapter-foundation validation: 2026-05-14. Backend tests passed with `47 passed in 0.42s`, frontend production build passed in 7.68s, and API smoke checks passed for health, platform registry, crawl start, case create/list/detail/run, Markdown export, visualization, summary, recommendation, analysis result, V1.5 topic-risk fields, and the Reddit mock adapter. The Vite Ant Design/ECharts vendor chunk warning remains non-blocking.
 
 Important constraints:
@@ -469,6 +471,38 @@ Expected result:
 - Mock `RawPost` items include platform, post id, author id/name, title, content, like/reply/share counts, created time, URL, and raw data.
 - Mock `RawComment` items include platform, post id, comment id, parent id when present, author id/name, content, like/reply counts, created time, URL, and raw data.
 - No real Douban API call, Douban page scraping, login, captcha handling, cookies, proxy rotation, private data access, or external LLM call occurs.
+
+## 4.5.8 Optional Toutiao Mock Adapter Smoke Check
+
+This checks the official API adapter scaffold for Toutiao. It should stay offline, should not require Toutiao credentials, and should not call real Toutiao APIs.
+
+Direct adapter check:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+set PYTHONPATH=backend
+python -c "from app.services.crawling.adapter_factory import get_adapter; a=get_adapter('toutiao'); posts=a.search_posts('Tesla', limit=3); comments=a.fetch_comments(posts[0].post_id, limit=3); print(a.health_check()); print(len(posts), len(comments), posts[0].platform, comments[0].platform)"
+```
+
+Backend `/crawl/start` check:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+$body = @{ keyword = "Tesla"; platforms = @("toutiao"); limit = 3 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
+```
+
+Expected result:
+
+- Adapter mode is `mock`.
+- `platform_metadata[0].platform` is `toutiao`.
+- `platform_metadata[0].source_type` is `official_api_adapter_scaffold`.
+- `real_mode_available=false`, `api_pending=true`, and `real_mode_disabled=true`.
+- `post_count` and `comment_count` are greater than zero and capped by the safe crawl limit.
+- `raw_post_schema_valid=true` and `raw_comment_schema_valid=true`.
+- Mock `RawPost` items include platform, post id, author id/name, title, content, like/reply/share counts, created time, URL, and raw data.
+- Mock `RawComment` items include platform, post id, comment id, parent id when present, author id/name, content, like/reply counts, created time, URL, and raw data.
+- No real Toutiao API call, Toutiao page scraping, login, captcha handling, cookies, proxy rotation, private data access, or external LLM call occurs.
 
 ## 4.6 Optional Public Parser Fixture Smoke Check
 

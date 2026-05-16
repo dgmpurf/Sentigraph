@@ -22,6 +22,10 @@ from app.services.crawling.kuaishou_adapter import (
     KUAISHOU_REQUIRED_CREDENTIALS,
 )
 from app.services.crawling.reddit_adapter import REDDIT_API_APPROVAL_STATUS, REDDIT_REQUIRED_CREDENTIALS
+from app.services.crawling.toutiao_adapter import (
+    TOUTIAO_API_APPROVAL_STATUS,
+    TOUTIAO_REQUIRED_CREDENTIALS,
+)
 from app.services.crawling.weibo_adapter import WEIBO_API_APPROVAL_STATUS, WEIBO_REQUIRED_CREDENTIALS
 from app.services.crawling.xiaohongshu_adapter import (
     XIAOHONGSHU_API_APPROVAL_STATUS,
@@ -36,7 +40,6 @@ CRAWLER_LATER = "crawler_later"
 DISABLED_OR_OPTIONAL_FUTURE = "disabled_or_optional_future"
 API_APPROVAL_NOT_REQUIRED = "not_required"
 API_APPROVAL_NOT_APPLICABLE = "not_applicable"
-API_APPROVAL_PLANNED = "planned"
 REAL_MODE_DISABLED_API_PENDING = "api_pending"
 
 
@@ -82,32 +85,6 @@ class PlatformRegistryItem:
             official_platform_url=self.official_platform_url,
             notes=self.notes,
         )
-
-
-def _official_mock_platform(
-    platform_id: str,
-    display_name: str,
-    official_platform_url: str,
-) -> PlatformRegistryItem:
-    return PlatformRegistryItem(
-        platform_id=platform_id,
-        display_name=display_name,
-        category=OFFICIAL_API_PLANNED,
-        source_type="mock_data_official_api_placeholder",
-        status="mock_selectable_official_api_planned",
-        enabled_in_mvp=True,
-        selectable_for_mock=True,
-        mock_available=True,
-        api_pending=True,
-        real_mode_disabled=True,
-        official_platform_url=official_platform_url,
-        notes=(
-            "Selectable for offline mock analysis only. Real access is planned through "
-            "the official API after credentials, permissions, and compliance review."
-        ),
-        api_approval_required=True,
-        api_approval_status=API_APPROVAL_PLANNED,
-    )
 
 
 def _crawler_later_platform(platform_id: str, display_name: str) -> PlatformRegistryItem:
@@ -318,7 +295,27 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         api_approval_status=DOUBAN_API_APPROVAL_STATUS,
         credentials_required=DOUBAN_REQUIRED_CREDENTIALS,
     ),
-    _official_mock_platform("toutiao", "Toutiao", "https://open.toutiao.com"),
+    PlatformRegistryItem(
+        platform_id="toutiao",
+        display_name="Toutiao",
+        category=OFFICIAL_API_PLANNED,
+        source_type="official_api_adapter_scaffold",
+        status="official_api_planned",
+        enabled_in_mvp=True,
+        selectable_for_mock=True,
+        mock_available=True,
+        api_pending=True,
+        real_mode_disabled=True,
+        official_platform_url="https://open.toutiao.com",
+        notes=(
+            "Selectable for offline Toutiao-style mock article/micro-headline/comment analysis. "
+            "Real official API mode is disabled until credentials, approval, and "
+            "the compliant API implementation are added. No page scraping is implemented."
+        ),
+        api_approval_required=True,
+        api_approval_status=TOUTIAO_API_APPROVAL_STATUS,
+        credentials_required=TOUTIAO_REQUIRED_CREDENTIALS,
+    ),
     _public_parser_scaffold_platform("hupu", "Hupu / 虎扑"),
     _public_parser_scaffold_platform("tieba", "Baidu Tieba / 百度贴吧"),
     _crawler_later_platform("tianya", "Tianya"),

@@ -26,6 +26,7 @@ from app.services.crawling.public_parser.public_parser_adapter import (
 )
 from app.services.crawling.platform_registry import get_platform_registry
 from app.services.crawling.reddit_adapter import REDDIT_REQUIRED_CREDENTIALS, RedditAdapter, RedditCredentials
+from app.services.crawling.toutiao_adapter import ToutiaoAdapter
 from app.services.crawling.weibo_adapter import WeiboAdapter
 from app.services.crawling.xiaohongshu_adapter import XiaohongshuAdapter
 from app.services.crawling.zhihu_adapter import ZhihuAdapter
@@ -325,6 +326,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     maimai_adapter = get_adapter("maimai")
     tieba_adapter = get_adapter("tieba")
     nga_adapter = get_adapter("nga")
+    toutiao_adapter = get_adapter("toutiao")
     weibo_adapter = get_adapter("weibo")
     xiaohongshu_adapter = get_adapter("xiaohongshu")
     zhihu_adapter = get_adapter("zhihu")
@@ -344,6 +346,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     assert has_platform_adapter("maimai") is True
     assert has_platform_adapter("tieba") is True
     assert has_platform_adapter("nga") is True
+    assert has_platform_adapter("toutiao") is True
     assert get_supported_adapter_ids() == [
         "bilibili",
         "douban",
@@ -356,6 +359,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
         "reddit",
         "the_paper",
         "tieba",
+        "toutiao",
         "weibo",
         "xiaohongshu",
         "zhihu",
@@ -375,6 +379,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     assert isinstance(maimai_adapter, MaimaiPublicParserAdapter)
     assert isinstance(tieba_adapter, TiebaPublicParserAdapter)
     assert isinstance(nga_adapter, NgaPublicParserAdapter)
+    assert isinstance(toutiao_adapter, ToutiaoAdapter)
     assert adapter.mode == "mock"
     assert alias_adapter.mode == "mock"
 
@@ -398,6 +403,7 @@ def test_adapter_factory_does_not_activate_planned_or_crawler_later_platforms() 
             "hupu",
             "maimai",
             "tieba",
+            "toutiao",
             "nga",
         }
     ]

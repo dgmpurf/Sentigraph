@@ -190,6 +190,69 @@ class SpyDoubanAdapter:
         ][:limit]
 
 
+class SpyToutiaoAdapter:
+    def __init__(self) -> None:
+        self.fallback_reason: str | None = None
+
+    def get_mode(self) -> str:
+        return "mock"
+
+    def get_status_metadata(self) -> dict[str, object]:
+        return {
+            "source_type": "official_api_adapter_scaffold",
+            "fetch_status": "mock",
+            "mock_available": True,
+            "real_mode_available": False,
+            "api_approval_required": True,
+            "api_approval_status": "planned",
+            "api_pending": True,
+            "real_mode_disabled": True,
+            "selectable_for_real": False,
+        }
+
+    def search_posts(
+        self,
+        keyword: str,
+        *,
+        limit: int,
+        sort: str = "new",
+        date_range: dict[str, str] | None = None,
+    ) -> list[RawPost]:
+        return [
+            RawPost(
+                platform="toutiao",
+                post_id="toutiao_spy_article_001",
+                author_id="toutiao_author_001",
+                author_name="toutiao_author",
+                title=f"{keyword} Toutiao adapter spy article",
+                content="Mock Toutiao adapter article discussion.",
+                like_count=93,
+                reply_count=11,
+                share_count=5,
+                created_at="2026-05-15T00:00:00Z",
+                url="https://www.toutiao.com/article/toutiao_spy_article_001/",
+                raw_data={"mode": "mock", "sort": sort, "date_range": date_range},
+            )
+        ][:limit]
+
+    def fetch_comments(self, post_id: str, *, limit: int) -> list[RawComment]:
+        return [
+            RawComment(
+                platform="toutiao",
+                post_id=post_id,
+                comment_id="toutiao_spy_comment_001",
+                parent_id=None,
+                author_id="toutiao_commenter_001",
+                author_name="toutiao_commenter",
+                content="Mock Toutiao adapter comment.",
+                like_count=10,
+                created_at="2026-05-15T00:01:00Z",
+                url="https://www.toutiao.com/article/toutiao_spy_article_001/#comment001",
+                raw_data={"mode": "mock"},
+            )
+        ][:limit]
+
+
 class SpyDouyinAdapter:
     def __init__(self) -> None:
         self.fallback_reason: str | None = None
@@ -1684,21 +1747,128 @@ def test_crawl_start_reddit_real_with_credentials_returns_mock_until_api_approva
     assert body["raw_posts"][0]["raw_data"]["mode"] == "mock"
 
 
-def test_crawl_start_non_adapter_official_platform_keeps_old_mock_first_behavior() -> None:
+def test_crawl_start_with_toutiao_uses_adapter_factory(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_get_adapter(platform_id: str) -> SpyToutiaoAdapter:
+        calls.append(platform_id)
+        return SpyToutiaoAdapter()
+
+    monkeypatch.setattr(crawl_service.adapter_factory, "get_adapter", fake_get_adapter)
+
     response = client.post(
         "/api/v1/crawl/start",
         json={"keyword": "Tesla", "platforms": ["toutiao"], "limit": 100},
     )
 
     body = response.json()
+    metadata = body["platform_metadata"][0]
 
     assert response.status_code == 200
-    assert body["project_id"] == "project_001"
-    assert body["crawl_task_id"] == "crawl_task_001"
+    assert calls == ["toutiao"]
     assert body["status"] == "queued"
-    assert body["platform_metadata"] == []
-    assert body["raw_posts"] == []
-    assert body["raw_comments"] == []
+    assert body["raw_posts"][0]["platform"] == "toutiao"
+    assert body["raw_comments"][0]["platform"] == "toutiao"
+    assert metadata["platform"] == "toutiao"
+    assert metadata["adapter_mode"] == "mock"
+    assert metadata["source_type"] == "official_api_adapter_scaffold"
+    assert metadata["fallback_used"] is False
+    assert metadata["fallback_reason_category"] is None
+    assert metadata["mock_available"] is True
+    assert metadata["real_mode_available"] is False
+    assert metadata["api_pending"] is True
+    assert metadata["real_mode_disabled"] is True
+    assert metadata["real_mode_blocked_reason"] == "mock_only"
+    assert metadata["post_count"] == 1
+    assert metadata["comment_count"] == 1
+
+
+def test_crawl_start_toutiao_mock_mode_returns_normalized_mock_data(monkeypatch) -> None:
+    monkeypatch.setenv("TOUTIAO_ADAPTER_MODE", "mock")
+    monkeypatch.delenv("TOUTIAO_CLIENT_ID", raising=False)
+    monkeypatch.delenv("TOUTIAO_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("TOUTIAO_ACCESS_TOKEN", raising=False)
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["toutiao"], "limit": 100},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert metadata["platform"] == "toutiao"
+    assert metadata["adapter_mode"] == "mock"
+    assert metadata["source_type"] == "official_api_adapter_scaffold"
+    assert metadata["fallback_used"] is False
+    assert metadata["fallback_reason_category"] is None
+    assert metadata["real_mode_available"] is False
+    assert metadata["real_mode_blocked_reason"] == "mock_only"
+    assert metadata["post_count"] <= 3
+    assert metadata["comment_count"] <= 3
+    assert metadata["raw_post_schema_valid"] is True
+    assert metadata["raw_comment_schema_valid"] is True
+    assert body["raw_posts"]
+    assert body["raw_comments"]
+    assert all(post["platform"] == "toutiao" for post in body["raw_posts"])
+    assert all(comment["platform"] == "toutiao" for comment in body["raw_comments"])
+
+
+def test_crawl_start_toutiao_real_mode_stays_api_pending_without_network(monkeypatch) -> None:
+    monkeypatch.setenv("TOUTIAO_ADAPTER_MODE", "real")
+    monkeypatch.setenv("TOUTIAO_CLIENT_ID", "client")
+    monkeypatch.setenv("TOUTIAO_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("TOUTIAO_ACCESS_TOKEN", "token")
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["toutiao"], "limit": 100},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert metadata["platform"] == "toutiao"
+    assert metadata["adapter_mode"] == "mock"
+    assert metadata["fallback_used"] is True
+    assert metadata["fallback_reason_category"] == "api_pending"
+    assert metadata["fetch_status"] == "api_pending"
+    assert metadata["api_pending"] is True
+    assert metadata["real_mode_disabled"] is True
+    assert metadata["real_mode_available"] is False
+    assert metadata["real_mode_blocked_reason"] == "api_pending"
+    assert metadata["real_mode_reached"] is False
+    assert metadata["sanitized_error_category"] == "api_pending"
+    assert body["raw_posts"]
+    assert body["raw_posts"][0]["raw_data"]["mode"] == "mock"
+
+
+def test_crawl_start_toutiao_real_without_credentials_falls_back_to_mock(monkeypatch) -> None:
+    monkeypatch.setenv("TOUTIAO_ADAPTER_MODE", "real")
+    monkeypatch.delenv("TOUTIAO_CLIENT_ID", raising=False)
+    monkeypatch.delenv("TOUTIAO_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("TOUTIAO_ACCESS_TOKEN", raising=False)
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["toutiao"], "limit": 100},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert metadata["platform"] == "toutiao"
+    assert metadata["adapter_mode"] == "mock"
+    assert metadata["fallback_used"] is True
+    assert metadata["fallback_reason_category"] == "config_error"
+    assert metadata["real_mode_blocked_reason"] == "credentials_missing"
+    assert metadata["real_mode_reached"] is False
+    assert metadata["exception_class"] is None
+    assert body["raw_posts"]
+    assert body["raw_comments"]
 
 
 def test_crawl_start_the_paper_uses_public_parser_fixture_fallback(monkeypatch) -> None:

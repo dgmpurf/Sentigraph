@@ -16,6 +16,7 @@ from app.services.crawling.public_parser.public_parser_adapter import (
     TiebaPublicParserAdapter,
 )
 from app.services.crawling.reddit_adapter import RedditAdapter
+from app.services.crawling.toutiao_adapter import ToutiaoAdapter
 from app.services.crawling.weibo_adapter import WeiboAdapter
 from app.services.crawling.xiaohongshu_adapter import XiaohongshuAdapter
 from app.services.crawling.zhihu_adapter import ZhihuAdapter
@@ -36,6 +37,7 @@ ADAPTER_REGISTRY: dict[str, AdapterClass] = {
     RedditAdapter.platform_id: RedditAdapter,
     ThePaperPublicParserAdapter.platform_id: ThePaperPublicParserAdapter,
     TiebaPublicParserAdapter.platform_id: TiebaPublicParserAdapter,
+    ToutiaoAdapter.platform_id: ToutiaoAdapter,
     WeiboAdapter.platform_id: WeiboAdapter,
     XiaohongshuAdapter.platform_id: XiaohongshuAdapter,
     ZhihuAdapter.platform_id: ZhihuAdapter,

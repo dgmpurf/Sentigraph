@@ -424,16 +424,24 @@ Completed:
 - Douban scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
 - Douban scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Latest local/Codex validation passed with focused Douban/adapter/crawl/registry checks (`71 passed in 0.76s`) and full `python -m pytest` (`261 passed in 3.29s`). Frontend build was not run for this QA pass because no frontend files changed.
+- Toutiao official API adapter scaffold is implemented in mock mode.
+- `adapter_factory.get_adapter("toutiao")` returns the Toutiao adapter.
+- `/api/v1/crawl/start` can return Toutiao-style normalized mock article/micro-headline `RawPost` and visible-comment `RawComment` data with safe adapter metadata.
+- `TOUTIAO_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Toutiao API calls are made.
+- Toutiao scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
+- Toutiao scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
+- Latest local/Codex validation passed with full `python -m pytest` (`272 passed in 2.75s`). Frontend build was not run for this QA pass because no frontend files changed.
 
 Near-term candidates:
 
+- Cross-platform official adapter QA matrix for Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao
 - Weibo official API application and approved implementation, only after permission scopes and compliance review are complete
 - Bilibili real API application and approved implementation
 - Kuaishou real API application and approved implementation, only after permission scopes and compliance review are complete
 - Xiaohongshu real API application and approved implementation, only after permission scopes and compliance review are complete
 - Zhihu real API application and approved implementation, only after permission scopes and compliance review are complete
 - Douban real API application and approved implementation, only after permission scopes and compliance review are complete
-- Toutiao official API adapter scaffold, mock-only and approval-pending like the existing official API scaffolds
+- Toutiao real API application and approved implementation, only after permission scopes and compliance review are complete
 
 Scope:
 

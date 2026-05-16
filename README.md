@@ -126,9 +126,9 @@ Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real ada
 - Douban
 - Toutiao
 
-这些平台当前只支持 mock workflow，不代表真实集成已经完成。Weibo、Bilibili、Douyin、Kuaishou、Xiaohongshu 已有 mock-only official API adapter scaffold；即使配置为 real mode，也只会返回安全的 `api_pending` / `config_error` 状态，不会调用真实平台 API。
+这些平台当前只支持 mock workflow，不代表真实集成已经完成。Weibo、Bilibili、Douyin、Kuaishou、Xiaohongshu、Zhihu、Douban、Toutiao 已有 mock-only official API adapter scaffold；即使配置为 real mode，也只会返回安全的 `api_pending` / `config_error` 状态，不会调用真实平台 API。
 
-Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, and Douban. Real API modes remain disabled and return safe `api_pending` / `config_error` metadata until approval, credentials, scopes, and implementation are added.
+Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao. Real API modes remain disabled and return safe `api_pending` / `config_error` metadata until approval, credentials, scopes, and implementation are added.
 
 ### Future Crawler-later
 

@@ -2,7 +2,7 @@
 
 Sentigraph now prioritizes Chinese public opinion platforms for future source integration while keeping Reddit visible in the project as a future real adapter candidate.
 
-The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, and Douban now have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, and Douban requests through the adapter layer and returns normalized mock data with safe status metadata.
+The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao now have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao requests through the adapter layer and returns normalized mock data with safe status metadata.
 
 ## Data-source readiness layer
 
@@ -30,6 +30,7 @@ Current global status:
 - Xiaohongshu: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Zhihu: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Douban: official API adapter scaffold available in mock mode; real API mode disabled and not called.
+- Toutiao: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Crawler-later platforms: Hupu, Baidu Tieba, Tianya, NGA, Maimai, The Paper / Pengpai News, Jiemian News.
 - YouTube: `disabled_or_optional_future`.
 
@@ -47,7 +48,7 @@ MVP selections are limited to platforms that can run with local mock data. Selec
 | `xiaohongshu` | Xiaohongshu | `official_api_planned` | `official_api_adapter_scaffold` | true |
 | `zhihu` | Zhihu | `official_api_planned` | `official_api_adapter_scaffold` | true |
 | `douban` | Douban | `official_api_planned` | `official_api_adapter_scaffold` | true |
-| `toutiao` | Toutiao | `official_api_planned` | `mock_data_official_api_placeholder` | true |
+| `toutiao` | Toutiao | `official_api_planned` | `official_api_adapter_scaffold` | true |
 
 ## official_api_planned
 
@@ -62,7 +63,7 @@ These platforms should be integrated through official API programs when credenti
 | `xiaohongshu` | Xiaohongshu | https://open.xiaohongshu.com | mock adapter scaffold; real API pending credentials/approval |
 | `zhihu` | Zhihu | https://open.zhihu.com | mock adapter scaffold; real API pending credentials/approval |
 | `douban` | Douban | https://developers.douban.com | mock adapter scaffold; real API pending credentials/approval |
-| `toutiao` | Toutiao | https://open.toutiao.com | mock-selectable placeholder |
+| `toutiao` | Toutiao | https://open.toutiao.com | mock adapter scaffold; real API pending credentials/approval |
 
 ## future_real_adapter_candidate
 
@@ -110,7 +111,7 @@ Factory behavior:
 
 - `get_adapter("reddit")` and `get_platform_adapter("reddit")` return the Reddit adapter.
 - Unknown platforms return a safe adapter registration error.
-- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, and Douban have mock-only official API adapter scaffolds. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
+- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have mock-only official API adapter scaffolds. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
 - Crawler-later platforms remain inactive for real collection.
 
 Safety constraints:
@@ -334,6 +335,37 @@ DOUBAN_ACCESS_TOKEN
 ```
 
 Remaining before real Douban integration:
+
+- official application/approval and permission-scope review
+- rate-limit and usage policy documentation
+- a reviewed official API client implementation
+- mocked response fixtures that match approved API payloads
+- compliance review before any live request
+
+### Toutiao official API adapter scaffold
+
+Toutiao is now an official-API-planned Chinese news and micro-headline platform with a concrete adapter scaffold. It is intentionally mock-first and does not call the real Toutiao API.
+
+Current behavior:
+
+- Default mode is `mock` through `TOUTIAO_ADAPTER_MODE=mock`.
+- `get_adapter("toutiao")` returns the Toutiao adapter.
+- `POST /api/v1/crawl/start` uses the adapter when `platforms` contains `toutiao`.
+- Mock mode returns deterministic Toutiao-style article, micro-headline, and visible public-comment mock data normalized as `RawPost` and `RawComment`.
+- If `TOUTIAO_ADAPTER_MODE=real`, the adapter stays in mock mode and reports safe `api_pending` or `config_error` metadata. No network call is made.
+- Safe status metadata includes `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, and `real_mode_disabled=true`.
+- No Toutiao page scraping, login, captcha handling, cookies, proxy rotation, private data access, or external LLM call is implemented.
+
+Future Toutiao credentials after approval:
+
+```text
+TOUTIAO_ADAPTER_MODE=real
+TOUTIAO_CLIENT_ID
+TOUTIAO_CLIENT_SECRET
+TOUTIAO_ACCESS_TOKEN
+```
+
+Remaining before real Toutiao integration:
 
 - official application/approval and permission-scope review
 - rate-limit and usage policy documentation
