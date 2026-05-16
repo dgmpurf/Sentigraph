@@ -469,6 +469,35 @@ Safety constraints:
 
 ## P4: Future Advanced Algorithm
 
+### LLM Provider Interface
+
+Goal: prepare future GPT / DeepSeek / Qwen assistance without changing the current offline MVP behavior.
+
+Status: scaffolded and QA-stabilized with deterministic mock provider on 2026-05-16.
+
+Implemented:
+
+- `backend/app/services/llm/` provider module with a common interface, deterministic `MockProvider`, placeholder `OpenAIProvider`, `DeepSeekProvider`, and `QwenProvider`.
+- `provider_factory.get_llm_provider()` defaults to `LLM_PROVIDER=mock`.
+- `LLM_ENABLE_REAL_CALLS=false` remains the default; placeholder real providers return safe `provider_not_enabled` / `not_configured` errors and do not make network calls.
+- `.env.example` documents `LLM_PROVIDER`, `LLM_ENABLE_REAL_CALLS`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, and `QWEN_API_KEY` without requiring values.
+- `json_guard` helpers provide deterministic JSON object/array parsing fallbacks for future schema-checked LLM output.
+- Keyword expansion now routes through the safe provider abstraction and falls back to `MockProvider` if configuration is invalid.
+- QA coverage verifies module presence, deterministic mock outputs, provider factory defaults and unknown-provider errors, disabled real-provider behavior, missing-key safety, secret redaction, safe keyword fallback, and JSON guard fallback behavior.
+- Latest backend validation passed with `python -m pytest` (`334 passed in 3.12s`).
+
+Future real LLM integration tasks:
+
+- Keep real OpenAI integration as a future task.
+- Keep real DeepSeek integration as a future task.
+- Keep real Qwen integration as a future task.
+- Keep any frontend or API LLM selector repair/status UI as a future task unless explicitly requested.
+- Add provider-specific HTTP clients only behind explicit `LLM_ENABLE_REAL_CALLS=true` and selected provider configuration.
+- Add strict prompt/output schemas for keyword expansion, topic labeling, risk explanations, report drafts, and recommendations.
+- Add mocked HTTP tests, timeout handling, retry limits, rate limits, and redacted diagnostics before any live provider call.
+- Add provider usage/cost safeguards and clear failure fallbacks to the deterministic pipeline.
+- Keep GitHub Actions CI intentionally disabled unless explicitly requested later.
+
 ### V2 Dynamic Risk Readiness
 
 Goal: prepare for full topic-cluster dynamic risk later.

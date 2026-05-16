@@ -11,6 +11,9 @@ from app.schemas.propagation import PropagationResponse
 from app.schemas.recommendation import RecommendationRequest, RecommendationResponse
 from app.schemas.summary import SummaryGenerateRequest, SummaryGenerateResponse
 from app.schemas.visualization import VisualizationDataRequest, VisualizationResponse
+from app.services.llm.errors import LLMProviderError
+from app.services.llm.mock_provider import MockProvider
+from app.services.llm.provider_factory import get_llm_provider
 from app.services.mock_pipeline import (
     build_mock_pipeline,
     build_pipeline_analysis,
@@ -31,17 +34,16 @@ def load_mock_json(filename: str) -> dict[str, Any] | list[dict[str, Any]]:
 
 def build_keyword_expansion(payload: KeywordExpandRequest) -> KeywordExpandResponse:
     keyword = payload.keyword.strip()
-    expanded = [keyword, "\u7279\u65af\u62c9", "Model Y", "\u81ea\u52a8\u9a7e\u9a76", "\u964d\u4ef7"]
-    queries = [
-        f"{keyword} problem",
-        f"{keyword} recall",
-        "\u7279\u65af\u62c9 \u5239\u8f66",
-        "\u7279\u65af\u62c9 \u964d\u4ef7",
-    ]
+    provider = _safe_llm_provider()
+    try:
+        expansion = provider.expand_keywords(keyword, language=payload.language)
+    except LLMProviderError:
+        expansion = MockProvider().expand_keywords(keyword, language=payload.language)
+
     return KeywordExpandResponse(
-        original_keyword=keyword,
-        expanded_keywords=list(dict.fromkeys(expanded)),
-        search_queries=queries,
+        original_keyword=expansion.original_keyword,
+        expanded_keywords=expansion.expanded_keywords,
+        search_queries=expansion.search_queries,
     )
 
 
@@ -167,3 +169,10 @@ def _pipeline_representative_comments(pipeline) -> list[str]:
         ),
     )
     return [comment.clean_text for comment in ranked_comments if comment.clean_text][:5]
+
+
+def _safe_llm_provider():
+    try:
+        return get_llm_provider()
+    except LLMProviderError:
+        return MockProvider()

@@ -31,6 +31,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - mock 关键词扩展、mock crawl task、mock analysis flow。
 - 文本清洗、重复检测、用户聚合。
 - deterministic mock sentiment/topic/bot/risk analysis services。
+- mock-first LLM provider interface scaffold：`LLM_PROVIDER=mock` 默认启用离线 `MockProvider`，OpenAI / DeepSeek / Qwen 仅为未来占位，不需要 API key，也不会调用外部 LLM API。
 - 可视化数据构建，包括情绪趋势、风险雷达、热力图、话题聚类、传播图谱、疑似水军影响。
 - 模板化 summary/recommendation/report builder。
 - normalized Chinese public opinion report API。
@@ -464,7 +465,7 @@ Base path:
 - mock-first：当前优先使用 mock/offline data。
 - no real crawlers yet。
 - no real platform APIs yet。
-- no OpenAI API or external LLM API required。
+- no OpenAI API or external LLM API required；`LLM_PROVIDER=mock` 和 `LLM_ENABLE_REAL_CALLS=false` 是默认安全模式。
 - no login bypass。
 - no captcha bypass。
 - no anti-bot evasion。
