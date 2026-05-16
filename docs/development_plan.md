@@ -252,10 +252,12 @@ Current adapter foundation status:
 - Shared adapter interface scaffold exists under `backend/app/services/crawling/base_adapter.py`.
 - Adapter factory exists under `backend/app/services/crawling/adapter_factory.py`.
 - Reddit adapter scaffold exists under `backend/app/services/crawling/reddit_adapter.py`.
+- Weibo official API adapter scaffold exists under `backend/app/services/crawling/weibo_adapter.py`; it is mock-only, returns Weibo-style normalized posts/comments, and keeps real API mode disabled as `api_pending` / `config_error`.
 - Bilibili official API adapter scaffold exists under `backend/app/services/crawling/bilibili_adapter.py`; it is mock-only, returns Bilibili-style normalized posts/comments, and keeps real API mode disabled as `api_pending` / `config_error`.
 - Adapter interface includes `search_posts`, `fetch_comments`, `normalize_post`, `normalize_comment`, `health_check`, `supports_real_mode`, and `get_required_credentials`.
-- Adapter factory exposes `get_adapter("reddit")`, `get_adapter("bilibili")`, and their `get_platform_adapter(...)` equivalents.
+- Adapter factory exposes `get_adapter("reddit")`, `get_adapter("weibo")`, `get_adapter("bilibili")`, and their `get_platform_adapter(...)` equivalents.
 - Reddit defaults to mock mode and falls back to mock data whenever credentials are missing.
+- Weibo defaults to mock mode and does not call the real Weibo API even if `WEIBO_ADAPTER_MODE=real` is set.
 - Bilibili defaults to mock mode and does not call the real Bilibili API even if `BILIBILI_ADAPTER_MODE=real` is set.
 - The current case flow remains mock-first and does not automatically call real Reddit APIs.
 - Adapter outputs must normalize into `RawPost` and `RawComment` schemas.
@@ -271,14 +273,12 @@ Reddit real-mode requirements for a future task:
 
 Suggested order:
 
-1. Weibo
-2. Bilibili
-3. Douyin
-4. Kuaishou
-5. Xiaohongshu
-6. Zhihu
-7. Douban
-8. Toutiao
+1. Douyin
+2. Kuaishou
+3. Xiaohongshu
+4. Zhihu
+5. Douban
+6. Toutiao
 
 Reddit remains a visible future real adapter candidate and can be reviewed in parallel after the shared adapter interface and compliance checklist are stable.
 

@@ -127,6 +127,69 @@ class SpyBilibiliAdapter:
         ][:limit]
 
 
+class SpyWeiboAdapter:
+    def __init__(self) -> None:
+        self.fallback_reason: str | None = None
+
+    def get_mode(self) -> str:
+        return "mock"
+
+    def get_status_metadata(self) -> dict[str, object]:
+        return {
+            "source_type": "official_api_adapter_scaffold",
+            "fetch_status": "mock",
+            "mock_available": True,
+            "real_mode_available": False,
+            "api_approval_required": True,
+            "api_approval_status": "planned",
+            "api_pending": True,
+            "real_mode_disabled": True,
+            "selectable_for_real": False,
+        }
+
+    def search_posts(
+        self,
+        keyword: str,
+        *,
+        limit: int,
+        sort: str = "new",
+        date_range: dict[str, str] | None = None,
+    ) -> list[RawPost]:
+        return [
+            RawPost(
+                platform="weibo",
+                post_id="weibo_spy_status_001",
+                author_id="weibo_author_001",
+                author_name="weibo_author",
+                title=f"{keyword} Weibo adapter spy status",
+                content="Mock Weibo adapter status.",
+                like_count=188,
+                reply_count=12,
+                share_count=9,
+                created_at="2026-05-15T00:00:00Z",
+                url="https://weibo.com/weibo_spy_status_001",
+                raw_data={"mode": "mock", "sort": sort, "date_range": date_range},
+            )
+        ][:limit]
+
+    def fetch_comments(self, post_id: str, *, limit: int) -> list[RawComment]:
+        return [
+            RawComment(
+                platform="weibo",
+                post_id=post_id,
+                comment_id="weibo_spy_comment_001",
+                parent_id=None,
+                author_id="weibo_commenter_001",
+                author_name="weibo_commenter",
+                content="Mock Weibo adapter comment.",
+                like_count=17,
+                created_at="2026-05-15T00:01:00Z",
+                url="https://weibo.com/weibo_spy_status_001#comment001",
+                raw_data={"mode": "mock"},
+            )
+        ][:limit]
+
+
 class AuthFailingRedditClient:
     def search_posts(
         self,
@@ -394,6 +457,130 @@ def test_crawl_start_bilibili_real_without_credentials_falls_back_to_mock(monkey
     assert body["raw_comments"]
 
 
+def test_crawl_start_with_weibo_uses_adapter_factory(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_get_adapter(platform_id: str) -> SpyWeiboAdapter:
+        calls.append(platform_id)
+        return SpyWeiboAdapter()
+
+    monkeypatch.setattr(crawl_service.adapter_factory, "get_adapter", fake_get_adapter)
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["weibo"], "limit": 100},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert calls == ["weibo"]
+    assert body["status"] == "queued"
+    assert body["raw_posts"][0]["platform"] == "weibo"
+    assert body["raw_comments"][0]["platform"] == "weibo"
+    assert metadata["platform"] == "weibo"
+    assert metadata["adapter_mode"] == "mock"
+    assert metadata["source_type"] == "official_api_adapter_scaffold"
+    assert metadata["fallback_used"] is False
+    assert metadata["fallback_reason_category"] is None
+    assert metadata["mock_available"] is True
+    assert metadata["real_mode_available"] is False
+    assert metadata["api_pending"] is True
+    assert metadata["real_mode_disabled"] is True
+    assert metadata["real_mode_blocked_reason"] == "mock_only"
+    assert metadata["post_count"] == 1
+    assert metadata["comment_count"] == 1
+
+
+def test_crawl_start_weibo_mock_mode_returns_normalized_mock_data(monkeypatch) -> None:
+    monkeypatch.setenv("WEIBO_ADAPTER_MODE", "mock")
+    monkeypatch.delenv("WEIBO_CLIENT_ID", raising=False)
+    monkeypatch.delenv("WEIBO_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("WEIBO_ACCESS_TOKEN", raising=False)
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["weibo"], "limit": 100},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert metadata["platform"] == "weibo"
+    assert metadata["adapter_mode"] == "mock"
+    assert metadata["source_type"] == "official_api_adapter_scaffold"
+    assert metadata["fallback_used"] is False
+    assert metadata["fallback_reason_category"] is None
+    assert metadata["real_mode_available"] is False
+    assert metadata["real_mode_blocked_reason"] == "mock_only"
+    assert metadata["post_count"] <= 3
+    assert metadata["comment_count"] <= 3
+    assert metadata["raw_post_schema_valid"] is True
+    assert metadata["raw_comment_schema_valid"] is True
+    assert body["raw_posts"]
+    assert body["raw_comments"]
+    assert all(post["platform"] == "weibo" for post in body["raw_posts"])
+    assert all(comment["platform"] == "weibo" for comment in body["raw_comments"])
+
+
+def test_crawl_start_weibo_real_mode_stays_api_pending_without_network(monkeypatch) -> None:
+    monkeypatch.setenv("WEIBO_ADAPTER_MODE", "real")
+    monkeypatch.setenv("WEIBO_CLIENT_ID", "client")
+    monkeypatch.setenv("WEIBO_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("WEIBO_ACCESS_TOKEN", "token")
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["weibo"], "limit": 100},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert metadata["platform"] == "weibo"
+    assert metadata["adapter_mode"] == "mock"
+    assert metadata["fallback_used"] is True
+    assert metadata["fallback_reason_category"] == "api_pending"
+    assert metadata["fetch_status"] == "api_pending"
+    assert metadata["api_pending"] is True
+    assert metadata["real_mode_disabled"] is True
+    assert metadata["real_mode_available"] is False
+    assert metadata["real_mode_blocked_reason"] == "api_pending"
+    assert metadata["real_mode_reached"] is False
+    assert metadata["sanitized_error_category"] == "api_pending"
+    assert body["raw_posts"]
+    assert body["raw_posts"][0]["raw_data"]["mode"] == "mock"
+
+
+def test_crawl_start_weibo_real_without_credentials_falls_back_to_mock(monkeypatch) -> None:
+    monkeypatch.setenv("WEIBO_ADAPTER_MODE", "real")
+    monkeypatch.delenv("WEIBO_CLIENT_ID", raising=False)
+    monkeypatch.delenv("WEIBO_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("WEIBO_ACCESS_TOKEN", raising=False)
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["weibo"], "limit": 100},
+    )
+
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+
+    assert response.status_code == 200
+    assert metadata["platform"] == "weibo"
+    assert metadata["adapter_mode"] == "mock"
+    assert metadata["fallback_used"] is True
+    assert metadata["fallback_reason_category"] == "config_error"
+    assert metadata["real_mode_blocked_reason"] == "credentials_missing"
+    assert metadata["real_mode_reached"] is False
+    assert metadata["exception_class"] is None
+    assert body["raw_posts"]
+    assert body["raw_comments"]
+
+
 def test_crawl_start_reddit_real_request_stays_mock_until_api_approval(monkeypatch) -> None:
     monkeypatch.setenv("REDDIT_ADAPTER_MODE", "real")
 
@@ -562,10 +749,10 @@ def test_crawl_start_reddit_real_with_credentials_returns_mock_until_api_approva
     assert body["raw_posts"][0]["raw_data"]["mode"] == "mock"
 
 
-def test_crawl_start_non_reddit_keeps_old_mock_first_behavior() -> None:
+def test_crawl_start_non_adapter_official_platform_keeps_old_mock_first_behavior() -> None:
     response = client.post(
         "/api/v1/crawl/start",
-        json={"keyword": "Tesla", "platforms": ["weibo"], "limit": 100},
+        json={"keyword": "Tesla", "platforms": ["douyin"], "limit": 100},
     )
 
     body = response.json()

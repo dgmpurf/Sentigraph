@@ -6,7 +6,7 @@ Last updated: 2026-05-16
 
 Sentigraph is currently in a mock-first desktop web MVP stage.
 
-The repository has a FastAPI backend skeleton, a React + Vite desktop dashboard frontend, mock JSON data, API contracts, local development instructions, CI configuration, deterministic backend analysis services, a mock analysis pipeline, and a template-based public opinion report builder.
+The repository has a FastAPI backend skeleton, a React + Vite desktop dashboard frontend, mock JSON data, API contracts, local development instructions, deterministic backend analysis services, a mock analysis pipeline, and a template-based public opinion report builder. GitHub Actions CI is intentionally disabled for now; validation should use local/Codex commands such as `python -m pytest` and `npm run build`.
 
 The current MVP flow is:
 
@@ -16,9 +16,11 @@ keyword input -> mock pipeline analysis -> backend report/visualization APIs -> 
 
 Real crawlers, real OpenAI/LLM calls, production database hardening, and complex ML models have not been implemented yet. The MVP remains runnable offline with mock data and deterministic rule/template logic.
 
+Latest Weibo official API adapter QA stabilization update: revalidated the Weibo scaffold without credentials, real API calls, page scraping, login/captcha bypass, cookies, proxy rotation, private data access, or external LLM calls. Verified the adapter interface, default mock mode, missing-credential fallback, `WEIBO_ADAPTER_MODE=real` safe `api_pending`/`config_error` behavior, `.env.example` Weibo variables, adapter factory registration, platform registry status, `/api/v1/crawl/start` metadata, mock `RawPost` / `RawComment` schema fields including `share_count`, existing Reddit/Bilibili/public-parser adapters, case flow, V1.5 reports, monitoring, scheduler, alerts, notifications, public parser status/preview, and local JSON/MongoDB store regressions. Focused Weibo/crawl/registry checks passed with `17 passed in 0.51s`; full backend validation passed with `201 passed in 3.03s`. Frontend build was not run because no frontend files changed. GitHub Actions CI remains intentionally disabled, and `.github/workflows/ci.yml` was not recreated; use local/Codex validation only.
+
 Latest Bilibili official API adapter scaffold update: added `backend/app/services/crawling/bilibili_adapter.py` as a mock-first official API adapter scaffold for Bilibili video/comment-style public opinion data. `adapter_factory.get_adapter("bilibili")` now returns the Bilibili adapter, `/api/v1/crawl/start` routes explicit `platforms=["bilibili"]` through the adapter, and the response includes normalized mock `RawPost` / `RawComment` data plus safe metadata such as `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, and `real_mode_disabled=true`. `BILIBILI_ADAPTER_MODE=real` remains blocked as `api_pending` or `config_error`; no real Bilibili API calls or page scraping are implemented. Focused Bilibili/crawl/registry/adapter validation passed with `45 passed in 1.03s`; full backend validation passed with `189 passed in 3.25s`. Frontend build was not run because no frontend files changed.
 
-Latest Bilibili official API adapter QA stabilization update: revalidated the Bilibili scaffold without credentials, real API calls, page scraping, login/captcha bypass, cookies, proxy rotation, private data access, or external LLM calls. Verified the adapter interface, default mock mode, missing-credential fallback, `BILIBILI_ADAPTER_MODE=real` safe `api_pending`/`config_error` behavior, `.env.example` Bilibili variables, adapter factory registration, platform registry status, `/api/v1/crawl/start` metadata, mock `RawPost` / `RawComment` schema fields, existing Reddit/public-parser adapters, case flow, V1.5 reports, monitoring, scheduler, alerts, notifications, public parser status/preview, and local JSON/MongoDB store regressions. Focused validation passed with `111 passed in 2.74s`; direct local adapter smoke returned 3 posts, 3 comments, and schema-valid crawl metadata; full backend validation passed with `189 passed in 3.09s`. Frontend build was not run because no frontend files changed.
+Latest Bilibili official API adapter QA stabilization update: revalidated the Bilibili scaffold without credentials, real API calls, page scraping, login/captcha bypass, cookies, proxy rotation, private data access, or external LLM calls. Verified the adapter interface, default mock mode, missing-credential fallback, `BILIBILI_ADAPTER_MODE=real` safe `api_pending`/`config_error` behavior, `.env.example` Bilibili variables, adapter factory registration, platform registry status, `/api/v1/crawl/start` metadata, mock `RawPost` / `RawComment` schema fields, existing Reddit/public-parser adapters, case flow, V1.5 reports, monitoring, scheduler, alerts, notifications, public parser status/preview, and local JSON/MongoDB store regressions. Direct local adapter smoke returned 3 posts, 3 comments, and schema-valid crawl metadata; full backend validation passed with `189 passed in 3.31s`. Frontend build was not run because no frontend files changed. GitHub Actions CI remains intentionally disabled, and `.github/workflows/ci.yml` was not recreated; use local/Codex validation only.
 
 Latest current milestone audit update: audited the mock-first Sentigraph state against the requested milestone list without product-code changes. Backend validation passed with `python -m pytest` (`167 passed in 3.02s`). Frontend validation passed with `npm.cmd run build` (`built in 7.69s`); the existing Vite warning for large Ant Design/ECharts vendor chunks remains non-blocking. No listed milestone is missing. Reddit remains partial by design because mock mode and the optional adapter scaffold are present, but real Reddit API use is still `api_pending` and disabled until approval.
 
@@ -228,7 +230,7 @@ Recommended release checkpoint:
 - Added `.python-version` with Python 3.10.
 - Added `pytest.ini`.
 - Added `GET /api/v1/health`.
-- Added GitHub Actions CI for backend tests and frontend build.
+- GitHub Actions CI is intentionally disabled for now; do not recreate `.github/workflows/ci.yml` unless explicitly requested. Use local/Codex validation commands for backend tests and frontend builds.
 - Created `docs/progress.md` as the project handoff and progress log.
 - Added an `AGENTS.md` rule requiring `docs/progress.md` updates after each major Codex task.
 - Confirmed frontend production build works locally with `npm.cmd --prefix frontend run build`.
@@ -381,7 +383,7 @@ Project and docs:
 - `docs/platform_sources.md` - Platform source roadmap and safety constraints.
 - `docs/demo_checklist.md` - Local demo checklist for backend/frontend startup, mock analysis flow, report copy action, risk monitor, and propagation graph checks.
 - `docs/progress.md` - Current progress log.
-- `.github/workflows/ci.yml` - CI workflow.
+- GitHub Actions workflow is intentionally absent; do not recreate `.github/workflows/ci.yml` unless explicitly requested.
 - `.python-version` - Python version marker.
 - `pytest.ini` - Pytest configuration.
 

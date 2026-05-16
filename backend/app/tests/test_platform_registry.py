@@ -39,8 +39,15 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["reddit"].api_pending is True
     assert by_id["reddit"].real_mode_disabled is True
     assert by_id["weibo"].category == OFFICIAL_API_PLANNED
+    assert by_id["weibo"].source_type == "official_api_adapter_scaffold"
+    assert by_id["weibo"].status == "official_api_planned"
     assert by_id["weibo"].enabled_in_mvp is True
     assert by_id["weibo"].selectable_for_mock is True
+    assert by_id["weibo"].mock_available is True
+    assert by_id["weibo"].real_mode_available is False
+    assert by_id["weibo"].api_pending is True
+    assert by_id["weibo"].real_mode_disabled is True
+    assert by_id["weibo"].selectable_for_real is False
     assert by_id["bilibili"].category == OFFICIAL_API_PLANNED
     assert by_id["bilibili"].source_type == "official_api_adapter_scaffold"
     assert by_id["bilibili"].status == "official_api_planned"
@@ -135,6 +142,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     monkeypatch.setenv("BILIBILI_CLIENT_ID", "bilibili-client-should-not-appear")
     monkeypatch.setenv("BILIBILI_CLIENT_SECRET", "bilibili-secret-should-not-appear")
     monkeypatch.setenv("BILIBILI_ACCESS_TOKEN", "bilibili-token-should-not-appear")
+    monkeypatch.setenv("WEIBO_CLIENT_ID", "weibo-client-should-not-appear")
+    monkeypatch.setenv("WEIBO_CLIENT_SECRET", "weibo-secret-should-not-appear")
+    monkeypatch.setenv("WEIBO_ACCESS_TOKEN", "weibo-token-should-not-appear")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -143,6 +153,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     by_id = {platform["platform_id"]: platform for platform in body["platforms"]}
     reddit = by_id["reddit"]
     bilibili = by_id["bilibili"]
+    weibo = by_id["weibo"]
 
     assert body["active_mvp_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
     assert body["mock_selectable_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
@@ -167,6 +178,25 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert reddit["selectable_for_mock"] is True
     assert reddit["selectable_for_real"] is False
     assert reddit["real_mode_disabled"] is True
+    assert weibo["status"] == "official_api_planned"
+    assert weibo["source_type"] == "official_api_adapter_scaffold"
+    assert weibo["mock_available"] is True
+    assert weibo["real_mode_available"] is False
+    assert weibo["api_approval_required"] is True
+    assert weibo["api_approval_status"] == "planned"
+    assert weibo["credentials_required"] == [
+        "WEIBO_CLIENT_ID",
+        "WEIBO_CLIENT_SECRET",
+        "WEIBO_ACCESS_TOKEN",
+    ]
+    assert weibo["credentials_present"] == {
+        "WEIBO_CLIENT_ID": True,
+        "WEIBO_CLIENT_SECRET": True,
+        "WEIBO_ACCESS_TOKEN": True,
+    }
+    assert weibo["selectable_for_mock"] is True
+    assert weibo["selectable_for_real"] is False
+    assert weibo["real_mode_disabled"] is True
     assert bilibili["status"] == "official_api_planned"
     assert bilibili["source_type"] == "official_api_adapter_scaffold"
     assert bilibili["mock_available"] is True
@@ -193,6 +223,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert "bilibili-client-should-not-appear" not in response_text
     assert "bilibili-secret-should-not-appear" not in response_text
     assert "bilibili-token-should-not-appear" not in response_text
+    assert "weibo-client-should-not-appear" not in response_text
+    assert "weibo-secret-should-not-appear" not in response_text
+    assert "weibo-token-should-not-appear" not in response_text
 
 
 def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch) -> None:
@@ -202,6 +235,9 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     monkeypatch.setenv("BILIBILI_CLIENT_ID", "")
     monkeypatch.setenv("BILIBILI_CLIENT_SECRET", "")
     monkeypatch.setenv("BILIBILI_ACCESS_TOKEN", "")
+    monkeypatch.setenv("WEIBO_CLIENT_ID", "")
+    monkeypatch.setenv("WEIBO_CLIENT_SECRET", "")
+    monkeypatch.setenv("WEIBO_ACCESS_TOKEN", "")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -209,6 +245,7 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     by_id = {platform["platform_id"]: platform for platform in response.json()["platforms"]}
     reddit = by_id["reddit"]
     bilibili = by_id["bilibili"]
+    weibo = by_id["weibo"]
     assert reddit["credentials_present"] == {
         "REDDIT_CLIENT_ID": False,
         "REDDIT_CLIENT_SECRET": False,
@@ -221,6 +258,12 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
         "BILIBILI_ACCESS_TOKEN": False,
     }
     assert bilibili["real_mode_available"] is False
+    assert weibo["credentials_present"] == {
+        "WEIBO_CLIENT_ID": False,
+        "WEIBO_CLIENT_SECRET": False,
+        "WEIBO_ACCESS_TOKEN": False,
+    }
+    assert weibo["real_mode_available"] is False
 
 
 def test_platform_status_keeps_crawler_later_not_real_selectable() -> None:

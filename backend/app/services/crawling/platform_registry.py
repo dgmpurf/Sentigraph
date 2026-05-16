@@ -10,6 +10,7 @@ from app.services.crawling.bilibili_adapter import (
     BILIBILI_REQUIRED_CREDENTIALS,
 )
 from app.services.crawling.reddit_adapter import REDDIT_API_APPROVAL_STATUS, REDDIT_REQUIRED_CREDENTIALS
+from app.services.crawling.weibo_adapter import WEIBO_API_APPROVAL_STATUS, WEIBO_REQUIRED_CREDENTIALS
 
 
 OFFICIAL_API_PLANNED = "official_api_planned"
@@ -153,7 +154,27 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         api_approval_status=REDDIT_API_APPROVAL_STATUS,
         credentials_required=REDDIT_REQUIRED_CREDENTIALS,
     ),
-    _official_mock_platform("weibo", "Weibo", "https://open.weibo.com"),
+    PlatformRegistryItem(
+        platform_id="weibo",
+        display_name="Weibo",
+        category=OFFICIAL_API_PLANNED,
+        source_type="official_api_adapter_scaffold",
+        status="official_api_planned",
+        enabled_in_mvp=True,
+        selectable_for_mock=True,
+        mock_available=True,
+        api_pending=True,
+        real_mode_disabled=True,
+        official_platform_url="https://open.weibo.com",
+        notes=(
+            "Selectable for offline Weibo-style mock microblog/comment analysis. "
+            "Real official API mode is disabled until credentials, approval, and "
+            "the compliant API implementation are added. No page scraping is implemented."
+        ),
+        api_approval_required=True,
+        api_approval_status=WEIBO_API_APPROVAL_STATUS,
+        credentials_required=WEIBO_REQUIRED_CREDENTIALS,
+    ),
     PlatformRegistryItem(
         platform_id="bilibili",
         display_name="Bilibili",

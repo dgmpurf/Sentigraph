@@ -4,6 +4,8 @@ Last updated: 2026-05-16
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
 
+CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate `.github/workflows/ci.yml` unless explicitly requested. Use local/Codex validation commands such as `python -m pytest` and `npm run build`; future CI can be reconsidered only if cost and notification concerns are resolved.
+
 ## Completed Pre-v1.0 Hardening Items
 
 ### Local Demo Data Utilities
@@ -376,17 +378,25 @@ Status: partially implemented.
 
 Completed:
 
+- Weibo official API adapter scaffold is implemented in mock mode.
+- `adapter_factory.get_adapter("weibo")` returns the Weibo adapter.
+- `/api/v1/crawl/start` can return Weibo-style normalized mock `RawPost` and `RawComment` data with safe adapter metadata.
+- `WEIBO_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Weibo API calls are made.
+- Weibo scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and old adapter regressions.
+- Weibo scaffold QA is stabilized: the explicit adapter interface, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Bilibili official API adapter scaffold is implemented in mock mode.
 - `adapter_factory.get_adapter("bilibili")` returns the Bilibili adapter.
 - `/api/v1/crawl/start` can return Bilibili-style normalized mock `RawPost` and `RawComment` data with safe adapter metadata.
 - `BILIBILI_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Bilibili API calls are made.
 - Bilibili scaffold QA is stabilized: mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and old case/monitoring/scheduler/notification/public-parser regressions are covered by tests.
+- Latest local/Codex validation passed with `python -m pytest` (`201 passed in 3.03s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
 
 Near-term candidates:
 
-- Weibo
+- Weibo official API application and approved implementation, only after permission scopes and compliance review are complete
 - Bilibili real API application and approved implementation
-- Douyin / Kuaishou official API scaffold review after Weibo, if product priority confirms short-video source parity
+- Douyin official API adapter scaffold, mock-only and approval-pending like Weibo/Bilibili
+- Kuaishou official API adapter scaffold, mock-only and approval-pending like Weibo/Bilibili
 
 Scope:
 

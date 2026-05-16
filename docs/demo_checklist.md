@@ -26,7 +26,9 @@ Latest Maimai public parser QA validation: 2026-05-15. Focused parser/crawl/regi
 
 Latest Public Parser Status frontend QA validation: 2026-05-15. The `公开页面解析` sidebar page was rechecked for route wiring, parser status loading, fixture preview, empty/error states, and no-live-fetch frontend behavior. The parser table now includes an inline `备注` column so every row shows platform notes. Frontend production build passed in 7.65s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The page loads parser rows dynamically, so Maimai appears through the backend status endpoint without adding a live-fetch control; preview requests from the frontend code always pass `use_live_fetch=false`.
 
-Latest Bilibili official API adapter QA validation: 2026-05-16. Focused Bilibili/adapter/crawl/registry/regression tests passed with `111 passed in 2.74s`; full backend validation passed with `189 passed in 3.09s`. Bilibili remains mock-first through `BILIBILI_ADAPTER_MODE=mock`; `BILIBILI_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`, returns mock data, and makes no real Bilibili API call. The smoke command in section 4.5.1 should return three mock Bilibili video-style `RawPost` items, three mock visible-comment-style `RawComment` items, `source_type=official_api_adapter_scaffold`, `real_mode_available=false`, and schema flags set to true.
+Latest Weibo official API adapter QA validation: 2026-05-16. Focused Weibo/adapter/crawl/registry checks passed with `17 passed in 0.51s`; full backend validation passed with `201 passed in 3.03s`. Weibo remains mock-first through `WEIBO_ADAPTER_MODE=mock`; `WEIBO_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`, returns mock data, and makes no real Weibo API call. The smoke command in section 4.5.1 should return three mock Weibo microblog-style `RawPost` items, three mock visible-comment-style `RawComment` items, `source_type=official_api_adapter_scaffold`, `real_mode_available=false`, `raw_post_schema_valid=true`, and `raw_comment_schema_valid=true`. GitHub Actions CI remains intentionally disabled; use local/Codex validation only.
+
+Latest Bilibili official API adapter QA validation: 2026-05-16. Focused Bilibili/adapter/crawl/registry/regression tests passed with `111 passed in 2.74s`; full backend validation passed with `189 passed in 3.09s`. Bilibili remains mock-first through `BILIBILI_ADAPTER_MODE=mock`; `BILIBILI_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`, returns mock data, and makes no real Bilibili API call. The smoke command in section 4.5.2 should return three mock Bilibili video-style `RawPost` items, three mock visible-comment-style `RawComment` items, `source_type=official_api_adapter_scaffold`, `real_mode_available=false`, and schema flags set to true.
 
 Latest v0.4 adapter-foundation validation: 2026-05-14. Backend tests passed with `47 passed in 0.42s`, frontend production build passed in 7.68s, and API smoke checks passed for health, platform registry, crawl start, case create/list/detail/run, Markdown export, visualization, summary, recommendation, analysis result, V1.5 topic-risk fields, and the Reddit mock adapter. The Vite Ant Design/ECharts vendor chunk warning remains non-blocking.
 
@@ -234,7 +236,39 @@ Expected result:
 - The command prints at least one normalized Reddit post/comment from local mock data.
 - No real Reddit API call is made.
 
-## 4.5.1 Optional Bilibili Mock Adapter Smoke Check
+## 4.5.1 Optional Weibo Mock Adapter Smoke Check
+
+This checks the official API adapter scaffold for Weibo. It should stay offline, should not require Weibo credentials, and should not call real Weibo APIs.
+
+Direct adapter check:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
+set PYTHONPATH=backend
+python -c "from app.services.crawling.adapter_factory import get_adapter; a=get_adapter('weibo'); posts=a.search_posts('Tesla', limit=3); comments=a.fetch_comments(posts[0].post_id, limit=3); print(a.health_check()); print(len(posts), len(comments), posts[0].platform, comments[0].platform)"
+```
+
+Backend `/crawl/start` check:
+
+```powershell
+cd /d "G:\AICODING\Sentigraph 鑸嗘儏鍥捐氨绯荤粺\Sentigraph"
+$body = @{ keyword = "Tesla"; platforms = @("weibo"); limit = 3 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/crawl/start" -ContentType "application/json" -Body $body | ConvertTo-Json -Depth 8
+```
+
+Expected result:
+
+- Adapter mode is `mock`.
+- `platform_metadata[0].platform` is `weibo`.
+- `platform_metadata[0].source_type` is `official_api_adapter_scaffold`.
+- `real_mode_available=false`, `api_pending=true`, and `real_mode_disabled=true`.
+- `post_count` and `comment_count` are greater than zero and capped by the safe crawl limit.
+- `raw_post_schema_valid=true` and `raw_comment_schema_valid=true`.
+- Mock `RawPost` items include platform, post id, author id/name, title, content, like/reply/share counts, created time, URL, and raw data.
+- Mock `RawComment` items include platform, post id, comment id, parent id when present, author id/name, content, like/reply counts, created time, URL, and raw data.
+- No real Weibo API call, Weibo page scraping, login, captcha handling, cookies, proxy rotation, private data access, or external LLM call occurs.
+
+## 4.5.2 Optional Bilibili Mock Adapter Smoke Check
 
 This checks the official API adapter scaffold for Bilibili. It should stay offline, should not require Bilibili credentials, and should not call real Bilibili APIs.
 

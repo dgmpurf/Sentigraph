@@ -48,7 +48,7 @@ crawler_later
 disabled_or_optional_future
 ```
 
-Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-only and must not trigger real crawlers or real platform APIs. `mock_available`, `real_mode_available`, `api_approval_required`, `api_approval_status`, `credentials_required`, `credentials_present`, `api_pending`, `real_mode_disabled`, and `selectable_for_real` are safe status fields for frontend/backend diagnostics. `credentials_present` must contain only booleans and must never expose credential values. Reddit currently has `mock_available=true`, `api_approval_status="api_pending"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Bilibili currently has `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `api_approval_status="planned"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`.
+Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-only and must not trigger real crawlers or real platform APIs. `mock_available`, `real_mode_available`, `api_approval_required`, `api_approval_status`, `credentials_required`, `credentials_present`, `api_pending`, `real_mode_disabled`, and `selectable_for_real` are safe status fields for frontend/backend diagnostics. `credentials_present` must contain only booleans and must never expose credential values. Reddit currently has `mock_available=true`, `api_approval_status="api_pending"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Weibo and Bilibili currently have `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `api_approval_status="planned"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`.
 
 ### PlatformStatusResponse
 
@@ -503,7 +503,7 @@ Rules:
 
 ## 1.5 Crawl Start Response
 
-`POST /api/v1/crawl/start` remains backward compatible with the original mock response and may include adapter output metadata when Reddit or Bilibili is selected.
+`POST /api/v1/crawl/start` remains backward compatible with the original mock response and may include adapter output metadata when Reddit, Weibo, or Bilibili is selected.
 
 ```json
 {
@@ -590,11 +590,12 @@ Rules:
 - `exception_class` is a safe exception class name only and must not include exception messages, request payloads, tokens, or credentials.
 - `real_mode_reached` indicates whether the real adapter path was reached.
 - `dependency_available` indicates whether required real-mode dependencies such as PRAW are importable.
-- `mock_available`, `api_pending`, and `real_mode_disabled` communicate safe adapter/source status without exposing credentials. Reddit real API mode stays disabled while approval is pending. Bilibili real official API mode stays disabled while credentials, approval, permission scopes, and implementation are pending.
+- `mock_available`, `api_pending`, and `real_mode_disabled` communicate safe adapter/source status without exposing credentials. Reddit real API mode stays disabled while approval is pending. Weibo and Bilibili real official API modes stay disabled while credentials, approval, permission scopes, and implementation are pending.
 - `real_mode_available`, `api_approval_required`, `api_approval_status`, `selectable_for_real`, and `real_mode_blocked_reason` describe why a real source path is or is not usable. Current valid blocked reasons include `api_pending`, `disabled`, `mock_only`, `credentials_missing`, and `approval_required`.
 - `raw_posts` uses the `RawPost` schema.
 - `raw_comments` uses the `RawComment` schema.
 - Official API planned platforms remain mock-only. Crawler-later platforms remain disabled for real crawling.
+- Weibo uses `source_type="official_api_adapter_scaffold"` and may return Weibo-style mock microblog/comment `RawPost` and `RawComment` items when selected in `/crawl/start`.
 - Bilibili uses `source_type="official_api_adapter_scaffold"` and may return Bilibili-style mock video/comment `RawPost` and `RawComment` items when selected in `/crawl/start`.
 
 ### Public Parser Metadata Extension

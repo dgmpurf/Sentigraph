@@ -67,21 +67,25 @@ GET /api/v1/platforms
       "platform_id": "weibo",
       "display_name": "Weibo",
       "category": "official_api_planned",
-      "source_type": "mock_data_official_api_placeholder",
-      "status": "mock_selectable_official_api_planned",
+      "source_type": "official_api_adapter_scaffold",
+      "status": "official_api_planned",
       "enabled_in_mvp": true,
       "selectable_for_mock": true,
       "mock_available": true,
       "real_mode_available": false,
       "api_approval_required": true,
       "api_approval_status": "planned",
-      "credentials_required": [],
-      "credentials_present": {},
+      "credentials_required": ["WEIBO_CLIENT_ID", "WEIBO_CLIENT_SECRET", "WEIBO_ACCESS_TOKEN"],
+      "credentials_present": {
+        "WEIBO_CLIENT_ID": false,
+        "WEIBO_CLIENT_SECRET": false,
+        "WEIBO_ACCESS_TOKEN": false
+      },
       "api_pending": true,
       "real_mode_disabled": true,
       "selectable_for_real": false,
       "official_platform_url": "https://open.weibo.com",
-      "notes": "Selectable for offline mock analysis only. Real access is planned through the official API after credentials, permissions, and compliance review."
+      "notes": "Selectable for offline Weibo-style mock microblog/comment analysis. Real official API mode is disabled until credentials, approval, and the compliant API implementation are added. No page scraping is implemented."
     },
     {
       "platform_id": "bilibili",
@@ -132,7 +136,7 @@ Important:
 - `real_mode_disabled=true` means the backend must not call the real platform API for that source.
 - Official API planned platforms may be selectable for mock analysis, but they must not trigger real API calls until credentials, permissions, and compliance checks are available.
 - Reddit is visible and mock-selectable as a future real adapter candidate, but its current real API status is `api_pending`.
-- Bilibili is mock-selectable through an official API adapter scaffold. Its real API mode is disabled and not called until credentials, approval, and implementation are added.
+- Weibo and Bilibili are mock-selectable through official API adapter scaffolds. Their real API modes are disabled and not called until credentials, approval, and implementation are added.
 - Crawler-later platforms are not selectable for real crawling in the MVP.
 - YouTube is `disabled_or_optional_future` and is not an active MVP platform.
 
@@ -425,6 +429,9 @@ Important:
 - Reddit mock mode returns normalized `RawPost` and `RawComment` items in `raw_posts` and `raw_comments`.
 - Reddit real API mode is disabled while Reddit approval is pending. If Reddit is selected, the endpoint returns normalized mock data and safe approval/fallback metadata.
 - Public-page scraping is not implemented and must not be used to bypass Reddit API approval.
+- When `platforms` contains `weibo`, the endpoint calls the Weibo official API adapter scaffold through `adapter_factory.get_adapter("weibo")`.
+- Weibo mock mode returns deterministic microblog-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
+- Weibo real API mode is disabled. If `WEIBO_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Weibo API call.
 - When `platforms` contains `bilibili`, the endpoint calls the Bilibili official API adapter scaffold through `adapter_factory.get_adapter("bilibili")`.
 - Bilibili mock mode returns deterministic video-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
 - Bilibili real API mode is disabled. If `BILIBILI_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Bilibili API call.
