@@ -206,6 +206,30 @@ GET /api/v1/platforms
       "selectable_for_real": false,
       "official_platform_url": "https://open.zhihu.com",
       "notes": "Selectable for offline Zhihu-style mock Q&A/article/comment analysis. Real official API mode is disabled until credentials, approval, and the compliant API implementation are added. No page scraping is implemented."
+    },
+    {
+      "platform_id": "douban",
+      "display_name": "Douban",
+      "category": "official_api_planned",
+      "source_type": "official_api_adapter_scaffold",
+      "status": "official_api_planned",
+      "enabled_in_mvp": true,
+      "selectable_for_mock": true,
+      "mock_available": true,
+      "real_mode_available": false,
+      "api_approval_required": true,
+      "api_approval_status": "planned",
+      "credentials_required": ["DOUBAN_CLIENT_ID", "DOUBAN_CLIENT_SECRET", "DOUBAN_ACCESS_TOKEN"],
+      "credentials_present": {
+        "DOUBAN_CLIENT_ID": false,
+        "DOUBAN_CLIENT_SECRET": false,
+        "DOUBAN_ACCESS_TOKEN": false
+      },
+      "api_pending": true,
+      "real_mode_disabled": true,
+      "selectable_for_real": false,
+      "official_platform_url": "https://developers.douban.com",
+      "notes": "Selectable for offline Douban-style mock review/group/topic analysis. Real official API mode is disabled until credentials, approval, and the compliant API implementation are added. No page scraping is implemented."
     }
   ],
   "active_mvp_platforms": [
@@ -232,7 +256,7 @@ Important:
 - `real_mode_disabled=true` means the backend must not call the real platform API for that source.
 - Official API planned platforms may be selectable for mock analysis, but they must not trigger real API calls until credentials, permissions, and compliance checks are available.
 - Reddit is visible and mock-selectable as a future real adapter candidate, but its current real API status is `api_pending`.
-- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, and Zhihu are mock-selectable through official API adapter scaffolds. Their real API modes are disabled and not called until credentials, approval, and implementation are added.
+- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, and Douban are mock-selectable through official API adapter scaffolds. Their real API modes are disabled and not called until credentials, approval, and implementation are added.
 - Crawler-later platforms are not selectable for real crawling in the MVP.
 - YouTube is `disabled_or_optional_future` and is not an active MVP platform.
 
@@ -543,6 +567,9 @@ Important:
 - When `platforms` contains `zhihu`, the endpoint calls the Zhihu official API adapter scaffold through `adapter_factory.get_adapter("zhihu")`.
 - Zhihu mock mode returns deterministic Q&A/article-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
 - Zhihu real API mode is disabled. If `ZHIHU_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Zhihu API call.
+- When `platforms` contains `douban`, the endpoint calls the Douban official API adapter scaffold through `adapter_factory.get_adapter("douban")`.
+- Douban mock mode returns deterministic review/group/topic-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
+- Douban real API mode is disabled. If `DOUBAN_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Douban API call.
 - When `platforms` explicitly contains a registered public-parser scaffold such as `the_paper`, `jiemian`, `hupu`, `maimai`, `tieba`, or `nga`, the endpoint calls the public parser adapter through `adapter_factory.get_adapter(platform_id)`.
 - The Paper, Jiemian, Hupu, Maimai, Tieba, and NGA public parsers currently run in `fixture_only` mode and return safe fixture/mock `RawPost` data by default.
 - The Paper has an optional local live public-page fetch pilot only when `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`. Jiemian remains fixture-only in this phase.

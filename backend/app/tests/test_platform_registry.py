@@ -93,6 +93,15 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["zhihu"].api_pending is True
     assert by_id["zhihu"].real_mode_disabled is True
     assert by_id["zhihu"].selectable_for_real is False
+    assert by_id["douban"].category == OFFICIAL_API_PLANNED
+    assert by_id["douban"].source_type == "official_api_adapter_scaffold"
+    assert by_id["douban"].status == "official_api_planned"
+    assert by_id["douban"].selectable_for_mock is True
+    assert by_id["douban"].mock_available is True
+    assert by_id["douban"].real_mode_available is False
+    assert by_id["douban"].api_pending is True
+    assert by_id["douban"].real_mode_disabled is True
+    assert by_id["douban"].selectable_for_real is False
     assert by_id["youtube"].category == DISABLED_OR_OPTIONAL_FUTURE
     assert by_id["youtube"].enabled_in_mvp is False
     assert by_id["youtube"].selectable_for_mock is False
@@ -193,6 +202,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     monkeypatch.setenv("ZHIHU_CLIENT_ID", "zhihu-client-should-not-appear")
     monkeypatch.setenv("ZHIHU_CLIENT_SECRET", "zhihu-secret-should-not-appear")
     monkeypatch.setenv("ZHIHU_ACCESS_TOKEN", "zhihu-token-should-not-appear")
+    monkeypatch.setenv("DOUBAN_CLIENT_ID", "douban-client-should-not-appear")
+    monkeypatch.setenv("DOUBAN_CLIENT_SECRET", "douban-secret-should-not-appear")
+    monkeypatch.setenv("DOUBAN_ACCESS_TOKEN", "douban-token-should-not-appear")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -206,6 +218,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     kuaishou = by_id["kuaishou"]
     xiaohongshu = by_id["xiaohongshu"]
     zhihu = by_id["zhihu"]
+    douban = by_id["douban"]
 
     assert body["active_mvp_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
     assert body["mock_selectable_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
@@ -344,6 +357,25 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert zhihu["selectable_for_mock"] is True
     assert zhihu["selectable_for_real"] is False
     assert zhihu["real_mode_disabled"] is True
+    assert douban["status"] == "official_api_planned"
+    assert douban["source_type"] == "official_api_adapter_scaffold"
+    assert douban["mock_available"] is True
+    assert douban["real_mode_available"] is False
+    assert douban["api_approval_required"] is True
+    assert douban["api_approval_status"] == "planned"
+    assert douban["credentials_required"] == [
+        "DOUBAN_CLIENT_ID",
+        "DOUBAN_CLIENT_SECRET",
+        "DOUBAN_ACCESS_TOKEN",
+    ]
+    assert douban["credentials_present"] == {
+        "DOUBAN_CLIENT_ID": True,
+        "DOUBAN_CLIENT_SECRET": True,
+        "DOUBAN_ACCESS_TOKEN": True,
+    }
+    assert douban["selectable_for_mock"] is True
+    assert douban["selectable_for_real"] is False
+    assert douban["real_mode_disabled"] is True
     response_text = response.text
     assert "client-value-should-not-appear" not in response_text
     assert "secret-value-should-not-appear" not in response_text
@@ -366,6 +398,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert "zhihu-client-should-not-appear" not in response_text
     assert "zhihu-secret-should-not-appear" not in response_text
     assert "zhihu-token-should-not-appear" not in response_text
+    assert "douban-client-should-not-appear" not in response_text
+    assert "douban-secret-should-not-appear" not in response_text
+    assert "douban-token-should-not-appear" not in response_text
 
 
 def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch) -> None:
@@ -390,6 +425,9 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     monkeypatch.setenv("ZHIHU_CLIENT_ID", "")
     monkeypatch.setenv("ZHIHU_CLIENT_SECRET", "")
     monkeypatch.setenv("ZHIHU_ACCESS_TOKEN", "")
+    monkeypatch.setenv("DOUBAN_CLIENT_ID", "")
+    monkeypatch.setenv("DOUBAN_CLIENT_SECRET", "")
+    monkeypatch.setenv("DOUBAN_ACCESS_TOKEN", "")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -402,6 +440,7 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     kuaishou = by_id["kuaishou"]
     xiaohongshu = by_id["xiaohongshu"]
     zhihu = by_id["zhihu"]
+    douban = by_id["douban"]
     assert reddit["credentials_present"] == {
         "REDDIT_CLIENT_ID": False,
         "REDDIT_CLIENT_SECRET": False,
@@ -444,6 +483,12 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
         "ZHIHU_ACCESS_TOKEN": False,
     }
     assert zhihu["real_mode_available"] is False
+    assert douban["credentials_present"] == {
+        "DOUBAN_CLIENT_ID": False,
+        "DOUBAN_CLIENT_SECRET": False,
+        "DOUBAN_ACCESS_TOKEN": False,
+    }
+    assert douban["real_mode_available"] is False
 
 
 def test_platform_status_keeps_crawler_later_not_real_selectable() -> None:

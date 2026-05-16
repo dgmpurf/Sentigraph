@@ -258,8 +258,9 @@ Current adapter foundation status:
 - Kuaishou official API adapter scaffold exists under `backend/app/services/crawling/kuaishou_adapter.py`; it is mock-only, returns Kuaishou-style normalized short-video/livestream posts/comments, and keeps real API mode disabled as `api_pending` / `config_error`.
 - Xiaohongshu official API adapter scaffold exists under `backend/app/services/crawling/xiaohongshu_adapter.py`; it is mock-only, returns Xiaohongshu-style normalized lifestyle/community note posts/comments, and keeps real API mode disabled as `api_pending` / `config_error`.
 - Zhihu official API adapter scaffold exists under `backend/app/services/crawling/zhihu_adapter.py`; it is mock-only, returns Zhihu-style normalized Q&A/article posts/comments, and keeps real API mode disabled as `api_pending` / `config_error`.
+- Douban official API adapter scaffold exists under `backend/app/services/crawling/douban_adapter.py`; it is mock-only, returns Douban-style normalized review/group/topic posts/comments, and keeps real API mode disabled as `api_pending` / `config_error`.
 - Adapter interface includes `search_posts`, `fetch_comments`, `normalize_post`, `normalize_comment`, `health_check`, `supports_real_mode`, and `get_required_credentials`.
-- Adapter factory exposes `get_adapter("reddit")`, `get_adapter("weibo")`, `get_adapter("bilibili")`, `get_adapter("douyin")`, `get_adapter("kuaishou")`, `get_adapter("xiaohongshu")`, `get_adapter("zhihu")`, and their `get_platform_adapter(...)` equivalents.
+- Adapter factory exposes `get_adapter("reddit")`, `get_adapter("weibo")`, `get_adapter("bilibili")`, `get_adapter("douyin")`, `get_adapter("kuaishou")`, `get_adapter("xiaohongshu")`, `get_adapter("zhihu")`, `get_adapter("douban")`, and their `get_platform_adapter(...)` equivalents.
 - Reddit defaults to mock mode and falls back to mock data whenever credentials are missing.
 - Weibo defaults to mock mode and does not call the real Weibo API even if `WEIBO_ADAPTER_MODE=real` is set.
 - Bilibili defaults to mock mode and does not call the real Bilibili API even if `BILIBILI_ADAPTER_MODE=real` is set.
@@ -267,6 +268,7 @@ Current adapter foundation status:
 - Kuaishou defaults to mock mode and does not call the real Kuaishou API even if `KUAISHOU_ADAPTER_MODE=real` is set.
 - Xiaohongshu defaults to mock mode and does not call the real Xiaohongshu API even if `XIAOHONGSHU_ADAPTER_MODE=real` is set.
 - Zhihu defaults to mock mode and does not call the real Zhihu API even if `ZHIHU_ADAPTER_MODE=real` is set.
+- Douban defaults to mock mode and does not call the real Douban API even if `DOUBAN_ADAPTER_MODE=real` is set.
 - The current case flow remains mock-first and does not automatically call real Reddit APIs.
 - Adapter outputs must normalize into `RawPost` and `RawComment` schemas.
 - Public-page parser adapters can be registered behind the same adapter factory when they remain fixture-first or explicitly reviewed for safe public live fetching.
@@ -281,9 +283,8 @@ Reddit real-mode requirements for a future task:
 
 Suggested next order:
 
-1. Douban
-2. Toutiao
-3. Real official API application packages after approval and compliance review
+1. Toutiao
+2. Real official API application packages after approval and compliance review
 
 Reddit remains a visible future real adapter candidate and can be reviewed in parallel after the shared adapter interface and compliance checklist are stable.
 

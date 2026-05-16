@@ -417,6 +417,13 @@ Completed:
 - Zhihu scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
 - Zhihu scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Latest local/Codex validation passed with focused Zhihu/adapter/crawl/registry checks (`67 passed in 0.80s`) and full `python -m pytest` (`249 passed in 3.04s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
+- Douban official API adapter scaffold is implemented in mock mode.
+- `adapter_factory.get_adapter("douban")` returns the Douban adapter.
+- `/api/v1/crawl/start` can return Douban-style normalized mock review/group/topic `RawPost` and visible-comment `RawComment` data with safe adapter metadata.
+- `DOUBAN_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Douban API calls are made.
+- Douban scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
+- Douban scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
+- Latest local/Codex validation passed with focused Douban/adapter/crawl/registry checks (`71 passed in 0.76s`) and full `python -m pytest` (`261 passed in 3.29s`). Frontend build was not run for this QA pass because no frontend files changed.
 
 Near-term candidates:
 
@@ -425,7 +432,7 @@ Near-term candidates:
 - Kuaishou real API application and approved implementation, only after permission scopes and compliance review are complete
 - Xiaohongshu real API application and approved implementation, only after permission scopes and compliance review are complete
 - Zhihu real API application and approved implementation, only after permission scopes and compliance review are complete
-- Douban official API adapter scaffold, mock-only and approval-pending like the existing official API scaffolds
+- Douban real API application and approved implementation, only after permission scopes and compliance review are complete
 - Toutiao official API adapter scaffold, mock-only and approval-pending like the existing official API scaffolds
 
 Scope:

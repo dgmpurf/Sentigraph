@@ -13,6 +13,7 @@ from app.services.crawling.adapter_factory import (
 )
 from app.services.crawling.base_adapter import AdapterHealth, BasePlatformAdapter, PlatformAdapterError
 from app.services.crawling.bilibili_adapter import BilibiliAdapter
+from app.services.crawling.douban_adapter import DoubanAdapter
 from app.services.crawling.douyin_adapter import DouyinAdapter
 from app.services.crawling.kuaishou_adapter import KuaishouAdapter
 from app.services.crawling.public_parser.public_parser_adapter import (
@@ -314,6 +315,7 @@ def test_reddit_real_mode_clamps_limits_with_mocked_client(monkeypatch: pytest.M
 def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REDDIT_ADAPTER_MODE", "mock")
     bilibili_adapter = get_adapter("bilibili")
+    douban_adapter = get_adapter("douban")
     adapter = get_platform_adapter("reddit")
     alias_adapter = get_adapter("Reddit")
     public_parser_adapter = get_adapter("the_paper")
@@ -329,6 +331,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     douyin_adapter = get_adapter("douyin")
 
     assert has_platform_adapter("bilibili") is True
+    assert has_platform_adapter("douban") is True
     assert has_platform_adapter("douyin") is True
     assert has_platform_adapter("kuaishou") is True
     assert has_platform_adapter("reddit") is True
@@ -343,6 +346,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     assert has_platform_adapter("nga") is True
     assert get_supported_adapter_ids() == [
         "bilibili",
+        "douban",
         "douyin",
         "hupu",
         "jiemian",
@@ -357,6 +361,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
         "zhihu",
     ]
     assert isinstance(bilibili_adapter, BilibiliAdapter)
+    assert isinstance(douban_adapter, DoubanAdapter)
     assert isinstance(douyin_adapter, DouyinAdapter)
     assert isinstance(kuaishou_adapter, KuaishouAdapter)
     assert isinstance(adapter, RedditAdapter)
@@ -381,6 +386,7 @@ def test_adapter_factory_does_not_activate_planned_or_crawler_later_platforms() 
         if platform.platform_id
         not in {
             "bilibili",
+            "douban",
             "douyin",
             "kuaishou",
             "reddit",

@@ -9,6 +9,10 @@ from app.services.crawling.bilibili_adapter import (
     BILIBILI_API_APPROVAL_STATUS,
     BILIBILI_REQUIRED_CREDENTIALS,
 )
+from app.services.crawling.douban_adapter import (
+    DOUBAN_API_APPROVAL_STATUS,
+    DOUBAN_REQUIRED_CREDENTIALS,
+)
 from app.services.crawling.douyin_adapter import (
     DOUYIN_API_APPROVAL_STATUS,
     DOUYIN_REQUIRED_CREDENTIALS,
@@ -293,7 +297,27 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         api_approval_status=ZHIHU_API_APPROVAL_STATUS,
         credentials_required=ZHIHU_REQUIRED_CREDENTIALS,
     ),
-    _official_mock_platform("douban", "Douban", "https://developers.douban.com"),
+    PlatformRegistryItem(
+        platform_id="douban",
+        display_name="Douban",
+        category=OFFICIAL_API_PLANNED,
+        source_type="official_api_adapter_scaffold",
+        status="official_api_planned",
+        enabled_in_mvp=True,
+        selectable_for_mock=True,
+        mock_available=True,
+        api_pending=True,
+        real_mode_disabled=True,
+        official_platform_url="https://developers.douban.com",
+        notes=(
+            "Selectable for offline Douban-style mock review/group/topic analysis. "
+            "Real official API mode is disabled until credentials, approval, and "
+            "the compliant API implementation are added. No page scraping is implemented."
+        ),
+        api_approval_required=True,
+        api_approval_status=DOUBAN_API_APPROVAL_STATUS,
+        credentials_required=DOUBAN_REQUIRED_CREDENTIALS,
+    ),
     _official_mock_platform("toutiao", "Toutiao", "https://open.toutiao.com"),
     _public_parser_scaffold_platform("hupu", "Hupu / 虎扑"),
     _public_parser_scaffold_platform("tieba", "Baidu Tieba / 百度贴吧"),
