@@ -389,14 +389,19 @@ Completed:
 - `/api/v1/crawl/start` can return Bilibili-style normalized mock `RawPost` and `RawComment` data with safe adapter metadata.
 - `BILIBILI_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Bilibili API calls are made.
 - Bilibili scaffold QA is stabilized: mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and old case/monitoring/scheduler/notification/public-parser regressions are covered by tests.
-- Latest local/Codex validation passed with `python -m pytest` (`201 passed in 3.03s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
+- Douyin official API adapter scaffold is implemented in mock mode.
+- `adapter_factory.get_adapter("douyin")` returns the Douyin adapter.
+- `/api/v1/crawl/start` can return Douyin-style normalized mock short-video `RawPost` and visible-comment `RawComment` data with safe adapter metadata.
+- `DOUYIN_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Douyin API calls are made.
+- Douyin scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
+- Douyin scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
+- Latest local/Codex validation passed with focused Douyin/adapter/crawl/registry checks (`20 passed in 0.67s`) and full `python -m pytest` (`213 passed in 3.10s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
 
 Near-term candidates:
 
 - Weibo official API application and approved implementation, only after permission scopes and compliance review are complete
 - Bilibili real API application and approved implementation
-- Douyin official API adapter scaffold, mock-only and approval-pending like Weibo/Bilibili
-- Kuaishou official API adapter scaffold, mock-only and approval-pending like Weibo/Bilibili
+- Kuaishou official API adapter scaffold, mock-only and approval-pending like Weibo/Bilibili/Douyin
 
 Scope:
 

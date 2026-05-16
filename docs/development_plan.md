@@ -254,11 +254,13 @@ Current adapter foundation status:
 - Reddit adapter scaffold exists under `backend/app/services/crawling/reddit_adapter.py`.
 - Weibo official API adapter scaffold exists under `backend/app/services/crawling/weibo_adapter.py`; it is mock-only, returns Weibo-style normalized posts/comments, and keeps real API mode disabled as `api_pending` / `config_error`.
 - Bilibili official API adapter scaffold exists under `backend/app/services/crawling/bilibili_adapter.py`; it is mock-only, returns Bilibili-style normalized posts/comments, and keeps real API mode disabled as `api_pending` / `config_error`.
+- Douyin official API adapter scaffold exists under `backend/app/services/crawling/douyin_adapter.py`; it is mock-only, returns Douyin-style normalized short-video posts/comments, and keeps real API mode disabled as `api_pending` / `config_error`.
 - Adapter interface includes `search_posts`, `fetch_comments`, `normalize_post`, `normalize_comment`, `health_check`, `supports_real_mode`, and `get_required_credentials`.
-- Adapter factory exposes `get_adapter("reddit")`, `get_adapter("weibo")`, `get_adapter("bilibili")`, and their `get_platform_adapter(...)` equivalents.
+- Adapter factory exposes `get_adapter("reddit")`, `get_adapter("weibo")`, `get_adapter("bilibili")`, `get_adapter("douyin")`, and their `get_platform_adapter(...)` equivalents.
 - Reddit defaults to mock mode and falls back to mock data whenever credentials are missing.
 - Weibo defaults to mock mode and does not call the real Weibo API even if `WEIBO_ADAPTER_MODE=real` is set.
 - Bilibili defaults to mock mode and does not call the real Bilibili API even if `BILIBILI_ADAPTER_MODE=real` is set.
+- Douyin defaults to mock mode and does not call the real Douyin API even if `DOUYIN_ADAPTER_MODE=real` is set.
 - The current case flow remains mock-first and does not automatically call real Reddit APIs.
 - Adapter outputs must normalize into `RawPost` and `RawComment` schemas.
 - Public-page parser adapters can be registered behind the same adapter factory when they remain fixture-first or explicitly reviewed for safe public live fetching.
@@ -271,14 +273,13 @@ Reddit real-mode requirements for a future task:
 - Add conservative rate-limit, retry, error reporting, and fixture-based tests before connecting it to product flows.
 - Keep real mode opt-in until compliance, quota, and UX behavior are reviewed.
 
-Suggested order:
+Suggested next order:
 
-1. Douyin
-2. Kuaishou
-3. Xiaohongshu
-4. Zhihu
-5. Douban
-6. Toutiao
+1. Kuaishou
+2. Xiaohongshu
+3. Zhihu
+4. Douban
+5. Toutiao
 
 Reddit remains a visible future real adapter candidate and can be reviewed in parallel after the shared adapter interface and compliance checklist are stable.
 

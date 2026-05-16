@@ -13,6 +13,7 @@ from app.services.crawling.adapter_factory import (
 )
 from app.services.crawling.base_adapter import AdapterHealth, BasePlatformAdapter, PlatformAdapterError
 from app.services.crawling.bilibili_adapter import BilibiliAdapter
+from app.services.crawling.douyin_adapter import DouyinAdapter
 from app.services.crawling.public_parser.public_parser_adapter import (
     HupuPublicParserAdapter,
     JiemianPublicParserAdapter,
@@ -319,8 +320,10 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     tieba_adapter = get_adapter("tieba")
     nga_adapter = get_adapter("nga")
     weibo_adapter = get_adapter("weibo")
+    douyin_adapter = get_adapter("douyin")
 
     assert has_platform_adapter("bilibili") is True
+    assert has_platform_adapter("douyin") is True
     assert has_platform_adapter("reddit") is True
     assert has_platform_adapter("weibo") is True
     assert has_platform_adapter("the_paper") is True
@@ -331,6 +334,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     assert has_platform_adapter("nga") is True
     assert get_supported_adapter_ids() == [
         "bilibili",
+        "douyin",
         "hupu",
         "jiemian",
         "maimai",
@@ -341,6 +345,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
         "weibo",
     ]
     assert isinstance(bilibili_adapter, BilibiliAdapter)
+    assert isinstance(douyin_adapter, DouyinAdapter)
     assert isinstance(adapter, RedditAdapter)
     assert isinstance(alias_adapter, RedditAdapter)
     assert isinstance(weibo_adapter, WeiboAdapter)
@@ -358,7 +363,8 @@ def test_adapter_factory_does_not_activate_planned_or_crawler_later_platforms() 
     inactive_adapter_platforms = [
         platform.platform_id
         for platform in get_platform_registry()
-        if platform.platform_id not in {"bilibili", "reddit", "weibo", "the_paper", "jiemian", "hupu", "maimai", "tieba", "nga"}
+        if platform.platform_id
+        not in {"bilibili", "douyin", "reddit", "weibo", "the_paper", "jiemian", "hupu", "maimai", "tieba", "nga"}
     ]
 
     assert inactive_adapter_platforms

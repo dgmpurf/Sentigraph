@@ -9,6 +9,10 @@ from app.services.crawling.bilibili_adapter import (
     BILIBILI_API_APPROVAL_STATUS,
     BILIBILI_REQUIRED_CREDENTIALS,
 )
+from app.services.crawling.douyin_adapter import (
+    DOUYIN_API_APPROVAL_STATUS,
+    DOUYIN_REQUIRED_CREDENTIALS,
+)
 from app.services.crawling.reddit_adapter import REDDIT_API_APPROVAL_STATUS, REDDIT_REQUIRED_CREDENTIALS
 from app.services.crawling.weibo_adapter import WEIBO_API_APPROVAL_STATUS, WEIBO_REQUIRED_CREDENTIALS
 
@@ -196,7 +200,27 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         api_approval_status=BILIBILI_API_APPROVAL_STATUS,
         credentials_required=BILIBILI_REQUIRED_CREDENTIALS,
     ),
-    _official_mock_platform("douyin", "Douyin", "https://developer.open-douyin.com"),
+    PlatformRegistryItem(
+        platform_id="douyin",
+        display_name="Douyin",
+        category=OFFICIAL_API_PLANNED,
+        source_type="official_api_adapter_scaffold",
+        status="official_api_planned",
+        enabled_in_mvp=True,
+        selectable_for_mock=True,
+        mock_available=True,
+        api_pending=True,
+        real_mode_disabled=True,
+        official_platform_url="https://developer.open-douyin.com",
+        notes=(
+            "Selectable for offline Douyin-style mock short-video/comment analysis. "
+            "Real official API mode is disabled until credentials, approval, and "
+            "the compliant API implementation are added. No page scraping is implemented."
+        ),
+        api_approval_required=True,
+        api_approval_status=DOUYIN_API_APPROVAL_STATUS,
+        credentials_required=DOUYIN_REQUIRED_CREDENTIALS,
+    ),
     _official_mock_platform("kuaishou", "Kuaishou", "https://open.kuaishou.com"),
     _official_mock_platform("xiaohongshu", "Xiaohongshu", "https://open.xiaohongshu.com"),
     _official_mock_platform("zhihu", "Zhihu", "https://open.zhihu.com"),

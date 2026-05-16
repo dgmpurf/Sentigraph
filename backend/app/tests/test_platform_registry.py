@@ -57,6 +57,15 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["bilibili"].api_pending is True
     assert by_id["bilibili"].real_mode_disabled is True
     assert by_id["bilibili"].selectable_for_real is False
+    assert by_id["douyin"].category == OFFICIAL_API_PLANNED
+    assert by_id["douyin"].source_type == "official_api_adapter_scaffold"
+    assert by_id["douyin"].status == "official_api_planned"
+    assert by_id["douyin"].selectable_for_mock is True
+    assert by_id["douyin"].mock_available is True
+    assert by_id["douyin"].real_mode_available is False
+    assert by_id["douyin"].api_pending is True
+    assert by_id["douyin"].real_mode_disabled is True
+    assert by_id["douyin"].selectable_for_real is False
     assert by_id["youtube"].category == DISABLED_OR_OPTIONAL_FUTURE
     assert by_id["youtube"].enabled_in_mvp is False
     assert by_id["youtube"].selectable_for_mock is False
@@ -145,6 +154,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     monkeypatch.setenv("WEIBO_CLIENT_ID", "weibo-client-should-not-appear")
     monkeypatch.setenv("WEIBO_CLIENT_SECRET", "weibo-secret-should-not-appear")
     monkeypatch.setenv("WEIBO_ACCESS_TOKEN", "weibo-token-should-not-appear")
+    monkeypatch.setenv("DOUYIN_CLIENT_KEY", "douyin-client-key-should-not-appear")
+    monkeypatch.setenv("DOUYIN_CLIENT_SECRET", "douyin-secret-should-not-appear")
+    monkeypatch.setenv("DOUYIN_ACCESS_TOKEN", "douyin-token-should-not-appear")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -154,6 +166,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     reddit = by_id["reddit"]
     bilibili = by_id["bilibili"]
     weibo = by_id["weibo"]
+    douyin = by_id["douyin"]
 
     assert body["active_mvp_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
     assert body["mock_selectable_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
@@ -216,6 +229,25 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert bilibili["selectable_for_mock"] is True
     assert bilibili["selectable_for_real"] is False
     assert bilibili["real_mode_disabled"] is True
+    assert douyin["status"] == "official_api_planned"
+    assert douyin["source_type"] == "official_api_adapter_scaffold"
+    assert douyin["mock_available"] is True
+    assert douyin["real_mode_available"] is False
+    assert douyin["api_approval_required"] is True
+    assert douyin["api_approval_status"] == "planned"
+    assert douyin["credentials_required"] == [
+        "DOUYIN_CLIENT_KEY",
+        "DOUYIN_CLIENT_SECRET",
+        "DOUYIN_ACCESS_TOKEN",
+    ]
+    assert douyin["credentials_present"] == {
+        "DOUYIN_CLIENT_KEY": True,
+        "DOUYIN_CLIENT_SECRET": True,
+        "DOUYIN_ACCESS_TOKEN": True,
+    }
+    assert douyin["selectable_for_mock"] is True
+    assert douyin["selectable_for_real"] is False
+    assert douyin["real_mode_disabled"] is True
     response_text = response.text
     assert "client-value-should-not-appear" not in response_text
     assert "secret-value-should-not-appear" not in response_text
@@ -226,6 +258,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert "weibo-client-should-not-appear" not in response_text
     assert "weibo-secret-should-not-appear" not in response_text
     assert "weibo-token-should-not-appear" not in response_text
+    assert "douyin-client-key-should-not-appear" not in response_text
+    assert "douyin-secret-should-not-appear" not in response_text
+    assert "douyin-token-should-not-appear" not in response_text
 
 
 def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch) -> None:
@@ -238,6 +273,9 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     monkeypatch.setenv("WEIBO_CLIENT_ID", "")
     monkeypatch.setenv("WEIBO_CLIENT_SECRET", "")
     monkeypatch.setenv("WEIBO_ACCESS_TOKEN", "")
+    monkeypatch.setenv("DOUYIN_CLIENT_KEY", "")
+    monkeypatch.setenv("DOUYIN_CLIENT_SECRET", "")
+    monkeypatch.setenv("DOUYIN_ACCESS_TOKEN", "")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -246,6 +284,7 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     reddit = by_id["reddit"]
     bilibili = by_id["bilibili"]
     weibo = by_id["weibo"]
+    douyin = by_id["douyin"]
     assert reddit["credentials_present"] == {
         "REDDIT_CLIENT_ID": False,
         "REDDIT_CLIENT_SECRET": False,
@@ -264,6 +303,12 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
         "WEIBO_ACCESS_TOKEN": False,
     }
     assert weibo["real_mode_available"] is False
+    assert douyin["credentials_present"] == {
+        "DOUYIN_CLIENT_KEY": False,
+        "DOUYIN_CLIENT_SECRET": False,
+        "DOUYIN_ACCESS_TOKEN": False,
+    }
+    assert douyin["real_mode_available"] is False
 
 
 def test_platform_status_keeps_crawler_later_not_real_selectable() -> None:
