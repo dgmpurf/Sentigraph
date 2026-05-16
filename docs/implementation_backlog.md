@@ -410,6 +410,13 @@ Completed:
 - Xiaohongshu scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
 - Xiaohongshu scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Latest local/Codex validation passed with focused Xiaohongshu/adapter/crawl/registry checks (`63 passed in 0.77s`) and full `python -m pytest` (`237 passed in 2.90s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
+- Zhihu official API adapter scaffold is implemented in mock mode.
+- `adapter_factory.get_adapter("zhihu")` returns the Zhihu adapter.
+- `/api/v1/crawl/start` can return Zhihu-style normalized mock Q&A/article `RawPost` and visible-comment `RawComment` data with safe adapter metadata.
+- `ZHIHU_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Zhihu API calls are made.
+- Zhihu scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
+- Zhihu scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
+- Latest local/Codex validation passed with focused Zhihu/adapter/crawl/registry checks (`67 passed in 0.80s`) and full `python -m pytest` (`249 passed in 3.04s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
 
 Near-term candidates:
 
@@ -417,7 +424,9 @@ Near-term candidates:
 - Bilibili real API application and approved implementation
 - Kuaishou real API application and approved implementation, only after permission scopes and compliance review are complete
 - Xiaohongshu real API application and approved implementation, only after permission scopes and compliance review are complete
-- Zhihu official API adapter scaffold, mock-only and approval-pending like the existing official API scaffolds
+- Zhihu real API application and approved implementation, only after permission scopes and compliance review are complete
+- Douban official API adapter scaffold, mock-only and approval-pending like the existing official API scaffolds
+- Toutiao official API adapter scaffold, mock-only and approval-pending like the existing official API scaffolds
 
 Scope:
 

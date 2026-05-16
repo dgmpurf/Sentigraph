@@ -128,6 +128,8 @@ Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real ada
 
 这些平台当前只支持 mock workflow，不代表真实集成已经完成。Weibo、Bilibili、Douyin、Kuaishou、Xiaohongshu 已有 mock-only official API adapter scaffold；即使配置为 real mode，也只会返回安全的 `api_pending` / `config_error` 状态，不会调用真实平台 API。
 
+Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, and Zhihu. Real API modes remain disabled and return safe `api_pending` / `config_error` metadata until approval, credentials, scopes, and implementation are added.
+
 ### Future Crawler-later
 
 这些平台未来可考虑基于公开页面 parser 和 selector profile 实现，但当前不可用于真实采集：
