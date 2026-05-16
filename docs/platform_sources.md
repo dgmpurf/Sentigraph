@@ -2,7 +2,7 @@
 
 Sentigraph now prioritizes Chinese public opinion platforms for future source integration while keeping Reddit visible in the project as a future real adapter candidate.
 
-The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, and Kuaishou now have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, and Kuaishou requests through the adapter layer and returns normalized mock data with safe status metadata.
+The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, and Xiaohongshu now have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, and Xiaohongshu requests through the adapter layer and returns normalized mock data with safe status metadata.
 
 ## Data-source readiness layer
 
@@ -27,6 +27,7 @@ Current global status:
 - Bilibili: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Douyin: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Kuaishou: official API adapter scaffold available in mock mode; real API mode disabled and not called.
+- Xiaohongshu: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Crawler-later platforms: Hupu, Baidu Tieba, Tianya, NGA, Maimai, The Paper / Pengpai News, Jiemian News.
 - YouTube: `disabled_or_optional_future`.
 
@@ -41,7 +42,7 @@ MVP selections are limited to platforms that can run with local mock data. Selec
 | `bilibili` | Bilibili | `official_api_planned` | `official_api_adapter_scaffold` | true |
 | `douyin` | Douyin | `official_api_planned` | `official_api_adapter_scaffold` | true |
 | `kuaishou` | Kuaishou | `official_api_planned` | `official_api_adapter_scaffold` | true |
-| `xiaohongshu` | Xiaohongshu | `official_api_planned` | `mock_data_official_api_placeholder` | true |
+| `xiaohongshu` | Xiaohongshu | `official_api_planned` | `official_api_adapter_scaffold` | true |
 | `zhihu` | Zhihu | `official_api_planned` | `mock_data_official_api_placeholder` | true |
 | `douban` | Douban | `official_api_planned` | `mock_data_official_api_placeholder` | true |
 | `toutiao` | Toutiao | `official_api_planned` | `mock_data_official_api_placeholder` | true |
@@ -56,7 +57,7 @@ These platforms should be integrated through official API programs when credenti
 | `bilibili` | Bilibili | https://openhome.bilibili.com | mock adapter scaffold; real API pending credentials/approval |
 | `douyin` | Douyin | https://developer.open-douyin.com | mock adapter scaffold; real API pending credentials/approval |
 | `kuaishou` | Kuaishou | https://open.kuaishou.com | mock adapter scaffold; real API pending credentials/approval |
-| `xiaohongshu` | Xiaohongshu | https://open.xiaohongshu.com | mock-selectable placeholder |
+| `xiaohongshu` | Xiaohongshu | https://open.xiaohongshu.com | mock adapter scaffold; real API pending credentials/approval |
 | `zhihu` | Zhihu | https://open.zhihu.com | mock-selectable placeholder |
 | `douban` | Douban | https://developers.douban.com | mock-selectable placeholder |
 | `toutiao` | Toutiao | https://open.toutiao.com | mock-selectable placeholder |
@@ -107,7 +108,7 @@ Factory behavior:
 
 - `get_adapter("reddit")` and `get_platform_adapter("reddit")` return the Reddit adapter.
 - Unknown platforms return a safe adapter registration error.
-- Weibo, Bilibili, Douyin, and Kuaishou have mock-only official API adapter scaffolds. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
+- Weibo, Bilibili, Douyin, Kuaishou, and Xiaohongshu have mock-only official API adapter scaffolds. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
 - Crawler-later platforms remain inactive for real collection.
 
 Safety constraints:
@@ -238,6 +239,37 @@ KUAISHOU_ACCESS_TOKEN
 ```
 
 Remaining before real Kuaishou integration:
+
+- official application/approval and permission-scope review
+- rate-limit and usage policy documentation
+- a reviewed official API client implementation
+- mocked response fixtures that match approved API payloads
+- compliance review before any live request
+
+### Xiaohongshu official API adapter scaffold
+
+Xiaohongshu is now an official-API-planned Chinese lifestyle/community note platform with a concrete adapter scaffold. It is intentionally mock-first and does not call the real Xiaohongshu API.
+
+Current behavior:
+
+- Default mode is `mock` through `XIAOHONGSHU_ADAPTER_MODE=mock`.
+- `get_adapter("xiaohongshu")` returns the Xiaohongshu adapter.
+- `POST /api/v1/crawl/start` uses the adapter when `platforms` contains `xiaohongshu`.
+- Mock mode returns deterministic Xiaohongshu-style note posts and visible public-comment mock data normalized as `RawPost` and `RawComment`.
+- If `XIAOHONGSHU_ADAPTER_MODE=real`, the adapter stays in mock mode and reports safe `api_pending` or `config_error` metadata. No network call is made.
+- Safe status metadata includes `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, and `real_mode_disabled=true`.
+- No Xiaohongshu page scraping, login, captcha handling, cookies, proxy rotation, private data access, or external LLM call is implemented.
+
+Future Xiaohongshu credentials after approval:
+
+```text
+XIAOHONGSHU_ADAPTER_MODE=real
+XIAOHONGSHU_CLIENT_ID
+XIAOHONGSHU_CLIENT_SECRET
+XIAOHONGSHU_ACCESS_TOKEN
+```
+
+Remaining before real Xiaohongshu integration:
 
 - official application/approval and permission-scope review
 - rate-limit and usage policy documentation

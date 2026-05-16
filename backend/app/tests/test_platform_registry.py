@@ -75,6 +75,15 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["kuaishou"].api_pending is True
     assert by_id["kuaishou"].real_mode_disabled is True
     assert by_id["kuaishou"].selectable_for_real is False
+    assert by_id["xiaohongshu"].category == OFFICIAL_API_PLANNED
+    assert by_id["xiaohongshu"].source_type == "official_api_adapter_scaffold"
+    assert by_id["xiaohongshu"].status == "official_api_planned"
+    assert by_id["xiaohongshu"].selectable_for_mock is True
+    assert by_id["xiaohongshu"].mock_available is True
+    assert by_id["xiaohongshu"].real_mode_available is False
+    assert by_id["xiaohongshu"].api_pending is True
+    assert by_id["xiaohongshu"].real_mode_disabled is True
+    assert by_id["xiaohongshu"].selectable_for_real is False
     assert by_id["youtube"].category == DISABLED_OR_OPTIONAL_FUTURE
     assert by_id["youtube"].enabled_in_mvp is False
     assert by_id["youtube"].selectable_for_mock is False
@@ -169,6 +178,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     monkeypatch.setenv("KUAISHOU_CLIENT_ID", "kuaishou-client-should-not-appear")
     monkeypatch.setenv("KUAISHOU_CLIENT_SECRET", "kuaishou-secret-should-not-appear")
     monkeypatch.setenv("KUAISHOU_ACCESS_TOKEN", "kuaishou-token-should-not-appear")
+    monkeypatch.setenv("XIAOHONGSHU_CLIENT_ID", "xiaohongshu-client-should-not-appear")
+    monkeypatch.setenv("XIAOHONGSHU_CLIENT_SECRET", "xiaohongshu-secret-should-not-appear")
+    monkeypatch.setenv("XIAOHONGSHU_ACCESS_TOKEN", "xiaohongshu-token-should-not-appear")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -180,6 +192,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     weibo = by_id["weibo"]
     douyin = by_id["douyin"]
     kuaishou = by_id["kuaishou"]
+    xiaohongshu = by_id["xiaohongshu"]
 
     assert body["active_mvp_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
     assert body["mock_selectable_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
@@ -280,6 +293,25 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert kuaishou["selectable_for_mock"] is True
     assert kuaishou["selectable_for_real"] is False
     assert kuaishou["real_mode_disabled"] is True
+    assert xiaohongshu["status"] == "official_api_planned"
+    assert xiaohongshu["source_type"] == "official_api_adapter_scaffold"
+    assert xiaohongshu["mock_available"] is True
+    assert xiaohongshu["real_mode_available"] is False
+    assert xiaohongshu["api_approval_required"] is True
+    assert xiaohongshu["api_approval_status"] == "planned"
+    assert xiaohongshu["credentials_required"] == [
+        "XIAOHONGSHU_CLIENT_ID",
+        "XIAOHONGSHU_CLIENT_SECRET",
+        "XIAOHONGSHU_ACCESS_TOKEN",
+    ]
+    assert xiaohongshu["credentials_present"] == {
+        "XIAOHONGSHU_CLIENT_ID": True,
+        "XIAOHONGSHU_CLIENT_SECRET": True,
+        "XIAOHONGSHU_ACCESS_TOKEN": True,
+    }
+    assert xiaohongshu["selectable_for_mock"] is True
+    assert xiaohongshu["selectable_for_real"] is False
+    assert xiaohongshu["real_mode_disabled"] is True
     response_text = response.text
     assert "client-value-should-not-appear" not in response_text
     assert "secret-value-should-not-appear" not in response_text
@@ -296,6 +328,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert "kuaishou-client-should-not-appear" not in response_text
     assert "kuaishou-secret-should-not-appear" not in response_text
     assert "kuaishou-token-should-not-appear" not in response_text
+    assert "xiaohongshu-client-should-not-appear" not in response_text
+    assert "xiaohongshu-secret-should-not-appear" not in response_text
+    assert "xiaohongshu-token-should-not-appear" not in response_text
 
 
 def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch) -> None:
@@ -314,6 +349,9 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     monkeypatch.setenv("KUAISHOU_CLIENT_ID", "")
     monkeypatch.setenv("KUAISHOU_CLIENT_SECRET", "")
     monkeypatch.setenv("KUAISHOU_ACCESS_TOKEN", "")
+    monkeypatch.setenv("XIAOHONGSHU_CLIENT_ID", "")
+    monkeypatch.setenv("XIAOHONGSHU_CLIENT_SECRET", "")
+    monkeypatch.setenv("XIAOHONGSHU_ACCESS_TOKEN", "")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -324,6 +362,7 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     weibo = by_id["weibo"]
     douyin = by_id["douyin"]
     kuaishou = by_id["kuaishou"]
+    xiaohongshu = by_id["xiaohongshu"]
     assert reddit["credentials_present"] == {
         "REDDIT_CLIENT_ID": False,
         "REDDIT_CLIENT_SECRET": False,
@@ -354,6 +393,12 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
         "KUAISHOU_ACCESS_TOKEN": False,
     }
     assert kuaishou["real_mode_available"] is False
+    assert xiaohongshu["credentials_present"] == {
+        "XIAOHONGSHU_CLIENT_ID": False,
+        "XIAOHONGSHU_CLIENT_SECRET": False,
+        "XIAOHONGSHU_ACCESS_TOKEN": False,
+    }
+    assert xiaohongshu["real_mode_available"] is False
 
 
 def test_platform_status_keeps_crawler_later_not_real_selectable() -> None:

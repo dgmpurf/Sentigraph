@@ -403,13 +403,21 @@ Completed:
 - Kuaishou scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
 - Kuaishou scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Latest local/Codex validation passed with focused Kuaishou/adapter/crawl/registry checks (`59 passed in 0.75s`) and full `python -m pytest` (`225 passed in 3.17s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
+- Xiaohongshu official API adapter scaffold is implemented in mock mode.
+- `adapter_factory.get_adapter("xiaohongshu")` returns the Xiaohongshu adapter.
+- `/api/v1/crawl/start` can return Xiaohongshu-style normalized mock lifestyle/community note `RawPost` and visible-comment `RawComment` data with safe adapter metadata.
+- `XIAOHONGSHU_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Xiaohongshu API calls are made.
+- Xiaohongshu scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
+- Xiaohongshu scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
+- Latest local/Codex validation passed with focused Xiaohongshu/adapter/crawl/registry checks (`63 passed in 0.77s`) and full `python -m pytest` (`237 passed in 2.90s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
 
 Near-term candidates:
 
 - Weibo official API application and approved implementation, only after permission scopes and compliance review are complete
 - Bilibili real API application and approved implementation
-- Xiaohongshu official API adapter scaffold, mock-only and approval-pending like Weibo/Bilibili/Douyin/Kuaishou
 - Kuaishou real API application and approved implementation, only after permission scopes and compliance review are complete
+- Xiaohongshu real API application and approved implementation, only after permission scopes and compliance review are complete
+- Zhihu official API adapter scaffold, mock-only and approval-pending like the existing official API scaffolds
 
 Scope:
 

@@ -19,6 +19,10 @@ from app.services.crawling.kuaishou_adapter import (
 )
 from app.services.crawling.reddit_adapter import REDDIT_API_APPROVAL_STATUS, REDDIT_REQUIRED_CREDENTIALS
 from app.services.crawling.weibo_adapter import WEIBO_API_APPROVAL_STATUS, WEIBO_REQUIRED_CREDENTIALS
+from app.services.crawling.xiaohongshu_adapter import (
+    XIAOHONGSHU_API_APPROVAL_STATUS,
+    XIAOHONGSHU_REQUIRED_CREDENTIALS,
+)
 
 
 OFFICIAL_API_PLANNED = "official_api_planned"
@@ -246,7 +250,27 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         api_approval_status=KUAISHOU_API_APPROVAL_STATUS,
         credentials_required=KUAISHOU_REQUIRED_CREDENTIALS,
     ),
-    _official_mock_platform("xiaohongshu", "Xiaohongshu", "https://open.xiaohongshu.com"),
+    PlatformRegistryItem(
+        platform_id="xiaohongshu",
+        display_name="Xiaohongshu",
+        category=OFFICIAL_API_PLANNED,
+        source_type="official_api_adapter_scaffold",
+        status="official_api_planned",
+        enabled_in_mvp=True,
+        selectable_for_mock=True,
+        mock_available=True,
+        api_pending=True,
+        real_mode_disabled=True,
+        official_platform_url="https://open.xiaohongshu.com",
+        notes=(
+            "Selectable for offline Xiaohongshu-style mock lifestyle/community note analysis. "
+            "Real official API mode is disabled until credentials, approval, and "
+            "the compliant API implementation are added. No page scraping is implemented."
+        ),
+        api_approval_required=True,
+        api_approval_status=XIAOHONGSHU_API_APPROVAL_STATUS,
+        credentials_required=XIAOHONGSHU_REQUIRED_CREDENTIALS,
+    ),
     _official_mock_platform("zhihu", "Zhihu", "https://open.zhihu.com"),
     _official_mock_platform("douban", "Douban", "https://developers.douban.com"),
     _official_mock_platform("toutiao", "Toutiao", "https://open.toutiao.com"),

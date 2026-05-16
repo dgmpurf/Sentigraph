@@ -26,6 +26,7 @@ from app.services.crawling.public_parser.public_parser_adapter import (
 from app.services.crawling.platform_registry import get_platform_registry
 from app.services.crawling.reddit_adapter import REDDIT_REQUIRED_CREDENTIALS, RedditAdapter, RedditCredentials
 from app.services.crawling.weibo_adapter import WeiboAdapter
+from app.services.crawling.xiaohongshu_adapter import XiaohongshuAdapter
 
 
 class FakeRedditClient:
@@ -322,6 +323,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     tieba_adapter = get_adapter("tieba")
     nga_adapter = get_adapter("nga")
     weibo_adapter = get_adapter("weibo")
+    xiaohongshu_adapter = get_adapter("xiaohongshu")
     douyin_adapter = get_adapter("douyin")
 
     assert has_platform_adapter("bilibili") is True
@@ -329,6 +331,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     assert has_platform_adapter("kuaishou") is True
     assert has_platform_adapter("reddit") is True
     assert has_platform_adapter("weibo") is True
+    assert has_platform_adapter("xiaohongshu") is True
     assert has_platform_adapter("the_paper") is True
     assert has_platform_adapter("jiemian") is True
     assert has_platform_adapter("hupu") is True
@@ -347,6 +350,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
         "the_paper",
         "tieba",
         "weibo",
+        "xiaohongshu",
     ]
     assert isinstance(bilibili_adapter, BilibiliAdapter)
     assert isinstance(douyin_adapter, DouyinAdapter)
@@ -354,6 +358,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     assert isinstance(adapter, RedditAdapter)
     assert isinstance(alias_adapter, RedditAdapter)
     assert isinstance(weibo_adapter, WeiboAdapter)
+    assert isinstance(xiaohongshu_adapter, XiaohongshuAdapter)
     assert isinstance(public_parser_adapter, ThePaperPublicParserAdapter)
     assert isinstance(jiemian_adapter, JiemianPublicParserAdapter)
     assert isinstance(hupu_adapter, HupuPublicParserAdapter)
@@ -369,7 +374,7 @@ def test_adapter_factory_does_not_activate_planned_or_crawler_later_platforms() 
         platform.platform_id
         for platform in get_platform_registry()
         if platform.platform_id
-        not in {"bilibili", "douyin", "kuaishou", "reddit", "weibo", "the_paper", "jiemian", "hupu", "maimai", "tieba", "nga"}
+        not in {"bilibili", "douyin", "kuaishou", "reddit", "weibo", "xiaohongshu", "the_paper", "jiemian", "hupu", "maimai", "tieba", "nga"}
     ]
 
     assert inactive_adapter_platforms
