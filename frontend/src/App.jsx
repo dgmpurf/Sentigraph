@@ -72,6 +72,10 @@ const PropagationGraph = lazyNamed(() => import('./pages/PropagationGraph.jsx'),
 const RiskMonitor = lazyNamed(() => import('./pages/RiskMonitor.jsx'), 'RiskMonitor')
 const SummaryReport = lazyNamed(() => import('./pages/SummaryReport.jsx'), 'SummaryReport')
 const PublicParserStatus = lazyNamed(() => import('./pages/PublicParserStatus.jsx'), 'PublicParserStatus')
+const PlatformIntegrationOverview = lazyNamed(
+  () => import('./pages/PlatformIntegrationOverview.jsx'),
+  'PlatformIntegrationOverview',
+)
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
@@ -581,6 +585,7 @@ function App() {
     risk: <RiskMonitor {...pageProps} />,
     summary: <SummaryReport {...pageProps} />,
     publicParsers: <PublicParserStatus />,
+    platformIntegrations: <PlatformIntegrationOverview />,
   }[activePage] || <NotFound activePage={activePage} onNavigate={setActivePage} />
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0

@@ -244,6 +244,13 @@ Acceptance:
 - frontend platform display shows Chinese readiness labels
 - `/crawl/start` keeps Reddit mock fallback while approval is pending
 
+Current frontend support:
+
+- `frontend/src/pages/PlatformIntegrationOverview.jsx` provides a desktop-first `平台接入总览` page for all data-source integrations.
+- The page reads existing safe endpoints only: `GET /api/v1/platforms`, `GET /api/v1/platforms/status`, and `GET /api/v1/public-parsers/status`.
+- It groups official API scaffolds, public-page parsers, Reddit, and disabled/future sources, displays credential presence as booleans only, and exposes public parser previews with `use_live_fetch=false`.
+- It does not provide a live-fetch toggle and does not enable real adapter modes.
+
 ### Adapter Contracts
 
 Goal: prepare real adapters without implementing crawlers yet.
@@ -438,6 +445,7 @@ Completed:
 
 Near-term candidates:
 
+- Browser QA for the Platform Integration Overview page and the existing Public Parser Status page at the desktop 1440px target
 - Frontend/API mock data source selector QA for Keyword Search and case creation across Reddit plus all eight official API scaffolds
 - Weibo official API application and approved implementation, only after permission scopes and compliance review are complete
 - Bilibili real API application and approved implementation

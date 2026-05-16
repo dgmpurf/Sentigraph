@@ -5,6 +5,7 @@ import {
   FileText,
   FileSearch,
   FolderKanban,
+  Globe2,
   Network,
   RefreshCw,
   Search,
@@ -26,6 +27,7 @@ const navItems = [
   { key: 'risk', label: 'Risk Monitor', icon: <ShieldAlert size={17} /> },
   { key: 'summary', label: 'Summary Report', icon: <FileText size={17} /> },
   { key: 'publicParsers', label: '公开页面解析', icon: <FileSearch size={17} /> },
+  { key: 'platformIntegrations', label: '平台接入总览', icon: <Globe2 size={17} /> },
 ]
 
 const riskLevelLabels = {

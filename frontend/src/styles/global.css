@@ -687,6 +687,73 @@ body {
   line-height: 1.48;
 }
 
+.integration-metric-card h2 {
+  margin: 4px 0 8px;
+  color: #42f5d7;
+  letter-spacing: 0;
+}
+
+.integration-explanation-card {
+  min-height: 116px;
+  border-color: rgba(66, 245, 215, 0.22);
+}
+
+.integration-section-card .ant-table-thead > tr > th {
+  background: rgba(66, 245, 215, 0.06) !important;
+}
+
+.integration-table-note {
+  max-width: 320px;
+  margin-bottom: 0 !important;
+  color: #9aa6bf;
+  line-height: 1.5;
+}
+
+.integration-credential-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.integration-credential {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.integration-note {
+  margin-bottom: 0 !important;
+  color: #9aa6bf;
+  line-height: 1.55;
+}
+
+.integration-tile-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.integration-tile {
+  display: flex;
+  min-height: 136px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.integration-tile-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.integration-preview-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 @media print {
   html,
   body,
