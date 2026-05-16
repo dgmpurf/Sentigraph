@@ -4,6 +4,8 @@ Sentigraph now prioritizes Chinese public opinion platforms for future source in
 
 The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao now have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao requests through the adapter layer and returns normalized mock data with safe status metadata.
 
+Cross-platform adapter QA is now stabilized with a parametrized local test matrix. The matrix verifies factory registration, mock-only official adapter behavior, safe blocked real-mode metadata, credential redaction, `/crawl/start` metadata, public parser fixture preview, and schema-valid `RawPost` / `RawComment` output without making real platform API calls.
+
 ## Data-source readiness layer
 
 Sentigraph exposes platform readiness through `GET /api/v1/platforms/status`. The status layer is safe for frontend display and contains only non-secret metadata:

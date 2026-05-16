@@ -374,7 +374,7 @@ Next parser tasks:
 
 Goal: prepare future official API applications without implementing API calls yet.
 
-Status: partially implemented.
+Status: first scaffold round implemented and cross-platform QA-stabilized. Real official API integrations remain future work.
 
 Completed:
 
@@ -431,10 +431,14 @@ Completed:
 - Toutiao scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
 - Toutiao scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Latest local/Codex validation passed with full `python -m pytest` (`272 passed in 2.75s`). Frontend build was not run for this QA pass because no frontend files changed.
+- Cross-platform adapter QA matrix is implemented in `backend/app/tests/test_cross_platform_adapter_consistency.py`.
+- The matrix covers Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao, and the fixture-only public parser adapters.
+- It verifies adapter factory registration, official scaffold interface parity, default mock mode, safe blocked real-mode metadata, schema-valid `RawPost` / `RawComment` output, `/crawl/start` metadata, credential redaction, and fixture-first public parser preview behavior.
+- Latest cross-platform validation passed with focused checks (`43 passed in 0.78s`) and full `python -m pytest` (`315 passed in 3.19s`). Frontend build was not run because no frontend files changed.
 
 Near-term candidates:
 
-- Cross-platform official adapter QA matrix for Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao
+- Frontend/API mock data source selector QA for Keyword Search and case creation across Reddit plus all eight official API scaffolds
 - Weibo official API application and approved implementation, only after permission scopes and compliance review are complete
 - Bilibili real API application and approved implementation
 - Kuaishou real API application and approved implementation, only after permission scopes and compliance review are complete
