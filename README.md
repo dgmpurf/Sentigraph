@@ -126,7 +126,7 @@ Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real ada
 - Douban
 - Toutiao
 
-这些平台当前只支持 mock workflow，不代表真实集成已经完成。
+这些平台当前只支持 mock workflow，不代表真实集成已经完成。Weibo、Bilibili、Douyin、Kuaishou 已有 mock-only official API adapter scaffold；即使配置为 real mode，也只会返回安全的 `api_pending` / `config_error` 状态，不会调用真实平台 API。
 
 ### Future Crawler-later
 

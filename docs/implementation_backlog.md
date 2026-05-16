@@ -396,12 +396,20 @@ Completed:
 - Douyin scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
 - Douyin scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Latest local/Codex validation passed with focused Douyin/adapter/crawl/registry checks (`20 passed in 0.67s`) and full `python -m pytest` (`213 passed in 3.10s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
+- Kuaishou official API adapter scaffold is implemented in mock mode.
+- `adapter_factory.get_adapter("kuaishou")` returns the Kuaishou adapter.
+- `/api/v1/crawl/start` can return Kuaishou-style normalized mock short-video/livestream `RawPost` and visible-comment `RawComment` data with safe adapter metadata.
+- `KUAISHOU_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Kuaishou API calls are made.
+- Kuaishou scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
+- Kuaishou scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
+- Latest local/Codex validation passed with focused Kuaishou/adapter/crawl/registry checks (`59 passed in 0.75s`) and full `python -m pytest` (`225 passed in 3.17s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
 
 Near-term candidates:
 
 - Weibo official API application and approved implementation, only after permission scopes and compliance review are complete
 - Bilibili real API application and approved implementation
-- Kuaishou official API adapter scaffold, mock-only and approval-pending like Weibo/Bilibili/Douyin
+- Xiaohongshu official API adapter scaffold, mock-only and approval-pending like Weibo/Bilibili/Douyin/Kuaishou
+- Kuaishou real API application and approved implementation, only after permission scopes and compliance review are complete
 
 Scope:
 

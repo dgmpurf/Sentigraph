@@ -10,6 +10,7 @@ from app.services.crawling import adapter_factory
 from app.services.crawling.base_adapter import BasePlatformAdapter, PlatformAdapterError
 from app.services.crawling.bilibili_adapter import BilibiliAdapter
 from app.services.crawling.douyin_adapter import DouyinAdapter
+from app.services.crawling.kuaishou_adapter import KuaishouAdapter
 from app.services.crawling.public_parser.parser_registry import get_public_parser_platform_ids
 from app.services.crawling.reddit_adapter import RedditAdapter
 from app.services.crawling.weibo_adapter import WeiboAdapter
@@ -19,6 +20,8 @@ SAFE_BILIBILI_POST_LIMIT = 3
 SAFE_BILIBILI_COMMENT_LIMIT = 3
 SAFE_DOUYIN_POST_LIMIT = 3
 SAFE_DOUYIN_COMMENT_LIMIT = 3
+SAFE_KUAISHOU_POST_LIMIT = 3
+SAFE_KUAISHOU_COMMENT_LIMIT = 3
 SAFE_REDDIT_POST_LIMIT = 3
 SAFE_REDDIT_COMMENT_LIMIT = 3
 SAFE_WEIBO_POST_LIMIT = 3
@@ -50,6 +53,12 @@ def start_crawl_with_adapters(payload: CrawlStartRequest) -> CrawlStartResponse:
         raw_posts.extend(douyin_posts)
         raw_comments.extend(douyin_comments)
         metadata.append(douyin_metadata)
+
+    if "kuaishou" in platforms:
+        kuaishou_posts, kuaishou_comments, kuaishou_metadata = _crawl_kuaishou(payload)
+        raw_posts.extend(kuaishou_posts)
+        raw_comments.extend(kuaishou_comments)
+        metadata.append(kuaishou_metadata)
 
     if "weibo" in platforms:
         weibo_posts, weibo_comments, weibo_metadata = _crawl_weibo(payload)
@@ -205,6 +214,84 @@ def _crawl_bilibili(payload: CrawlStartRequest) -> tuple[list[RawPost], list[Raw
         comments,
         PlatformCrawlMetadata(
             platform="bilibili",
+            adapter_mode=adapter_mode,
+            source_type=_safe_str(adapter_status.get("source_type")) or "official_api_adapter_scaffold",
+            parser_status=_safe_str(adapter_status.get("parser_status")),
+            live_fetch_enabled=bool(adapter_status.get("live_fetch_enabled", False)),
+            live_fetch_attempted=bool(adapter_status.get("live_fetch_attempted", False)),
+            live_fetch_allowed=bool(adapter_status.get("live_fetch_allowed", False)),
+            fallback_used=fallback_used,
+            fallback_reason_category=fallback_category,
+            fetch_status=_safe_str(adapter_status.get("fetch_status")),
+            mock_available=bool(adapter_status.get("mock_available", True)),
+            real_mode_available=bool(adapter_status.get("real_mode_available", False)),
+            api_approval_required=bool(adapter_status.get("api_approval_required", True)),
+            api_approval_status=_safe_str(adapter_status.get("api_approval_status")),
+            api_pending=bool(adapter_status.get("api_pending", True)),
+            real_mode_disabled=bool(adapter_status.get("real_mode_disabled", True)),
+            selectable_for_real=bool(adapter_status.get("selectable_for_real", False)),
+            real_mode_blocked_reason=_real_mode_blocked_reason(fallback_reason, adapter_status, adapter_mode),
+            real_mode_reached=bool(adapter_status.get("real_mode_reached", False)),
+            dependency_available=bool(adapter_status.get("dependency_available", True)),
+            exception_class=_safe_str(adapter_status.get("exception_class")),
+            sanitized_error_category=fallback_category,
+            post_count=len(posts),
+            comment_count=len(comments),
+            schema_valid=post_schema_valid and comment_schema_valid,
+            raw_post_schema_valid=post_schema_valid,
+            raw_comment_schema_valid=comment_schema_valid,
+        ),
+    )
+
+
+def _crawl_kuaishou(payload: CrawlStartRequest) -> tuple[list[RawPost], list[RawComment], PlatformCrawlMetadata]:
+    post_limit = min(payload.limit, SAFE_KUAISHOU_POST_LIMIT)
+    comment_limit = min(payload.limit, SAFE_KUAISHOU_COMMENT_LIMIT)
+
+    posts: list[RawPost] = []
+    comments: list[RawComment] = []
+    adapter: BasePlatformAdapter | None = None
+    fallback_reason: str | None = None
+    fallback_used = False
+
+    try:
+        adapter = adapter_factory.get_adapter("kuaishou")
+        posts = adapter.search_posts(
+            keyword=payload.keyword,
+            limit=post_limit,
+            sort="new",
+            date_range=_serialize_date_range(payload),
+        )
+        fallback_reason = getattr(adapter, "fallback_reason", None)
+        fallback_used = bool(fallback_reason)
+        if posts:
+            comments = adapter.fetch_comments(posts[0].post_id, limit=comment_limit)
+            fallback_reason = getattr(adapter, "fallback_reason", None) or fallback_reason
+            fallback_used = bool(fallback_reason)
+    except PlatformAdapterError as exc:
+        fallback_reason = f"adapter_error:{exc.__class__.__name__}"
+        fallback_used = True
+        adapter = None
+        posts, comments = _kuaishou_mock_fallback(payload)
+    except Exception as exc:  # pragma: no cover - last-resort safety guard
+        fallback_reason = f"adapter_error:{exc.__class__.__name__}"
+        fallback_used = True
+        adapter = None
+        posts, comments = _kuaishou_mock_fallback(payload)
+
+    post_schema_valid = _validate_items(posts, RawPost)
+    comment_schema_valid = _validate_items(comments, RawComment)
+    adapter_mode = _adapter_mode(adapter, fallback_reason)
+    adapter_status = _adapter_status_metadata(adapter)
+    fallback_category = _fallback_reason_category(fallback_reason) or _safe_str(
+        adapter_status.get("sanitized_error_category")
+    )
+
+    return (
+        posts,
+        comments,
+        PlatformCrawlMetadata(
+            platform="kuaishou",
             adapter_mode=adapter_mode,
             source_type=_safe_str(adapter_status.get("source_type")) or "official_api_adapter_scaffold",
             parser_status=_safe_str(adapter_status.get("parser_status")),
@@ -528,6 +615,20 @@ def _douyin_mock_fallback(payload: CrawlStartRequest) -> tuple[list[RawPost], li
     comments: list[RawComment] = []
     if posts:
         comments = mock_adapter.fetch_comments(posts[0].post_id, limit=min(payload.limit, SAFE_DOUYIN_COMMENT_LIMIT))
+    return posts, comments
+
+
+def _kuaishou_mock_fallback(payload: CrawlStartRequest) -> tuple[list[RawPost], list[RawComment]]:
+    mock_adapter = KuaishouAdapter(mode="mock")
+    posts = mock_adapter.search_posts(
+        keyword=payload.keyword,
+        limit=min(payload.limit, SAFE_KUAISHOU_POST_LIMIT),
+        sort="new",
+        date_range=_serialize_date_range(payload),
+    )
+    comments: list[RawComment] = []
+    if posts:
+        comments = mock_adapter.fetch_comments(posts[0].post_id, limit=min(payload.limit, SAFE_KUAISHOU_COMMENT_LIMIT))
     return posts, comments
 
 
