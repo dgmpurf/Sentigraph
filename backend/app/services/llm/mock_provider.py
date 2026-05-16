@@ -63,26 +63,57 @@ class MockProvider(BaseLLMProvider):
         if not normalized:
             normalized = "public opinion"
 
-        if normalized.lower() == "tesla" or "\u7279\u65af\u62c9" in normalized:
-            expanded = [normalized, "\u7279\u65af\u62c9", "Model Y", "\u81ea\u52a8\u9a7e\u9a76", "\u964d\u4ef7"]
+        language_hint = _language_hint(normalized, language)
+        lowered = normalized.lower()
+
+        if lowered == "tesla" or "\u7279\u65af\u62c9" in normalized:
+            expanded = _tesla_expansion(normalized)
             queries = [
-                f"{normalized} problem",
-                f"{normalized} recall",
-                "\u7279\u65af\u62c9 \u5239\u8f66",
+                "Tesla problem",
+                "Tesla recall",
+                "Tesla price cut",
+                "\u7279\u65af\u62c9 \u53ec\u56de",
                 "\u7279\u65af\u62c9 \u964d\u4ef7",
+                "\u7279\u65af\u62c9 \u81ea\u52a8\u9a7e\u9a76",
             ]
-        else:
+        elif lowered == "bilibili" or "b\u7ad9" in lowered or "\u54d4\u54e9\u54d4\u54e9" in normalized:
+            expanded = _bilibili_expansion(normalized)
+            queries = [
+                "Bilibili public opinion",
+                "Bilibili comments",
+                "B\u7ad9 UP\u4e3b",
+                "\u54d4\u54e9\u54d4\u54e9 \u5f39\u5e55",
+                "B\u7ad9 \u89c6\u9891\u8bc4\u8bba",
+            ]
+        elif language_hint == "zh-CN":
             expanded = [
                 normalized,
                 f"{normalized} \u8206\u60c5",
                 f"{normalized} \u6295\u8bc9",
-                f"{normalized} \u98ce\u9669",
+                f"{normalized} \u4e89\u8bae",
                 f"{normalized} \u56de\u5e94",
+                f"{normalized} \u98ce\u9669",
+            ]
+            queries = [
+                f"{normalized} \u8206\u60c5",
+                f"{normalized} \u6295\u8bc9",
+                f"{normalized} \u4e89\u8bae",
+                f"{normalized} \u5b98\u65b9\u56de\u5e94",
+            ]
+        else:
+            expanded = [
+                normalized,
+                f"{normalized} public opinion",
+                f"{normalized} complaints",
+                f"{normalized} controversy",
+                f"{normalized} response",
+                f"{normalized} \u8206\u60c5",
             ]
             queries = [
                 f"{normalized} problem",
+                f"{normalized} complaints",
+                f"{normalized} controversy",
                 f"{normalized} response",
-                f"{normalized} \u6295\u8bc9",
                 f"{normalized} \u8206\u60c5",
             ]
 
@@ -270,6 +301,66 @@ def _count_hits(text: str, terms: set[str]) -> int:
 
 def _clamp(value: float, minimum: float = -1.0, maximum: float = 1.0) -> float:
     return max(minimum, min(maximum, value))
+
+
+def _language_hint(keyword: str, language: str) -> str:
+    requested = (language or "auto").strip()
+    if requested == "zh-CN":
+        return "zh-CN"
+    if _contains_cjk(keyword):
+        return "zh-CN"
+    if requested == "en-US":
+        return "en-US"
+    return "en-US"
+
+
+def _contains_cjk(value: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in value)
+
+
+def _tesla_expansion(keyword: str) -> list[str]:
+    if "\u7279\u65af\u62c9" in keyword:
+        return [
+            keyword,
+            "Tesla",
+            "Model Y",
+            "Model 3",
+            "\u7535\u52a8\u8f66",
+            "\u81ea\u52a8\u9a7e\u9a76",
+            "\u53ec\u56de",
+            "\u964d\u4ef7",
+        ]
+    return [
+        keyword,
+        "\u7279\u65af\u62c9",
+        "Model Y",
+        "Model 3",
+        "\u7535\u52a8\u8f66",
+        "\u81ea\u52a8\u9a7e\u9a76",
+        "\u53ec\u56de",
+        "\u964d\u4ef7",
+    ]
+
+
+def _bilibili_expansion(keyword: str) -> list[str]:
+    if keyword.lower() == "bilibili":
+        return [
+            keyword,
+            "B\u7ad9",
+            "\u54d4\u54e9\u54d4\u54e9",
+            "UP\u4e3b",
+            "\u5f39\u5e55",
+            "\u89c6\u9891\u8bc4\u8bba",
+        ]
+    return [
+        keyword,
+        "Bilibili",
+        "B\u7ad9",
+        "\u54d4\u54e9\u54d4\u54e9",
+        "UP\u4e3b",
+        "\u5f39\u5e55",
+        "\u89c6\u9891\u8bc4\u8bba",
+    ]
 
 
 def _dedupe(values: Sequence[str]) -> list[str]:

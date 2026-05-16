@@ -6,14 +6,11 @@ from typing import Any
 from app.schemas.alert import AlertsResponse
 from app.schemas.analysis import AnalysisResultResponse, AnalysisRunRequest, AnalysisRunResponse
 from app.schemas.crawl import CrawlStartRequest, CrawlStartResponse
-from app.schemas.keyword import KeywordExpandRequest, KeywordExpandResponse
 from app.schemas.propagation import PropagationResponse
 from app.schemas.recommendation import RecommendationRequest, RecommendationResponse
 from app.schemas.summary import SummaryGenerateRequest, SummaryGenerateResponse
 from app.schemas.visualization import VisualizationDataRequest, VisualizationResponse
-from app.services.llm.errors import LLMProviderError
-from app.services.llm.mock_provider import MockProvider
-from app.services.llm.provider_factory import get_llm_provider
+from app.services.keyword import build_keyword_expansion
 from app.services.mock_pipeline import (
     build_mock_pipeline,
     build_pipeline_analysis,
@@ -30,21 +27,6 @@ MOCK_DATA_DIR = Path(__file__).resolve().parents[3] / "mock_data"
 def load_mock_json(filename: str) -> dict[str, Any] | list[dict[str, Any]]:
     with (MOCK_DATA_DIR / filename).open("r", encoding="utf-8") as file:
         return json.load(file)
-
-
-def build_keyword_expansion(payload: KeywordExpandRequest) -> KeywordExpandResponse:
-    keyword = payload.keyword.strip()
-    provider = _safe_llm_provider()
-    try:
-        expansion = provider.expand_keywords(keyword, language=payload.language)
-    except LLMProviderError:
-        expansion = MockProvider().expand_keywords(keyword, language=payload.language)
-
-    return KeywordExpandResponse(
-        original_keyword=expansion.original_keyword,
-        expanded_keywords=expansion.expanded_keywords,
-        search_queries=expansion.search_queries,
-    )
 
 
 def start_mock_crawl(_: CrawlStartRequest) -> CrawlStartResponse:
@@ -169,10 +151,3 @@ def _pipeline_representative_comments(pipeline) -> list[str]:
         ),
     )
     return [comment.clean_text for comment in ranked_comments if comment.clean_text][:5]
-
-
-def _safe_llm_provider():
-    try:
-        return get_llm_provider()
-    except LLMProviderError:
-        return MockProvider()

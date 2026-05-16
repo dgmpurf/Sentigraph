@@ -482,15 +482,17 @@ Implemented:
 - `LLM_ENABLE_REAL_CALLS=false` remains the default; placeholder real providers return safe `provider_not_enabled` / `not_configured` errors and do not make network calls.
 - `.env.example` documents `LLM_PROVIDER`, `LLM_ENABLE_REAL_CALLS`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, and `QWEN_API_KEY` without requiring values.
 - `json_guard` helpers provide deterministic JSON object/array parsing fallbacks for future schema-checked LLM output.
-- Keyword expansion now routes through the safe provider abstraction and falls back to `MockProvider` if configuration is invalid.
-- QA coverage verifies module presence, deterministic mock outputs, provider factory defaults and unknown-provider errors, disabled real-provider behavior, missing-key safety, secret redaction, safe keyword fallback, and JSON guard fallback behavior.
-- Latest backend validation passed with `python -m pytest` (`334 passed in 3.12s`).
+- Keyword expansion now routes through `backend/app/services/keyword/keyword_expander.py`, calls the safe provider factory, and uses `MockProvider` only for current deterministic expansion.
+- MockProvider keyword expansion is active for the keyword API and includes deterministic Tesla, Bilibili, Chinese-language, and generic public-opinion variants while preserving the existing keyword response schema.
+- QA coverage verifies module presence, deterministic mock outputs, provider factory defaults and unknown-provider errors, provider-factory invocation from keyword expansion, disabled real-provider behavior, missing-key endpoint safety, secret redaction, safe keyword fallback, old keyword response-schema compatibility, and JSON guard fallback behavior.
+- Latest backend validation passed with `python -m pytest` (`341 passed in 3.46s`).
 
 Future real LLM integration tasks:
 
 - Keep real OpenAI integration as a future task.
 - Keep real DeepSeek integration as a future task.
 - Keep real Qwen integration as a future task.
+- Keep real LLM keyword expansion as a future task; current keyword expansion must remain MockProvider-only until an explicit real-provider integration task is approved.
 - Keep any frontend or API LLM selector repair/status UI as a future task unless explicitly requested.
 - Add provider-specific HTTP clients only behind explicit `LLM_ENABLE_REAL_CALLS=true` and selected provider configuration.
 - Add strict prompt/output schemas for keyword expansion, topic labeling, risk explanations, report drafts, and recommendations.

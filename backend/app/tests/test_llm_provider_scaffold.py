@@ -13,6 +13,7 @@ from app.services.llm.mock_provider import MockProvider
 from app.services.llm.openai_provider import OpenAIProvider
 from app.services.llm.provider_factory import get_llm_provider
 from app.services.llm.qwen_provider import QwenProvider
+import app.services.keyword.keyword_expander as keyword_expander
 
 
 client = TestClient(app)
@@ -42,8 +43,68 @@ def test_mock_provider_expands_keywords_deterministically() -> None:
 
     assert result.provider == "mock"
     assert result.original_keyword == "Tesla"
-    assert result.expanded_keywords == ["Tesla", "特斯拉", "Model Y", "自动驾驶", "降价"]
-    assert result.search_queries == ["Tesla problem", "Tesla recall", "特斯拉 刹车", "特斯拉 降价"]
+    assert result.expanded_keywords == [
+        "Tesla",
+        "特斯拉",
+        "Model Y",
+        "Model 3",
+        "电动车",
+        "自动驾驶",
+        "召回",
+        "降价",
+    ]
+    assert result.search_queries == [
+        "Tesla problem",
+        "Tesla recall",
+        "Tesla price cut",
+        "特斯拉 召回",
+        "特斯拉 降价",
+        "特斯拉 自动驾驶",
+    ]
+
+
+def test_mock_provider_expands_bilibili_and_chinese_keywords() -> None:
+    provider = MockProvider()
+
+    bilibili = provider.expand_keywords("Bilibili", language="auto")
+    chinese = provider.expand_keywords("新能源汽车", language="en-US")
+
+    assert bilibili.expanded_keywords == ["Bilibili", "B站", "哔哩哔哩", "UP主", "弹幕", "视频评论"]
+    assert "B站 视频评论" in bilibili.search_queries
+    assert chinese.expanded_keywords == [
+        "新能源汽车",
+        "新能源汽车 舆情",
+        "新能源汽车 投诉",
+        "新能源汽车 争议",
+        "新能源汽车 回应",
+        "新能源汽车 风险",
+    ]
+    assert chinese.search_queries == [
+        "新能源汽车 舆情",
+        "新能源汽车 投诉",
+        "新能源汽车 争议",
+        "新能源汽车 官方回应",
+    ]
+
+
+def test_mock_provider_unknown_keyword_uses_public_opinion_variants() -> None:
+    result = MockProvider().expand_keywords("Acme", language="auto")
+
+    assert result.expanded_keywords == [
+        "Acme",
+        "Acme public opinion",
+        "Acme complaints",
+        "Acme controversy",
+        "Acme response",
+        "Acme 舆情",
+    ]
+    assert result.search_queries == [
+        "Acme problem",
+        "Acme complaints",
+        "Acme controversy",
+        "Acme response",
+        "Acme 舆情",
+    ]
 
 
 def test_mock_provider_sentiment_output_is_stable() -> None:
@@ -99,6 +160,11 @@ def test_keyword_expansion_falls_back_to_mock_when_real_provider_is_disabled(mon
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_ENABLE_REAL_CALLS", "false")
     monkeypatch.setenv("OPENAI_API_KEY", "secret-value-should-not-appear")
+    monkeypatch.setattr(
+        OpenAIProvider,
+        "expand_keywords",
+        lambda *args, **kwargs: pytest.fail("OpenAIProvider.expand_keywords must not be called"),
+    )
 
     response = client.post(
         "/api/v1/keywords/expand",
@@ -107,8 +173,122 @@ def test_keyword_expansion_falls_back_to_mock_when_real_provider_is_disabled(mon
 
     assert response.status_code == 200
     body = response.json()
-    assert body["expanded_keywords"] == ["Tesla", "特斯拉", "Model Y", "自动驾驶", "降价"]
+    assert body["expanded_keywords"] == [
+        "Tesla",
+        "特斯拉",
+        "Model Y",
+        "Model 3",
+        "电动车",
+        "自动驾驶",
+        "召回",
+        "降价",
+    ]
     assert "secret-value-should-not-appear" not in response.text
+
+
+def test_keyword_expansion_uses_provider_factory_and_mock_by_default(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    def fake_get_llm_provider():
+        calls["count"] += 1
+        return MockProvider()
+
+    monkeypatch.setattr(keyword_expander, "get_llm_provider", fake_get_llm_provider)
+
+    response = client.post(
+        "/api/v1/keywords/expand",
+        json={"keyword": "Bilibili", "platforms": ["bilibili"], "language": "auto"},
+    )
+
+    assert response.status_code == 200
+    assert calls["count"] == 1
+    body = response.json()
+    assert body["expanded_keywords"] == ["Bilibili", "B站", "哔哩哔哩", "UP主", "弹幕", "视频评论"]
+
+
+def test_keyword_expansion_missing_real_provider_keys_are_safe(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_ENABLE_REAL_CALLS", "true")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        OpenAIProvider,
+        "expand_keywords",
+        lambda *args, **kwargs: pytest.fail("OpenAIProvider.expand_keywords must not be called"),
+    )
+
+    response = client.post(
+        "/api/v1/keywords/expand",
+        json={"keyword": "Tesla", "platforms": ["weibo"], "language": "auto"},
+    )
+
+    assert response.status_code == 200
+    assert "OPENAI_API_KEY" not in response.text
+    assert "not_configured" not in response.text
+    assert "Tesla" in response.json()["expanded_keywords"]
+
+
+def test_keyword_expand_api_keeps_existing_response_schema(monkeypatch) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("LLM_ENABLE_REAL_CALLS", raising=False)
+
+    response = client.post(
+        "/api/v1/keywords/expand",
+        json={"keyword": "Tesla", "platforms": ["weibo"], "language": "auto"},
+    )
+
+    assert response.status_code == 200
+    assert set(response.json()) == {"original_keyword", "expanded_keywords", "search_queries"}
+
+
+def test_keyword_expand_api_handles_chinese_tesla_keyword(monkeypatch) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+
+    response = client.post(
+        "/api/v1/keywords/expand",
+        json={"keyword": "特斯拉", "platforms": ["weibo"], "language": "auto"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["original_keyword"] == "特斯拉"
+    assert body["expanded_keywords"] == [
+        "特斯拉",
+        "Tesla",
+        "Model Y",
+        "Model 3",
+        "电动车",
+        "自动驾驶",
+        "召回",
+        "降价",
+    ]
+    assert "特斯拉 召回" in body["search_queries"]
+
+
+def test_keyword_expand_api_handles_chinese_keyword_and_unknown_provider(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "unknown-provider")
+
+    response = client.post(
+        "/api/v1/keywords/expand",
+        json={"keyword": "一个未知关键词", "platforms": ["weibo"], "language": "auto"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["original_keyword"] == "一个未知关键词"
+    assert body["expanded_keywords"] == [
+        "一个未知关键词",
+        "一个未知关键词 舆情",
+        "一个未知关键词 投诉",
+        "一个未知关键词 争议",
+        "一个未知关键词 回应",
+        "一个未知关键词 风险",
+    ]
+    assert body["search_queries"] == [
+        "一个未知关键词 舆情",
+        "一个未知关键词 投诉",
+        "一个未知关键词 争议",
+        "一个未知关键词 官方回应",
+    ]
 
 
 def test_provider_factory_defaults_to_mock(monkeypatch) -> None:
