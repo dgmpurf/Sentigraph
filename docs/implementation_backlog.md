@@ -1,6 +1,6 @@
 # Sentigraph Implementation Backlog
 
-Last updated: 2026-05-15
+Last updated: 2026-05-16
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
 
@@ -372,12 +372,21 @@ Next parser tasks:
 
 Goal: prepare future official API applications without implementing API calls yet.
 
-Status: planned.
+Status: partially implemented.
+
+Completed:
+
+- Bilibili official API adapter scaffold is implemented in mock mode.
+- `adapter_factory.get_adapter("bilibili")` returns the Bilibili adapter.
+- `/api/v1/crawl/start` can return Bilibili-style normalized mock `RawPost` and `RawComment` data with safe adapter metadata.
+- `BILIBILI_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Bilibili API calls are made.
+- Bilibili scaffold QA is stabilized: mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and old case/monitoring/scheduler/notification/public-parser regressions are covered by tests.
 
 Near-term candidates:
 
 - Weibo
-- Bilibili
+- Bilibili real API application and approved implementation
+- Douyin / Kuaishou official API scaffold review after Weibo, if product priority confirms short-video source parity
 
 Scope:
 

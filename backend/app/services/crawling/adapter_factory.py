@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TypeAlias
 
 from app.services.crawling.base_adapter import AdapterMode, BasePlatformAdapter, PlatformAdapterError
+from app.services.crawling.bilibili_adapter import BilibiliAdapter
 from app.services.crawling.public_parser.public_parser_adapter import (
     HupuPublicParserAdapter,
     JiemianPublicParserAdapter,
@@ -18,6 +19,7 @@ AdapterClass: TypeAlias = type[BasePlatformAdapter]
 
 
 ADAPTER_REGISTRY: dict[str, AdapterClass] = {
+    BilibiliAdapter.platform_id: BilibiliAdapter,
     HupuPublicParserAdapter.platform_id: HupuPublicParserAdapter,
     JiemianPublicParserAdapter.platform_id: JiemianPublicParserAdapter,
     MaimaiPublicParserAdapter.platform_id: MaimaiPublicParserAdapter,

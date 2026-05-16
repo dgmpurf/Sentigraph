@@ -42,7 +42,14 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["weibo"].enabled_in_mvp is True
     assert by_id["weibo"].selectable_for_mock is True
     assert by_id["bilibili"].category == OFFICIAL_API_PLANNED
+    assert by_id["bilibili"].source_type == "official_api_adapter_scaffold"
+    assert by_id["bilibili"].status == "official_api_planned"
     assert by_id["bilibili"].selectable_for_mock is True
+    assert by_id["bilibili"].mock_available is True
+    assert by_id["bilibili"].real_mode_available is False
+    assert by_id["bilibili"].api_pending is True
+    assert by_id["bilibili"].real_mode_disabled is True
+    assert by_id["bilibili"].selectable_for_real is False
     assert by_id["youtube"].category == DISABLED_OR_OPTIONAL_FUTURE
     assert by_id["youtube"].enabled_in_mvp is False
     assert by_id["youtube"].selectable_for_mock is False
@@ -125,6 +132,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     monkeypatch.setenv("REDDIT_CLIENT_ID", "client-value-should-not-appear")
     monkeypatch.setenv("REDDIT_CLIENT_SECRET", "secret-value-should-not-appear")
     monkeypatch.setenv("REDDIT_USER_AGENT", "agent-value-should-not-appear")
+    monkeypatch.setenv("BILIBILI_CLIENT_ID", "bilibili-client-should-not-appear")
+    monkeypatch.setenv("BILIBILI_CLIENT_SECRET", "bilibili-secret-should-not-appear")
+    monkeypatch.setenv("BILIBILI_ACCESS_TOKEN", "bilibili-token-should-not-appear")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -132,6 +142,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     body = response.json()
     by_id = {platform["platform_id"]: platform for platform in body["platforms"]}
     reddit = by_id["reddit"]
+    bilibili = by_id["bilibili"]
 
     assert body["active_mvp_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
     assert body["mock_selectable_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
@@ -156,27 +167,60 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert reddit["selectable_for_mock"] is True
     assert reddit["selectable_for_real"] is False
     assert reddit["real_mode_disabled"] is True
+    assert bilibili["status"] == "official_api_planned"
+    assert bilibili["source_type"] == "official_api_adapter_scaffold"
+    assert bilibili["mock_available"] is True
+    assert bilibili["real_mode_available"] is False
+    assert bilibili["api_approval_required"] is True
+    assert bilibili["api_approval_status"] == "planned"
+    assert bilibili["credentials_required"] == [
+        "BILIBILI_CLIENT_ID",
+        "BILIBILI_CLIENT_SECRET",
+        "BILIBILI_ACCESS_TOKEN",
+    ]
+    assert bilibili["credentials_present"] == {
+        "BILIBILI_CLIENT_ID": True,
+        "BILIBILI_CLIENT_SECRET": True,
+        "BILIBILI_ACCESS_TOKEN": True,
+    }
+    assert bilibili["selectable_for_mock"] is True
+    assert bilibili["selectable_for_real"] is False
+    assert bilibili["real_mode_disabled"] is True
     response_text = response.text
     assert "client-value-should-not-appear" not in response_text
     assert "secret-value-should-not-appear" not in response_text
     assert "agent-value-should-not-appear" not in response_text
+    assert "bilibili-client-should-not-appear" not in response_text
+    assert "bilibili-secret-should-not-appear" not in response_text
+    assert "bilibili-token-should-not-appear" not in response_text
 
 
 def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch) -> None:
     monkeypatch.setenv("REDDIT_CLIENT_ID", "")
     monkeypatch.setenv("REDDIT_CLIENT_SECRET", "")
     monkeypatch.setenv("REDDIT_USER_AGENT", "")
+    monkeypatch.setenv("BILIBILI_CLIENT_ID", "")
+    monkeypatch.setenv("BILIBILI_CLIENT_SECRET", "")
+    monkeypatch.setenv("BILIBILI_ACCESS_TOKEN", "")
 
     response = client.get("/api/v1/platforms/status")
 
     assert response.status_code == 200
-    reddit = next(platform for platform in response.json()["platforms"] if platform["platform_id"] == "reddit")
+    by_id = {platform["platform_id"]: platform for platform in response.json()["platforms"]}
+    reddit = by_id["reddit"]
+    bilibili = by_id["bilibili"]
     assert reddit["credentials_present"] == {
         "REDDIT_CLIENT_ID": False,
         "REDDIT_CLIENT_SECRET": False,
         "REDDIT_USER_AGENT": False,
     }
     assert reddit["real_mode_available"] is False
+    assert bilibili["credentials_present"] == {
+        "BILIBILI_CLIENT_ID": False,
+        "BILIBILI_CLIENT_SECRET": False,
+        "BILIBILI_ACCESS_TOKEN": False,
+    }
+    assert bilibili["real_mode_available"] is False
 
 
 def test_platform_status_keeps_crawler_later_not_real_selectable() -> None:

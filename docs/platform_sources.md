@@ -2,7 +2,7 @@
 
 Sentigraph now prioritizes Chinese public opinion platforms for future source integration while keeping Reddit visible in the project as a future real adapter candidate.
 
-The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. `POST /api/v1/crawl/start` routes Reddit requests through the adapter layer and returns local mock Reddit data with safe status metadata while approval is pending.
+The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Bilibili now has an official API adapter scaffold with mock video/comment data only; real Bilibili API mode remains disabled until credentials, approval, permission scopes, and implementation are added. `POST /api/v1/crawl/start` routes Reddit and Bilibili requests through the adapter layer and returns normalized mock data with safe status metadata.
 
 ## Data-source readiness layer
 
@@ -23,6 +23,7 @@ Current global status:
 - Reddit: `api_pending`; mock mode available; real API mode disabled until Reddit approval is granted.
 - Reddit scraping: not implemented and not used to bypass API approval.
 - Official API planned platforms: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao.
+- Bilibili: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Crawler-later platforms: Hupu, Baidu Tieba, Tianya, NGA, Maimai, The Paper / Pengpai News, Jiemian News.
 - YouTube: `disabled_or_optional_future`.
 
@@ -34,7 +35,7 @@ MVP selections are limited to platforms that can run with local mock data. Selec
 | --- | --- | --- | --- | --- |
 | `reddit` | Reddit | `future_real_adapter_candidate` | `mock_data_future_adapter_placeholder` | true |
 | `weibo` | Weibo | `official_api_planned` | `mock_data_official_api_placeholder` | true |
-| `bilibili` | Bilibili | `official_api_planned` | `mock_data_official_api_placeholder` | true |
+| `bilibili` | Bilibili | `official_api_planned` | `official_api_adapter_scaffold` | true |
 | `douyin` | Douyin | `official_api_planned` | `mock_data_official_api_placeholder` | true |
 | `kuaishou` | Kuaishou | `official_api_planned` | `mock_data_official_api_placeholder` | true |
 | `xiaohongshu` | Xiaohongshu | `official_api_planned` | `mock_data_official_api_placeholder` | true |
@@ -49,7 +50,7 @@ These platforms should be integrated through official API programs when credenti
 | platform_id | display_name | official_platform_url | MVP status |
 | --- | --- | --- | --- |
 | `weibo` | Weibo | https://open.weibo.com | mock-selectable placeholder |
-| `bilibili` | Bilibili | https://openhome.bilibili.com | mock-selectable placeholder |
+| `bilibili` | Bilibili | https://openhome.bilibili.com | mock adapter scaffold; real API pending credentials/approval |
 | `douyin` | Douyin | https://developer.open-douyin.com | mock-selectable placeholder |
 | `kuaishou` | Kuaishou | https://open.kuaishou.com | mock-selectable placeholder |
 | `xiaohongshu` | Xiaohongshu | https://open.xiaohongshu.com | mock-selectable placeholder |
@@ -103,7 +104,7 @@ Factory behavior:
 
 - `get_adapter("reddit")` and `get_platform_adapter("reddit")` return the Reddit adapter.
 - Unknown platforms return a safe adapter registration error.
-- Official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
+- Bilibili has a mock-only official API adapter scaffold. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
 - Crawler-later platforms remain inactive for real collection.
 
 Safety constraints:
@@ -114,6 +115,37 @@ Safety constraints:
 - Do not store Reddit credentials in the repository.
 - Add fixture-first tests before expanding real-mode behavior.
 - Rate-limit and retry handling should stay conservative and transparent.
+
+### Bilibili official API adapter scaffold
+
+Bilibili is the first official-API-planned Chinese platform with a concrete adapter scaffold. It is intentionally mock-first and does not call the real Bilibili API.
+
+Current behavior:
+
+- Default mode is `mock` through `BILIBILI_ADAPTER_MODE=mock`.
+- `get_adapter("bilibili")` returns the Bilibili adapter.
+- `POST /api/v1/crawl/start` uses the adapter when `platforms` contains `bilibili`.
+- Mock mode returns deterministic Bilibili-style video posts and visible public-comment mock data normalized as `RawPost` and `RawComment`.
+- If `BILIBILI_ADAPTER_MODE=real`, the adapter stays in mock mode and reports safe `api_pending` or `config_error` metadata. No network call is made.
+- Safe status metadata includes `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, and `real_mode_disabled=true`.
+- Latest QA status: focused Bilibili/adapter/crawl/registry/regression validation passed, direct local smoke returned schema-valid mock posts/comments, and full backend validation passed. No real Bilibili API call or Bilibili page scraping was made.
+
+Future Bilibili credentials after approval:
+
+```text
+BILIBILI_ADAPTER_MODE=real
+BILIBILI_CLIENT_ID
+BILIBILI_CLIENT_SECRET
+BILIBILI_ACCESS_TOKEN
+```
+
+Remaining before real Bilibili integration:
+
+- official application/approval and permission-scope review
+- rate-limit and usage policy documentation
+- a reviewed official API client implementation
+- mocked response fixtures that match approved API payloads
+- compliance review before any live request
 
 ## Compliant Public-Source Parser Framework
 

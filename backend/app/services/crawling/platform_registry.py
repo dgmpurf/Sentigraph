@@ -5,6 +5,10 @@ from dataclasses import dataclass
 
 from app.core.environment import load_project_env
 from app.schemas.platform import PlatformSource, PlatformStatusResponse, PlatformStatusSummary
+from app.services.crawling.bilibili_adapter import (
+    BILIBILI_API_APPROVAL_STATUS,
+    BILIBILI_REQUIRED_CREDENTIALS,
+)
 from app.services.crawling.reddit_adapter import REDDIT_API_APPROVAL_STATUS, REDDIT_REQUIRED_CREDENTIALS
 
 
@@ -150,7 +154,27 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         credentials_required=REDDIT_REQUIRED_CREDENTIALS,
     ),
     _official_mock_platform("weibo", "Weibo", "https://open.weibo.com"),
-    _official_mock_platform("bilibili", "Bilibili", "https://openhome.bilibili.com"),
+    PlatformRegistryItem(
+        platform_id="bilibili",
+        display_name="Bilibili",
+        category=OFFICIAL_API_PLANNED,
+        source_type="official_api_adapter_scaffold",
+        status="official_api_planned",
+        enabled_in_mvp=True,
+        selectable_for_mock=True,
+        mock_available=True,
+        api_pending=True,
+        real_mode_disabled=True,
+        official_platform_url="https://openhome.bilibili.com",
+        notes=(
+            "Selectable for offline Bilibili-style mock video/comment analysis. "
+            "Real official API mode is disabled until credentials, approval, and "
+            "the compliant API implementation are added. No page scraping is implemented."
+        ),
+        api_approval_required=True,
+        api_approval_status=BILIBILI_API_APPROVAL_STATUS,
+        credentials_required=BILIBILI_REQUIRED_CREDENTIALS,
+    ),
     _official_mock_platform("douyin", "Douyin", "https://developer.open-douyin.com"),
     _official_mock_platform("kuaishou", "Kuaishou", "https://open.kuaishou.com"),
     _official_mock_platform("xiaohongshu", "Xiaohongshu", "https://open.xiaohongshu.com"),
