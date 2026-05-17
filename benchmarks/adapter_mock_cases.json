@@ -1,0 +1,65 @@
+[
+  {
+    "platform_id": "reddit",
+    "keyword": "Tesla",
+    "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "platform_id": "bilibili",
+    "keyword": "Tesla",
+    "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "platform_id": "weibo",
+    "keyword": "Tesla",
+    "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "platform_id": "douyin",
+    "keyword": "Tesla",
+    "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "platform_id": "kuaishou",
+    "keyword": "Tesla",
+    "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "platform_id": "xiaohongshu",
+    "keyword": "Tesla",
+    "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "platform_id": "zhihu",
+    "keyword": "Tesla",
+    "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "platform_id": "douban",
+    "keyword": "Tesla",
+    "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "platform_id": "toutiao",
+    "keyword": "Tesla",
+    "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  }
+]

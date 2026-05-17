@@ -9,6 +9,7 @@ venv/
 .DS_Store
 .pytest_cache/
 .coverage
+.benchmarks/
 backend/data/*.json
 backend/data/*.json.tmp
 !backend/data/.gitkeep

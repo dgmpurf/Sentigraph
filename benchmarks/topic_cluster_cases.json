@@ -1,0 +1,54 @@
+[
+  {
+    "case_id": "topic_cluster_core_signals",
+    "comments": [
+      {
+        "comment_id": "cluster_quality_001",
+        "author_id": "quality_user_a",
+        "language": "en",
+        "text": "The battery quality issue is serious and many owners are asking for repair.",
+        "duplicate_count": 2,
+        "is_repeated_script": false
+      },
+      {
+        "comment_id": "cluster_response_001",
+        "author_id": "response_user_a",
+        "language": "en",
+        "text": "The official response is delayed and the timeline remains unclear.",
+        "duplicate_count": 1,
+        "is_repeated_script": false
+      },
+      {
+        "comment_id": "cluster_amplification_001",
+        "author_id": "amplifier_a",
+        "language": "en",
+        "text": "Same slogan copied everywhere, repost this script now.",
+        "duplicate_count": 5,
+        "is_repeated_script": true
+      },
+      {
+        "comment_id": "cluster_pricing_001",
+        "author_id": "pricing_user_a",
+        "language": "en",
+        "text": "The sudden price cut made early buyers feel treated unfairly.",
+        "duplicate_count": 1,
+        "is_repeated_script": false
+      },
+      {
+        "comment_id": "cluster_neutral_001",
+        "author_id": "neutral_user_a",
+        "language": "en",
+        "text": "Some users are comparing delivery schedules and service locations.",
+        "duplicate_count": 1,
+        "is_repeated_script": false
+      }
+    ],
+    "expected_topics": [
+      "Product quality issues",
+      "Delayed official response",
+      "Coordinated amplification",
+      "Pricing and policy",
+      "General discussion"
+    ]
+  }
+]

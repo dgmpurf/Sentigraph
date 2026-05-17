@@ -8,6 +8,28 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### v3.9 LLM Safety QA Stabilization
+
+Status: QA-stabilized on 2026-05-17.
+
+Completed:
+
+- Revalidated `GET /api/v1/llm/status` and `GET /api/v1/llm/usage` as safe metadata-only endpoints.
+- Revalidated the `LLM Safety` / `大模型安全状态` page source wiring, sidebar navigation, API helpers, provider cards, guardrail metric display, and safety flags.
+- Confirmed the page has no real-call enable button, no API key input, and no `.env` modification path.
+- Revalidated `scripts/reset_local_data.py`, `scripts/seed_demo_cases.py`, and `scripts/api_smoke_check.py` for local/mock-only behavior.
+- Confirmed GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+
+Acceptance:
+
+- backend tests passed with `409 passed in 3.73s`
+- frontend production build passed in 7.84s with the existing non-blocking Ant Design/ECharts vendor chunk warning
+- no real LLM API, real platform API, real crawler, live public fetch, real notification delivery, API key printing, `.env` printing, raw prompt logging, or raw user-content logging was introduced
+
+Next recommended task:
+
+- Run a browser click-through QA pass for LLM Safety, Platform Integration Overview, Selector Repair Tool, Public Parser Status, and Keyword Search data-source selectors before starting any new real-provider or real-platform work.
+
 ### Local Demo Data Utilities
 
 Status: implemented and validated on 2026-05-15.
@@ -535,6 +557,37 @@ Future real LLM integration tasks:
 - Add prompt evaluation datasets for each LLM-assisted operation.
 - Keep GitHub Actions CI intentionally disabled unless explicitly requested later.
 - Keep the LLM Safety page read-only; real-call enabling, key management, provider selection, and durable usage budgets remain future work behind explicit approval.
+
+### v4.0 Offline Benchmark Harness
+
+Status: implemented and QA-stabilized on 2026-05-17.
+
+Completed:
+
+- Added deterministic benchmark fixtures under `benchmarks/`.
+- Added `scripts/run_offline_benchmarks.py` for serverless offline evaluation.
+- Covered sentiment, topic clustering, V1.5 topic risk, report builder, Markdown export, selector repair mock, public parser fixtures, and mock platform adapter normalization.
+- Added generated benchmark output ignore policy via `.benchmarks/`.
+- Added pytest coverage for the benchmark runner.
+- Added QA coverage for missing fixture files so fixture-loading problems become clear suite failures instead of tracebacks.
+- Added `docs/offline_benchmarks.md` and README command notes.
+
+Validation:
+
+- Backend tests passed with `412 passed in 3.34s`.
+- Offline benchmark passed with `78 passed, 0 failed, 0 warnings`.
+- Frontend build was not rerun because no frontend files changed.
+- GitHub Actions CI remains intentionally disabled unless explicitly requested later.
+
+Future evaluation tasks:
+
+- Expand to a larger human-labeled sentiment dataset.
+- Add topic clustering quality metrics and fixture-level expected groupings.
+- Add a report quality rubric and deterministic scoring checks.
+- Build a parser regression corpus with more fixture variants per platform.
+- Add LLM output evaluation fixtures before any real LLM provider is enabled.
+- Add platform-specific integration benchmarks with mocked clients before any real platform API is enabled.
+- Keep GitHub Actions CI intentionally disabled unless explicitly requested later.
 
 ### V2 Dynamic Risk Readiness
 

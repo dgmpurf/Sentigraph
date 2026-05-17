@@ -1,0 +1,28 @@
+[
+  {
+    "case_id": "report_zh_cn_required_fields",
+    "project_id": "benchmark_report_project",
+    "keyword": "Tesla",
+    "platforms": ["reddit", "bilibili", "weibo"],
+    "title": "Tesla Offline Benchmark Report",
+    "report_language": "zh-CN",
+    "representative_comments": [
+      "Serious battery quality issue and unresolved repair complaint.",
+      "官方回应节奏偏慢，用户希望看到明确时间表。"
+    ],
+    "required_markdown_sections": [
+      "title",
+      "keyword",
+      "platforms",
+      "risk score",
+      "risk level",
+      "risk model version",
+      "summary",
+      "key findings",
+      "top risk topics",
+      "representative comments",
+      "recommended actions",
+      "suggested public response"
+    ]
+  }
+]

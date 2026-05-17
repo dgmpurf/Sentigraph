@@ -16,7 +16,7 @@ keyword input -> mock pipeline analysis -> backend report/visualization APIs -> 
 
 Real crawlers, real OpenAI/LLM calls, production database hardening, and complex ML models have not been implemented yet. The MVP remains runnable offline with mock data and deterministic rule/template logic.
 
-Latest v3.9 hardening update: added read-only LLM safety backend endpoints (`GET /api/v1/llm/status` and `GET /api/v1/llm/usage`) plus a desktop `LLM Safety` / `大模型安全状态` frontend page. The backend endpoints expose only safe provider readiness, real-call disabled state, API key presence booleans, usage guardrail limits, and metadata-only usage summaries; they do not expose API key values, `.env` values, raw prompts, raw user content, or raw LLM request bodies. The frontend page shows MockProvider/OpenAI/DeepSeek/Qwen status, API key presence booleans only, daily call/token limits, current usage summary, and explicit safety notices; it has no real-call toggle, no API key input, and no `.env` modification path. Local smoke tooling now checks platform status, public parser status/preview, and LLM status/usage, while `seed_demo_cases.py` now creates a deterministic Hupu public-parser demo case and fixture preview counts without live fetching. Backend validation passed with `python -m pytest` (`409 passed in 3.39s`). Frontend validation passed with `npm run build` from `frontend` (`built in 7.68s`) with the existing non-blocking Ant Design/ECharts large vendor chunk warning. API smoke script was updated but not auto-run because it requires a running backend; use `python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000` after starting the backend. GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated. No real LLM APIs, real platform APIs, real crawlers, live public fetch, real notifications, authentication, API key printing, `.env` printing/modification, or raw prompt logging was introduced. Known non-blocking issues: Vite still reports large vendor chunks for Ant Design/ECharts, and the LLM usage guardrail remains in-process/mock-only rather than durable. Next recommended task: run a browser click-through QA pass for the new LLM Safety page and existing data-source admin pages, or add mocked provider HTTP client harnesses and pricing/token fixtures while keeping real calls disabled.
+Latest v3.9 hardening QA stabilization update: revalidated the read-only LLM safety backend endpoints (`GET /api/v1/llm/status` and `GET /api/v1/llm/usage`), the desktop `LLM Safety` / `大模型安全状态` frontend page, and the local smoke/reset/seed scripts. The backend endpoints still expose only provider readiness, real-call disabled state, API key presence booleans, usage guardrail limits, and metadata-only usage summaries; they do not expose API key values, `.env` values, raw prompts, raw user content, or raw LLM request bodies. The frontend page still shows MockProvider/OpenAI/DeepSeek/Qwen status, API key presence booleans only, daily call/token limits, current usage summary, and explicit safety notices; it has no real-call toggle, no API key input, and no `.env` modification path. `reset_local_data.py` remains limited to project-local runtime JSON files under `backend/data`, `seed_demo_cases.py` remains deterministic/mock-only with a Hupu fixture preview, and `api_smoke_check.py` targets only a caller-supplied local backend URL. Backend validation passed with `python -m pytest` (`409 passed in 3.73s`). Frontend validation passed with `npm run build` from `frontend` (`built in 7.84s`) with the existing non-blocking Ant Design/ECharts large vendor chunk warning. API smoke script was reviewed but not auto-run because it requires a running backend; use `python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000` after starting the backend. GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated. No real LLM APIs, real platform APIs, real crawlers, live public fetch, real notifications, authentication, API key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced. Known non-blocking issues: Vite still reports large vendor chunks for Ant Design/ECharts, and the LLM usage guardrail remains in-process/mock-only rather than durable. Next recommended task: run a browser click-through QA pass for the LLM Safety page plus Platform Integration Overview, Selector Repair Tool, Public Parser Status, and Keyword Search data-source selectors before moving to mocked provider HTTP client harnesses.
 
 Latest LLM usage guardrail QA stabilization update: revalidated the offline usage/cost guardrail scaffold and tightened the future real-provider placeholder path. Placeholder OpenAI / DeepSeek / Qwen providers still make no network calls, but when real calls are explicitly enabled and credentials are present they now consult `check_call_allowed()` before returning the current no-call placeholder error, preserving a fail-closed pattern for future HTTP clients. Added coverage for keyword, sentiment, topic summary, report, recommendation, and selector-repair mock usage recording; safe usage-record field shape; raw prompt/user-content/HTML exclusion; over-limit call/input/token blocking; fail-open mode; reset behavior; no API-key leakage; and disabled real-provider safety. Focused LLM guardrail/provider validation passed with `python -m pytest backend/app/tests/test_llm_usage_guardrails.py backend/app/tests/test_llm_provider_scaffold.py` (`50 passed in 0.58s`); full backend validation passed with `python -m pytest` (`405 passed in 3.35s`). Frontend build was not run because no frontend files changed in this QA task. GitHub Actions CI remains intentionally disabled, `.github/workflows/ci.yml` was not recreated, no real LLM APIs were called, no API keys were printed, no raw prompts or raw user content were logged, no real platform APIs were called, and live public fetching remains disabled by default. Next recommended task: add mocked provider HTTP client harnesses plus provider-specific pricing/token-accounting fixtures before any real OpenAI / DeepSeek / Qwen implementation.
 
@@ -630,9 +630,51 @@ Known limitations:
 - Non-Reddit platforms still use the previous mock-first behavior and do not have adapter output yet.
 - Case runs still use the deterministic mock pipeline rather than live crawl results.
 
+## 6.2 v4.0 Offline Benchmark Harness
+
+Update date: 2026-05-17.
+
+Status: implemented and validated.
+
+What changed:
+
+- Added a root `benchmarks/` fixture corpus for sentiment, topic clustering, V1.5 topic risk, report builder, Markdown export, selector repair, public parser fixtures, and platform adapter mock normalization.
+- Added `scripts/run_offline_benchmarks.py`, a serverless offline benchmark runner that does not require API keys, a running backend, real platform APIs, real LLM calls, live public fetching, crawlers, or real notifications.
+- The runner writes generated JSON summaries to `.benchmarks/offline_benchmark_summary.json`; `.benchmarks/` is gitignored.
+- Added pytest coverage for the benchmark runner so the harness itself remains importable, deterministic, and safe.
+- Added `docs/offline_benchmarks.md` and documented the benchmark command in `README.md`.
+
+Validation:
+
+- Backend tests passed: `411 passed in 3.46s`.
+- Offline benchmark passed: `78 passed, 0 failed, 0 warnings`.
+- Frontend build was not run because no frontend files changed.
+
+Known limitations:
+
+- The fixture corpus is intentionally small and coarse.
+- The sentiment checks use broad expected labels, not a human-labeled production dataset.
+- Topic clustering checks validate deterministic grouping shape, not advanced clustering quality metrics.
+- Report checks validate required fields and Markdown structure, not human quality scoring.
+- Public parser coverage remains fixture-only with live fetch disabled.
+
+Next recommended task: expand the benchmark corpus into a larger evaluation pack with human-labeled sentiment examples, parser regression fixtures, topic clustering quality metrics, and a report quality rubric. Keep it offline-only until real LLM/API call paths are explicitly approved.
+
+QA stabilization update, 2026-05-17:
+
+- Revalidated all required benchmark fixtures and suites: sentiment, topic clustering, V1.5 topic risk, report builder, Markdown export, selector repair, public parser fixtures, and platform adapter mock normalization.
+- Hardened missing/malformed fixture handling so the runner prints a normal pass/fail summary with the affected suite marked failed instead of dropping a traceback.
+- Added regression coverage for missing fixture behavior.
+- Confirmed generated benchmark output is written only under the gitignored `.benchmarks/` directory.
+- Backend tests passed: `412 passed in 3.34s`.
+- Offline benchmark passed: `78 passed, 0 failed, 0 warnings`.
+- Frontend build was not run because no frontend files changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- No real LLM APIs, real platform APIs, crawlers, live public fetch, real notifications, API-key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: run a browser click-through QA pass for the new LLM Safety page plus Platform Integration Overview, Selector Repair Tool, Public Parser Status, and Keyword Search data-source selectors. Keep it UI/API consistency only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, do not start real API integrations, and keep the LLM provider layer in mock mode.
+Recommended next development task: expand the offline benchmark corpus into a larger evaluation pack with human-labeled sentiment examples, parser regression fixtures, topic clustering quality metrics, and a report quality rubric. Keep it offline-only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, and do not start real API integrations.
 
 Suggested scope:
 
@@ -643,5 +685,6 @@ Suggested scope:
 - If alert refinement continues next, keep it manual/mock-only. Notification delivery must remain local simulation only until explicit external-channel configuration and tests are added.
 - If Reddit integration is selected next, keep real API mode disabled until approval is granted and use sanitized fixtures or mocked clients only.
 - If public parser work continues later, do not implement login bypass, captcha bypass, proxy rotation, cookies, private data scraping, or Reddit scraping.
+- Re-run the offline benchmark harness after each evaluation-corpus expansion.
 - Re-run the browser checklist in `docs/demo_checklist.md` after the next product-polish task.
 - Keep existing API schemas stable.

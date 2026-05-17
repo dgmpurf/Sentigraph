@@ -2,7 +2,7 @@
 
 Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
 
-Latest v3.9 hardening validation: 2026-05-17. Backend tests passed with `409 passed in 3.39s`. Frontend production build passed in 7.68s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The new `LLM Safety` / `大模型安全状态` page is read-only and displays MockProvider/default status, disabled real-call status, API key presence booleans only, and metadata-only usage summaries. Local smoke tooling now includes LLM status/usage and public parser preview checks, and demo seeding now creates a Hupu fixture-parser demo case. No real LLM API, real platform API, real crawler, live public fetch, real notification, authentication, `.env` modification, API key printing, or raw prompt logging is introduced.
+Latest v3.9 QA stabilization validation: 2026-05-17. Backend tests passed with `409 passed in 3.73s`. Frontend production build passed in 7.84s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The `LLM Safety` / `大模型安全状态` page is read-only and displays MockProvider/default status, disabled real-call status, API key presence booleans only, guardrail limits, and metadata-only usage summaries. Local smoke tooling includes LLM status/usage and public parser preview checks, and demo seeding creates a Hupu fixture-parser demo case. No real LLM API, real platform API, real crawler, live public fetch, real notification, authentication, `.env` modification, API key printing, raw prompt logging, or raw user-content logging is introduced.
 
 Latest pre-v1.0 hardening validation: 2026-05-15. Backend tests passed with `92 passed in 2.82s`. Frontend production build passed in 7.75s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke check passed with `26 passed, 0 failed` against a temporary local backend and temporary project-local JSON store. New local demo utilities are available for safe runtime data reset, deterministic demo seeding, and local API smoke validation. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, Reddit credential, MongoDB, Redis, or external LLM call is made.
 
@@ -57,6 +57,67 @@ Important constraints:
 - Do not call OpenAI or external LLM APIs.
 - Use the offline mock pipeline only.
 - Test on a desktop browser around 1440px width.
+
+## 0.1 v3.9 Exact Local Commands
+
+Backend tests:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python -m pytest
+```
+
+Backend server with local JSON persistence:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+set CASE_STORE_BACKEND=local_json
+set PUBLIC_PARSER_LIVE_FETCH_ENABLED=false
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+Frontend dev server:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\frontend"
+npm run dev
+```
+
+Frontend production build:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\frontend"
+npm run build
+```
+
+Reset local runtime JSON data:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\reset_local_data.py --yes
+```
+
+Seed deterministic demo cases:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\seed_demo_cases.py --reset-first
+```
+
+Run the local API smoke check after starting the backend:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
+```
+
+LLM Safety page demo:
+
+1. Start the backend with local JSON mode.
+2. Start the frontend dev server.
+3. Open `http://127.0.0.1:5173`.
+4. Click `LLM Safety` / `大模型安全状态` in the sidebar.
+5. Confirm real calls are disabled, API key status is boolean-only, usage summaries contain no raw prompts, and there is no API key input or enable-real-calls button.
 
 ## 0. Pre-v1.0 Local Demo Data Tools
 

@@ -1,0 +1,38 @@
+[
+  {
+    "platform_id": "the_paper",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0
+  },
+  {
+    "platform_id": "jiemian",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0
+  },
+  {
+    "platform_id": "hupu",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 2
+  },
+  {
+    "platform_id": "tieba",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 3
+  },
+  {
+    "platform_id": "nga",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 3
+  },
+  {
+    "platform_id": "maimai",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 2
+  }
+]

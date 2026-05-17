@@ -1,0 +1,44 @@
+[
+  {
+    "case_id": "sent_en_negative_quality",
+    "language": "en",
+    "text": "This product has serious quality issues and the service response is disappointing.",
+    "expected_sentiments": ["negative"]
+  },
+  {
+    "case_id": "sent_en_positive_support",
+    "language": "en",
+    "text": "The support team fixed the issue quickly and I trust the product again.",
+    "expected_sentiments": ["positive", "neutral"]
+  },
+  {
+    "case_id": "sent_en_neutral_status",
+    "language": "en",
+    "text": "The company posted a service update and users are waiting for more details.",
+    "expected_sentiments": ["neutral"]
+  },
+  {
+    "case_id": "sent_zh_negative_quality",
+    "language": "zh-CN",
+    "text": "这个产品质量问题严重，售后回应太慢，用户非常失望。",
+    "expected_sentiments": ["negative"]
+  },
+  {
+    "case_id": "sent_zh_positive_trust",
+    "language": "zh-CN",
+    "text": "客服处理很及时，方案透明，大家重新建立了信任。",
+    "expected_sentiments": ["positive", "neutral"]
+  },
+  {
+    "case_id": "sent_zh_questioning",
+    "language": "zh-CN",
+    "text": "后续安排是什么，官方什么时候公布更多细节？",
+    "expected_sentiments": ["neutral"]
+  },
+  {
+    "case_id": "sent_mixed_negative",
+    "language": "auto",
+    "text": "Good design, but the battery problem is serious and 用户投诉很多.",
+    "expected_sentiments": ["negative", "mixed"]
+  }
+]

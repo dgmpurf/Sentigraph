@@ -1,0 +1,719 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BACKEND_DIR = REPO_ROOT / "backend"
+BENCHMARK_DIR = REPO_ROOT / "benchmarks"
+DEFAULT_OUTPUT_DIR = REPO_ROOT / ".benchmarks"
+
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from app.schemas.analysis import (  # noqa: E402
+    AnalysisResultResponse,
+    BotImpactSummary,
+    BotScore,
+    RiskBrief,
+)
+from app.schemas.case import AnalysisCaseDetail  # noqa: E402
+from app.schemas.comment import CleanComment, RawComment, RawPost  # noqa: E402
+from app.schemas.risk import TOPIC_RISK_MODEL_VERSION, TopicRiskScoreResult  # noqa: E402
+from app.services.case_store import _build_markdown  # noqa: E402
+from app.services.crawling.adapter_factory import get_adapter  # noqa: E402
+from app.services.crawling.public_parser.parser_status_service import preview_public_parser  # noqa: E402
+from app.services.crawling.public_parser.selector_profile import PROFILE_DIR  # noqa: E402
+from app.services.crawling.public_parser.selector_repair.html_sanitizer import sanitize_html  # noqa: E402
+from app.services.crawling.public_parser.selector_repair.selector_repair_service import (  # noqa: E402
+    build_repair_request,
+    preview_suggestion,
+    suggest_selectors,
+)
+from app.services.llm.usage_guardrails import reset_usage_for_tests  # noqa: E402
+from app.services.nlp.sentiment_analyzer import SentimentAnalyzer  # noqa: E402
+from app.services.nlp.topic_clusterer import TopicClusterer  # noqa: E402
+from app.services.recommendation.report_builder import build_public_opinion_report  # noqa: E402
+from app.services.scoring.topic_risk_score import calculate_topic_risk_score  # noqa: E402
+
+
+BENCHMARK_VERSION = "v4.0_offline_benchmark_v1"
+EXPECTED_FIXTURE_FILES = (
+    "sentiment_cases.json",
+    "topic_cluster_cases.json",
+    "topic_risk_cases.json",
+    "report_builder_cases.json",
+    "selector_repair_cases.json",
+    "parser_fixture_cases.json",
+    "adapter_mock_cases.json",
+)
+SAFE_ENV_DEFAULTS = {
+    "LLM_PROVIDER": "mock",
+    "LLM_ENABLE_REAL_CALLS": "false",
+    "PUBLIC_PARSER_LIVE_FETCH_ENABLED": "false",
+    "SELECTOR_REPAIR_MODE": "mock",
+    "SELECTOR_REPAIR_ENABLE_REAL_LLM": "false",
+    "SENTIMENT_ANALYZER_MODE": "rule_based",
+    "TOPIC_SUMMARY_MODE": "template",
+}
+
+
+class BenchmarkFixtureError(RuntimeError):
+    """Raised for fixture loading problems that should become benchmark failures."""
+
+
+class SuiteRecorder:
+    def __init__(self, suite: str) -> None:
+        self.suite = suite
+        self.cases: list[dict[str, Any]] = []
+        self.warnings: list[str] = []
+
+    def check(self, case_id: str, condition: bool, message: str, details: dict[str, Any] | None = None) -> None:
+        self.cases.append(
+            {
+                "case_id": case_id,
+                "passed": bool(condition),
+                "message": message,
+                "details": details or {},
+            }
+        )
+
+    def warn(self, message: str) -> None:
+        self.warnings.append(message)
+
+    def summary(self) -> dict[str, Any]:
+        passed = sum(1 for case in self.cases if case["passed"])
+        failed = len(self.cases) - passed
+        return {
+            "suite": self.suite,
+            "status": "pass" if failed == 0 else "fail",
+            "passed": passed,
+            "failed": failed,
+            "warnings": self.warnings,
+            "cases": self.cases,
+        }
+
+
+def run_all_benchmarks(
+    *,
+    fixture_dir: str | Path = BENCHMARK_DIR,
+    output_dir: str | Path | None = DEFAULT_OUTPUT_DIR,
+    write_json: bool = True,
+) -> dict[str, Any]:
+    """Run deterministic offline benchmark suites without a backend server."""
+
+    _apply_safe_env_defaults()
+    reset_usage_for_tests()
+    start = time.perf_counter()
+    fixture_root = Path(fixture_dir)
+    suites = [
+        _safe_run_suite("sentiment", lambda: _run_sentiment_benchmark(fixture_root)),
+        _safe_run_suite("topic_cluster", lambda: _run_topic_cluster_benchmark(fixture_root)),
+        _safe_run_suite("topic_risk", lambda: _run_topic_risk_benchmark(fixture_root)),
+        _safe_run_suite("report_builder", lambda: _run_report_builder_benchmark(fixture_root)),
+        _safe_run_suite("markdown_export", lambda: _run_markdown_export_benchmark(fixture_root)),
+        _safe_run_suite("selector_repair", lambda: _run_selector_repair_benchmark(fixture_root)),
+        _safe_run_suite("public_parser_fixtures", lambda: _run_public_parser_benchmark(fixture_root)),
+        _safe_run_suite("platform_adapter_mocks", lambda: _run_adapter_mock_benchmark(fixture_root)),
+    ]
+    total_passed = sum(suite["passed"] for suite in suites)
+    total_failed = sum(suite["failed"] for suite in suites)
+    total_warnings = sum(len(suite["warnings"]) for suite in suites)
+    result = {
+        "benchmark_version": BENCHMARK_VERSION,
+        "generated_at": _utc_now_iso(),
+        "duration_seconds": round(time.perf_counter() - start, 4),
+        "total_passed": total_passed,
+        "total_failed": total_failed,
+        "total_warnings": total_warnings,
+        "safe_mode": {
+            "real_llm_calls": False,
+            "real_platform_calls": False,
+            "live_fetch_enabled": False,
+            "backend_server_required": False,
+            "api_keys_required": False,
+        },
+        "suites": suites,
+    }
+    if write_json and output_dir is not None:
+        path = _write_summary(result, Path(output_dir))
+        result["json_summary_path"] = str(path)
+    return result
+
+
+def _safe_run_suite(suite_name: str, runner) -> dict[str, Any]:
+    try:
+        return runner()
+    except BenchmarkFixtureError as exc:
+        recorder = SuiteRecorder(suite_name)
+        recorder.check(
+            f"{suite_name}:fixture_error",
+            False,
+            str(exc),
+            {"error_category": "fixture_error"},
+        )
+        return recorder.summary()
+
+
+def _run_sentiment_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("sentiment")
+    cases = _load_json(fixture_root / "sentiment_cases.json")
+    analyzer = SentimentAnalyzer(mode="rule_based")
+    for index, case in enumerate(cases, start=1):
+        comment = _clean_comment(
+            case_id=case["case_id"],
+            text=case["text"],
+            language=case.get("language", "auto"),
+            author_id=f"sentiment_author_{index}",
+        )
+        result = analyzer.analyze_comment(comment)
+        recorder.check(
+            case["case_id"],
+            result.sentiment in set(case["expected_sentiments"]),
+            "coarse sentiment label matches expected offline fixture",
+            {"actual": result.sentiment, "expected": case["expected_sentiments"]},
+        )
+        recorder.check(
+            f"{case['case_id']}:schema",
+            -1.0 <= result.sentiment_score <= 1.0 and bool(result.reason) and bool(result.stance),
+            "sentiment output keeps score range and required fields",
+            {
+                "sentiment_score": result.sentiment_score,
+                "emotion_tags": result.emotion_tags,
+                "confidence": result.confidence,
+            },
+        )
+    return recorder.summary()
+
+
+def _run_topic_cluster_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("topic_cluster")
+    cases = _load_json(fixture_root / "topic_cluster_cases.json")
+    analyzer = SentimentAnalyzer(mode="rule_based")
+    clusterer = TopicClusterer(summary_mode="template")
+    for case in cases:
+        comments = [_comment_from_fixture(item) for item in case["comments"]]
+        sentiments = [analyzer.analyze_comment(comment) for comment in comments]
+        clusters = clusterer.cluster(comments, sentiments)
+        topics = {cluster.topic for cluster in clusters}
+        for expected_topic in case["expected_topics"]:
+            recorder.check(
+                f"{case['case_id']}:{expected_topic}",
+                expected_topic in topics,
+                "expected deterministic topic bucket is present",
+                {"topics": sorted(topics)},
+            )
+        recorder.check(
+            f"{case['case_id']}:shape",
+            all(cluster.summary and cluster.comment_count >= 1 and cluster.representative_comments for cluster in clusters),
+            "topic clusters include summary, count, and representatives",
+            {"cluster_count": len(clusters)},
+        )
+    return recorder.summary()
+
+
+def _run_topic_risk_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("topic_risk")
+    cases = _load_json(fixture_root / "topic_risk_cases.json")
+    for case in cases:
+        comments = [_comment_from_fixture(item) for item in case["comments"]]
+        sentiments = [SentimentAnalyzer(mode="rule_based").analyze_comment(comment) for comment in comments]
+        clusters = TopicClusterer(summary_mode="template").cluster(comments, sentiments)
+        result = _calculate_risk_from_comments(case["comments"], comments, sentiments, clusters)
+        expected = case.get("expected", {})
+        high_topic = _find_topic(result, expected.get("high_topic", ""))
+        low_topic = _find_topic(result, expected.get("low_topic", ""))
+        sorted_scores = [topic.topic_risk_score for topic in result.top_risk_topics]
+        all_scores = [topic.topic_risk_score for topic in result.topic_risks]
+        recorder.check(
+            f"{case['case_id']}:version",
+            result.risk_model_version == TOPIC_RISK_MODEL_VERSION,
+            "V1.5 topic risk model version is preserved",
+            {"risk_model_version": result.risk_model_version},
+        )
+        recorder.check(
+            f"{case['case_id']}:score_range",
+            all(0 <= score <= 100 for score in all_scores)
+            and 0 <= result.overall_risk <= 100
+            and 0 <= result.manipulation_risk <= 100,
+            "all topic risk scores stay in 0-100",
+            {"scores": all_scores, "overall_risk": result.overall_risk},
+        )
+        recorder.check(
+            f"{case['case_id']}:ordering",
+            sorted_scores == sorted(sorted_scores, reverse=True),
+            "top risk topics are sorted deterministically by score",
+            {"top_scores": sorted_scores},
+        )
+        recorder.check(
+            f"{case['case_id']}:negative_above_neutral",
+            bool(high_topic and low_topic and high_topic.topic_risk_score > low_topic.topic_risk_score),
+            "high negative quality topic scores above low-volume neutral topic",
+            {
+                "high_topic_score": high_topic.topic_risk_score if high_topic else None,
+                "low_topic_score": low_topic.topic_risk_score if low_topic else None,
+            },
+        )
+        recorder.check(
+            f"{case['case_id']}:manipulation",
+            result.manipulation_risk >= float(expected.get("min_manipulation_risk", 0)),
+            "bot/manipulation signals increase manipulation risk",
+            {"manipulation_risk": result.manipulation_risk},
+        )
+    return recorder.summary()
+
+
+def _run_report_builder_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("report_builder")
+    for case, _analysis, report in _iter_report_contexts(fixture_root):
+        recorder.check(
+            f"{case['case_id']}:fields",
+            bool(report.overall_summary)
+            and bool(report.key_findings)
+            and bool(report.recommended_actions)
+            and bool(report.suggested_public_response),
+            "zh-CN report includes required strategic fields",
+            {
+                "report_language": report.report_language,
+                "risk_score": report.risk_score,
+                "risk_level": report.risk_level,
+            },
+        )
+        representative_text = "\n".join(report.representative_comments)
+        recorder.check(
+            f"{case['case_id']}:representatives",
+            all(comment in representative_text for comment in case["representative_comments"]),
+            "representative comments are preserved in original language",
+        )
+        combined_report_text = "\n".join(
+            [
+                report.overall_summary,
+                *report.key_findings,
+                *report.main_risk_factors,
+                *report.recommended_actions,
+                report.suggested_public_response,
+            ]
+        )
+        recorder.check(
+            f"{case['case_id']}:no_json_dump",
+            "{" not in combined_report_text and "}" not in combined_report_text,
+            "report text does not degrade into a raw JSON dump",
+        )
+    return recorder.summary()
+
+
+def _run_markdown_export_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("markdown_export")
+    for case, analysis, report in _iter_report_contexts(fixture_root):
+        markdown = _markdown_for_report_case(case, analysis, report)
+        recorder.check(
+            f"{case['case_id']}:markdown_sections",
+            _markdown_has_required_sections(markdown, case, report),
+            "Markdown export includes required benchmark sections",
+            {"markdown_length": len(markdown)},
+        )
+    return recorder.summary()
+
+
+def _run_selector_repair_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("selector_repair")
+    cases = _load_json(fixture_root / "selector_repair_cases.json")
+    for case in cases:
+        profile_path = PROFILE_DIR / f"{case['platform_id']}.json"
+        before_profile = profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
+        sanitized = sanitize_html(case["html"], max_chars=20000)
+        recorder.check(
+            f"{case['case_id']}:sanitize",
+            "<script" not in sanitized.lower()
+            and "<style" not in sanitized.lower()
+            and "onclick=" not in sanitized.lower()
+            and len(sanitized) <= 20000,
+            "sanitizer removes scripts, styles, inline events, and obeys length limit",
+        )
+        request = build_repair_request(
+            platform_id=case["platform_id"],
+            html=case["html"],
+            error_summary=case.get("error_summary", ""),
+            extraction_targets=case.get("extraction_targets"),
+        )
+        suggestion = suggest_selectors(request)
+        second_suggestion = suggest_selectors(request)
+        suggestion_dump = suggestion.model_dump(mode="json")
+        second_dump = second_suggestion.model_dump(mode="json")
+        targets = {candidate.target for candidate in suggestion.candidates}
+        recorder.check(
+            f"{case['case_id']}:deterministic",
+            suggestion_dump == second_dump and set(case["expected_targets"]).issubset(targets),
+            "MockProvider selector suggestions are deterministic and cover expected targets",
+            {"targets": sorted(targets)},
+        )
+        preview = preview_suggestion(case["platform_id"], suggestion, sanitized)
+        matched_targets = {target for target, matched in preview.matched_targets.items() if matched}
+        recorder.check(
+            f"{case['case_id']}:preview",
+            preview.profile_modified is False and bool(matched_targets.intersection(case["expected_targets"])),
+            "selector preview matches fixture HTML and does not modify profiles",
+            {"matched_targets": sorted(matched_targets), "warnings": preview.warnings},
+        )
+        after_profile = profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
+        recorder.check(
+            f"{case['case_id']}:profile_unchanged",
+            before_profile == after_profile,
+            "active parser profile file is not modified automatically",
+        )
+    return recorder.summary()
+
+
+def _run_public_parser_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("public_parser_fixtures")
+    cases = _load_json(fixture_root / "parser_fixture_cases.json")
+    for case in cases:
+        platform = case["platform_id"]
+        result = preview_public_parser(platform, limit=case.get("limit", 3), use_live_fetch=False)
+        post_valid = all(_schema_valid(RawPost, item) for item in result.sample_posts)
+        comment_valid = all(_schema_valid(RawComment, item) for item in result.sample_comments)
+        recorder.check(
+            f"{platform}:counts",
+            result.post_count >= case["min_posts"] and result.comment_count >= case["min_comments"],
+            "public parser fixture returns expected post/comment counts",
+            {"post_count": result.post_count, "comment_count": result.comment_count},
+        )
+        recorder.check(
+            f"{platform}:schema",
+            result.raw_post_schema_valid is True
+            and result.raw_comment_schema_valid is True
+            and post_valid
+            and comment_valid,
+            "public parser fixture output validates RawPost/RawComment schema",
+        )
+        recorder.check(
+            f"{platform}:live_disabled",
+            result.live_fetch_enabled is False,
+            "public parser benchmark keeps live fetch disabled",
+        )
+    return recorder.summary()
+
+
+def _run_adapter_mock_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("platform_adapter_mocks")
+    cases = _load_json(fixture_root / "adapter_mock_cases.json")
+    for case in cases:
+        platform = case["platform_id"]
+        adapter = get_adapter(platform, mode="mock")
+        posts = adapter.search_posts(case["keyword"], limit=case.get("limit", 2))
+        comments = adapter.fetch_comments(posts[0].post_id, limit=case.get("limit", 2)) if posts else []
+        recorder.check(
+            f"{platform}:counts",
+            len(posts) >= case["min_posts"] and len(comments) >= case["min_comments"],
+            "mock adapter returns deterministic posts and comments",
+            {"post_count": len(posts), "comment_count": len(comments)},
+        )
+        recorder.check(
+            f"{platform}:post_schema",
+            all(_schema_valid(RawPost, post) for post in posts),
+            "mock adapter posts validate RawPost schema",
+        )
+        recorder.check(
+            f"{platform}:comment_schema",
+            all(_schema_valid(RawComment, comment) for comment in comments),
+            "mock adapter comments validate RawComment schema",
+        )
+    return recorder.summary()
+
+
+def _calculate_risk_from_comments(
+    raw_comment_fixtures: list[dict[str, Any]],
+    comments: list[CleanComment],
+    sentiments: list[Any],
+    clusters: list[Any],
+) -> TopicRiskScoreResult:
+    bot_accounts = [
+        BotScore(
+            author_id=item["author_id"],
+            bot_probability=float(item.get("bot_probability", 0.0)),
+            bot_reasons=["benchmark repeated-script signal"],
+            influence_weight=1.0,
+        )
+        for item in raw_comment_fixtures
+        if float(item.get("bot_probability", 0.0)) >= 0.5 or bool(item.get("is_repeated_script"))
+    ]
+    suspected_comment_count = sum(
+        int(item.get("duplicate_count", 1))
+        for item in raw_comment_fixtures
+        if float(item.get("bot_probability", 0.0)) >= 0.5 or bool(item.get("is_repeated_script"))
+    )
+    total_comment_count = max(1, sum(int(item.get("duplicate_count", 1)) for item in raw_comment_fixtures))
+    bot_impact = BotImpactSummary(
+        suspected_bot_ratio=round(len(bot_accounts) / max(1, len(raw_comment_fixtures)), 4),
+        suspected_bot_comment_ratio=round(suspected_comment_count / total_comment_count, 4),
+    )
+    raw_comments = [_raw_comment_from_fixture(item) for item in raw_comment_fixtures]
+    return calculate_topic_risk_score(
+        clusters,
+        clean_comments=comments,
+        sentiment_results=sentiments,
+        bot_accounts=bot_accounts,
+        bot_impact=bot_impact,
+        raw_comments=raw_comments,
+    )
+
+
+def _analysis_from_outputs(
+    project_id: str,
+    comments: list[CleanComment],
+    sentiments: list[Any],
+    clusters: list[Any],
+    risk_result: TopicRiskScoreResult,
+) -> AnalysisResultResponse:
+    sentiment_summary = SentimentAnalyzer.summarize(sentiments)
+    bot_impact = BotImpactSummary(suspected_bot_ratio=0.25, suspected_bot_comment_ratio=0.5)
+    return AnalysisResultResponse(
+        project_id=project_id,
+        summary="Offline benchmark analysis for deterministic Sentigraph report evaluation.",
+        sentiment=sentiment_summary,
+        topics=clusters,
+        conflicts=[],
+        bot_score=bot_impact,
+        risk=RiskBrief(risk_score=int(round(risk_result.overall_risk)), risk_level=risk_result.risk_level),
+        sentiment_results=sentiments,
+        ai_generated=[],
+        bot_accounts=[],
+        risk_model_version=TOPIC_RISK_MODEL_VERSION,
+        topic_risks=risk_result.topic_risks,
+        top_risk_topics=risk_result.top_risk_topics,
+        max_topic_risk=risk_result.max_topic_risk,
+        average_topic_risk=risk_result.average_topic_risk,
+        overall_risk=risk_result.overall_risk,
+        real_crisis_risk=risk_result.real_crisis_risk,
+        manipulation_risk=risk_result.manipulation_risk,
+        risk_explanation=risk_result.risk_explanation,
+    )
+
+
+def _iter_report_contexts(fixture_root: Path):
+    cases = _load_json(fixture_root / "report_builder_cases.json")
+    topic_fixture = _load_json(fixture_root / "topic_risk_cases.json")[0]
+    comments = [_comment_from_fixture(item) for item in topic_fixture["comments"]]
+    analyzer = SentimentAnalyzer(mode="rule_based")
+    sentiments = [analyzer.analyze_comment(comment) for comment in comments]
+    clusters = TopicClusterer(summary_mode="template").cluster(comments, sentiments)
+    risk_result = _calculate_risk_from_comments(topic_fixture["comments"], comments, sentiments, clusters)
+    for case in cases:
+        analysis = _analysis_from_outputs(case["project_id"], comments, sentiments, clusters, risk_result)
+        report = build_public_opinion_report(
+            analysis,
+            topic_risk_result=risk_result,
+            representative_comments=case["representative_comments"],
+            report_language=case.get("report_language", "zh-CN"),
+        )
+        yield case, analysis, report
+
+
+def _markdown_for_report_case(case: dict[str, Any], analysis: AnalysisResultResponse, report: Any) -> str:
+    now = datetime(2026, 5, 17, tzinfo=timezone.utc)
+    detail = AnalysisCaseDetail(
+        case_id=f"{case['case_id']}_case",
+        project_id=case["project_id"],
+        title=case["title"],
+        keyword=case["keyword"],
+        platforms=case["platforms"],
+        status="completed",
+        created_at=now,
+        updated_at=now,
+        risk_score=report.overall_risk if report.overall_risk is not None else report.risk_score,
+        risk_level=report.risk_level,
+        risk_model_version=report.risk_model_version,
+        report_language=case.get("report_language", "zh-CN"),
+        analysis_result=analysis,
+        visualization_data=None,
+        report=report,
+        markdown_available=True,
+    )
+    return _build_markdown(detail)
+
+
+def _markdown_has_required_sections(markdown: str, case: dict[str, Any], report: Any) -> bool:
+    if not markdown.startswith(f"# {case['title']}"):
+        return False
+    required_values = [
+        case["keyword"],
+        ", ".join(case["platforms"]),
+        "/100",
+        report.risk_level,
+        report.risk_model_version,
+        report.overall_summary,
+        report.suggested_public_response,
+    ]
+    if report.key_findings:
+        required_values.append(report.key_findings[0])
+    if report.top_risk_topics:
+        required_values.append(report.top_risk_topics[0].topic)
+    if report.representative_comments:
+        required_values.append(report.representative_comments[0])
+    if report.recommended_actions:
+        required_values.append(report.recommended_actions[0])
+    return all(value in markdown for value in required_values if value)
+
+
+def _comment_from_fixture(item: dict[str, Any]) -> CleanComment:
+    return _clean_comment(
+        case_id=item["comment_id"],
+        text=item["text"],
+        language=item.get("language", "auto"),
+        author_id=item.get("author_id", "benchmark_author"),
+        duplicate_count=int(item.get("duplicate_count", 1)),
+        is_repeated_script=bool(item.get("is_repeated_script", False)),
+    )
+
+
+def _clean_comment(
+    *,
+    case_id: str,
+    text: str,
+    language: str,
+    author_id: str,
+    duplicate_count: int = 1,
+    is_repeated_script: bool = False,
+) -> CleanComment:
+    return CleanComment(
+        clean_comment_id=case_id,
+        original_comment_ids=[case_id],
+        platforms=["benchmark"],
+        post_ids=["benchmark_post"],
+        author_id=author_id,
+        clean_text=text,
+        language=language,
+        duplicate_group_id=f"{case_id}_dup" if duplicate_count > 1 else None,
+        duplicate_count=duplicate_count,
+        semantic_similarity_group=None,
+        is_repeated_script=is_repeated_script,
+        created_at_min="2026-05-17T00:00:00Z",
+        created_at_max="2026-05-17T00:00:00Z",
+    )
+
+
+def _raw_comment_from_fixture(item: dict[str, Any]) -> RawComment:
+    comment_id = item["comment_id"]
+    return RawComment(
+        platform="benchmark",
+        post_id="benchmark_post",
+        comment_id=comment_id,
+        parent_id=None,
+        author_id=item.get("author_id", "benchmark_author"),
+        author_name=item.get("author_id", "benchmark_author"),
+        content=item["text"],
+        like_count=int(item.get("like_count", 0)),
+        reply_count=int(item.get("reply_count", 0)),
+        share_count=int(item.get("share_count", 0)),
+        created_at="2026-05-17T00:00:00Z",
+        url=f"https://example.invalid/benchmark/{comment_id}",
+        raw_data={"mode": "offline_benchmark"},
+    )
+
+
+def _find_topic(result: TopicRiskScoreResult, topic_name: str):
+    return next((topic for topic in result.topic_risks if topic.topic == topic_name), None)
+
+
+def _schema_valid(schema: Any, value: Any) -> bool:
+    try:
+        if hasattr(value, "model_dump"):
+            schema.model_validate(value.model_dump(mode="json"))
+        else:
+            schema.model_validate(value)
+    except Exception:
+        return False
+    return True
+
+
+def _load_json(path: Path) -> Any:
+    if not path.exists():
+        expected = ", ".join(EXPECTED_FIXTURE_FILES)
+        raise BenchmarkFixtureError(
+            f"Required benchmark fixture is missing: {path.name}. Expected fixtures: {expected}."
+        )
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise BenchmarkFixtureError(
+            f"Benchmark fixture is not valid JSON: {path.name}."
+        ) from exc
+
+
+def _apply_safe_env_defaults() -> None:
+    for key, value in SAFE_ENV_DEFAULTS.items():
+        os.environ.setdefault(key, value)
+
+
+def _write_summary(result: dict[str, Any], output_dir: Path) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "offline_benchmark_summary.json"
+    path.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run Sentigraph v4.0 offline benchmark suites without external APIs."
+    )
+    parser.add_argument(
+        "--fixture-dir",
+        default=str(BENCHMARK_DIR),
+        help="Benchmark fixture directory. Defaults to the repository benchmarks directory.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help="Generated JSON summary directory. Defaults to .benchmarks.",
+    )
+    parser.add_argument(
+        "--no-json",
+        action="store_true",
+        help="Do not write a generated JSON summary file.",
+    )
+    return parser
+
+
+def main() -> int:
+    args = _build_parser().parse_args()
+    result = run_all_benchmarks(
+        fixture_dir=args.fixture_dir,
+        output_dir=None if args.no_json else args.output_dir,
+        write_json=not args.no_json,
+    )
+    _print_summary(result)
+    return 0 if result["total_failed"] == 0 else 1
+
+
+def _print_summary(result: dict[str, Any]) -> None:
+    print("Sentigraph offline benchmark summary")
+    print(f"Benchmark version: {result['benchmark_version']}")
+    for suite in result["suites"]:
+        status = "PASS" if suite["failed"] == 0 else "FAIL"
+        print(
+            f"- {suite['suite']}: {status} "
+            f"({suite['passed']} passed, {suite['failed']} failed, {len(suite['warnings'])} warnings)"
+        )
+    print(
+        "Total: "
+        f"{result['total_passed']} passed, {result['total_failed']} failed, "
+        f"{result['total_warnings']} warnings in {result['duration_seconds']}s"
+    )
+    if result.get("json_summary_path"):
+        print(f"JSON summary: {result['json_summary_path']}")
+    print("Safety: no real LLM calls, no real platform API calls, live fetch disabled.")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

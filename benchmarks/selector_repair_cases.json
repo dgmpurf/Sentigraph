@@ -1,0 +1,10 @@
+[
+  {
+    "case_id": "selector_repair_hupu_fixture",
+    "platform_id": "hupu",
+    "error_summary": "title and reply selectors stopped matching after fixture layout change",
+    "extraction_targets": ["title", "content", "comment_content"],
+    "html": "<html><head><style>.hidden{display:none}</style><script>window.token='secret-token';</script></head><body><article class=\"thread\" onclick=\"steal()\"><h1 class=\"thread-title\">Tesla service discussion on Hupu</h1><div class=\"thread-content\">Visible repair timeline discussion.</div><div class=\"reply-item\"><span class=\"reply-author\">fixture_user</span><p class=\"reply-content\">The repair timeline should be public.</p></div></article></body></html>",
+    "expected_targets": ["title", "content", "comment_content"]
+  }
+]

@@ -407,6 +407,12 @@ Run the local API smoke check after the backend is running:
 python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
 ```
 
+Run the v4.0 offline benchmark harness:
+
+```cmd
+python scripts\run_offline_benchmarks.py
+```
+
 Equivalent root npm helper scripts are also available:
 
 ```cmd
