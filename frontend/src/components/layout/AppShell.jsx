@@ -11,6 +11,7 @@ import {
   Search,
   ShieldAlert,
   Sparkles,
+  Wrench,
 } from 'lucide-react'
 
 import { riskTone } from '../../utils/formatters.js'
@@ -28,6 +29,7 @@ const navItems = [
   { key: 'summary', label: 'Summary Report', icon: <FileText size={17} /> },
   { key: 'publicParsers', label: '公开页面解析', icon: <FileSearch size={17} /> },
   { key: 'platformIntegrations', label: '平台接入总览', icon: <Globe2 size={17} /> },
+  { key: 'selectorRepair', label: 'Selector 修复工具', icon: <Wrench size={17} /> },
 ]
 
 const riskLevelLabels = {

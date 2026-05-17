@@ -76,6 +76,7 @@ const PlatformIntegrationOverview = lazyNamed(
   () => import('./pages/PlatformIntegrationOverview.jsx'),
   'PlatformIntegrationOverview',
 )
+const SelectorRepairTool = lazyNamed(() => import('./pages/SelectorRepairTool.jsx'), 'SelectorRepairTool')
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
@@ -586,6 +587,7 @@ function App() {
     summary: <SummaryReport {...pageProps} />,
     publicParsers: <PublicParserStatus />,
     platformIntegrations: <PlatformIntegrationOverview />,
+    selectorRepair: <SelectorRepairTool />,
   }[activePage] || <NotFound activePage={activePage} onNavigate={setActivePage} />
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0

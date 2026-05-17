@@ -10,6 +10,7 @@ from app.schemas.selector_repair import (
     SelectorRepairSuggestion,
 )
 from app.services.crawling.public_parser.html_cleaner import select_nodes
+from app.services.crawling.public_parser.errors import SelectorProfileError
 from app.services.crawling.public_parser.parser_registry import has_public_parser
 from app.services.crawling.public_parser.selector_profile import SelectorProfile, load_selector_profile
 from app.services.crawling.public_parser.selector_repair.html_sanitizer import (
@@ -36,7 +37,10 @@ def build_repair_request(
     if not has_public_parser(normalized_platform):
         raise ValueError(f"Public parser platform is not registered for '{platform_id}'.")
 
-    loaded_profile = load_selector_profile(normalized_platform)
+    try:
+        loaded_profile = load_selector_profile(normalized_platform)
+    except SelectorProfileError as exc:
+        raise ValueError(f"Selector profile is unavailable for '{platform_id}'.") from exc
     current_profile = profile or loaded_profile.model_dump(mode="json")
     max_chars = _selector_repair_max_html_chars()
     targets = extraction_targets or _targets_from_profile(loaded_profile)

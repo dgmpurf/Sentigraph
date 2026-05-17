@@ -32,6 +32,26 @@ export async function previewPublicParser(platform, limit = 3, use_live_fetch = 
   return normalizePublicParserPreview(data)
 }
 
+export async function suggestSelectorRepair(payload) {
+  const { data } = await apiClient.post(`${API_PREFIX}/public-parsers/selector-repair/suggest`, {
+    platform_id: payload.platform_id || payload.platform || '',
+    html: payload.html || '',
+    profile: payload.profile && typeof payload.profile === 'object' ? payload.profile : {},
+    extraction_targets: Array.isArray(payload.extraction_targets) ? payload.extraction_targets : [],
+    error_summary: payload.error_summary || '',
+  })
+  return normalizeSelectorRepairSuggestion(data)
+}
+
+export async function previewSelectorRepair(payload) {
+  const { data } = await apiClient.post(`${API_PREFIX}/public-parsers/selector-repair/preview`, {
+    platform_id: payload.platform_id || payload.platform || '',
+    suggestion: payload.suggestion,
+    fixture_html: payload.fixture_html || payload.html || '',
+  })
+  return normalizeSelectorRepairPreview(data)
+}
+
 export async function listAnalysisCases() {
   const { data } = await apiClient.get(`${API_PREFIX}/cases`)
   return Array.isArray(data) ? data : []
@@ -469,6 +489,87 @@ function normalizeRawCommentPreview(data) {
     created_at: data.created_at || null,
     url: data.url || '',
   }
+}
+
+function normalizeSelectorRepairSuggestion(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      platform_id: '',
+      status: 'error',
+      candidates: [],
+      warnings: ['empty_selector_repair_response'],
+      provider: 'mock',
+      generated_by_mock: true,
+      applied: false,
+      review_required: true,
+      draft_id: null,
+    }
+  }
+  return {
+    ...data,
+    platform_id: String(data.platform_id || ''),
+    status: String(data.status || 'error'),
+    candidates: Array.isArray(data.candidates)
+      ? data.candidates.map(normalizeSelectorCandidate).filter(Boolean)
+      : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
+    provider: String(data.provider || 'mock'),
+    generated_by_mock: data.generated_by_mock !== false,
+    applied: Boolean(data.applied),
+    review_required: data.review_required !== false,
+    draft_id: data.draft_id ? String(data.draft_id) : null,
+  }
+}
+
+function normalizeSelectorCandidate(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    target: String(data.target || ''),
+    selector: String(data.selector || ''),
+    selector_type: String(data.selector_type || 'css'),
+    confidence: Number.isFinite(Number(data.confidence)) ? Number(data.confidence) : 0,
+    rationale: String(data.rationale || ''),
+    source: String(data.source || 'mock_provider'),
+    warning: data.warning ? String(data.warning) : '',
+  }
+}
+
+function normalizeSelectorRepairPreview(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      platform_id: '',
+      status: 'preview_failed',
+      matched_targets: {},
+      sample_values: {},
+      warnings: ['empty_selector_repair_preview_response'],
+      suggestion: null,
+      profile_modified: false,
+    }
+  }
+  return {
+    ...data,
+    platform_id: String(data.platform_id || ''),
+    status: String(data.status || 'preview_failed'),
+    matched_targets: normalizeBooleanMap(data.matched_targets),
+    sample_values: normalizeStringMap(data.sample_values),
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
+    suggestion: data.suggestion ? normalizeSelectorRepairSuggestion(data.suggestion) : null,
+    profile_modified: Boolean(data.profile_modified),
+  }
+}
+
+function normalizeBooleanMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).map(([key, mapValue]) => [String(key), Boolean(mapValue)]),
+  )
+}
+
+function normalizeStringMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).map(([key, mapValue]) => [String(key), String(mapValue ?? '')]),
+  )
 }
 
 function normalizeOptionalScore(value) {

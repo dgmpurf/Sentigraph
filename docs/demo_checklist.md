@@ -650,6 +650,33 @@ Expected frontend result:
 - React never renders raw JavaScript objects such as `[object Object]` in the visible page.
 - No real platform API, public-page fetch, cookie, login, captcha handling, proxy rotation, private data access, Reddit scraping, or external LLM call occurs.
 
+## 4.6.3 Selector Repair Tool
+
+This checks the developer-facing selector repair panel. It uses only caller-provided fixture/sanitized HTML and the existing mock selector repair backend.
+
+Frontend page check:
+
+1. Start the backend and frontend.
+2. Open `http://127.0.0.1:5173`.
+3. Click the sidebar item `Selector 修复工具`.
+4. Confirm the page shows the safety notice: MockProvider mode, no real LLM calls, no live webpage fetch, no automatic parser profile modification, and fixture/sanitized HTML only.
+5. Select a public parser platform such as `hupu`, `the_paper`, or `jiemian`.
+6. Paste or keep fixture-style HTML in the `Sanitized HTML` text area.
+7. Click `生成 Selector 建议`.
+8. Confirm candidate selector cards show target field, selector, confidence, rationale, and source.
+9. Click `预览建议`.
+10. Confirm preview shows extracted title/content samples where matched, matched target tags, warnings, and `profile_modified=false`.
+11. Clear the HTML field and confirm the page shows a user-facing error instead of crashing.
+
+Expected result:
+
+- The frontend calls `POST /api/v1/public-parsers/selector-repair/suggest` and `POST /api/v1/public-parsers/selector-repair/preview`.
+- The frontend does not fetch live websites and does not expose a live-fetch toggle.
+- The page does not include an apply-to-profile button.
+- `复制草稿 JSON` only copies suggestion JSON to the clipboard; it does not write profile files.
+- Empty HTML, malformed HTML, missing optional fields, invalid platform/backend errors, and preview warnings render as UI states rather than raw JavaScript objects.
+- No real LLM API, real platform API, browser cookie, login/captcha bypass, proxy rotation, private data access, Reddit scraping, or active profile modification occurs.
+
 ## 4.7 Optional The Paper Live Public-Page Fetch Pilot
 
 This is a local-only pilot and is disabled by default. Use it only for one tiny manual check against a public The Paper article page. Do not use accounts, cookies, browser profiles, captcha handling, proxy rotation, or private/authenticated pages.

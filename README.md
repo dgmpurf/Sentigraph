@@ -61,9 +61,10 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - 后端平台 registry，区分 mock-selectable、official API planned、crawler-later、optional future。
 - 后端 deterministic mock analysis pipeline。
 - 情绪分析、话题聚类、重复话术/疑似水军信号、风险评分。
-- Dashboard、Keyword Search、Cases、Analysis Result、Propagation Graph、Risk Monitor、Summary Report、Public Parser Status、Platform Integration Overview 页面。
+- Dashboard、Keyword Search、Cases、Analysis Result、Propagation Graph、Risk Monitor、Summary Report、Public Parser Status、Platform Integration Overview、Selector Repair Tool 页面。
 - Public Parser Status 页面支持 `the_paper`、`jiemian`、`hupu`、`maimai`、`tieba`、`nga` 的 fixture-first 状态查看和安全预览；前端不会启用 live public fetching。
 - Platform Integration Overview 页面集中展示官方 API scaffold、公开页面解析、Reddit API-pending 状态和未来可选来源；凭证只显示 present/missing 布尔状态，前端不会启用真实模式或 live public fetching。
+- Selector Repair Tool 页面只使用 fixture/sanitized HTML 和 MockProvider selector 建议；不会抓取真实网页、调用真实 LLM API 或自动修改 parser profile。
 - ECharts 图表：情绪趋势、风险雷达、话题图、平台热力、传播图谱。
 - 中文结构化舆情报告：
   - 舆情总览

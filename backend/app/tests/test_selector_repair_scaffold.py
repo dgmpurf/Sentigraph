@@ -9,10 +9,14 @@ from app.main import app
 from app.schemas.selector_repair import (
     SelectorCandidate,
     SelectorRepairRequest,
+    SelectorRepairStatus,
     SelectorRepairSuggestion,
+    SelectorRepairPreviewResult,
 )
+from app.services.crawling.public_parser.errors import SelectorProfileError
 from app.services.crawling.public_parser.selector_repair.html_sanitizer import sanitize_html
 import app.services.crawling.public_parser.selector_repair.selector_repair_service as repair_service
+from app.core.config import settings
 from app.services.llm.mock_provider import MockProvider
 
 
@@ -39,6 +43,32 @@ FIXTURE_HTML = """
 </html>
 """
 
+THE_PAPER_FIXTURE = (
+    Path(__file__).resolve().parent / "fixtures" / "public_parser" / "the_paper_article.html"
+)
+
+
+def test_selector_repair_schemas_are_usable() -> None:
+    candidate = SelectorCandidate(target="title", selector="h1.article-title", confidence=0.9)
+    request = SelectorRepairRequest(
+        platform_id="the_paper",
+        sanitized_html="<article><h1 class='article-title'>Title</h1></article>",
+        extraction_targets=["title"],
+    )
+    suggestion = SelectorRepairSuggestion(platform_id="the_paper", candidates=[candidate])
+    preview = SelectorRepairPreviewResult(
+        platform_id="the_paper",
+        status="preview_ok",
+        matched_targets={"title": True},
+        suggestion=suggestion,
+    )
+    status_value: SelectorRepairStatus = "suggested"
+
+    assert request.platform_id == "the_paper"
+    assert suggestion.candidates[0].selector == "h1.article-title"
+    assert preview.profile_modified is False
+    assert status_value == "suggested"
+
 
 def test_html_sanitizer_removes_scripts_styles_events_and_obvious_tokens() -> None:
     html = """
@@ -46,7 +76,7 @@ def test_html_sanitizer_removes_scripts_styles_events_and_obvious_tokens() -> No
     <script>token=abc123</script>
     <style>body{color:red}</style>
     <meta name="csrf-token" content="secret">
-    token=abc123; session_id="secret"; client_secret='secret'
+    token=abc123; session_id="secret"; client_secret='secret'; Authorization: Bearer bearer-secret
     """
 
     sanitized = sanitize_html(html)
@@ -56,8 +86,20 @@ def test_html_sanitizer_removes_scripts_styles_events_and_obvious_tokens() -> No
     assert "onclick" not in sanitized.lower()
     assert "csrf-token" not in sanitized.lower()
     assert "abc123" not in sanitized
+    assert "bearer-secret" not in sanitized
     assert "client_secret=[REDACTED]" in sanitized
     assert "data-safe" in sanitized
+
+
+def test_html_sanitizer_preserves_structure_and_handles_empty_or_malformed_html() -> None:
+    malformed = "<article><h1>Fixture title<div class='content'>Body"
+
+    assert sanitize_html("") == ""
+    sanitized = sanitize_html(malformed)
+
+    assert "<article>" in sanitized
+    assert "<h1>Fixture title" in sanitized
+    assert "class='content'" in sanitized
 
 
 def test_html_sanitizer_limits_length() -> None:
@@ -72,6 +114,12 @@ def test_env_example_documents_selector_repair_defaults() -> None:
     assert "SELECTOR_REPAIR_MODE=mock" in env_example
     assert "SELECTOR_REPAIR_ENABLE_REAL_LLM=false" in env_example
     assert "SELECTOR_REPAIR_MAX_HTML_CHARS=20000" in env_example
+
+
+def test_selector_repair_config_defaults_are_safe() -> None:
+    assert settings.selector_repair_mode == "mock"
+    assert settings.selector_repair_enable_real_llm is False
+    assert settings.selector_repair_max_html_chars == 20000
 
 
 def test_repair_request_builds_safely(monkeypatch) -> None:
@@ -93,6 +141,18 @@ def test_repair_request_builds_safely(monkeypatch) -> None:
     assert request.extraction_targets == ["title", "content"]
     assert "<script" not in request.sanitized_html.lower()
     assert "onclick" not in request.sanitized_html.lower()
+
+
+def test_missing_registered_profile_fails_safely(monkeypatch) -> None:
+    monkeypatch.setattr(repair_service, "has_public_parser", lambda platform: True)
+
+    def missing_profile(platform: str):
+        raise SelectorProfileError(f"Selector profile is not registered for '{platform}'.")
+
+    monkeypatch.setattr(repair_service, "load_selector_profile", missing_profile)
+
+    with pytest.raises(ValueError, match="Selector profile is unavailable"):
+        repair_service.build_repair_request("the_paper", FIXTURE_HTML)
 
 
 def test_mock_provider_returns_deterministic_selector_suggestions() -> None:
@@ -159,6 +219,23 @@ def test_future_real_selector_repair_mode_is_disabled(monkeypatch) -> None:
     assert "selector_repair_real_llm_disabled" in suggestion.warnings
 
 
+def test_mock_provider_selector_repair_works_for_the_paper_fixture(monkeypatch) -> None:
+    monkeypatch.setenv("SELECTOR_REPAIR_MODE", "mock")
+    html = THE_PAPER_FIXTURE.read_text(encoding="utf-8")
+    request = repair_service.build_repair_request(
+        "the_paper",
+        html,
+        error_summary="article selectors missing",
+        extraction_targets=["title", "content", "author"],
+    )
+    suggestion = repair_service.suggest_selectors(request)
+
+    assert suggestion.platform_id == "the_paper"
+    assert suggestion.generated_by_mock is True
+    assert {candidate.target for candidate in suggestion.candidates} == {"title", "content", "author"}
+    assert "<script" not in request.sanitized_html.lower()
+
+
 def test_preview_suggestion_works_against_fixture_html() -> None:
     suggestion = SelectorRepairSuggestion(
         platform_id="hupu",
@@ -180,6 +257,29 @@ def test_preview_suggestion_works_against_fixture_html() -> None:
     }
     assert preview.sample_values["title"] == "Fixture title"
     assert preview.sample_values["comment_content"] == "Visible public reply."
+
+
+def test_preview_empty_or_unmatched_suggestion_fails_safely() -> None:
+    empty_preview = repair_service.preview_suggestion(
+        "hupu",
+        SelectorRepairSuggestion(platform_id="hupu", candidates=[]),
+        FIXTURE_HTML,
+    )
+    unmatched_preview = repair_service.preview_suggestion(
+        "hupu",
+        SelectorRepairSuggestion(
+            platform_id="hupu",
+            candidates=[SelectorCandidate(target="title", selector=".does-not-exist")],
+        ),
+        FIXTURE_HTML,
+    )
+
+    assert empty_preview.status == "preview_failed"
+    assert "no_selector_candidates" in empty_preview.warnings
+    assert empty_preview.profile_modified is False
+    assert unmatched_preview.status == "preview_failed"
+    assert unmatched_preview.matched_targets == {"title": False}
+    assert "some_selector_candidates_unmatched" in unmatched_preview.warnings
 
 
 def test_invalid_platform_fails_safely() -> None:
@@ -228,6 +328,31 @@ def test_selector_repair_api_suggest_and_preview() -> None:
     assert preview["profile_modified"] is False
     assert preview["matched_targets"]["title"] is True
     assert preview["matched_targets"]["content"] is True
+
+
+def test_selector_repair_api_rejects_malformed_suggestion_safely() -> None:
+    response = client.post(
+        "/api/v1/public-parsers/selector-repair/preview",
+        json={
+            "platform_id": "hupu",
+            "suggestion": {
+                "platform_id": "hupu",
+                "status": "suggested",
+                "candidates": [
+                    {
+                        "target": "title",
+                        "selector": "h1.thread-title",
+                        "selector_type": "xpath",
+                        "confidence": 2,
+                    }
+                ],
+            },
+            "fixture_html": FIXTURE_HTML,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "secret" not in response.text.lower()
 
 
 def test_selector_repair_does_not_modify_active_profiles() -> None:

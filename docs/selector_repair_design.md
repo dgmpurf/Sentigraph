@@ -25,6 +25,7 @@ The current implementation only works from caller-provided public fixture HTML. 
 - `<style>` tags
 - inline event handlers such as `onclick`
 - obvious token/cookie/authorization/client-secret/password pairs
+- bearer-style authorization values
 - obvious token/cookie/CSRF metadata
 
 The sanitized HTML is capped by `SELECTOR_REPAIR_MAX_HTML_CHARS`, defaulting to `20000`, so repair requests stay bounded.
@@ -47,6 +48,8 @@ Current endpoints:
 - `POST /api/v1/public-parsers/selector-repair/preview`
 
 Both endpoints are fixture-only and deterministic. They never fetch live pages and never modify active profile files.
+
+Invalid platforms, missing selector profiles, malformed suggestions, and unmatched preview selectors fail safely with structured errors or preview warnings. These failures do not write to parser profile files.
 
 ## Configuration
 

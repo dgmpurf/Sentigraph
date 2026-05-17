@@ -14,7 +14,7 @@ _EVENT_HANDLER_RE = re.compile(
 _SECRET_PAIR_RE = re.compile(
     r"(?i)\b(cookie|token|access_token|auth|authorization|sessionid|session_id|csrf|client_secret|password)"
     r"\s*[:=]\s*"
-    r"(\"[^\"]*\"|'[^']*'|[^\s\"'<>;]+)"
+    r"(\"[^\"]*\"|'[^']*'|Bearer\s+[^\s\"'<>;]+|[^\s\"'<>;]+)"
 )
 _COOKIE_META_RE = re.compile(
     r"<meta\b[^>]*(?:cookie|token|csrf|authorization|client_secret)[^>]*>",
