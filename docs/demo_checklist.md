@@ -28,6 +28,8 @@ Latest Public Parser Status frontend QA validation: 2026-05-15. The `公开页�
 
 Latest Platform Integration Overview frontend QA validation: 2026-05-16. The `平台接入总览` sidebar page was rechecked against the safe status contract. It loads `GET /api/v1/platforms`, `GET /api/v1/platforms/status`, and `GET /api/v1/public-parsers/status`, shows all eight official API scaffolds, all six public parser platforms, Reddit API-pending status, and future/disabled sources. Public parser preview buttons remain fixed to `use_live_fetch=false`, preview samples render as cards, credential presence is displayed only as booleans, and registry-safe tags now show mock availability, real-mode availability, API approval state, MVP enablement, and mock/real selectability in the public-parser and tile sections. Frontend production build passed in 7.63s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Backend code was not changed. Browser smoke found only the existing shared Ant Design `Spin` tip warning; no real platform API or live public fetch was enabled.
 
+Latest Selector Repair Tool frontend QA validation: 2026-05-17. The `Selector 修复工具` sidebar page was rechecked for route wiring, sidebar navigation, six public parser platform options, safety notice content, selector suggestion flow, preview flow, warning/error/empty states, copy-only draft behavior, and no-live-fetch/no-apply behavior. Browser smoke confirmed fixture HTML suggestions and previews render as cards/tags, `profile_modified=false` remains visible, empty HTML shows a user-facing error, and `复制草稿 JSON` only copies suggestion JSON to the browser clipboard. Frontend production build passed in 7.56s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Backend regression tests passed with `381 passed in 3.63s`. The only observed browser-console issue was the existing shared Ant Design `Spin` tip warning; no real LLM API, live website fetch, active profile modification, real platform API, cookie, login/captcha bypass, proxy rotation, private data access, or Reddit scraping was enabled.
+
 Latest Weibo official API adapter QA validation: 2026-05-16. Focused Weibo/adapter/crawl/registry checks passed with `17 passed in 0.51s`; full backend validation passed with `201 passed in 3.03s`. Weibo remains mock-first through `WEIBO_ADAPTER_MODE=mock`; `WEIBO_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`, returns mock data, and makes no real Weibo API call. The smoke command in section 4.5.1 should return three mock Weibo microblog-style `RawPost` items, three mock visible-comment-style `RawComment` items, `source_type=official_api_adapter_scaffold`, `real_mode_available=false`, `raw_post_schema_valid=true`, and `raw_comment_schema_valid=true`. GitHub Actions CI remains intentionally disabled; use local/Codex validation only.
 
 Latest Bilibili official API adapter QA validation: 2026-05-16. Focused Bilibili/adapter/crawl/registry/regression tests passed with `111 passed in 2.74s`; full backend validation passed with `189 passed in 3.09s`. Bilibili remains mock-first through `BILIBILI_ADAPTER_MODE=mock`; `BILIBILI_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`, returns mock data, and makes no real Bilibili API call. The smoke command in section 4.5.2 should return three mock Bilibili video-style `RawPost` items, three mock visible-comment-style `RawComment` items, `source_type=official_api_adapter_scaffold`, `real_mode_available=false`, and schema flags set to true.
@@ -667,6 +669,8 @@ Frontend page check:
 9. Click `预览建议`.
 10. Confirm preview shows extracted title/content samples where matched, matched target tags, warnings, and `profile_modified=false`.
 11. Clear the HTML field and confirm the page shows a user-facing error instead of crashing.
+12. Click `复制草稿 JSON` after generating a suggestion and confirm only JSON text is copied to the clipboard.
+13. If testing error handling, stop the backend or submit an unsupported platform through an API client and confirm the page shows a safe backend error state.
 
 Expected result:
 
@@ -674,6 +678,7 @@ Expected result:
 - The frontend does not fetch live websites and does not expose a live-fetch toggle.
 - The page does not include an apply-to-profile button.
 - `复制草稿 JSON` only copies suggestion JSON to the clipboard; it does not write profile files.
+- `Schema 校验` displays backend schema status if returned and otherwise shows `未返回` without crashing.
 - Empty HTML, malformed HTML, missing optional fields, invalid platform/backend errors, and preview warnings render as UI states rather than raw JavaScript objects.
 - No real LLM API, real platform API, browser cookie, login/captcha bypass, proxy rotation, private data access, Reddit scraping, or active profile modification occurs.
 

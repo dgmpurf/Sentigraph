@@ -722,6 +722,37 @@ Rules:
 - `profile_modified` must remain false for suggestion and preview flows.
 - Credential values, cookies, and private data must never be included.
 
+## 0.2 LLM Provider Readiness Diagnostics
+
+The LLM provider diagnostics schema is internal/backend-safe status metadata. It is not an external LLM response and must never include API key values.
+
+```json
+{
+  "provider_name": "mock",
+  "real_calls_enabled": false,
+  "api_key_present": false,
+  "provider_status": "mock_ready",
+  "required_credentials": [],
+  "credential_presence": {}
+}
+```
+
+Allowed `provider_status` values in the current scaffold:
+
+```text
+mock_ready
+provider_not_enabled
+not_configured
+unknown_provider
+```
+
+Rules:
+
+- `LLM_PROVIDER=mock` and `LLM_ENABLE_REAL_CALLS=false` remain the defaults.
+- `api_key_present` and `credential_presence` are booleans only.
+- Secret redaction helpers return `present` or `missing` only; no full or partial API key should appear in logs, tests, docs, or diagnostics.
+- OpenAI, DeepSeek, and Qwen providers remain placeholders until a future real-provider integration task adds reviewed HTTP clients, timeout/rate-limit/cost controls, mocked HTTP tests, and strict output validation.
+
 ## 2. Raw Post
 
 ```json

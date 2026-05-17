@@ -11,8 +11,9 @@ from app.services.llm.errors import LLMProviderConfigError, LLMProviderNotEnable
 from app.services.llm.json_guard import parse_json_array, parse_json_object
 from app.services.llm.mock_provider import MockProvider
 from app.services.llm.openai_provider import OpenAIProvider
-from app.services.llm.provider_factory import get_llm_provider
+from app.services.llm.provider_factory import get_llm_provider, get_llm_provider_diagnostics
 from app.services.llm.qwen_provider import QwenProvider
+from app.services.llm.redaction import redact_api_key, redact_config_dict
 import app.services.keyword.keyword_expander as keyword_expander
 
 
@@ -30,6 +31,7 @@ def test_llm_provider_module_files_exist() -> None:
         "deepseek_provider.py",
         "qwen_provider.py",
         "provider_factory.py",
+        "redaction.py",
         "schemas.py",
         "json_guard.py",
         "errors.py",
@@ -313,6 +315,100 @@ def test_provider_factory_unknown_provider_fails_safely(monkeypatch) -> None:
 
     assert exc_info.value.category == "unknown_provider"
     assert "unknown-model" in str(exc_info.value)
+
+
+def test_llm_redaction_helpers_report_presence_only() -> None:
+    secret_value = "secret-value-should-not-appear"
+
+    assert redact_api_key(secret_value) == "present"
+    assert redact_api_key("") == "missing"
+    redacted = redact_config_dict(
+        {
+            "LLM_PROVIDER": "openai",
+            "OPENAI_API_KEY": secret_value,
+            "nested": {
+                "client_secret": secret_value,
+                "access_token": secret_value,
+                "safe_value": "visible",
+            },
+            "items": [{"QWEN_API_KEY": secret_value}],
+        }
+    )
+
+    assert redacted == {
+        "LLM_PROVIDER": "openai",
+        "OPENAI_API_KEY": "present",
+        "nested": {
+            "client_secret": "present",
+            "access_token": "present",
+            "safe_value": "visible",
+        },
+        "items": [{"QWEN_API_KEY": "present"}],
+    }
+    assert secret_value not in str(redacted)
+
+
+def test_llm_provider_diagnostics_default_to_mock(monkeypatch) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("LLM_ENABLE_REAL_CALLS", raising=False)
+
+    diagnostics = get_llm_provider_diagnostics()
+
+    assert diagnostics.provider_name == "mock"
+    assert diagnostics.real_calls_enabled is False
+    assert diagnostics.api_key_present is False
+    assert diagnostics.provider_status == "mock_ready"
+    assert diagnostics.required_credentials == []
+    assert diagnostics.credential_presence == {}
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "credential_name"),
+    [
+        ("openai", "OPENAI_API_KEY"),
+        ("deepseek", "DEEPSEEK_API_KEY"),
+        ("qwen", "QWEN_API_KEY"),
+    ],
+)
+def test_llm_provider_diagnostics_show_presence_only(monkeypatch, provider_name, credential_name) -> None:
+    secret_value = f"{provider_name}-secret-value-should-not-appear"
+    monkeypatch.setenv("LLM_ENABLE_REAL_CALLS", "false")
+    monkeypatch.setenv(credential_name, secret_value)
+
+    diagnostics = get_llm_provider_diagnostics(provider_name)
+
+    assert diagnostics.provider_name == provider_name
+    assert diagnostics.real_calls_enabled is False
+    assert diagnostics.api_key_present is True
+    assert diagnostics.provider_status == "provider_not_enabled"
+    assert diagnostics.credential_presence == {credential_name: True}
+    assert secret_value not in diagnostics.model_dump_json()
+
+
+def test_llm_provider_diagnostics_missing_real_key_is_not_configured(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_ENABLE_REAL_CALLS", "true")
+    monkeypatch.delenv("QWEN_API_KEY", raising=False)
+
+    diagnostics = get_llm_provider_diagnostics("qwen")
+
+    assert diagnostics.provider_name == "qwen"
+    assert diagnostics.real_calls_enabled is True
+    assert diagnostics.api_key_present is False
+    assert diagnostics.provider_status == "not_configured"
+    assert diagnostics.credential_presence == {"QWEN_API_KEY": False}
+
+
+def test_llm_provider_diagnostics_unknown_provider_fails_safely(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_ENABLE_REAL_CALLS", "true")
+
+    diagnostics = get_llm_provider_diagnostics("unknown-provider")
+
+    assert diagnostics.provider_name == "unknown-provider"
+    assert diagnostics.real_calls_enabled is True
+    assert diagnostics.api_key_present is False
+    assert diagnostics.provider_status == "unknown_provider"
+    assert diagnostics.required_credentials == []
+    assert diagnostics.credential_presence == {}
 
 
 @pytest.mark.parametrize(

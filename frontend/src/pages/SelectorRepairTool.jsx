@@ -123,7 +123,9 @@ function PreviewSummary({ preview }) {
 
   const sampleValues = preview.sample_values || {}
   const matchedEntries = Object.entries(preview.matched_targets || {})
-  const commentCount = Object.keys(sampleValues).filter((key) => key.includes('comment')).length
+  const inferredCommentCount = Object.keys(sampleValues).filter((key) => key.includes('comment')).length
+  const commentCount = preview.comment_count ?? inferredCommentCount
+  const schemaValid = preview.schema_valid
   const contentPreview = sampleValues.content || sampleValues.main_content || sampleValues.body || ''
 
   return (
@@ -141,7 +143,11 @@ function PreviewSummary({ preview }) {
         </div>
         <div>
           <Text type="secondary">Schema 校验</Text>
-          <Text strong>-</Text>
+          {typeof schemaValid === 'boolean' ? (
+            <Tag color={schemaValid ? 'green' : 'red'}>{schemaValid ? 'valid' : 'invalid'}</Tag>
+          ) : (
+            <Text strong>未返回</Text>
+          )}
         </div>
         <div>
           <Text type="secondary">评论提取数</Text>
@@ -426,9 +432,13 @@ export function SelectorRepairTool() {
                   <Title level={4}>候选 Selector</Title>
                 </Space>
                 <Space wrap>
-                  <Tag color={suggestion?.generated_by_mock ? 'green' : 'default'}>
-                    generated_by_mock={suggestion?.generated_by_mock ? 'true' : 'false'}
-                  </Tag>
+                  {suggestion ? (
+                    <Tag color={suggestion.generated_by_mock ? 'green' : 'default'}>
+                      generated_by_mock={suggestion.generated_by_mock ? 'true' : 'false'}
+                    </Tag>
+                  ) : (
+                    <Tag>generated_by_mock=未生成</Tag>
+                  )}
                   <Tag>{safeText(suggestion?.status, '未生成')}</Tag>
                 </Space>
               </div>

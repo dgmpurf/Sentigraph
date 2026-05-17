@@ -18,6 +18,15 @@ class ProviderHealth(BaseModel):
     error_category: str | None = None
 
 
+class ProviderDiagnostics(BaseModel):
+    provider_name: str
+    real_calls_enabled: bool
+    api_key_present: bool
+    provider_status: str
+    required_credentials: list[str] = Field(default_factory=list)
+    credential_presence: dict[str, bool] = Field(default_factory=dict)
+
+
 class KeywordExpansionResult(BaseModel):
     original_keyword: str
     expanded_keywords: list[str]

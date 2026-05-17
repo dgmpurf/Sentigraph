@@ -482,6 +482,8 @@ Implemented:
 - `LLM_ENABLE_REAL_CALLS=false` remains the default; placeholder real providers return safe `provider_not_enabled` / `not_configured` errors and do not make network calls.
 - `.env.example` documents `LLM_PROVIDER`, `LLM_ENABLE_REAL_CALLS`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, and `QWEN_API_KEY` without requiring values.
 - `json_guard` helpers provide deterministic JSON object/array parsing fallbacks for future schema-checked LLM output.
+- LLM real-provider readiness helpers are in place: `redaction.redact_api_key()`, `redaction.redact_config_dict()`, and `provider_factory.get_llm_provider_diagnostics()` expose only provider status and present/missing credential state without printing API key values.
+- `docs/llm_provider_readiness.md` documents the current mock-only default, safety gates, secret handling rules, and checklist required before any real OpenAI / DeepSeek / Qwen call.
 - Keyword expansion now routes through `backend/app/services/keyword/keyword_expander.py`, calls the safe provider factory, and uses `MockProvider` only for current deterministic expansion.
 - MockProvider keyword expansion is active for the keyword API and includes deterministic Tesla, Bilibili, Chinese-language, and generic public-opinion variants while preserving the existing keyword response schema.
 - Sentiment analysis now supports `SENTIMENT_ANALYZER_MODE=rule_based|mock_llm|future_real_llm`; `rule_based` remains the default, `mock_llm` uses the deterministic offline MockProvider path with rule-based fallback, and `future_real_llm` is a no-call placeholder.
@@ -489,13 +491,15 @@ Implemented:
 - Public parser selector repair now has a mock-first backend scaffold: sanitized fixture HTML requests, deterministic `MockProvider.suggest_selector_repair()` candidates, preview against fixture HTML, and explicit `profile_modified=false` behavior.
 - `frontend/src/pages/SelectorRepairTool.jsx` provides a developer-facing `Selector 修复工具` page that calls only the mock selector repair suggest/preview endpoints with caller-provided fixture HTML.
 - The Selector Repair Tool displays safety notices, candidate selector cards, preview extraction cards, warnings/errors, empty/loading states, and a copy-only JSON draft action; it has no live-fetch toggle and no apply-to-profile action.
+- Selector Repair Tool frontend QA is complete for the current mock workflow: route/sidebar wiring, platform options, safety notice, suggestion/preview interactions, empty-HTML error handling, copy-only draft behavior, optional preview field normalization, and no raw JavaScript object rendering were rechecked.
 - `.env.example` documents `SELECTOR_REPAIR_MODE=mock`, `SELECTOR_REPAIR_ENABLE_REAL_LLM=false`, and `SELECTOR_REPAIR_MAX_HTML_CHARS=20000`.
 - `docs/selector_repair_design.md` documents the sanitized HTML requirement, no-bypass policy, no automatic profile application, and future human-review workflow.
 - Selector repair mock scaffold QA is complete: tests cover schema usability, script/style/event-handler removal, bearer/token/cookie-style redaction, HTML length limits, empty/malformed HTML, missing profiles, invalid platforms, deterministic MockProvider suggestions, fixture preview, malformed suggestion rejection, active-profile immutability, endpoint safety, and old parser/API regressions.
 - QA coverage verifies module presence, deterministic mock outputs, provider factory defaults and unknown-provider errors, provider-factory invocation from keyword expansion, disabled real-provider behavior, missing-key endpoint safety, secret redaction, safe keyword fallback, old keyword response-schema compatibility, and JSON guard fallback behavior.
+- LLM real-provider readiness QA covers default/mock diagnostics, disabled real-provider diagnostics, missing-key diagnostics, unknown-provider diagnostics, present/missing-only redaction helpers, and no credential value exposure.
 - QA coverage also verifies sentiment default mode, rule-based provider isolation, unknown-mode fallback, deterministic English/Chinese/neutral mock LLM mode, disabled/missing-key real-provider safety, failure fallback, no future-real provider calls, V1.5 topic-risk pipeline compatibility, and report-builder compatibility.
 - QA coverage also verifies topic summary default template mode, template provider isolation, unknown-mode fallback, deterministic mock LLM cluster summaries, Chinese/English/mixed-input handling, empty-comment and empty-cluster safety, disabled/missing-key real-provider safety, failure fallback, no future-real provider calls, V1.5 topic-risk pipeline compatibility, and report-builder compatibility.
-- Latest backend validation passed with `python -m pytest` (`381 passed in 3.60s`). Focused selector repair validation passed with `18 passed in 0.57s`. Latest frontend validation for the Selector Repair Tool passed with `npm run build` (`built in 7.49s`); the existing large vendor chunk warning remains non-blocking.
+- Latest LLM readiness validation passed with focused `python -m pytest backend/app/tests/test_llm_provider_scaffold.py` (`33 passed in 0.58s`), full `python -m pytest` (`388 passed in 3.49s`), and frontend `npm run build` (`built in 7.72s`) because the worktree still contains prior frontend changes. The existing large vendor chunk warning remains non-blocking.
 
 Future real LLM integration tasks:
 
@@ -506,13 +510,15 @@ Future real LLM integration tasks:
 - Keep real LLM sentiment analysis as a future task; current sentiment analysis must remain `rule_based` by default and `mock_llm` must stay offline/deterministic.
 - Keep real LLM topic summary generation as a future task; current topic summaries must remain `template` by default and `mock_llm` must stay offline/deterministic.
 - Keep real LLM selector repair as a future task; current selector repair must remain `mock` mode, fixture-only, sanitized, and review-required.
+- Keep report-builder real LLM drafting as a future task. Current product report generation remains deterministic and template-based; `MockProvider.generate_report()` is available as a provider-layer scaffold only.
+- Keep automatic selector profile application as a future/manual-review task. The current frontend must not write active profile files.
 - Add prompt calibration and a labeled sentiment evaluation dataset before any real-provider sentiment mode is considered.
 - Add topic-summary prompt calibration and fixture evaluation before any real-provider topic summary mode is considered.
 - Keep richer frontend selector repair workflow features as future tasks: durable draft storage, side-by-side profile diffing, and explicit human approval gates.
 - Add durable draft storage and review/approval workflow before allowing any profile update from selector repair output.
 - Add provider-specific HTTP clients only behind explicit `LLM_ENABLE_REAL_CALLS=true` and selected provider configuration.
 - Add strict prompt/output schemas for keyword expansion, topic labeling, risk explanations, report drafts, and recommendations.
-- Add mocked HTTP tests, timeout handling, retry limits, rate limits, and redacted diagnostics before any live provider call.
+- Add mocked HTTP tests, timeout handling, retry limits, rate limits, cost/rate-limit tracking, and redacted diagnostics before any live provider call.
 - Add provider usage/cost safeguards and clear failure fallbacks to the deterministic pipeline.
 - Keep GitHub Actions CI intentionally disabled unless explicitly requested later.
 
