@@ -903,7 +903,9 @@ body {
 
 .benchmark-status-card,
 .benchmark-suite-card,
-.benchmark-empty-card {
+.benchmark-empty-card,
+.benchmark-history-card,
+.benchmark-regression-card {
   border-color: rgba(66, 245, 215, 0.22);
 }
 
@@ -923,6 +925,36 @@ body {
 
 .benchmark-suite-card .ant-table-thead > tr > th {
   background: rgba(66, 245, 215, 0.06) !important;
+}
+
+.benchmark-regression-metrics {
+  margin-bottom: 14px;
+}
+
+.benchmark-regression-metrics > .ant-col > div {
+  min-height: 78px;
+  padding: 12px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.benchmark-regression-metrics h5 {
+  margin: 6px 0 0;
+  color: #f4f7fb;
+  letter-spacing: 0;
+}
+
+.benchmark-change-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.benchmark-change-card {
+  border-color: rgba(255, 161, 67, 0.28);
+  background: rgba(255, 161, 67, 0.06);
 }
 
 @media print {

@@ -1,6 +1,6 @@
 # Sentigraph Offline Benchmarks
 
-Status: v4.0 offline benchmark harness implemented and QA-stabilized.
+Status: v4.2 benchmark history and regression tracking implemented and QA-stabilized.
 
 ## Purpose
 
@@ -39,13 +39,19 @@ From the repository root on Windows:
 python scripts\run_offline_benchmarks.py
 ```
 
-The script prints a readable pass/fail summary and writes a generated JSON summary to:
+The script prints a readable pass/fail summary and writes a generated latest JSON summary to:
 
 ```text
 .benchmarks/offline_benchmark_summary.json
 ```
 
-Generated `.benchmarks/` output is intentionally gitignored. To run without writing JSON:
+Each JSON-writing run also creates a timestamped summary-only history entry under:
+
+```text
+.benchmarks/history/
+```
+
+Generated `.benchmarks/` output is intentionally gitignored. To run without writing JSON or history output:
 
 ```cmd
 python scripts\run_offline_benchmarks.py --no-json
@@ -71,7 +77,7 @@ The script applies safe process-local defaults for mock/offline behavior. It doe
 
 ## What It Does Not Cover
 
-The current v4.0 harness is intentionally small and coarse. It does not replace:
+The current v4.x harness is intentionally small and coarse. It does not replace:
 
 - a human-labeled sentiment evaluation dataset
 - topic clustering quality metrics such as purity, recall, or NMI
@@ -100,13 +106,21 @@ The Benchmark Dashboard / Evaluation Report page reads the latest generated summ
 GET /api/v1/benchmarks/latest
 ```
 
-The endpoint reads only:
+It also reads history and regression status through:
+
+```http
+GET /api/v1/benchmarks/history
+GET /api/v1/benchmarks/regression
+```
+
+The endpoints read only:
 
 ```text
 .benchmarks/offline_benchmark_summary.json
+.benchmarks/history/
 ```
 
-It does not run benchmarks automatically. Generate the summary first:
+They do not run benchmarks automatically. Generate the summary first:
 
 ```cmd
 python scripts\run_offline_benchmarks.py
@@ -115,7 +129,20 @@ python scripts\run_offline_benchmarks.py
 Then start the local backend and frontend and open the sidebar item:
 
 ```text
-Benchmarks · 离线评测
+Benchmarks / 离线评测
 ```
 
-The dashboard displays totals, suite-level pass/fail counts, warning counts, generated time, benchmark version, and a simple regression-risk indicator. Missing or malformed summary files return a clear empty/error state without exposing project-local file paths. It intentionally does not expose benchmark case payloads, raw fixture content, prompts, API keys, `.env` values, or raw user content.
+The dashboard displays totals, suite-level pass/fail counts, warning counts, generated time, benchmark version, history rows, and regression detection. Missing or malformed summary/history files return clear empty/error states without exposing project-local file paths. It intentionally does not expose benchmark case payloads, raw fixture content, prompts, API keys, `.env` values, or raw user content.
+
+## Regression Detection
+
+Each run compares the latest summary with the previous history entry, when one exists. The regression summary reports:
+
+- `regression_detected`
+- changed suites
+- previous/latest total failures
+- previous/latest total warnings
+- previous/latest total passed counts
+- reason categories such as `total_failed_increased`, `total_warnings_increased`, `suite_pass_to_fail`, and `total_passed_decreased`
+
+If only one run exists, the regression endpoint returns `status="no_history"` so the UI can show `无历史记录可比较`. The comparison is summary-only and does not inspect or expose benchmark case payloads.

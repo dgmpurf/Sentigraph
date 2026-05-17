@@ -33,7 +33,7 @@ const navItems = [
   { key: 'platformIntegrations', label: '平台接入总览', icon: <Globe2 size={17} /> },
   { key: 'selectorRepair', label: 'Selector 修复工具', icon: <Wrench size={17} /> },
   { key: 'llmSafety', label: '大模型安全状态', icon: <ShieldCheck size={17} /> },
-  { key: 'benchmarks', label: 'Benchmarks · 离线评测', icon: <ClipboardCheck size={17} /> },
+  { key: 'benchmarks', label: 'Benchmarks / 离线评测', icon: <ClipboardCheck size={17} /> },
 ]
 
 const riskLevelLabels = {
@@ -82,7 +82,7 @@ export function AppShell({
             {caseTitle ? <Tag color="geekblue">{caseTitle}</Tag> : null}
             <Text className="project-label">{projectId}</Text>
             <Tag color={riskTone(riskLevel)}>
-              风险 {riskScore} · {riskLevelLabels[riskLevel] || riskLevel}
+              风险 {riskScore} / {riskLevelLabels[riskLevel] || riskLevel}
             </Tag>
             <Tag color="volcano">{alertsCount} Alerts</Tag>
           </Space>

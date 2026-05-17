@@ -67,6 +67,16 @@ export async function getLatestBenchmarkSummary() {
   return normalizeBenchmarkSummary(data)
 }
 
+export async function getBenchmarkHistory() {
+  const { data } = await apiClient.get(`${API_PREFIX}/benchmarks/history`)
+  return normalizeBenchmarkHistory(data)
+}
+
+export async function getBenchmarkRegression() {
+  const { data } = await apiClient.get(`${API_PREFIX}/benchmarks/regression`)
+  return normalizeBenchmarkRegression(data)
+}
+
 export async function listAnalysisCases() {
   const { data } = await apiClient.get(`${API_PREFIX}/cases`)
   return Array.isArray(data) ? data : []
@@ -694,12 +704,16 @@ function normalizeBenchmarkSummary(data) {
     source: String(data.source || 'offline_benchmark_summary'),
     available: Boolean(data.available),
     status: String(data.status || 'unknown'),
+    benchmark_id: data.benchmark_id ? String(data.benchmark_id) : null,
     generated_at: data.generated_at ? String(data.generated_at) : null,
     benchmark_version: data.benchmark_version ? String(data.benchmark_version) : null,
+    duration_seconds: Number.isFinite(Number(data.duration_seconds)) ? Number(data.duration_seconds) : null,
     total_passed: Number(data.total_passed || 0),
     total_failed: Number(data.total_failed || 0),
     total_warnings: Number(data.total_warnings || 0),
     suites: Array.isArray(data.suites) ? data.suites.map(normalizeBenchmarkSuite).filter(Boolean) : [],
+    regression_detected:
+      typeof data.regression_detected === 'boolean' ? data.regression_detected : null,
     message: String(data.message || ''),
   }
 }
@@ -712,6 +726,122 @@ function normalizeBenchmarkSuite(data) {
     passed: Number(data.passed || 0),
     failed: Number(data.failed || 0),
     warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
+  }
+}
+
+function normalizeBenchmarkHistory(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      source: 'offline_benchmark_history',
+      available: false,
+      status: 'missing',
+      total_entries: 0,
+      malformed_entries: 0,
+      entries: [],
+      message: 'Benchmark history is unavailable.',
+    }
+  }
+  return {
+    ...data,
+    source: String(data.source || 'offline_benchmark_history'),
+    available: Boolean(data.available),
+    status: String(data.status || 'unknown'),
+    total_entries: Number(data.total_entries || 0),
+    malformed_entries: Number(data.malformed_entries || 0),
+    entries: Array.isArray(data.entries)
+      ? data.entries.map(normalizeBenchmarkHistoryEntry).filter(Boolean)
+      : [],
+    message: String(data.message || ''),
+  }
+}
+
+function normalizeBenchmarkHistoryEntry(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    source: String(data.source || 'offline_benchmark'),
+    benchmark_id: String(data.benchmark_id || ''),
+    generated_at: data.generated_at ? String(data.generated_at) : null,
+    benchmark_version: data.benchmark_version ? String(data.benchmark_version) : null,
+    duration_seconds: Number.isFinite(Number(data.duration_seconds)) ? Number(data.duration_seconds) : null,
+    total_passed: Number(data.total_passed || 0),
+    total_failed: Number(data.total_failed || 0),
+    total_warnings: Number(data.total_warnings || 0),
+    suites: Array.isArray(data.suites) ? data.suites.map(normalizeBenchmarkSuite).filter(Boolean) : [],
+    regression_detected:
+      typeof data.regression_detected === 'boolean' ? data.regression_detected : null,
+  }
+}
+
+function normalizeBenchmarkRegression(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      source: 'offline_benchmark_regression',
+      available: false,
+      status: 'missing',
+      regression_detected: false,
+      changed_suites: [],
+      previous_benchmark_id: null,
+      latest_benchmark_id: null,
+      previous_generated_at: null,
+      latest_generated_at: null,
+      previous_total_failed: null,
+      latest_total_failed: 0,
+      previous_total_warnings: null,
+      latest_total_warnings: 0,
+      previous_total_passed: null,
+      latest_total_passed: 0,
+      reason_categories: [],
+      message: 'Benchmark regression status is unavailable.',
+    }
+  }
+  return {
+    ...data,
+    source: String(data.source || 'offline_benchmark_regression'),
+    available: Boolean(data.available),
+    status: String(data.status || 'unknown'),
+    regression_detected: Boolean(data.regression_detected),
+    changed_suites: Array.isArray(data.changed_suites)
+      ? data.changed_suites.map(normalizeBenchmarkSuiteChange).filter(Boolean)
+      : [],
+    previous_benchmark_id: data.previous_benchmark_id ? String(data.previous_benchmark_id) : null,
+    latest_benchmark_id: data.latest_benchmark_id ? String(data.latest_benchmark_id) : null,
+    previous_generated_at: data.previous_generated_at ? String(data.previous_generated_at) : null,
+    latest_generated_at: data.latest_generated_at ? String(data.latest_generated_at) : null,
+    previous_total_failed:
+      data.previous_total_failed === null || data.previous_total_failed === undefined
+        ? null
+        : Number(data.previous_total_failed || 0),
+    latest_total_failed: Number(data.latest_total_failed || 0),
+    previous_total_warnings:
+      data.previous_total_warnings === null || data.previous_total_warnings === undefined
+        ? null
+        : Number(data.previous_total_warnings || 0),
+    latest_total_warnings: Number(data.latest_total_warnings || 0),
+    previous_total_passed:
+      data.previous_total_passed === null || data.previous_total_passed === undefined
+        ? null
+        : Number(data.previous_total_passed || 0),
+    latest_total_passed: Number(data.latest_total_passed || 0),
+    reason_categories: Array.isArray(data.reason_categories)
+      ? data.reason_categories.map((reason) => String(reason))
+      : [],
+    message: String(data.message || ''),
+  }
+}
+
+function normalizeBenchmarkSuiteChange(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    suite: String(data.suite || ''),
+    change_types: Array.isArray(data.change_types)
+      ? data.change_types.map((changeType) => String(changeType))
+      : [],
+    previous_status: String(data.previous_status || 'unknown'),
+    latest_status: String(data.latest_status || 'unknown'),
+    previous_failed: Number(data.previous_failed || 0),
+    latest_failed: Number(data.latest_failed || 0),
+    previous_warnings: Number(data.previous_warnings || 0),
+    latest_warnings: Number(data.latest_warnings || 0),
   }
 }
 

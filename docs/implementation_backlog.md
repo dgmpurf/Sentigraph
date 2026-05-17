@@ -574,12 +574,17 @@ Completed:
 - Added `GET /api/v1/benchmarks/latest`, a safe read-only endpoint for the latest generated offline benchmark summary.
 - Added the frontend `Benchmarks / 离线评测` dashboard page for viewing totals, suite status, warning counts, generated time, and regression-risk status.
 - Completed Benchmark Dashboard QA for valid, missing, and malformed summary states, expected suite display, safe field exposure, and frontend build regression.
+- Added v4.2 benchmark history and regression tracking with `.benchmarks/history/` summary-only entries, `GET /api/v1/benchmarks/history`, `GET /api/v1/benchmarks/regression`, previous/latest comparison, changed-suite reporting, and Dashboard history/regression panels.
+- Confirmed the benchmark history/regression design remains summary-only and must not expose per-case payloads, raw prompts, raw user content, API keys, `.env` values, or local file paths.
+- Benchmark history/regression QA is complete: latest/history/regression endpoint behavior, runner history output, regression comparison, generated-output redaction, Dashboard labels, sidebar navigation, and frontend build regression are locally validated.
 
 Validation:
 
 - Backend tests passed with `415 passed in 3.47s`.
 - Offline benchmark passed with `78 passed, 0 failed, 0 warnings`.
 - Frontend build passed in 7.62s with the existing non-blocking Ant Design/ECharts vendor chunk warning.
+- v4.2 benchmark history validation passed with `423 passed in 3.66s`, two offline benchmark runs at `78 passed, 0 failed, 0 warnings`, and frontend build in 8.15s with the same non-blocking vendor chunk warning.
+- Latest v4.2 QA stabilization passed with focused benchmark tests (`14 passed in 0.77s`), full backend tests (`423 passed in 3.40s`), offline benchmarks (`78 passed, 0 failed, 0 warnings`, `no_regression`), and frontend build in 7.43s with the same non-blocking vendor chunk warning.
 - GitHub Actions CI remains intentionally disabled unless explicitly requested later.
 
 Future evaluation tasks:
@@ -588,7 +593,7 @@ Future evaluation tasks:
 - Add topic clustering quality metrics and fixture-level expected groupings.
 - Add a report quality rubric and deterministic scoring checks.
 - Build a parser regression corpus with more fixture variants per platform.
-- Add benchmark history comparison and trend visualization after summary storage is durable.
+- Expand benchmark history UX with charts after the local file-based history format is stable.
 - Add benchmark drill-down views only after a safe redaction/review model for per-case payloads exists.
 - Add LLM output evaluation fixtures before any real LLM provider is enabled.
 - Add platform-specific integration benchmarks with mocked clients before any real platform API is enabled.

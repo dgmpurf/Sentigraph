@@ -1386,17 +1386,19 @@ Rules:
   "suggested_response": "我们已注意到近期关于Product quality issues的讨论。我们已将相关情况列为优先处理事项，并将在确认事实后通过官方渠道持续更新。如用户有具体案例，欢迎通过官方客服或支持渠道提交信息，我们会基于事实进行核查和处理。"
 }
 ```
-## 17. Offline Benchmark Summary
+## 17. Offline Benchmark Summary, History, and Regression
 
-`LatestBenchmarkSummaryResponse` is used by `GET /api/v1/benchmarks/latest` and the frontend Benchmark Dashboard. It is a safe summary of a generated offline benchmark result and must not include per-case payloads.
+`LatestBenchmarkSummaryResponse`, `BenchmarkHistoryResponse`, and `BenchmarkRegressionResponse` are used by the Benchmark Dashboard. They are safe summaries of generated offline benchmark results and must not include per-case payloads.
 
 ```json
 {
   "source": "offline_benchmark_summary",
   "available": true,
   "status": "available",
+  "benchmark_id": "benchmark_20260517T000000z",
   "generated_at": "2026-05-17T00:00:00Z",
   "benchmark_version": "v4.0_offline_benchmark_v1",
+  "duration_seconds": 0.74,
   "total_passed": 78,
   "total_failed": 0,
   "total_warnings": 0,
@@ -1409,7 +1411,56 @@ Rules:
       "warnings": []
     }
   ],
+  "regression_detected": false,
   "message": "Latest offline benchmark summary loaded."
+}
+```
+
+`BenchmarkHistoryEntry`:
+
+```json
+{
+  "source": "offline_benchmark",
+  "benchmark_id": "benchmark_20260517T000000z",
+  "generated_at": "2026-05-17T00:00:00Z",
+  "benchmark_version": "v4.0_offline_benchmark_v1",
+  "duration_seconds": 0.74,
+  "total_passed": 78,
+  "total_failed": 0,
+  "total_warnings": 0,
+  "suites": [],
+  "regression_detected": false
+}
+```
+
+`BenchmarkRegressionResponse`:
+
+```json
+{
+  "source": "offline_benchmark_regression",
+  "available": true,
+  "status": "regression_detected",
+  "regression_detected": true,
+  "changed_suites": [
+    {
+      "suite": "sentiment",
+      "change_types": ["suite_pass_to_fail", "new_failures"],
+      "previous_status": "pass",
+      "latest_status": "fail",
+      "previous_failed": 0,
+      "latest_failed": 1,
+      "previous_warnings": 0,
+      "latest_warnings": 0
+    }
+  ],
+  "previous_total_failed": 0,
+  "latest_total_failed": 1,
+  "previous_total_warnings": 0,
+  "latest_total_warnings": 0,
+  "previous_total_passed": 78,
+  "latest_total_passed": 77,
+  "reason_categories": ["total_failed_increased", "suite_pass_to_fail"],
+  "message": "Regression risk detected in the latest offline benchmark run."
 }
 ```
 
@@ -1419,11 +1470,16 @@ Allowed `status` values for the response:
 available
 missing
 malformed
+no_history
+no_regression
+regression_detected
 ```
 
 Rules:
 
-- `source` is always `offline_benchmark_summary`.
+- `source` is `offline_benchmark_summary`, `offline_benchmark_history`, `offline_benchmark`, or `offline_benchmark_regression` depending on the object.
 - `suites` contains only suite name, suite status, pass/fail counts, and suite-level warnings.
 - Benchmark `cases` arrays and raw fixture content are intentionally omitted from the API response.
-- Missing or malformed summary files produce safe empty responses rather than uncaught errors.
+- Regression detection records new failures, warning increases, suite `pass` to `fail`, and total-passed decreases.
+- Missing or malformed summary/history files produce safe empty responses rather than uncaught errors.
+- API responses and generated history summaries must not include local file paths, raw prompts, raw user content, API keys, `.env` values, or external request bodies.

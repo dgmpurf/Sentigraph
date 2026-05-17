@@ -413,7 +413,7 @@ Run the v4.0 offline benchmark harness:
 python scripts\run_offline_benchmarks.py
 ```
 
-The frontend `Benchmarks · 离线评测` page can display the latest generated summary through `GET /api/v1/benchmarks/latest`. The API only reads `.benchmarks/offline_benchmark_summary.json`; it does not run benchmarks automatically.
+The frontend `Benchmarks / 离线评测` page can display the latest generated summary, history, and regression comparison through `GET /api/v1/benchmarks/latest`, `GET /api/v1/benchmarks/history`, and `GET /api/v1/benchmarks/regression`. The API only reads `.benchmarks/offline_benchmark_summary.json` and `.benchmarks/history/`; it does not run benchmarks automatically.
 
 Equivalent root npm helper scripts are also available:
 
@@ -439,6 +439,8 @@ Base path:
 - `GET /api/v1/llm/status`
 - `GET /api/v1/llm/usage`
 - `GET /api/v1/benchmarks/latest`
+- `GET /api/v1/benchmarks/history`
+- `GET /api/v1/benchmarks/regression`
 - `POST /api/v1/keywords/expand`
 - `POST /api/v1/crawl/start`
 - `POST /api/v1/analysis/run`

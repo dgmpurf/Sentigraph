@@ -45,6 +45,8 @@ from app.services.scoring.topic_risk_score import calculate_topic_risk_score  # 
 
 
 BENCHMARK_VERSION = "v4.0_offline_benchmark_v1"
+LATEST_SUMMARY_FILENAME = "offline_benchmark_summary.json"
+HISTORY_DIR_NAME = "history"
 EXPECTED_FIXTURE_FILES = (
     "sentiment_cases.json",
     "topic_cluster_cases.json",
@@ -143,8 +145,10 @@ def run_all_benchmarks(
         "suites": suites,
     }
     if write_json and output_dir is not None:
-        path = _write_summary(result, Path(output_dir))
-        result["json_summary_path"] = str(path)
+        write_result = _write_summary(result, Path(output_dir))
+        result["json_summary_path"] = str(write_result["summary_path"])
+        result["json_history_path"] = str(write_result["history_path"])
+        result["regression_summary"] = write_result["regression_summary"]
     return result
 
 
@@ -652,11 +656,246 @@ def _apply_safe_env_defaults() -> None:
         os.environ.setdefault(key, value)
 
 
-def _write_summary(result: dict[str, Any], output_dir: Path) -> Path:
+def _write_summary(result: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / "offline_benchmark_summary.json"
-    path.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    history_dir = output_dir / HISTORY_DIR_NAME
+    previous_entry = _load_previous_history_entry(history_dir)
+    safe_summary = _safe_benchmark_summary(result)
+    regression_summary = build_regression_summary(safe_summary, previous_entry)
+    safe_summary["regression_summary"] = regression_summary
+
+    summary_path = output_dir / LATEST_SUMMARY_FILENAME
+    summary_path.write_text(
+        json.dumps(safe_summary, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    history_dir.mkdir(parents=True, exist_ok=True)
+    history_entry = {
+        **safe_summary,
+        "source": "offline_benchmark",
+        "regression_detected": bool(regression_summary.get("regression_detected")),
+    }
+    history_path = _build_history_path(history_dir, str(history_entry["benchmark_id"]))
+    history_path.write_text(
+        json.dumps(history_entry, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return {
+        "summary_path": summary_path,
+        "history_path": history_path,
+        "regression_summary": regression_summary,
+    }
+
+
+def _safe_benchmark_summary(result: dict[str, Any]) -> dict[str, Any]:
+    generated_at = str(result.get("generated_at") or _utc_now_iso())
+    return {
+        "source": "offline_benchmark_summary",
+        "benchmark_id": _build_benchmark_id(generated_at),
+        "benchmark_version": str(result.get("benchmark_version") or BENCHMARK_VERSION),
+        "generated_at": generated_at,
+        "duration_seconds": _safe_float(result.get("duration_seconds")),
+        "total_passed": _safe_int(result.get("total_passed")),
+        "total_failed": _safe_int(result.get("total_failed")),
+        "total_warnings": _safe_int(result.get("total_warnings")),
+        "suites": [_safe_suite_summary(suite) for suite in result.get("suites", []) if isinstance(suite, dict)],
+    }
+
+
+def _safe_suite_summary(suite: dict[str, Any]) -> dict[str, Any]:
+    warnings = suite.get("warnings")
+    return {
+        "suite": str(suite.get("suite") or "unknown"),
+        "status": str(suite.get("status") or "unknown"),
+        "passed": _safe_int(suite.get("passed")),
+        "failed": _safe_int(suite.get("failed")),
+        "warnings": [str(warning)[:300] for warning in warnings] if isinstance(warnings, list) else [],
+    }
+
+
+def build_regression_summary(
+    latest_summary: dict[str, Any],
+    previous_summary: dict[str, Any] | None,
+) -> dict[str, Any]:
+    latest_total_failed = _safe_int(latest_summary.get("total_failed"))
+    latest_total_warnings = _safe_int(latest_summary.get("total_warnings"))
+    latest_total_passed = _safe_int(latest_summary.get("total_passed"))
+    if previous_summary is None:
+        return {
+            "source": "offline_benchmark_regression",
+            "available": False,
+            "status": "no_history",
+            "regression_detected": False,
+            "changed_suites": [],
+            "previous_total_failed": None,
+            "latest_total_failed": latest_total_failed,
+            "previous_total_warnings": None,
+            "latest_total_warnings": latest_total_warnings,
+            "previous_total_passed": None,
+            "latest_total_passed": latest_total_passed,
+            "message": "No previous benchmark history entry is available for comparison.",
+        }
+
+    previous_total_failed = _safe_int(previous_summary.get("total_failed"))
+    previous_total_warnings = _safe_int(previous_summary.get("total_warnings"))
+    previous_total_passed = _safe_int(previous_summary.get("total_passed"))
+    changed_suites = _build_changed_suites(latest_summary, previous_summary)
+    regression_reasons: list[str] = []
+    if latest_total_failed > previous_total_failed:
+        regression_reasons.append("total_failed_increased")
+    if latest_total_warnings > previous_total_warnings:
+        regression_reasons.append("total_warnings_increased")
+    if latest_total_passed < previous_total_passed:
+        regression_reasons.append("total_passed_decreased")
+    if any("suite_pass_to_fail" in change["change_types"] for change in changed_suites):
+        regression_reasons.append("suite_pass_to_fail")
+
+    regression_detected = bool(regression_reasons or changed_suites)
+    return {
+        "source": "offline_benchmark_regression",
+        "available": True,
+        "status": "regression_detected" if regression_detected else "no_regression",
+        "regression_detected": regression_detected,
+        "changed_suites": changed_suites,
+        "previous_benchmark_id": previous_summary.get("benchmark_id"),
+        "latest_benchmark_id": latest_summary.get("benchmark_id"),
+        "previous_generated_at": previous_summary.get("generated_at"),
+        "latest_generated_at": latest_summary.get("generated_at"),
+        "previous_total_failed": previous_total_failed,
+        "latest_total_failed": latest_total_failed,
+        "previous_total_warnings": previous_total_warnings,
+        "latest_total_warnings": latest_total_warnings,
+        "previous_total_passed": previous_total_passed,
+        "latest_total_passed": latest_total_passed,
+        "reason_categories": regression_reasons,
+        "message": (
+            "Regression risk detected in the latest offline benchmark run."
+            if regression_detected
+            else "No benchmark regression detected compared with the previous run."
+        ),
+    }
+
+
+def _build_changed_suites(
+    latest_summary: dict[str, Any],
+    previous_summary: dict[str, Any],
+) -> list[dict[str, Any]]:
+    previous_suites = _suite_map(previous_summary.get("suites"))
+    latest_suites = _suite_map(latest_summary.get("suites"))
+    changed: list[dict[str, Any]] = []
+    for suite_name in sorted(set(previous_suites) | set(latest_suites)):
+        previous_suite = previous_suites.get(suite_name, {})
+        latest_suite = latest_suites.get(suite_name, {})
+        change_types: list[str] = []
+        previous_status = str(previous_suite.get("status") or "missing")
+        latest_status = str(latest_suite.get("status") or "missing")
+        previous_failed = _safe_int(previous_suite.get("failed"))
+        latest_failed = _safe_int(latest_suite.get("failed"))
+        previous_warning_count = len(previous_suite.get("warnings") or [])
+        latest_warning_count = len(latest_suite.get("warnings") or [])
+
+        if previous_status == "pass" and latest_status == "fail":
+            change_types.append("suite_pass_to_fail")
+        if latest_failed > previous_failed:
+            change_types.append("new_failures")
+        if latest_warning_count > previous_warning_count:
+            change_types.append("warnings_increased")
+        if not change_types:
+            continue
+        changed.append(
+            {
+                "suite": suite_name,
+                "change_types": change_types,
+                "previous_status": previous_status,
+                "latest_status": latest_status,
+                "previous_failed": previous_failed,
+                "latest_failed": latest_failed,
+                "previous_warnings": previous_warning_count,
+                "latest_warnings": latest_warning_count,
+            }
+        )
+    return changed
+
+
+def _suite_map(value: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, list):
+        return {}
+    suites: dict[str, dict[str, Any]] = {}
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        suite_name = str(item.get("suite") or "").strip()
+        if suite_name:
+            suites[suite_name] = item
+    return suites
+
+
+def _load_previous_history_entry(history_dir: Path) -> dict[str, Any] | None:
+    if not history_dir.exists() or not history_dir.is_dir():
+        return None
+    for path in sorted(history_dir.glob("*.json"), reverse=True):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            return _safe_history_entry(payload)
+    return None
+
+
+def _safe_history_entry(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source": "offline_benchmark",
+        "benchmark_id": str(payload.get("benchmark_id") or ""),
+        "benchmark_version": str(payload.get("benchmark_version") or BENCHMARK_VERSION),
+        "generated_at": str(payload.get("generated_at") or ""),
+        "duration_seconds": _safe_float(payload.get("duration_seconds")),
+        "total_passed": _safe_int(payload.get("total_passed")),
+        "total_failed": _safe_int(payload.get("total_failed")),
+        "total_warnings": _safe_int(payload.get("total_warnings")),
+        "suites": [_safe_suite_summary(suite) for suite in payload.get("suites", []) if isinstance(suite, dict)],
+        "regression_detected": bool(payload.get("regression_detected")),
+    }
+
+
+def _build_history_path(history_dir: Path, benchmark_id: str) -> Path:
+    safe_id = "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in benchmark_id)
+    safe_id = safe_id or "benchmark"
+    path = history_dir / f"{safe_id}.json"
+    counter = 2
+    while path.exists():
+        path = history_dir / f"{safe_id}_{counter}.json"
+        counter += 1
     return path
+
+
+def _build_benchmark_id(generated_at: str) -> str:
+    safe_timestamp = (
+        generated_at.replace(":", "")
+        .replace("-", "")
+        .replace("+", "")
+        .replace(".", "")
+        .replace("Z", "z")
+    )
+    safe_timestamp = "".join(char for char in safe_timestamp if char.isalnum() or char in {"T", "z"})
+    return f"benchmark_{safe_timestamp or int(time.time())}"
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(float(value), 4)
+    except (TypeError, ValueError):
+        return None
 
 
 def _utc_now_iso() -> str:
@@ -712,6 +951,16 @@ def _print_summary(result: dict[str, Any]) -> None:
     )
     if result.get("json_summary_path"):
         print(f"JSON summary: {result['json_summary_path']}")
+    if result.get("json_history_path"):
+        print(f"History entry: {result['json_history_path']}")
+    regression = result.get("regression_summary")
+    if isinstance(regression, dict):
+        if regression.get("available") is False:
+            print("Regression: no previous history entry available for comparison")
+        elif regression.get("regression_detected"):
+            print(f"Regression: detected ({', '.join(regression.get('reason_categories') or ['suite_changed'])})")
+        else:
+            print("Regression: no regression detected")
     print("Safety: no real LLM calls, no real platform API calls, live fetch disabled.")
 
 

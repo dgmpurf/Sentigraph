@@ -2,6 +2,8 @@
 
 Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
 
+Latest v4.2 benchmark history QA stabilization validation: 2026-05-17. Focused benchmark route/runner tests passed with `14 passed in 0.77s`; full backend tests passed with `423 passed in 3.40s`; offline benchmarks passed with `78 passed, 0 failed, 0 warnings`; frontend production build passed in 7.43s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The `Benchmarks / 离线评测` page now displays latest results, history rows, and regression status with clean Chinese labels. No real LLM API, real platform API, crawler, live public fetch, real notification, API key printing, `.env` value printing, raw prompt logging, or raw user-content logging was introduced.
+
 Latest v3.9 QA stabilization validation: 2026-05-17. Backend tests passed with `409 passed in 3.73s`. Frontend production build passed in 7.84s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The `LLM Safety` / `大模型安全状态` page is read-only and displays MockProvider/default status, disabled real-call status, API key presence booleans only, guardrail limits, and metadata-only usage summaries. Local smoke tooling includes LLM status/usage and public parser preview checks, and demo seeding creates a Hupu fixture-parser demo case. No real LLM API, real platform API, real crawler, live public fetch, real notification, authentication, `.env` modification, API key printing, raw prompt logging, or raw user-content logging is introduced.
 
 Latest pre-v1.0 hardening validation: 2026-05-15. Backend tests passed with `92 passed in 2.82s`. Frontend production build passed in 7.75s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke check passed with `26 passed, 0 failed` against a temporary local backend and temporary project-local JSON store. New local demo utilities are available for safe runtime data reset, deterministic demo seeding, and local API smoke validation. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, Reddit credential, MongoDB, Redis, or external LLM call is made.
@@ -1114,7 +1116,7 @@ Expected result:
 
 ## 12. Benchmark Dashboard / Evaluation Report
 
-Before opening the page, generate the latest offline benchmark summary:
+Before opening the page, generate at least one offline benchmark summary. Run it twice if you want to see a previous/latest regression comparison:
 
 ```cmd
 cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
@@ -1136,7 +1138,7 @@ npm run dev
 Demo steps:
 
 1. Open `http://127.0.0.1:5173`.
-2. Click `Benchmarks · 离线评测` in the sidebar.
+2. Click `Benchmarks / 离线评测` in the sidebar.
 3. Confirm the page shows `总通过`, `总失败`, `警告`, `评测套件`, `最近结果`, and `回归风险`.
 4. Confirm the suites appear: sentiment, topic_cluster, topic_risk, report_builder, markdown_export, selector_repair, public_parser_fixtures, and platform_adapter_mocks.
 5. Confirm missing summary state appears clearly if `.benchmarks/offline_benchmark_summary.json` has not been generated.
@@ -1148,8 +1150,24 @@ powershell -Command "Invoke-RestMethod http://127.0.0.1:8000/api/v1/benchmarks/l
 
 Expected result:
 
-- The frontend only reads `GET /api/v1/benchmarks/latest`.
+- The frontend only reads `GET /api/v1/benchmarks/latest`, `GET /api/v1/benchmarks/history`, and `GET /api/v1/benchmarks/regression`.
 - The backend does not run benchmarks automatically.
 - Missing or malformed benchmark summary files return a clear empty/error state and do not expose project-local file paths.
 - If the page shows a 404 for `/api/v1/benchmarks/latest`, stop the old backend process and restart uvicorn so the new benchmark route is loaded.
 - No real LLM API, real platform API, crawler, live public fetch, real notification, API key value, `.env` value, raw prompt, or raw user content is exposed.
+
+Benchmark history and regression addendum:
+
+1. Run `python scripts\run_offline_benchmarks.py` at least twice to create `.benchmarks/offline_benchmark_summary.json` and `.benchmarks/history/` entries.
+2. Refresh the `Benchmarks / 离线评测` page.
+3. Confirm the page shows `历史记录`, `回归检测`, `是否退化`, `新增失败`, `警告变化`, and `套件变化`.
+4. Confirm regression status is one of `无回归`, `发现回归风险`, or `无历史记录可比较`.
+5. Confirm history rows show generated time, pass/fail/warning totals, duration, and whether a regression was detected.
+6. Verify the safe endpoints directly if needed:
+
+```cmd
+powershell -Command "Invoke-RestMethod http://127.0.0.1:8000/api/v1/benchmarks/history | ConvertTo-Json -Depth 8"
+powershell -Command "Invoke-RestMethod http://127.0.0.1:8000/api/v1/benchmarks/regression | ConvertTo-Json -Depth 8"
+```
+
+Expected result: the history/regression APIs read only project-local `.benchmarks/` summary files, never run benchmarks automatically, never expose local file paths or case payloads, and never expose raw prompts, raw user content, API keys, `.env` values, or external request bodies.

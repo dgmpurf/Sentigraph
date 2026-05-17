@@ -704,6 +704,77 @@ QA stabilization result:
 
 Next recommended task after validation: expand the benchmark corpus with larger labeled datasets and richer parser regression fixtures while keeping the harness offline-only.
 
+## 6.4 v4.2 Benchmark History and Regression Tracking
+
+Update date: 2026-05-17.
+
+Status: implemented and validated in this checkpoint.
+
+What changed:
+
+- `scripts/run_offline_benchmarks.py` now writes a safe latest summary to `.benchmarks/offline_benchmark_summary.json` and a timestamped summary-only history entry under `.benchmarks/history/`.
+- Generated benchmark output remains under the gitignored `.benchmarks/` directory.
+- The runner compares the latest run with the previous history entry and records a safe regression summary for increased failures, increased warnings, suite `pass` to `fail`, and decreased total passed count.
+- Added read-only backend endpoints:
+  - `GET /api/v1/benchmarks/latest`
+  - `GET /api/v1/benchmarks/history`
+  - `GET /api/v1/benchmarks/regression`
+- The endpoints read only project-local generated benchmark summary files, do not run benchmarks automatically, and do not expose local paths, per-case benchmark payloads, raw prompts, raw user content, API keys, `.env` values, or external request bodies.
+- The Benchmark Dashboard now loads latest summary, history, and regression status in parallel, displays history rows, and shows `无回归`, `发现回归风险`, or `无历史记录可比较`.
+- Added regression coverage for latest summary, history listing, missing/malformed files, increased failures, suite pass-to-fail changes, and safe path/payload redaction.
+
+Validation:
+
+- Focused benchmark route/runner tests passed: `14 passed in 0.81s`.
+- Full backend tests passed: `423 passed in 3.66s`.
+- Offline benchmark passed twice: `78 passed, 0 failed, 0 warnings`; the second run compared against previous history and reported no regression.
+- Frontend build passed: `npm run build` completed in 8.15s from `frontend` with the existing non-blocking Ant Design/ECharts large vendor chunk warning.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- No real LLM APIs, real platform APIs, crawlers, live public fetch, real notifications, API-key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced.
+
+Known limitations:
+
+- History is file-based and local to `.benchmarks/`; it is not a durable database.
+- Regression comparison is summary-level only; it does not perform per-case diffing.
+- The current benchmark corpus remains intentionally small and offline-only.
+
+Next recommended task: expand the offline benchmark corpus with larger labeled sentiment datasets, parser regression fixture variants, and a report quality rubric before any real LLM or real platform integration.
+
+### v4.2 Benchmark History and Regression QA Stabilization
+
+Status: QA-stabilized on 2026-05-17.
+
+What passed:
+
+- `scripts/run_offline_benchmarks.py` writes `.benchmarks/offline_benchmark_summary.json` and timestamped summary-only files under `.benchmarks/history/`.
+- `.benchmarks/` remains gitignored.
+- The latest/history/regression endpoints return safe summary metadata only and do not run benchmarks automatically.
+- Missing and malformed summary/history states are covered by tests and return safe empty/error responses.
+- Regression comparison covers no-history, no-regression, increased failures, increased warnings, suite `pass` to `fail`, and decreased pass counts.
+- The Benchmark Dashboard displays latest totals, suite rows, history rows, regression status, and changed-suite cards without rendering raw JavaScript objects.
+
+What was fixed:
+
+- Cleaned the Benchmark Dashboard Chinese labels for `离线评测`, `最近结果`, `历史记录`, `回归检测`, `是否退化`, `新增失败`, `警告变化`, `套件变化`, `无回归`, `发现回归风险`, and `无历史记录可比较`.
+- Cleaned the sidebar label to `Benchmarks / 离线评测`.
+- Escaped text arrows inside JSX so the production build no longer emits JSX arrow-character warnings.
+
+Validation:
+
+- Focused benchmark route/runner tests passed: `14 passed in 0.77s`.
+- Full backend tests passed: `423 passed in 3.40s`.
+- Offline benchmark passed: `78 passed, 0 failed, 0 warnings`; latest regression status was `no_regression`.
+- Frontend build passed in 7.43s with the existing non-blocking Ant Design/ECharts large vendor chunk warning.
+- Direct TestClient checks confirmed `GET /api/v1/benchmarks/latest`, `/history`, and `/regression` return HTTP 200 and do not expose key/prompt/path markers.
+- Generated benchmark output was checked for API-key markers, raw prompt/user-content markers, case payload markers, and unsafe summary-path markers.
+
+Safety confirmation:
+
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- No real LLM APIs, real platform APIs, crawlers, live public fetch, real notifications, API-key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced.
+
+Next recommended task: expand the offline benchmark corpus with larger labeled sentiment datasets, parser regression fixture variants, topic clustering quality metrics, and a report quality rubric before any real LLM or real platform integration.
+
 ## 7. Next Recommended Task
 
 Recommended next development task: expand the offline benchmark corpus into a larger evaluation pack with human-labeled sentiment examples, parser regression fixtures, topic clustering quality metrics, and a report quality rubric. Keep it offline-only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, and do not start real API integrations.
