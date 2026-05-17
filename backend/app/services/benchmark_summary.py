@@ -262,6 +262,10 @@ def _safe_suites(value: Any) -> list[BenchmarkSuiteSummary]:
             BenchmarkSuiteSummary(
                 suite=suite_name,
                 status=_safe_optional_text(item.get("status")) or "unknown",
+                case_count=_safe_int(
+                    item.get("case_count"),
+                    fallback=_safe_int(item.get("passed")) + _safe_int(item.get("failed")),
+                ),
                 passed=_safe_int(item.get("passed")),
                 failed=_safe_int(item.get("failed")),
                 warnings=[str(warning) for warning in warnings] if isinstance(warnings, list) else [],

@@ -577,6 +577,9 @@ Completed:
 - Added v4.2 benchmark history and regression tracking with `.benchmarks/history/` summary-only entries, `GET /api/v1/benchmarks/history`, `GET /api/v1/benchmarks/regression`, previous/latest comparison, changed-suite reporting, and Dashboard history/regression panels.
 - Confirmed the benchmark history/regression design remains summary-only and must not expose per-case payloads, raw prompts, raw user content, API keys, `.env` values, or local file paths.
 - Benchmark history/regression QA is complete: latest/history/regression endpoint behavior, runner history output, regression comparison, generated-output redaction, Dashboard labels, sidebar navigation, and frontend build regression are locally validated.
+- Expanded the v4.3 synthetic offline evaluation dataset across Chinese crisis/risk sentiment cases, richer topic-cluster scenarios, V1.5 topic-risk edge cases, report/Markdown contexts, selector repair failures, public parser edge fixtures, and adapter mock normalization cases.
+- Added `case_count` to suite-level benchmark summaries and safe benchmark API schema normalization. Generated summaries still omit per-case payloads and raw fixture content.
+- Expanded dataset QA is complete for the current v4.3 corpus, including malformed fixture-case fail-safe behavior and no raw fixture-text echoing in suite-level failure metadata.
 
 Validation:
 
@@ -585,6 +588,8 @@ Validation:
 - Frontend build passed in 7.62s with the existing non-blocking Ant Design/ECharts vendor chunk warning.
 - v4.2 benchmark history validation passed with `423 passed in 3.66s`, two offline benchmark runs at `78 passed, 0 failed, 0 warnings`, and frontend build in 8.15s with the same non-blocking vendor chunk warning.
 - Latest v4.2 QA stabilization passed with focused benchmark tests (`14 passed in 0.77s`), full backend tests (`423 passed in 3.40s`), offline benchmarks (`78 passed, 0 failed, 0 warnings`, `no_regression`), and frontend build in 7.43s with the same non-blocking vendor chunk warning.
+- v4.3 dataset expansion validation passed with full backend tests (`423 passed in 3.70s`) and offline benchmarks (`246 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
+- v4.3 dataset QA stabilization passed with focused benchmark tests (`15 passed in 0.93s`), full backend tests (`424 passed in 3.37s`), and offline benchmarks (`246 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
 - GitHub Actions CI remains intentionally disabled unless explicitly requested later.
 
 Future evaluation tasks:
@@ -593,6 +598,7 @@ Future evaluation tasks:
 - Add topic clustering quality metrics and fixture-level expected groupings.
 - Add a report quality rubric and deterministic scoring checks.
 - Build a parser regression corpus with more fixture variants per platform.
+- Add dedicated markdown export rubric checks if report format begins to diverge by report type.
 - Expand benchmark history UX with charts after the local file-based history format is stable.
 - Add benchmark drill-down views only after a safe redaction/review model for per-case payloads exists.
 - Add LLM output evaluation fixtures before any real LLM provider is enabled.

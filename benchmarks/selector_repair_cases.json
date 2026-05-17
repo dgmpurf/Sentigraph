@@ -1,10 +1,64 @@
 [
   {
-    "case_id": "selector_repair_hupu_fixture",
+    "case_id": "selector_repair_hupu_changed_layout",
     "platform_id": "hupu",
     "error_summary": "title and reply selectors stopped matching after fixture layout change",
     "extraction_targets": ["title", "content", "comment_content"],
     "html": "<html><head><style>.hidden{display:none}</style><script>window.token='secret-token';</script></head><body><article class=\"thread\" onclick=\"steal()\"><h1 class=\"thread-title\">Tesla service discussion on Hupu</h1><div class=\"thread-content\">Visible repair timeline discussion.</div><div class=\"reply-item\"><span class=\"reply-author\">fixture_user</span><p class=\"reply-content\">The repair timeline should be public.</p></div></article></body></html>",
-    "expected_targets": ["title", "content", "comment_content"]
+    "expected_targets": ["title", "content", "comment_content"],
+    "expected_preview_status": "preview_ok"
+  },
+  {
+    "case_id": "selector_repair_missing_title_selector",
+    "platform_id": "the_paper",
+    "error_summary": "title selector returns no nodes while content still matches",
+    "extraction_targets": ["title", "content"],
+    "html": "<html><body><article><div class=\"article-content\">The fixture keeps the article body but omits the expected title node.</div><span class=\"article-author\">fixture_author</span><time class=\"article-date\">2026-05-17T00:00:00Z</time></article></body></html>",
+    "expected_targets": ["title", "content"],
+    "expected_matched_targets": ["content"],
+    "min_matched_targets": 1,
+    "expected_preview_status": "preview_failed"
+  },
+  {
+    "case_id": "selector_repair_missing_content_selector",
+    "platform_id": "jiemian",
+    "error_summary": "content selector is missing after an article body layout change",
+    "extraction_targets": ["title", "content"],
+    "html": "<html><body><div class=\"layout\"><h1 class=\"article-title\">Fixture title still available</h1><div class=\"article-summary\">Body moved to a new summary block for review only.</div><span class=\"article-source\">fixture_source</span></div></body></html>",
+    "expected_targets": ["title", "content"],
+    "expected_matched_targets": ["title"],
+    "min_matched_targets": 1,
+    "expected_preview_status": "preview_failed"
+  },
+  {
+    "case_id": "selector_repair_changed_article_container",
+    "platform_id": "maimai",
+    "error_summary": "article container changed but post title and body remain visible",
+    "extraction_targets": ["article", "title", "content", "comment_content"],
+    "html": "<html><body><article class=\"maimai-post\"><h1 class=\"post-title\">Workplace response discussion</h1><section class=\"post-content\">Employees discuss a public workplace complaint using fixture data.</section><div class=\"comment-item\"><span class=\"comment-author\">fixture_user</span><p class=\"comment-content\">The company should answer with facts.</p></div></article></body></html>",
+    "expected_targets": ["article", "title", "content", "comment_content"],
+    "expected_preview_status": "preview_ok"
+  },
+  {
+    "case_id": "selector_repair_comments_unavailable",
+    "platform_id": "the_paper",
+    "error_summary": "comments are unavailable in the sanitized public fixture",
+    "extraction_targets": ["title", "content", "comment_content"],
+    "html": "<html><body><article><h1 class=\"article-title\">Safety article fixture</h1><div class=\"article-content\">The public article body is visible but comments are unavailable.</div></article></body></html>",
+    "expected_targets": ["title", "content", "comment_content"],
+    "expected_matched_targets": ["title", "content"],
+    "min_matched_targets": 2,
+    "expected_preview_status": "preview_failed"
+  },
+  {
+    "case_id": "selector_repair_malformed_html",
+    "platform_id": "tieba",
+    "error_summary": "fixture HTML is malformed and selectors should fail safely",
+    "extraction_targets": ["title", "content", "comment_content"],
+    "html": "<html><body><article class=\"thread\"><div class=\"broken\">unterminated fixture",
+    "expected_targets": ["title", "content", "comment_content"],
+    "expected_matched_targets": [],
+    "min_matched_targets": 0,
+    "expected_preview_status": "preview_failed"
   }
 ]

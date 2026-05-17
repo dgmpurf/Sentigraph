@@ -18,27 +18,69 @@
     "expected_sentiments": ["neutral"]
   },
   {
-    "case_id": "sent_zh_negative_quality",
-    "language": "zh-CN",
-    "text": "这个产品质量问题严重，售后回应太慢，用户非常失望。",
-    "expected_sentiments": ["negative"]
+    "case_id": "sent_en_mixed_product",
+    "language": "en",
+    "text": "The design is good, but the battery problem is serious and the repair delay is frustrating.",
+    "expected_sentiments": ["negative", "mixed"]
   },
   {
-    "case_id": "sent_zh_positive_trust",
-    "language": "zh-CN",
-    "text": "客服处理很及时，方案透明，大家重新建立了信任。",
-    "expected_sentiments": ["positive", "neutral"]
+    "case_id": "sent_en_sarcasm_delay",
+    "language": "en",
+    "text": "Great, another delayed response with no clear fix; amazing support as always.",
+    "expected_sentiments": ["negative", "mixed"]
   },
   {
-    "case_id": "sent_zh_questioning",
-    "language": "zh-CN",
-    "text": "后续安排是什么，官方什么时候公布更多细节？",
+    "case_id": "sent_en_ambiguous_unknown",
+    "language": "en",
+    "text": "The update was mentioned in several threads and people are still watching the situation.",
     "expected_sentiments": ["neutral"]
   },
   {
-    "case_id": "sent_mixed_negative",
-    "language": "auto",
-    "text": "Good design, but the battery problem is serious and 用户投诉很多.",
+    "case_id": "sent_zh_mild_complaint",
+    "language": "zh-CN",
+    "text": "\u8fd9\u6b21\u4f53\u9a8c\u4e0d\u592a\u597d\uff0c\u552e\u540e\u54cd\u5e94\u6709\u70b9\u6162\uff0c\u95ee\u9898\u8fd8\u6ca1\u5904\u7406\uff0c\u4f53\u9a8c\u6bd4\u8f83\u5dee\u3002",
     "expected_sentiments": ["negative", "mixed"]
+  },
+  {
+    "case_id": "sent_zh_strong_negative_complaint",
+    "language": "zh-CN",
+    "text": "\u8fd9\u4e2a\u4ea7\u54c1\u8d28\u91cf\u95ee\u9898\u4e25\u91cd\uff0c\u6295\u8bc9\u591a\u6b21\u6ca1\u6709\u7ed3\u679c\uff0c\u975e\u5e38\u5931\u671b\u3002",
+    "expected_sentiments": ["negative"]
+  },
+  {
+    "case_id": "sent_zh_neutral_question",
+    "language": "zh-CN",
+    "text": "\u540e\u7eed\u5b89\u6392\u662f\u4ec0\u4e48\uff0c\u5b98\u65b9\u4ec0\u4e48\u65f6\u5019\u516c\u5e03\u66f4\u591a\u7ec6\u8282\uff1f",
+    "expected_sentiments": ["neutral"]
+  },
+  {
+    "case_id": "sent_zh_positive_support",
+    "language": "zh-CN",
+    "text": "\u5ba2\u670d\u5904\u7406\u5f88\u53ca\u65f6\uff0c\u65b9\u6848\u900f\u660e\uff0c\u6211\u4eec\u613f\u610f\u7ee7\u7eed\u652f\u6301\u5e76\u4fe1\u4efb\u8fd9\u4e2a\u54c1\u724c\u3002",
+    "expected_sentiments": ["positive", "neutral"]
+  },
+  {
+    "case_id": "sent_zh_questioning_response",
+    "language": "zh-CN",
+    "text": "\u7528\u6237\u60f3\u77e5\u9053\u5b98\u65b9\u56de\u5e94\u7684\u65f6\u95f4\u8868\uff0c\u76ee\u524d\u4fe1\u606f\u8fd8\u4e0d\u591f\u6e05\u695a\u3002",
+    "expected_sentiments": ["negative", "neutral"]
+  },
+  {
+    "case_id": "sent_mixed_language_negative",
+    "language": "auto",
+    "text": "Good design, but the battery problem is serious and \u7528\u6237\u6295\u8bc9\u5f88\u591a.",
+    "expected_sentiments": ["negative", "mixed"]
+  },
+  {
+    "case_id": "sent_zh_mockery_repeated_script",
+    "language": "zh-CN",
+    "text": "\u53c8\u662f\u4e00\u6ce2\u91cd\u590d\u8bdd\u672f\u5237\u5c4f\uff0c\u770b\u8d77\u6765\u50cf\u6c34\u519b\u5728\u5e26\u8282\u594f\u3002",
+    "expected_sentiments": ["negative"]
+  },
+  {
+    "case_id": "sent_zh_unknown_ambiguous",
+    "language": "zh-CN",
+    "text": "\u76f8\u5173\u8ba8\u8bba\u8fd8\u5728\u7ee7\u7eed\uff0c\u4e0d\u540c\u7528\u6237\u6b63\u5728\u8865\u5145\u81ea\u5df1\u770b\u5230\u7684\u60c5\u51b5\u3002",
+    "expected_sentiments": ["neutral"]
   }
 ]

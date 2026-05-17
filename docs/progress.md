@@ -775,9 +775,54 @@ Safety confirmation:
 
 Next recommended task: expand the offline benchmark corpus with larger labeled sentiment datasets, parser regression fixture variants, topic clustering quality metrics, and a report quality rubric before any real LLM or real platform integration.
 
+## 6.5 v4.3 Offline Evaluation Dataset Expansion
+
+Update date: 2026-05-17.
+
+Status: implemented and validated.
+
+What changed:
+
+- Expanded `benchmarks/sentiment_cases.json` with additional synthetic Chinese complaint/support/questioning cases, English mixed sentiment, sarcasm/mockery, and ambiguous neutral examples.
+- Expanded `benchmarks/topic_cluster_cases.json` across product quality, delayed official response, pricing complaint, safety concern, customer service issue, suspected coordinated amplification, neutral discussion, fan/supporter conflict, and workplace issue scenarios.
+- Expanded `benchmarks/topic_risk_cases.json` across low neutral discussion, medium product complaint, safety/legal concern, repeated-script manipulation, organic negative crisis, polarized conflict, and small high-severity topics that should not be diluted.
+- Expanded report/Markdown coverage with brand/product crisis, public figure controversy, workplace complaint, suspected bot amplification, and safety/legal issue report contexts.
+- Expanded selector repair fixtures for missing title/content selectors, changed containers, comments unavailable, and malformed HTML while preserving the no-profile-modification rule.
+- Expanded public parser benchmark coverage with one inline synthetic edge fixture for each public parser platform.
+- Expanded adapter mock normalization coverage with a second synthetic case for each mock adapter platform.
+- Added `case_count` to benchmark suite summaries and safe benchmark API schema normalization so generated summaries expose suite-level counts without exposing raw case payloads.
+
+Validation:
+
+- Backend tests passed: `423 passed in 3.70s`.
+- Offline benchmark passed: `246 passed, 0 failed, 0 warnings`; latest regression status was `no_regression`.
+- Frontend build was not run because no frontend files changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- No real LLM APIs, real platform APIs, crawlers, live public fetch, real notifications, API-key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced.
+
+QA stabilization update, 2026-05-17:
+
+- Revalidated expanded v4.3 fixture coverage for sentiment, topic clustering, V1.5 topic risk, report/Markdown, selector repair, public parser edge fixtures, and adapter mock normalization.
+- Hardened malformed fixture-case handling so a bad case object becomes a redacted suite-level benchmark failure instead of a Python traceback.
+- Added regression coverage confirming malformed case failures do not echo raw fixture text.
+- Focused benchmark route/runner tests passed: `15 passed in 0.93s`.
+- Full backend tests passed: `424 passed in 3.37s`.
+- Offline benchmark passed: `246 passed, 0 failed, 0 warnings`; latest regression status was `no_regression`.
+- Frontend build was not run because no frontend files changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- No real LLM APIs, real platform APIs, crawlers, live public fetch, real notifications, API-key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced.
+
+Known limitations:
+
+- The v4.3 corpus is still synthetic and coarse; it is regression protection, not a production-quality labeled dataset.
+- Topic clustering expectations remain bucket/shape checks rather than full clustering quality metrics.
+- Report checks verify required sections and stable structure rather than human quality scoring.
+
+Next recommended task: add a report quality rubric and fixture-level scoring checks, then expand parser regression fixtures into a larger per-platform corpus while keeping the harness offline-only.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: expand the offline benchmark corpus into a larger evaluation pack with human-labeled sentiment examples, parser regression fixtures, topic clustering quality metrics, and a report quality rubric. Keep it offline-only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, and do not start real API integrations.
+Recommended next development task: add a deterministic report quality rubric and fixture-level scoring checks, then expand parser regression fixtures into a larger per-platform corpus. Keep it offline-only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, and do not start real API integrations.
 
 Suggested scope:
 

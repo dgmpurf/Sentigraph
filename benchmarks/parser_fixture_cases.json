@@ -1,38 +1,95 @@
 [
   {
+    "case_id": "parser_the_paper_default_fixture",
     "platform_id": "the_paper",
     "limit": 3,
     "min_posts": 1,
     "min_comments": 0
   },
   {
+    "case_id": "parser_jiemian_default_fixture",
     "platform_id": "jiemian",
     "limit": 3,
     "min_posts": 1,
     "min_comments": 0
   },
   {
+    "case_id": "parser_hupu_default_fixture",
     "platform_id": "hupu",
     "limit": 3,
     "min_posts": 1,
     "min_comments": 2
   },
   {
+    "case_id": "parser_tieba_default_fixture",
     "platform_id": "tieba",
     "limit": 3,
     "min_posts": 1,
     "min_comments": 3
   },
   {
+    "case_id": "parser_nga_default_fixture",
     "platform_id": "nga",
     "limit": 3,
     "min_posts": 1,
     "min_comments": 3
   },
   {
+    "case_id": "parser_maimai_default_fixture",
     "platform_id": "maimai",
     "limit": 3,
     "min_posts": 1,
     "min_comments": 2
+  },
+  {
+    "case_id": "parser_the_paper_missing_author_edge",
+    "platform_id": "the_paper",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "expect_default_author": true,
+    "fixture_html": "<html><body><article><h1 class=\"article-title\">Synthetic quality discussion</h1><time class=\"article-date\">2026-05-17T00:00:00Z</time><section class=\"article-content\">A public article fixture intentionally omits the author field.</section></article></body></html>"
+  },
+  {
+    "case_id": "parser_jiemian_missing_created_at_edge",
+    "platform_id": "jiemian",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "expect_default_created_at": true,
+    "fixture_html": "<html><body><article><h1 class=\"article-title\">Synthetic business article</h1><span class=\"article-source\">fixture_source</span><div class=\"article-content\">This edge fixture omits created_at and should use a deterministic default.</div></article></body></html>"
+  },
+  {
+    "case_id": "parser_hupu_no_comments_edge",
+    "platform_id": "hupu",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">Hupu no-comment fixture</h1><span class=\"thread-author\">fixture_author</span><time class=\"thread-created-at\">2026-05-17T00:00:00Z</time><div class=\"thread-content\">The thread body is visible but there are no reply items.</div></article></body></html>"
+  },
+  {
+    "case_id": "parser_tieba_nested_content_edge",
+    "platform_id": "tieba",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">Tieba nested content fixture</h1><span class=\"thread-author\">tieba_fixture_author</span><time class=\"thread-created-at\">2026-05-17T00:00:00Z</time><div class=\"thread-content\">Outer text <span>nested public discussion about service clarity</span></div><div class=\"reply-item\" data-comment-id=\"tieba_edge_reply_001\"><span class=\"reply-author\">reply_user</span><time class=\"reply-created-at\">2026-05-17T00:05:00Z</time><p class=\"reply-content\">Nested content still parses as a visible reply.</p><span class=\"reply-like-count\">12</span><span class=\"reply-floor\">2F</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_nga_missing_created_at_edge",
+    "platform_id": "nga",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "expect_default_created_at": true,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">NGA missing date fixture</h1><span class=\"thread-author\">nga_fixture_author</span><div class=\"thread-content\">The post omits created_at but keeps public thread content.</div><div class=\"reply-item\" data-comment-id=\"nga_edge_reply_001\"><span class=\"reply-author\">reply_user</span><p class=\"reply-content\">Reply date is also optional in this synthetic fixture.</p><span class=\"reply-like-count\">8</span><span class=\"reply-floor\">3F</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_maimai_extra_whitespace_edge",
+    "platform_id": "maimai",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><article class=\"maimai-post\"><h1 class=\"post-title\">   Workplace topic with whitespace   </h1><span class=\"post-author\"> fixture_author </span><time class=\"post-created-at\"> 2026-05-17T00:00:00Z </time><div class=\"post-content\">   Employees discuss public workplace communication with extra whitespace.   </div></article></body></html>"
   }
 ]

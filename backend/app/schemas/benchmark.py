@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class BenchmarkSuiteSummary(BaseModel):
     suite: str
     status: str = "unknown"
+    case_count: int = 0
     passed: int = 0
     failed: int = 0
     warnings: list[str] = Field(default_factory=list)

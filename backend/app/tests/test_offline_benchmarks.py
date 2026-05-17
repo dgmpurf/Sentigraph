@@ -34,6 +34,7 @@ def test_offline_benchmark_runner_passes_without_server_or_external_calls() -> N
         "public_parser_fixtures",
         "platform_adapter_mocks",
     }
+    assert all(suite["case_count"] == suite["passed"] + suite["failed"] for suite in result["suites"])
 
 
 def test_offline_benchmark_runner_can_write_safe_json_summary(tmp_path) -> None:
@@ -50,6 +51,8 @@ def test_offline_benchmark_runner_can_write_safe_json_summary(tmp_path) -> None:
     assert summary["total_failed"] == 0
     assert summary["source"] == "offline_benchmark_summary"
     assert history["source"] == "offline_benchmark"
+    assert all("case_count" in suite for suite in summary["suites"])
+    assert all("case_count" in suite for suite in history["suites"])
     assert history["benchmark_id"] == summary["benchmark_id"]
     assert history["regression_detected"] is False
     assert summary["regression_summary"]["status"] == "no_history"
@@ -114,6 +117,35 @@ def test_offline_benchmark_runner_reports_missing_fixture_safely(tmp_path) -> No
     assert sentiment_suite["status"] == "fail"
     assert sentiment_suite["cases"][0]["details"]["error_category"] == "fixture_error"
     assert "sentiment_cases.json" in sentiment_suite["cases"][0]["message"]
+
+
+def test_offline_benchmark_runner_reports_malformed_case_safely(tmp_path) -> None:
+    script = _load_script("run_offline_benchmarks.py")
+    fixture_dir = tmp_path / "benchmarks"
+    shutil.copytree(REPO_ROOT / "benchmarks", fixture_dir)
+    raw_case_text = "This raw fixture text should not be echoed in safe failure messages."
+    (fixture_dir / "sentiment_cases.json").write_text(
+        json.dumps(
+            [
+                {
+                    "case_id": "malformed_sentiment_case",
+                    "text": raw_case_text,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = script.run_all_benchmarks(fixture_dir=fixture_dir, write_json=False)
+    sentiment_suite = next(suite for suite in result["suites"] if suite["suite"] == "sentiment")
+    response_text = json.dumps(sentiment_suite)
+
+    assert result["total_failed"] >= 1
+    assert sentiment_suite["status"] == "fail"
+    assert sentiment_suite["cases"][0]["case_id"] == "sentiment:suite_error"
+    assert sentiment_suite["cases"][0]["details"]["error_category"] == "suite_error"
+    assert sentiment_suite["cases"][0]["details"]["error_type"] == "KeyError"
+    assert raw_case_text not in response_text
 
 
 def _load_script(filename: str):

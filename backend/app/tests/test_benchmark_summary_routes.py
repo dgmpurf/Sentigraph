@@ -77,6 +77,7 @@ def test_latest_benchmark_summary_valid_file_returns_safe_fields(monkeypatch, tm
         {
             "suite": "sentiment",
             "status": "pass",
+            "case_count": 3,
             "passed": 3,
             "failed": 0,
             "warnings": ["fixture warning"],

@@ -1,5 +1,6 @@
 [
   {
+    "case_id": "adapter_reddit_tesla",
     "platform_id": "reddit",
     "keyword": "Tesla",
     "limit": 2,
@@ -7,6 +8,7 @@
     "min_comments": 1
   },
   {
+    "case_id": "adapter_bilibili_tesla",
     "platform_id": "bilibili",
     "keyword": "Tesla",
     "limit": 2,
@@ -14,6 +16,7 @@
     "min_comments": 1
   },
   {
+    "case_id": "adapter_weibo_tesla",
     "platform_id": "weibo",
     "keyword": "Tesla",
     "limit": 2,
@@ -21,6 +24,7 @@
     "min_comments": 1
   },
   {
+    "case_id": "adapter_douyin_tesla",
     "platform_id": "douyin",
     "keyword": "Tesla",
     "limit": 2,
@@ -28,6 +32,7 @@
     "min_comments": 1
   },
   {
+    "case_id": "adapter_kuaishou_tesla",
     "platform_id": "kuaishou",
     "keyword": "Tesla",
     "limit": 2,
@@ -35,6 +40,7 @@
     "min_comments": 1
   },
   {
+    "case_id": "adapter_xiaohongshu_tesla",
     "platform_id": "xiaohongshu",
     "keyword": "Tesla",
     "limit": 2,
@@ -42,6 +48,7 @@
     "min_comments": 1
   },
   {
+    "case_id": "adapter_zhihu_tesla",
     "platform_id": "zhihu",
     "keyword": "Tesla",
     "limit": 2,
@@ -49,6 +56,7 @@
     "min_comments": 1
   },
   {
+    "case_id": "adapter_douban_tesla",
     "platform_id": "douban",
     "keyword": "Tesla",
     "limit": 2,
@@ -56,9 +64,82 @@
     "min_comments": 1
   },
   {
+    "case_id": "adapter_toutiao_tesla",
     "platform_id": "toutiao",
     "keyword": "Tesla",
     "limit": 2,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "case_id": "adapter_reddit_quality_issue",
+    "platform_id": "reddit",
+    "keyword": "quality issue",
+    "limit": 1,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "case_id": "adapter_bilibili_quality_issue",
+    "platform_id": "bilibili",
+    "keyword": "\u8d28\u91cf\u95ee\u9898",
+    "limit": 1,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "case_id": "adapter_weibo_response_issue",
+    "platform_id": "weibo",
+    "keyword": "\u5b98\u65b9\u56de\u5e94",
+    "limit": 1,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "case_id": "adapter_douyin_short_video_issue",
+    "platform_id": "douyin",
+    "keyword": "\u77ed\u89c6\u9891\u8ba8\u8bba",
+    "limit": 1,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "case_id": "adapter_kuaishou_livestream_issue",
+    "platform_id": "kuaishou",
+    "keyword": "\u76f4\u64ad\u8206\u60c5",
+    "limit": 1,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "case_id": "adapter_xiaohongshu_note_issue",
+    "platform_id": "xiaohongshu",
+    "keyword": "\u7b14\u8bb0\u6295\u8bc9",
+    "limit": 1,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "case_id": "adapter_zhihu_discussion_issue",
+    "platform_id": "zhihu",
+    "keyword": "\u95ee\u7b54\u4e89\u8bae",
+    "limit": 1,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "case_id": "adapter_douban_group_issue",
+    "platform_id": "douban",
+    "keyword": "\u5c0f\u7ec4\u8ba8\u8bba",
+    "limit": 1,
+    "min_posts": 1,
+    "min_comments": 1
+  },
+  {
+    "case_id": "adapter_toutiao_article_issue",
+    "platform_id": "toutiao",
+    "keyword": "\u5934\u6761\u8bc4\u8bba",
+    "limit": 1,
     "min_posts": 1,
     "min_comments": 1
   }

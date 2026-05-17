@@ -1829,14 +1829,15 @@ Response when a summary exists:
   "generated_at": "2026-05-17T00:00:00Z",
   "benchmark_version": "v4.0_offline_benchmark_v1",
   "duration_seconds": 0.74,
-  "total_passed": 78,
+  "total_passed": 246,
   "total_failed": 0,
   "total_warnings": 0,
   "suites": [
     {
       "suite": "sentiment",
       "status": "pass",
-      "passed": 14,
+      "case_count": 28,
+      "passed": 28,
       "failed": 0,
       "warnings": []
     }
@@ -1888,7 +1889,7 @@ Response:
       "generated_at": "2026-05-17T00:00:00Z",
       "benchmark_version": "v4.0_offline_benchmark_v1",
       "duration_seconds": 0.74,
-      "total_passed": 78,
+      "total_passed": 246,
       "total_failed": 0,
       "total_warnings": 0,
       "suites": [],
@@ -1922,8 +1923,8 @@ Response:
   "latest_total_failed": 0,
   "previous_total_warnings": 0,
   "latest_total_warnings": 0,
-  "previous_total_passed": 78,
-  "latest_total_passed": 78,
+  "previous_total_passed": 246,
+  "latest_total_passed": 246,
   "reason_categories": [],
   "message": "No benchmark regression detected compared with the previous run."
 }
@@ -1934,7 +1935,7 @@ Rules:
 - The endpoint reads only `.benchmarks/offline_benchmark_summary.json` under the project root.
 - History is read only from `.benchmarks/history/` under the project root.
 - The endpoints do not run benchmarks automatically.
-- They return suite-level summary fields only. They intentionally omit per-case benchmark payloads.
+- They return suite-level summary fields only: suite name, status, `case_count`, passed, failed, and warnings. They intentionally omit per-case benchmark payloads.
 - They must not expose raw fixture text, raw HTML, prompts, raw user content, API keys, `.env` values, local file paths, or external request bodies.
 - Missing or malformed summary/history files return safe `status="missing"` or `status="malformed"` responses with no traceback.
 - Regression detection compares summary metadata only: increased total failures, increased warnings, suite `pass` to `fail`, and decreased total passed count.

@@ -1399,14 +1399,15 @@ Rules:
   "generated_at": "2026-05-17T00:00:00Z",
   "benchmark_version": "v4.0_offline_benchmark_v1",
   "duration_seconds": 0.74,
-  "total_passed": 78,
+  "total_passed": 246,
   "total_failed": 0,
   "total_warnings": 0,
   "suites": [
     {
       "suite": "sentiment",
       "status": "pass",
-      "passed": 14,
+      "case_count": 28,
+      "passed": 28,
       "failed": 0,
       "warnings": []
     }
@@ -1425,7 +1426,7 @@ Rules:
   "generated_at": "2026-05-17T00:00:00Z",
   "benchmark_version": "v4.0_offline_benchmark_v1",
   "duration_seconds": 0.74,
-  "total_passed": 78,
+  "total_passed": 246,
   "total_failed": 0,
   "total_warnings": 0,
   "suites": [],
@@ -1457,8 +1458,8 @@ Rules:
   "latest_total_failed": 1,
   "previous_total_warnings": 0,
   "latest_total_warnings": 0,
-  "previous_total_passed": 78,
-  "latest_total_passed": 77,
+  "previous_total_passed": 246,
+  "latest_total_passed": 245,
   "reason_categories": ["total_failed_increased", "suite_pass_to_fail"],
   "message": "Regression risk detected in the latest offline benchmark run."
 }
@@ -1478,7 +1479,7 @@ regression_detected
 Rules:
 
 - `source` is `offline_benchmark_summary`, `offline_benchmark_history`, `offline_benchmark`, or `offline_benchmark_regression` depending on the object.
-- `suites` contains only suite name, suite status, pass/fail counts, and suite-level warnings.
+- `suites` contains only suite name, suite status, `case_count`, pass/fail counts, and suite-level warnings.
 - Benchmark `cases` arrays and raw fixture content are intentionally omitted from the API response.
 - Regression detection records new failures, warning increases, suite `pass` to `fail`, and total-passed decreases.
 - Missing or malformed summary/history files produce safe empty responses rather than uncaught errors.

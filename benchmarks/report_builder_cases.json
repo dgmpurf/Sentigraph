@@ -1,14 +1,118 @@
 [
   {
-    "case_id": "report_zh_cn_required_fields",
-    "project_id": "benchmark_report_project",
+    "case_id": "report_brand_product_crisis",
+    "project_id": "benchmark_report_brand_product",
     "keyword": "Tesla",
     "platforms": ["reddit", "bilibili", "weibo"],
     "title": "Tesla Offline Benchmark Report",
     "report_language": "zh-CN",
     "representative_comments": [
-      "Serious battery quality issue and unresolved repair complaint.",
-      "官方回应节奏偏慢，用户希望看到明确时间表。"
+      "The quality issue keeps happening and the repair complaint is still unresolved.",
+      "\u5b98\u65b9\u56de\u5e94\u8282\u594f\u504f\u6162\uff0c\u7528\u6237\u5e0c\u671b\u770b\u5230\u660e\u786e\u65f6\u95f4\u8868\u3002"
+    ],
+    "required_markdown_sections": [
+      "title",
+      "keyword",
+      "platforms",
+      "risk score",
+      "risk level",
+      "risk model version",
+      "summary",
+      "key findings",
+      "top risk topics",
+      "representative comments",
+      "recommended actions",
+      "suggested public response"
+    ]
+  },
+  {
+    "case_id": "report_public_figure_controversy",
+    "project_id": "benchmark_report_public_figure",
+    "keyword": "\u67d0\u516c\u4f17\u4eba\u7269\u4e89\u8bae",
+    "platforms": ["weibo", "zhihu", "douban"],
+    "title": "Public Figure Controversy Offline Report",
+    "report_language": "zh-CN",
+    "representative_comments": [
+      "\u4e8b\u4ef6\u8bf4\u6cd5\u4e0d\u4e00\uff0c\u5e0c\u671b\u5f53\u4e8b\u65b9\u7ed9\u51fa\u53ef\u6838\u5b9e\u8bf4\u660e\u3002",
+      "\u7406\u6027\u8ba8\u8bba\u5c31\u597d\uff0c\u4e0d\u8981\u653e\u5927\u672a\u8bc1\u5b9e\u4fe1\u606f\u3002"
+    ],
+    "required_markdown_sections": [
+      "title",
+      "keyword",
+      "platforms",
+      "risk score",
+      "risk level",
+      "risk model version",
+      "summary",
+      "key findings",
+      "top risk topics",
+      "representative comments",
+      "recommended actions",
+      "suggested public response"
+    ]
+  },
+  {
+    "case_id": "report_company_workplace_complaint",
+    "project_id": "benchmark_report_workplace",
+    "keyword": "\u516c\u53f8\u804c\u573a\u6295\u8bc9",
+    "platforms": ["maimai", "zhihu", "weibo"],
+    "title": "Workplace Complaint Offline Report",
+    "report_language": "zh-CN",
+    "representative_comments": [
+      "\u5458\u5de5\u4e3b\u8981\u5173\u6ce8\u52a0\u73ed\u6c9f\u901a\u548c\u7ba1\u7406\u54cd\u5e94\u3002",
+      "\u5982\u679c\u516c\u53f8\u80fd\u7ed9\u51fa\u4e8b\u5b9e\u6027\u8bf4\u660e\uff0c\u8ba8\u8bba\u53ef\u80fd\u4f1a\u964d\u6e29\u3002"
+    ],
+    "required_markdown_sections": [
+      "title",
+      "keyword",
+      "platforms",
+      "risk score",
+      "risk level",
+      "risk model version",
+      "summary",
+      "key findings",
+      "top risk topics",
+      "representative comments",
+      "recommended actions",
+      "suggested public response"
+    ]
+  },
+  {
+    "case_id": "report_suspected_bot_amplification",
+    "project_id": "benchmark_report_bot_amplification",
+    "keyword": "\u91cd\u590d\u8bdd\u672f\u6269\u6563",
+    "platforms": ["tieba", "nga", "hupu"],
+    "title": "Suspected Bot Amplification Offline Report",
+    "report_language": "zh-CN",
+    "representative_comments": [
+      "\u591a\u4e2a\u8d26\u53f7\u5728\u91cd\u590d\u540c\u4e00\u6bb5\u8bdd\uff0c\u770b\u8d77\u6765\u9700\u8981\u533a\u5206\u771f\u5b9e\u6295\u8bc9\u548c\u5e26\u8282\u594f\u3002",
+      "Coordinated accounts repeat this script and attack every official response."
+    ],
+    "required_markdown_sections": [
+      "title",
+      "keyword",
+      "platforms",
+      "risk score",
+      "risk level",
+      "risk model version",
+      "summary",
+      "key findings",
+      "top risk topics",
+      "representative comments",
+      "recommended actions",
+      "suggested public response"
+    ]
+  },
+  {
+    "case_id": "report_safety_legal_issue",
+    "project_id": "benchmark_report_safety_legal",
+    "keyword": "\u5b89\u5168\u4e0e\u6cd5\u52a1\u98ce\u9669",
+    "platforms": ["toutiao", "the_paper", "jiemian"],
+    "title": "Safety Legal Issue Offline Report",
+    "report_language": "zh-CN",
+    "representative_comments": [
+      "Serious safety problem and possible recall issue need legal review now.",
+      "\u5b89\u5168\u9690\u60a3\u8981\u4f18\u5148\u6838\u67e5\uff0c\u4e0d\u80fd\u53ea\u7ed9\u6a21\u7cca\u56de\u590d\u3002"
     ],
     "required_markdown_sections": [
       "title",

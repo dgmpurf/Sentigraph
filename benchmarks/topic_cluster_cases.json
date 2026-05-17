@@ -50,5 +50,131 @@
       "Pricing and policy",
       "General discussion"
     ]
+  },
+  {
+    "case_id": "topic_cluster_product_quality_cn",
+    "comments": [
+      {
+        "comment_id": "cluster_quality_cn_001",
+        "author_id": "owner_cn_a",
+        "language": "zh-CN",
+        "text": "\u8d28\u91cf\u95ee\u9898\u53cd\u590d\u51fa\u73b0\uff0c\u7528\u6237\u8981\u6c42\u5c3d\u5feb\u516c\u5e03\u7ef4\u4fee\u65b9\u6848\u3002",
+        "duplicate_count": 2,
+        "is_repeated_script": false
+      }
+    ],
+    "expected_topics": ["Product quality issues"]
+  },
+  {
+    "case_id": "topic_cluster_delayed_response",
+    "comments": [
+      {
+        "comment_id": "cluster_response_002",
+        "author_id": "response_user_b",
+        "language": "en",
+        "text": "Official response remains delayed and users want a clear statement.",
+        "duplicate_count": 2,
+        "is_repeated_script": false
+      }
+    ],
+    "expected_topics": ["Delayed official response"]
+  },
+  {
+    "case_id": "topic_cluster_pricing_complaint",
+    "comments": [
+      {
+        "comment_id": "cluster_pricing_002",
+        "author_id": "pricing_user_b",
+        "language": "en",
+        "text": "The discount policy and price change made early buyers complain about fairness.",
+        "duplicate_count": 2,
+        "is_repeated_script": false
+      }
+    ],
+    "expected_topics": ["Pricing and policy"]
+  },
+  {
+    "case_id": "topic_cluster_safety_concern",
+    "comments": [
+      {
+        "comment_id": "cluster_safety_001",
+        "author_id": "safety_user_a",
+        "language": "en",
+        "text": "This safety problem needs an immediate recall and transparent inspection report.",
+        "duplicate_count": 3,
+        "is_repeated_script": false
+      }
+    ],
+    "expected_topics": ["Product quality issues"]
+  },
+  {
+    "case_id": "topic_cluster_customer_service_issue",
+    "comments": [
+      {
+        "comment_id": "cluster_service_001",
+        "author_id": "service_user_a",
+        "language": "en",
+        "text": "Customer support has not solved the service issue after several repair appointments.",
+        "duplicate_count": 2,
+        "is_repeated_script": false
+      }
+    ],
+    "expected_topics": ["Product quality issues"]
+  },
+  {
+    "case_id": "topic_cluster_suspected_coordination",
+    "comments": [
+      {
+        "comment_id": "cluster_coord_001",
+        "author_id": "coord_user_a",
+        "language": "en",
+        "text": "Coordinated accounts are repeating the same script and asking everyone to attack.",
+        "duplicate_count": 8,
+        "is_repeated_script": true
+      }
+    ],
+    "expected_topics": ["Coordinated amplification"]
+  },
+  {
+    "case_id": "topic_cluster_neutral_product_discussion",
+    "comments": [
+      {
+        "comment_id": "cluster_neutral_002",
+        "author_id": "neutral_user_b",
+        "language": "en",
+        "text": "People are comparing delivery schedules, colors, and charging station locations.",
+        "duplicate_count": 1,
+        "is_repeated_script": false
+      }
+    ],
+    "expected_topics": ["General discussion"]
+  },
+  {
+    "case_id": "topic_cluster_fan_supporter_conflict",
+    "comments": [
+      {
+        "comment_id": "cluster_fan_conflict_001",
+        "author_id": "fan_user_a",
+        "language": "en",
+        "text": "Fans and critics are arguing about whether the brand deserves patience.",
+        "duplicate_count": 2,
+        "is_repeated_script": false
+      }
+    ],
+    "expected_topics": ["General discussion"]
+  },
+  {
+    "case_id": "topic_cluster_workplace_issue",
+    "comments": [
+      {
+        "comment_id": "cluster_workplace_001",
+        "author_id": "workplace_user_a",
+        "language": "en",
+        "text": "A workplace issue about overtime and manager communication is becoming a complaint thread.",
+        "duplicate_count": 2,
+        "is_repeated_script": false
+      }
+    ],
+    "expected_topics": ["Product quality issues"]
   }
 ]

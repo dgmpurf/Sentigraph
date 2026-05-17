@@ -1,46 +1,111 @@
 [
   {
-    "case_id": "topic_risk_ordering_and_manipulation",
+    "case_id": "topic_risk_low_neutral_discussion",
     "comments": [
       {
-        "comment_id": "risk_quality_001",
-        "author_id": "owner_a",
+        "comment_id": "risk_low_neutral_001",
+        "author_id": "neutral_a",
         "language": "en",
-        "text": "Serious battery quality issue and unresolved repair complaint.",
-        "duplicate_count": 6,
-        "is_repeated_script": true,
-        "like_count": 42,
-        "reply_count": 12,
-        "share_count": 5
+        "text": "People are comparing delivery schedules and appointment availability.",
+        "duplicate_count": 1,
+        "is_repeated_script": false,
+        "like_count": 3,
+        "reply_count": 1,
+        "share_count": 0
       },
       {
-        "comment_id": "risk_quality_002",
-        "author_id": "owner_b",
+        "comment_id": "risk_low_neutral_002",
+        "author_id": "neutral_b",
         "language": "en",
-        "text": "Quality problem keeps happening and support has not solved it.",
-        "duplicate_count": 3,
+        "text": "Some users are sharing neutral notes about store locations.",
+        "duplicate_count": 1,
         "is_repeated_script": false,
-        "like_count": 31,
+        "like_count": 2,
+        "reply_count": 0,
+        "share_count": 0
+      }
+    ],
+    "expected": {
+      "top_topic": "General discussion",
+      "max_overall_risk": 30,
+      "min_manipulation_risk": 0
+    }
+  },
+  {
+    "case_id": "topic_risk_medium_product_complaint",
+    "comments": [
+      {
+        "comment_id": "risk_product_medium_001",
+        "author_id": "owner_a",
+        "language": "en",
+        "text": "The serious quality issue problem keeps happening and the repair complaint is still unresolved.",
+        "duplicate_count": 5,
+        "is_repeated_script": false,
+        "like_count": 30,
         "reply_count": 8,
         "share_count": 2
       },
       {
-        "comment_id": "risk_bot_001",
-        "author_id": "bot_like_a",
+        "comment_id": "risk_product_medium_002",
+        "author_id": "owner_b",
         "language": "en",
-        "text": "Copy this message everywhere and push the same crisis hashtag.",
-        "duplicate_count": 8,
-        "is_repeated_script": true,
-        "like_count": 20,
+        "text": "This product problem is bad and worse after another delayed support timeline.",
+        "duplicate_count": 3,
+        "is_repeated_script": false,
+        "like_count": 18,
         "reply_count": 4,
-        "share_count": 8,
-        "bot_probability": 0.78
+        "share_count": 1
       },
       {
-        "comment_id": "risk_neutral_001",
-        "author_id": "neutral_a",
+        "comment_id": "risk_product_medium_neutral",
+        "author_id": "neutral_c",
         "language": "en",
-        "text": "People are comparing service centers and appointment availability.",
+        "text": "Other users are comparing store opening hours.",
+        "duplicate_count": 1,
+        "is_repeated_script": false,
+        "like_count": 2,
+        "reply_count": 0,
+        "share_count": 0
+      }
+    ],
+    "expected": {
+      "high_topic": "Product quality issues",
+      "low_topic": "General discussion",
+      "top_topic": "Product quality issues",
+      "min_overall_risk": 25,
+      "min_manipulation_risk": 0
+    }
+  },
+  {
+    "case_id": "topic_risk_high_safety_legal_concern",
+    "comments": [
+      {
+        "comment_id": "risk_safety_001",
+        "author_id": "safety_owner_a",
+        "language": "en",
+        "text": "Serious safety problem and possible recall issue need legal review now.",
+        "duplicate_count": 5,
+        "is_repeated_script": false,
+        "like_count": 92,
+        "reply_count": 30,
+        "share_count": 18
+      },
+      {
+        "comment_id": "risk_safety_002",
+        "author_id": "safety_owner_b",
+        "language": "en",
+        "text": "A defect complaint involving safety should not wait for another delayed response.",
+        "duplicate_count": 4,
+        "is_repeated_script": false,
+        "like_count": 75,
+        "reply_count": 21,
+        "share_count": 12
+      },
+      {
+        "comment_id": "risk_safety_neutral",
+        "author_id": "neutral_d",
+        "language": "en",
+        "text": "Some readers are collecting official documentation links.",
         "duplicate_count": 1,
         "is_repeated_script": false,
         "like_count": 4,
@@ -50,8 +115,217 @@
     ],
     "expected": {
       "high_topic": "Product quality issues",
+      "low_topic": "Delayed official response",
+      "top_topic": "Product quality issues",
+      "min_overall_risk": 40,
+      "min_real_crisis_risk": 45,
+      "min_manipulation_risk": 0
+    }
+  },
+  {
+    "case_id": "topic_risk_high_manipulation_repeated_scripts",
+    "comments": [
+      {
+        "comment_id": "risk_coord_001",
+        "author_id": "script_a",
+        "language": "en",
+        "text": "Coordinated accounts repeat this script and attack every official response.",
+        "duplicate_count": 10,
+        "is_repeated_script": true,
+        "like_count": 40,
+        "reply_count": 12,
+        "share_count": 20,
+        "bot_probability": 0.86
+      },
+      {
+        "comment_id": "risk_coord_002",
+        "author_id": "script_b",
+        "language": "en",
+        "text": "Repeat the same script everywhere and push the crisis tag.",
+        "duplicate_count": 8,
+        "is_repeated_script": true,
+        "like_count": 25,
+        "reply_count": 7,
+        "share_count": 16,
+        "bot_probability": 0.76
+      },
+      {
+        "comment_id": "risk_coord_neutral",
+        "author_id": "neutral_e",
+        "language": "en",
+        "text": "A few users are asking what actually happened.",
+        "duplicate_count": 1,
+        "is_repeated_script": false,
+        "like_count": 2,
+        "reply_count": 1,
+        "share_count": 0
+      }
+    ],
+    "expected": {
+      "high_topic": "Coordinated amplification",
       "low_topic": "General discussion",
-      "min_manipulation_risk": 5
+      "top_topic": "Coordinated amplification",
+      "min_overall_risk": 30,
+      "min_manipulation_risk": 35
+    }
+  },
+  {
+    "case_id": "topic_risk_high_real_crisis_organic_negative",
+    "comments": [
+      {
+        "comment_id": "risk_organic_001",
+        "author_id": "organic_a",
+        "language": "en",
+        "text": "Serious quality issue problem complaint still unresolved after repeated repair appointments.",
+        "duplicate_count": 2,
+        "is_repeated_script": false,
+        "like_count": 88,
+        "reply_count": 24,
+        "share_count": 9
+      },
+      {
+        "comment_id": "risk_organic_002",
+        "author_id": "organic_b",
+        "language": "en",
+        "text": "The defect complaint and product problem are credible because several owners posted service records.",
+        "duplicate_count": 2,
+        "is_repeated_script": false,
+        "like_count": 70,
+        "reply_count": 18,
+        "share_count": 8
+      },
+      {
+        "comment_id": "risk_organic_003",
+        "author_id": "organic_c",
+        "language": "en",
+        "text": "This serious issue problem is bad and should be handled publicly before trust gets worse.",
+        "duplicate_count": 2,
+        "is_repeated_script": false,
+        "like_count": 61,
+        "reply_count": 14,
+        "share_count": 6
+      },
+      {
+        "comment_id": "risk_organic_neutral",
+        "author_id": "neutral_f",
+        "language": "en",
+        "text": "Some users are waiting for the next service bulletin.",
+        "duplicate_count": 1,
+        "is_repeated_script": false,
+        "like_count": 3,
+        "reply_count": 0,
+        "share_count": 0
+      }
+    ],
+    "expected": {
+      "high_topic": "Product quality issues",
+      "low_topic": "General discussion",
+      "top_topic": "Product quality issues",
+      "min_overall_risk": 40,
+      "min_real_crisis_risk": 45,
+      "min_manipulation_risk": 0
+    }
+  },
+  {
+    "case_id": "topic_risk_polarized_conflict",
+    "comments": [
+      {
+        "comment_id": "risk_polar_001",
+        "author_id": "critic_a",
+        "language": "en",
+        "text": "The quality problem is bad and the complaint should be escalated.",
+        "duplicate_count": 3,
+        "is_repeated_script": false,
+        "like_count": 42,
+        "reply_count": 13,
+        "share_count": 4
+      },
+      {
+        "comment_id": "risk_polar_002",
+        "author_id": "supporter_a",
+        "language": "en",
+        "text": "I trust the support team and believe the product quality can be resolved.",
+        "duplicate_count": 3,
+        "is_repeated_script": false,
+        "like_count": 37,
+        "reply_count": 10,
+        "share_count": 3
+      },
+      {
+        "comment_id": "risk_polar_neutral",
+        "author_id": "neutral_g",
+        "language": "en",
+        "text": "Fans and critics are arguing in long threads.",
+        "duplicate_count": 1,
+        "is_repeated_script": false,
+        "like_count": 5,
+        "reply_count": 2,
+        "share_count": 0
+      }
+    ],
+    "expected": {
+      "high_topic": "Product quality issues",
+      "low_topic": "General discussion",
+      "top_topic": "Product quality issues",
+      "min_overall_risk": 30,
+      "min_manipulation_risk": 0
+    }
+  },
+  {
+    "case_id": "topic_risk_small_high_severity_not_diluted",
+    "comments": [
+      {
+        "comment_id": "risk_small_severe_001",
+        "author_id": "safety_case_a",
+        "language": "en",
+        "text": "Severe safety issue with a bad product problem, possible defect, and legal complaint should be reviewed immediately.",
+        "duplicate_count": 1,
+        "is_repeated_script": false,
+        "like_count": 130,
+        "reply_count": 42,
+        "share_count": 20
+      },
+      {
+        "comment_id": "risk_small_neutral_001",
+        "author_id": "neutral_h",
+        "language": "en",
+        "text": "People are comparing delivery colors.",
+        "duplicate_count": 2,
+        "is_repeated_script": false,
+        "like_count": 2,
+        "reply_count": 0,
+        "share_count": 0
+      },
+      {
+        "comment_id": "risk_small_neutral_002",
+        "author_id": "neutral_i",
+        "language": "en",
+        "text": "Some users are sharing charging station maps.",
+        "duplicate_count": 2,
+        "is_repeated_script": false,
+        "like_count": 2,
+        "reply_count": 0,
+        "share_count": 0
+      },
+      {
+        "comment_id": "risk_small_neutral_003",
+        "author_id": "neutral_j",
+        "language": "en",
+        "text": "A few comments ask about store hours.",
+        "duplicate_count": 2,
+        "is_repeated_script": false,
+        "like_count": 1,
+        "reply_count": 0,
+        "share_count": 0
+      }
+    ],
+    "expected": {
+      "high_topic": "Product quality issues",
+      "low_topic": "General discussion",
+      "top_topic": "Product quality issues",
+      "min_overall_risk": 35,
+      "min_real_crisis_risk": 40,
+      "min_manipulation_risk": 0
     }
   }
 ]

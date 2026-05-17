@@ -29,8 +29,10 @@ from app.schemas.comment import CleanComment, RawComment, RawPost  # noqa: E402
 from app.schemas.risk import TOPIC_RISK_MODEL_VERSION, TopicRiskScoreResult  # noqa: E402
 from app.services.case_store import _build_markdown  # noqa: E402
 from app.services.crawling.adapter_factory import get_adapter  # noqa: E402
+from app.services.crawling.public_parser.base_public_parser import BasePublicParser  # noqa: E402
 from app.services.crawling.public_parser.parser_status_service import preview_public_parser  # noqa: E402
-from app.services.crawling.public_parser.selector_profile import PROFILE_DIR  # noqa: E402
+from app.services.crawling.public_parser.public_fetcher import PublicFetcher  # noqa: E402
+from app.services.crawling.public_parser.selector_profile import PROFILE_DIR, load_selector_profile  # noqa: E402
 from app.services.crawling.public_parser.selector_repair.html_sanitizer import sanitize_html  # noqa: E402
 from app.services.crawling.public_parser.selector_repair.selector_repair_service import (  # noqa: E402
     build_repair_request,
@@ -96,6 +98,7 @@ class SuiteRecorder:
         return {
             "suite": self.suite,
             "status": "pass" if failed == 0 else "fail",
+            "case_count": len(self.cases),
             "passed": passed,
             "failed": failed,
             "warnings": self.warnings,
@@ -162,6 +165,21 @@ def _safe_run_suite(suite_name: str, runner) -> dict[str, Any]:
             False,
             str(exc),
             {"error_category": "fixture_error"},
+        )
+        return recorder.summary()
+    except Exception as exc:
+        recorder = SuiteRecorder(suite_name)
+        recorder.check(
+            f"{suite_name}:suite_error",
+            False,
+            (
+                "Benchmark suite failed safely before completion. "
+                "Check the fixture shape and deterministic runner logic for this suite."
+            ),
+            {
+                "error_category": "suite_error",
+                "error_type": type(exc).__name__,
+            },
         )
         return recorder.summary()
 
@@ -232,8 +250,10 @@ def _run_topic_risk_benchmark(fixture_root: Path) -> dict[str, Any]:
         clusters = TopicClusterer(summary_mode="template").cluster(comments, sentiments)
         result = _calculate_risk_from_comments(case["comments"], comments, sentiments, clusters)
         expected = case.get("expected", {})
-        high_topic = _find_topic(result, expected.get("high_topic", ""))
-        low_topic = _find_topic(result, expected.get("low_topic", ""))
+        high_topic_name = expected.get("high_topic")
+        low_topic_name = expected.get("low_topic")
+        high_topic = _find_topic(result, high_topic_name) if high_topic_name else None
+        low_topic = _find_topic(result, low_topic_name) if low_topic_name else None
         sorted_scores = [topic.topic_risk_score for topic in result.top_risk_topics]
         all_scores = [topic.topic_risk_score for topic in result.topic_risks]
         recorder.check(
@@ -256,21 +276,54 @@ def _run_topic_risk_benchmark(fixture_root: Path) -> dict[str, Any]:
             "top risk topics are sorted deterministically by score",
             {"top_scores": sorted_scores},
         )
-        recorder.check(
-            f"{case['case_id']}:negative_above_neutral",
-            bool(high_topic and low_topic and high_topic.topic_risk_score > low_topic.topic_risk_score),
-            "high negative quality topic scores above low-volume neutral topic",
-            {
-                "high_topic_score": high_topic.topic_risk_score if high_topic else None,
-                "low_topic_score": low_topic.topic_risk_score if low_topic else None,
-            },
-        )
-        recorder.check(
-            f"{case['case_id']}:manipulation",
-            result.manipulation_risk >= float(expected.get("min_manipulation_risk", 0)),
-            "bot/manipulation signals increase manipulation risk",
-            {"manipulation_risk": result.manipulation_risk},
-        )
+        if high_topic_name and low_topic_name:
+            recorder.check(
+                f"{case['case_id']}:negative_above_neutral",
+                bool(high_topic and low_topic and high_topic.topic_risk_score > low_topic.topic_risk_score),
+                "expected higher-risk topic scores above lower-risk comparison topic",
+                {
+                    "high_topic": high_topic_name,
+                    "low_topic": low_topic_name,
+                    "high_topic_score": high_topic.topic_risk_score if high_topic else None,
+                    "low_topic_score": low_topic.topic_risk_score if low_topic else None,
+                },
+            )
+        if expected.get("top_topic"):
+            leading_topic = result.top_risk_topics[0].topic if result.top_risk_topics else None
+            recorder.check(
+                f"{case['case_id']}:top_topic",
+                leading_topic == expected["top_topic"],
+                "expected leading topic remains deterministic",
+                {"leading_topic": leading_topic, "expected": expected["top_topic"]},
+            )
+        if "min_overall_risk" in expected:
+            recorder.check(
+                f"{case['case_id']}:min_overall_risk",
+                result.overall_risk >= float(expected["min_overall_risk"]),
+                "overall topic risk meets minimum expected range",
+                {"overall_risk": result.overall_risk},
+            )
+        if "max_overall_risk" in expected:
+            recorder.check(
+                f"{case['case_id']}:max_overall_risk",
+                result.overall_risk <= float(expected["max_overall_risk"]),
+                "overall topic risk stays below maximum expected range",
+                {"overall_risk": result.overall_risk},
+            )
+        if "min_real_crisis_risk" in expected:
+            recorder.check(
+                f"{case['case_id']}:real_crisis",
+                result.real_crisis_risk >= float(expected["min_real_crisis_risk"]),
+                "credible negative topic signals increase real-crisis risk",
+                {"real_crisis_risk": result.real_crisis_risk},
+            )
+        if "min_manipulation_risk" in expected:
+            recorder.check(
+                f"{case['case_id']}:manipulation",
+                result.manipulation_risk >= float(expected["min_manipulation_risk"]),
+                "bot/manipulation signals increase manipulation risk",
+                {"manipulation_risk": result.manipulation_risk},
+            )
     return recorder.summary()
 
 
@@ -360,12 +413,22 @@ def _run_selector_repair_benchmark(fixture_root: Path) -> dict[str, Any]:
         )
         preview = preview_suggestion(case["platform_id"], suggestion, sanitized)
         matched_targets = {target for target, matched in preview.matched_targets.items() if matched}
+        expected_matched_targets = set(case.get("expected_matched_targets") or case["expected_targets"])
+        min_matched_targets = int(case.get("min_matched_targets", 1))
         recorder.check(
             f"{case['case_id']}:preview",
-            preview.profile_modified is False and bool(matched_targets.intersection(case["expected_targets"])),
+            preview.profile_modified is False
+            and len(matched_targets.intersection(expected_matched_targets)) >= min_matched_targets,
             "selector preview matches fixture HTML and does not modify profiles",
             {"matched_targets": sorted(matched_targets), "warnings": preview.warnings},
         )
+        if case.get("expected_preview_status"):
+            recorder.check(
+                f"{case['case_id']}:preview_status",
+                preview.status == case["expected_preview_status"],
+                "selector preview status matches expected fixture outcome",
+                {"status": preview.status, "expected": case["expected_preview_status"]},
+            )
         after_profile = profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
         recorder.check(
             f"{case['case_id']}:profile_unchanged",
@@ -380,28 +443,82 @@ def _run_public_parser_benchmark(fixture_root: Path) -> dict[str, Any]:
     cases = _load_json(fixture_root / "parser_fixture_cases.json")
     for case in cases:
         platform = case["platform_id"]
-        result = preview_public_parser(platform, limit=case.get("limit", 3), use_live_fetch=False)
-        post_valid = all(_schema_valid(RawPost, item) for item in result.sample_posts)
-        comment_valid = all(_schema_valid(RawComment, item) for item in result.sample_comments)
+        safe_limit = int(case.get("limit", 3))
+        if case.get("fixture_html"):
+            profile = load_selector_profile(platform)
+            parser = BasePublicParser(
+                profile,
+                fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+            )
+            parsed = parser.parse_html(
+                case["fixture_html"],
+                source_url=profile.fixture_url or profile.base_url,
+                keyword=case.get("keyword", "benchmark"),
+                limit=safe_limit,
+                metadata_extra={"fetch_status": "inline_fixture"},
+            )
+            posts = parsed.posts[:safe_limit]
+            comments = parsed.comments[:safe_limit]
+            post_count = len(parsed.posts)
+            comment_count = len(parsed.comments)
+            raw_post_schema_valid = all(_schema_valid(RawPost, item) for item in posts)
+            raw_comment_schema_valid = all(_schema_valid(RawComment, item) for item in comments)
+            live_fetch_enabled = bool(parsed.metadata.get("live_fetch_enabled", False))
+            fallback_reason_category = parsed.metadata.get("fallback_reason_category")
+        else:
+            result = preview_public_parser(platform, limit=safe_limit, use_live_fetch=False)
+            posts = result.sample_posts
+            comments = result.sample_comments
+            post_count = result.post_count
+            comment_count = result.comment_count
+            raw_post_schema_valid = (
+                result.raw_post_schema_valid and all(_schema_valid(RawPost, item) for item in posts)
+            )
+            raw_comment_schema_valid = (
+                result.raw_comment_schema_valid and all(_schema_valid(RawComment, item) for item in comments)
+            )
+            live_fetch_enabled = result.live_fetch_enabled
+            fallback_reason_category = result.fallback_reason_category
         recorder.check(
-            f"{platform}:counts",
-            result.post_count >= case["min_posts"] and result.comment_count >= case["min_comments"],
+            f"{case.get('case_id', platform)}:counts",
+            post_count >= case["min_posts"] and comment_count >= case["min_comments"],
             "public parser fixture returns expected post/comment counts",
-            {"post_count": result.post_count, "comment_count": result.comment_count},
+            {"post_count": post_count, "comment_count": comment_count},
         )
         recorder.check(
-            f"{platform}:schema",
-            result.raw_post_schema_valid is True
-            and result.raw_comment_schema_valid is True
-            and post_valid
-            and comment_valid,
+            f"{case.get('case_id', platform)}:schema",
+            raw_post_schema_valid is True and raw_comment_schema_valid is True,
             "public parser fixture output validates RawPost/RawComment schema",
         )
         recorder.check(
-            f"{platform}:live_disabled",
-            result.live_fetch_enabled is False,
+            f"{case.get('case_id', platform)}:live_disabled",
+            live_fetch_enabled is False,
             "public parser benchmark keeps live fetch disabled",
         )
+        if case.get("expect_default_author"):
+            recorder.check(
+                f"{case['case_id']}:default_author",
+                bool(posts) and all(post.author_name == "public_source" for post in posts),
+                "missing author falls back to safe public_source value",
+                {"authors": [post.author_name for post in posts]},
+            )
+        if case.get("expect_default_created_at"):
+            recorder.check(
+                f"{case['case_id']}:default_created_at",
+                bool(posts) and all(post.created_at == "2026-05-15T00:00:00Z" for post in posts),
+                "missing created_at falls back to deterministic timestamp",
+                {"created_at": [post.created_at for post in posts]},
+            )
+        if case.get("expected_fallback_reason_category"):
+            recorder.check(
+                f"{case['case_id']}:fallback_reason",
+                fallback_reason_category == case["expected_fallback_reason_category"],
+                "parser reports expected safe fallback reason for edge fixture",
+                {
+                    "fallback_reason_category": fallback_reason_category,
+                    "expected": case["expected_fallback_reason_category"],
+                },
+            )
     return recorder.summary()
 
 
@@ -410,22 +527,23 @@ def _run_adapter_mock_benchmark(fixture_root: Path) -> dict[str, Any]:
     cases = _load_json(fixture_root / "adapter_mock_cases.json")
     for case in cases:
         platform = case["platform_id"]
+        case_label = case.get("case_id", platform)
         adapter = get_adapter(platform, mode="mock")
         posts = adapter.search_posts(case["keyword"], limit=case.get("limit", 2))
         comments = adapter.fetch_comments(posts[0].post_id, limit=case.get("limit", 2)) if posts else []
         recorder.check(
-            f"{platform}:counts",
+            f"{case_label}:counts",
             len(posts) >= case["min_posts"] and len(comments) >= case["min_comments"],
             "mock adapter returns deterministic posts and comments",
             {"post_count": len(posts), "comment_count": len(comments)},
         )
         recorder.check(
-            f"{platform}:post_schema",
+            f"{case_label}:post_schema",
             all(_schema_valid(RawPost, post) for post in posts),
             "mock adapter posts validate RawPost schema",
         )
         recorder.check(
-            f"{platform}:comment_schema",
+            f"{case_label}:comment_schema",
             all(_schema_valid(RawComment, comment) for comment in comments),
             "mock adapter comments validate RawComment schema",
         )
@@ -708,6 +826,7 @@ def _safe_suite_summary(suite: dict[str, Any]) -> dict[str, Any]:
     return {
         "suite": str(suite.get("suite") or "unknown"),
         "status": str(suite.get("status") or "unknown"),
+        "case_count": _safe_int(suite.get("case_count"), fallback=_safe_int(suite.get("passed")) + _safe_int(suite.get("failed"))),
         "passed": _safe_int(suite.get("passed")),
         "failed": _safe_int(suite.get("failed")),
         "warnings": [str(warning)[:300] for warning in warnings] if isinstance(warnings, list) else [],
@@ -882,11 +1001,11 @@ def _build_benchmark_id(generated_at: str) -> str:
     return f"benchmark_{safe_timestamp or int(time.time())}"
 
 
-def _safe_int(value: Any) -> int:
+def _safe_int(value: Any, fallback: int = 0) -> int:
     try:
         return max(0, int(value))
     except (TypeError, ValueError):
-        return 0
+        return fallback
 
 
 def _safe_float(value: Any) -> float | None:
@@ -942,7 +1061,8 @@ def _print_summary(result: dict[str, Any]) -> None:
         status = "PASS" if suite["failed"] == 0 else "FAIL"
         print(
             f"- {suite['suite']}: {status} "
-            f"({suite['passed']} passed, {suite['failed']} failed, {len(suite['warnings'])} warnings)"
+            f"({suite.get('case_count', suite['passed'] + suite['failed'])} cases, "
+            f"{suite['passed']} passed, {suite['failed']} failed, {len(suite['warnings'])} warnings)"
         )
     print(
         "Total: "
