@@ -2,6 +2,7 @@ import { Button, Layout, Menu, Space, Tag, Tooltip, Typography } from 'antd'
 import {
   Activity,
   BarChart3,
+  ClipboardCheck,
   FileText,
   FileSearch,
   FolderKanban,
@@ -32,6 +33,7 @@ const navItems = [
   { key: 'platformIntegrations', label: '平台接入总览', icon: <Globe2 size={17} /> },
   { key: 'selectorRepair', label: 'Selector 修复工具', icon: <Wrench size={17} /> },
   { key: 'llmSafety', label: '大模型安全状态', icon: <ShieldCheck size={17} /> },
+  { key: 'benchmarks', label: 'Benchmarks · 离线评测', icon: <ClipboardCheck size={17} /> },
 ]
 
 const riskLevelLabels = {

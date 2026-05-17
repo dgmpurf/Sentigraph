@@ -571,12 +571,15 @@ Completed:
 - Added pytest coverage for the benchmark runner.
 - Added QA coverage for missing fixture files so fixture-loading problems become clear suite failures instead of tracebacks.
 - Added `docs/offline_benchmarks.md` and README command notes.
+- Added `GET /api/v1/benchmarks/latest`, a safe read-only endpoint for the latest generated offline benchmark summary.
+- Added the frontend `Benchmarks / 离线评测` dashboard page for viewing totals, suite status, warning counts, generated time, and regression-risk status.
+- Completed Benchmark Dashboard QA for valid, missing, and malformed summary states, expected suite display, safe field exposure, and frontend build regression.
 
 Validation:
 
-- Backend tests passed with `412 passed in 3.34s`.
+- Backend tests passed with `415 passed in 3.47s`.
 - Offline benchmark passed with `78 passed, 0 failed, 0 warnings`.
-- Frontend build was not rerun because no frontend files changed.
+- Frontend build passed in 7.62s with the existing non-blocking Ant Design/ECharts vendor chunk warning.
 - GitHub Actions CI remains intentionally disabled unless explicitly requested later.
 
 Future evaluation tasks:
@@ -585,6 +588,8 @@ Future evaluation tasks:
 - Add topic clustering quality metrics and fixture-level expected groupings.
 - Add a report quality rubric and deterministic scoring checks.
 - Build a parser regression corpus with more fixture variants per platform.
+- Add benchmark history comparison and trend visualization after summary storage is durable.
+- Add benchmark drill-down views only after a safe redaction/review model for per-case payloads exists.
 - Add LLM output evaluation fixtures before any real LLM provider is enabled.
 - Add platform-specific integration benchmarks with mocked clients before any real platform API is enabled.
 - Keep GitHub Actions CI intentionally disabled unless explicitly requested later.

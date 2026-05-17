@@ -91,3 +91,31 @@ python scripts\run_offline_benchmarks.py
 ```
 
 Future real-provider work should add mocked HTTP tests, provider-specific cost accounting, prompt/output schema tests, and human review datasets before any live call path is activated.
+
+## Viewing Results In The UI
+
+The Benchmark Dashboard / Evaluation Report page reads the latest generated summary through:
+
+```http
+GET /api/v1/benchmarks/latest
+```
+
+The endpoint reads only:
+
+```text
+.benchmarks/offline_benchmark_summary.json
+```
+
+It does not run benchmarks automatically. Generate the summary first:
+
+```cmd
+python scripts\run_offline_benchmarks.py
+```
+
+Then start the local backend and frontend and open the sidebar item:
+
+```text
+Benchmarks · 离线评测
+```
+
+The dashboard displays totals, suite-level pass/fail counts, warning counts, generated time, benchmark version, and a simple regression-risk indicator. Missing or malformed summary files return a clear empty/error state without exposing project-local file paths. It intentionally does not expose benchmark case payloads, raw fixture content, prompts, API keys, `.env` values, or raw user content.

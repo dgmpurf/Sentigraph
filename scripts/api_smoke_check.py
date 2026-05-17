@@ -70,6 +70,7 @@ def run_smoke_check(base_url: str = DEFAULT_BASE_URL) -> list[SmokeResult]:
     )
     check("llm status", lambda: _expect_key(client.request("GET", "/llm/status"), "provider_name"))
     check("llm usage", lambda: _expect_key(client.request("GET", "/llm/usage"), "total_calls"))
+    check("benchmark latest", lambda: _expect_key(client.request("GET", "/benchmarks/latest"), "source"))
     check(
         "keyword expansion",
         lambda: _expect_key(

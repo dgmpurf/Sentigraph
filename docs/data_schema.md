@@ -1386,3 +1386,44 @@ Rules:
   "suggested_response": "我们已注意到近期关于Product quality issues的讨论。我们已将相关情况列为优先处理事项，并将在确认事实后通过官方渠道持续更新。如用户有具体案例，欢迎通过官方客服或支持渠道提交信息，我们会基于事实进行核查和处理。"
 }
 ```
+## 17. Offline Benchmark Summary
+
+`LatestBenchmarkSummaryResponse` is used by `GET /api/v1/benchmarks/latest` and the frontend Benchmark Dashboard. It is a safe summary of a generated offline benchmark result and must not include per-case payloads.
+
+```json
+{
+  "source": "offline_benchmark_summary",
+  "available": true,
+  "status": "available",
+  "generated_at": "2026-05-17T00:00:00Z",
+  "benchmark_version": "v4.0_offline_benchmark_v1",
+  "total_passed": 78,
+  "total_failed": 0,
+  "total_warnings": 0,
+  "suites": [
+    {
+      "suite": "sentiment",
+      "status": "pass",
+      "passed": 14,
+      "failed": 0,
+      "warnings": []
+    }
+  ],
+  "message": "Latest offline benchmark summary loaded."
+}
+```
+
+Allowed `status` values for the response:
+
+```text
+available
+missing
+malformed
+```
+
+Rules:
+
+- `source` is always `offline_benchmark_summary`.
+- `suites` contains only suite name, suite status, pass/fail counts, and suite-level warnings.
+- Benchmark `cases` arrays and raw fixture content are intentionally omitted from the API response.
+- Missing or malformed summary files produce safe empty responses rather than uncaught errors.

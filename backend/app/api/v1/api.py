@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.routes import (
     alerts,
     analysis,
+    benchmarks,
     cases,
     crawl,
     health,
@@ -24,6 +25,7 @@ api_router.include_router(keywords.router, prefix="/keywords", tags=["keywords"]
 api_router.include_router(platforms.router, prefix="/platforms", tags=["platforms"])
 api_router.include_router(public_parsers.router, prefix="/public-parsers", tags=["public-parsers"])
 api_router.include_router(llm.router, prefix="/llm", tags=["llm"])
+api_router.include_router(benchmarks.router, prefix="/benchmarks", tags=["benchmarks"])
 api_router.include_router(cases.router, prefix="/cases", tags=["cases"])
 api_router.include_router(crawl.router, prefix="/crawl", tags=["crawl"])
 api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])

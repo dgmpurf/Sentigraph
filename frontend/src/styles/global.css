@@ -901,6 +901,30 @@ body {
   padding: 10px 0;
 }
 
+.benchmark-status-card,
+.benchmark-suite-card,
+.benchmark-empty-card {
+  border-color: rgba(66, 245, 215, 0.22);
+}
+
+.benchmark-metric-card h2 {
+  margin: 4px 0 8px;
+  color: #42f5d7;
+  font-size: 30px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.benchmark-summary-copy {
+  margin-bottom: 0 !important;
+  color: #c9d4ea;
+  line-height: 1.7;
+}
+
+.benchmark-suite-card .ant-table-thead > tr > th {
+  background: rgba(66, 245, 215, 0.06) !important;
+}
+
 @media print {
   html,
   body,

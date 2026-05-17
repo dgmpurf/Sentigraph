@@ -78,6 +78,7 @@ const PlatformIntegrationOverview = lazyNamed(
 )
 const SelectorRepairTool = lazyNamed(() => import('./pages/SelectorRepairTool.jsx'), 'SelectorRepairTool')
 const LlmAdminStatus = lazyNamed(() => import('./pages/LlmAdminStatus.jsx'), 'LlmAdminStatus')
+const BenchmarkDashboard = lazyNamed(() => import('./pages/BenchmarkDashboard.jsx'), 'BenchmarkDashboard')
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
@@ -590,6 +591,7 @@ function App() {
     platformIntegrations: <PlatformIntegrationOverview />,
     selectorRepair: <SelectorRepairTool />,
     llmSafety: <LlmAdminStatus />,
+    benchmarks: <BenchmarkDashboard />,
   }[activePage] || <NotFound activePage={activePage} onNavigate={setActivePage} />
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0

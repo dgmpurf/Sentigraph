@@ -1111,3 +1111,45 @@ Expected result:
 - Backend tests pass.
 - Frontend build passes.
 - Vite may still report a non-blocking large chunk warning for Ant Design and ECharts unless code splitting has been further optimized.
+
+## 12. Benchmark Dashboard / Evaluation Report
+
+Before opening the page, generate the latest offline benchmark summary:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\run_offline_benchmarks.py
+```
+
+Start the backend and frontend:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\frontend"
+npm run dev
+```
+
+Demo steps:
+
+1. Open `http://127.0.0.1:5173`.
+2. Click `Benchmarks · 离线评测` in the sidebar.
+3. Confirm the page shows `总通过`, `总失败`, `警告`, `评测套件`, `最近结果`, and `回归风险`.
+4. Confirm the suites appear: sentiment, topic_cluster, topic_risk, report_builder, markdown_export, selector_repair, public_parser_fixtures, and platform_adapter_mocks.
+5. Confirm missing summary state appears clearly if `.benchmarks/offline_benchmark_summary.json` has not been generated.
+6. Optionally verify the safe summary endpoint directly:
+
+```cmd
+powershell -Command "Invoke-RestMethod http://127.0.0.1:8000/api/v1/benchmarks/latest | ConvertTo-Json -Depth 8"
+```
+
+Expected result:
+
+- The frontend only reads `GET /api/v1/benchmarks/latest`.
+- The backend does not run benchmarks automatically.
+- Missing or malformed benchmark summary files return a clear empty/error state and do not expose project-local file paths.
+- If the page shows a 404 for `/api/v1/benchmarks/latest`, stop the old backend process and restart uvicorn so the new benchmark route is loaded.
+- No real LLM API, real platform API, crawler, live public fetch, real notification, API key value, `.env` value, raw prompt, or raw user content is exposed.

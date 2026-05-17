@@ -62,6 +62,11 @@ export async function getLlmUsage() {
   return normalizeLlmUsage(data)
 }
 
+export async function getLatestBenchmarkSummary() {
+  const { data } = await apiClient.get(`${API_PREFIX}/benchmarks/latest`)
+  return normalizeBenchmarkSummary(data)
+}
+
 export async function listAnalysisCases() {
   const { data } = await apiClient.get(`${API_PREFIX}/cases`)
   return Array.isArray(data) ? data : []
@@ -666,6 +671,47 @@ function normalizeLlmUsageRecord(data) {
     timestamp: data.timestamp ? String(data.timestamp) : '',
     success: data.success !== false,
     failure_category: data.failure_category ? String(data.failure_category) : null,
+  }
+}
+
+function normalizeBenchmarkSummary(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      source: 'offline_benchmark_summary',
+      available: false,
+      status: 'missing',
+      generated_at: null,
+      benchmark_version: null,
+      total_passed: 0,
+      total_failed: 0,
+      total_warnings: 0,
+      suites: [],
+      message: 'Benchmark summary is unavailable.',
+    }
+  }
+  return {
+    ...data,
+    source: String(data.source || 'offline_benchmark_summary'),
+    available: Boolean(data.available),
+    status: String(data.status || 'unknown'),
+    generated_at: data.generated_at ? String(data.generated_at) : null,
+    benchmark_version: data.benchmark_version ? String(data.benchmark_version) : null,
+    total_passed: Number(data.total_passed || 0),
+    total_failed: Number(data.total_failed || 0),
+    total_warnings: Number(data.total_warnings || 0),
+    suites: Array.isArray(data.suites) ? data.suites.map(normalizeBenchmarkSuite).filter(Boolean) : [],
+    message: String(data.message || ''),
+  }
+}
+
+function normalizeBenchmarkSuite(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    suite: String(data.suite || ''),
+    status: String(data.status || 'unknown'),
+    passed: Number(data.passed || 0),
+    failed: Number(data.failed || 0),
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
   }
 }
 
