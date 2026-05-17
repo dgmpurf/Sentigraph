@@ -484,6 +484,13 @@ Implemented:
 - `json_guard` helpers provide deterministic JSON object/array parsing fallbacks for future schema-checked LLM output.
 - LLM real-provider readiness helpers are in place: `redaction.redact_api_key()`, `redaction.redact_config_dict()`, and `provider_factory.get_llm_provider_diagnostics()` expose only provider status and present/missing credential state without printing API key values.
 - `docs/llm_provider_readiness.md` documents the current mock-only default, safety gates, secret handling rules, and checklist required before any real OpenAI / DeepSeek / Qwen call.
+- LLM usage/cost guardrail scaffold is implemented in `backend/app/services/llm/usage_guardrails.py`, with metadata-only mock usage records, deterministic token estimates, call/token/input-size limit checks, in-process usage summaries, and `reset_usage_for_tests()`.
+- `.env.example` documents `LLM_USAGE_TRACKING_ENABLED=true`, `LLM_DAILY_CALL_LIMIT=100`, `LLM_DAILY_TOKEN_LIMIT=100000`, `LLM_MAX_INPUT_CHARS=20000`, `LLM_FAIL_CLOSED_ON_LIMIT=true`, and `LLM_COST_GUARDRAIL_MODE=mock`.
+- `MockProvider` records safe usage metadata for keyword expansion, sentiment mock LLM analysis, topic extraction/summary, mock report/recommendation drafts, and selector repair suggestions; prompts, raw text, raw HTML, response bodies, and keys are not stored.
+- `docs/llm_usage_guardrails.md` documents the current mock-only usage tracking behavior, what is recorded, what is never recorded, and the future checklist before real LLM calls.
+- LLM safety status APIs are available at `GET /api/v1/llm/status` and `GET /api/v1/llm/usage`; they expose provider readiness, real-call disabled state, API key presence booleans only, and metadata-only usage summaries.
+- `frontend/src/pages/LlmAdminStatus.jsx` adds the `LLM Safety` / `大模型安全状态` dashboard page. It has no real-call toggle, no API key input, no `.env` modification path, and no raw prompt display.
+- Local smoke tooling now checks LLM safety endpoints and public parser preview, while `seed_demo_cases.py` creates a deterministic Hupu public-parser demo case without live fetching.
 - Keyword expansion now routes through `backend/app/services/keyword/keyword_expander.py`, calls the safe provider factory, and uses `MockProvider` only for current deterministic expansion.
 - MockProvider keyword expansion is active for the keyword API and includes deterministic Tesla, Bilibili, Chinese-language, and generic public-opinion variants while preserving the existing keyword response schema.
 - Sentiment analysis now supports `SENTIMENT_ANALYZER_MODE=rule_based|mock_llm|future_real_llm`; `rule_based` remains the default, `mock_llm` uses the deterministic offline MockProvider path with rule-based fallback, and `future_real_llm` is a no-call placeholder.
@@ -497,9 +504,10 @@ Implemented:
 - Selector repair mock scaffold QA is complete: tests cover schema usability, script/style/event-handler removal, bearer/token/cookie-style redaction, HTML length limits, empty/malformed HTML, missing profiles, invalid platforms, deterministic MockProvider suggestions, fixture preview, malformed suggestion rejection, active-profile immutability, endpoint safety, and old parser/API regressions.
 - QA coverage verifies module presence, deterministic mock outputs, provider factory defaults and unknown-provider errors, provider-factory invocation from keyword expansion, disabled real-provider behavior, missing-key endpoint safety, secret redaction, safe keyword fallback, old keyword response-schema compatibility, and JSON guard fallback behavior.
 - LLM real-provider readiness QA covers default/mock diagnostics, disabled real-provider diagnostics, missing-key diagnostics, unknown-provider diagnostics, present/missing-only redaction helpers, and no credential value exposure.
+- LLM usage guardrail QA is complete for the current scaffold. Coverage includes deterministic token estimates, under-limit decisions, call/token/input-size limit blocking, fail-open mode, MockProvider metadata recording across keyword, sentiment, topic, report, recommendation, and selector-repair operations, safe usage-record field shape, no raw prompt/user-content/HTML storage, safe label normalization, usage summary/reset behavior, tracking-disabled behavior, disabled real-provider safety, and placeholder real-provider guardrail checks before future call paths.
 - QA coverage also verifies sentiment default mode, rule-based provider isolation, unknown-mode fallback, deterministic English/Chinese/neutral mock LLM mode, disabled/missing-key real-provider safety, failure fallback, no future-real provider calls, V1.5 topic-risk pipeline compatibility, and report-builder compatibility.
 - QA coverage also verifies topic summary default template mode, template provider isolation, unknown-mode fallback, deterministic mock LLM cluster summaries, Chinese/English/mixed-input handling, empty-comment and empty-cluster safety, disabled/missing-key real-provider safety, failure fallback, no future-real provider calls, V1.5 topic-risk pipeline compatibility, and report-builder compatibility.
-- Latest LLM readiness validation passed with focused `python -m pytest backend/app/tests/test_llm_provider_scaffold.py` (`33 passed in 0.58s`), full `python -m pytest` (`388 passed in 3.49s`), and frontend `npm run build` (`built in 7.72s`) because the worktree still contains prior frontend changes. The existing large vendor chunk warning remains non-blocking.
+- Latest LLM usage guardrail QA validation passed with focused `python -m pytest backend/app/tests/test_llm_usage_guardrails.py backend/app/tests/test_llm_provider_scaffold.py` (`50 passed in 0.58s`) and full `python -m pytest` (`405 passed in 3.35s`). Frontend build was not rerun for the guardrail QA checkpoint because no frontend files changed. The existing large vendor chunk warning remains non-blocking.
 
 Future real LLM integration tasks:
 
@@ -520,7 +528,13 @@ Future real LLM integration tasks:
 - Add strict prompt/output schemas for keyword expansion, topic labeling, risk explanations, report drafts, and recommendations.
 - Add mocked HTTP tests, timeout handling, retry limits, rate limits, cost/rate-limit tracking, and redacted diagnostics before any live provider call.
 - Add provider usage/cost safeguards and clear failure fallbacks to the deterministic pipeline.
+- Add real token accounting per provider/model before enabling any real provider call.
+- Add provider-specific pricing tables and budget calculation.
+- Add user-level or project-level budgets after authentication and tenancy exist.
+- Add request throttling and durable usage storage only after the in-process scaffold is stable.
+- Add prompt evaluation datasets for each LLM-assisted operation.
 - Keep GitHub Actions CI intentionally disabled unless explicitly requested later.
+- Keep the LLM Safety page read-only; real-call enabling, key management, provider selection, and durable usage budgets remain future work behind explicit approval.
 
 ### V2 Dynamic Risk Readiness
 

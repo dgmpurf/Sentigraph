@@ -33,8 +33,10 @@ Current pieces:
 - `OpenAIProvider`, `DeepSeekProvider`, `QwenProvider`: placeholders for future real integrations.
 - `provider_factory.get_llm_provider()`: selects the configured provider.
 - `provider_factory.get_llm_provider_diagnostics()`: returns safe readiness status only.
+- `GET /api/v1/llm/status`: exposes frontend-safe provider readiness with API key presence booleans only.
 - `json_guard`: deterministic JSON parsing fallback helpers.
 - `redaction`: present/missing-only secret redaction helpers.
+- `usage_guardrails`: offline metadata-only call counters and limit checks for future real providers.
 
 ## Safety Gates
 
@@ -62,6 +64,8 @@ Safe diagnostics may show:
 
 Safe diagnostics must never show full or partial API key values. `redact_api_key()` returns only `present` or `missing`, and `redact_config_dict()` redacts secret-like keys recursively.
 
+The `LLM Safety` / `大模型安全状态` frontend page consumes the safe status endpoint. It is read-only: it does not enable real calls, accept API keys, modify `.env`, or display credential variable names/values.
+
 ## Current LLM-Connected Modules
 
 - Keyword expansion routes through the provider factory but only uses `MockProvider` in the current MVP.
@@ -76,6 +80,7 @@ Before enabling any real OpenAI, DeepSeek, or Qwen call:
 
 - Add the provider HTTP client behind `LLM_ENABLE_REAL_CALLS=true`.
 - Add request timeouts, retry limits, rate limits, and cost tracking.
+- Call usage guardrails before any external request and fail closed when limits are exceeded.
 - Add strict request and response schemas.
 - Add mocked HTTP tests for success, provider errors, malformed responses, timeouts, and rate limits.
 - Add prompt evaluation fixtures for keyword expansion, sentiment, topic summaries, report drafts, and selector repair.
@@ -86,6 +91,6 @@ Before enabling any real OpenAI, DeepSeek, or Qwen call:
 ## Known Limitations
 
 - Real OpenAI, DeepSeek, and Qwen integrations are not implemented.
-- No provider pricing, token accounting, or rate-limit enforcement is implemented yet.
+- No provider pricing, real model-specific token accounting, durable usage storage, or real-provider rate-limit enforcement is implemented yet.
 - No prompt evaluation dataset is in place yet.
 - Selector repair suggestions are deterministic mock heuristics and must remain human-reviewed before any profile edit.

@@ -23,6 +23,7 @@ from app.services.case_store import (
     run_case,
     run_monitoring_check,
 )
+from app.services.crawling.public_parser.parser_status_service import preview_public_parser
 from app.services.monitoring.scheduler_service import enable_case_monitoring, run_due_monitoring_jobs
 from app.services.storage.local_json_store import LocalJsonCaseStore
 
@@ -69,6 +70,19 @@ def seed_demo_cases(
         )
     )
 
+    public_parser_case = create_case(
+        AnalysisCaseCreateRequest(
+            title="Hupu Fixture Parser Watch",
+            keyword="hupu_fixture_public_discussion",
+            platforms=["hupu"],
+            report_language="zh-CN",
+        )
+    )
+    public_parser_completed = run_case(public_parser_case.case_id)
+    if public_parser_completed is None:
+        raise RuntimeError("Failed to run public parser demo case.")
+    public_parser_preview = preview_public_parser("hupu", limit=3, use_live_fetch=False)
+
     snapshots = repository.list_analysis_snapshots(completed.case_id)
     alerts = repository.list_case_alerts(completed.case_id)
     notifications = repository.list_case_notifications(completed.case_id)
@@ -76,8 +90,12 @@ def seed_demo_cases(
 
     return {
         "store_path": str(getattr(repository.store, "path", DEFAULT_STORE_PATH)),
-        "created_case_ids": [primary.case_id, secondary.case_id],
+        "created_case_ids": [primary.case_id, secondary.case_id, public_parser_case.case_id],
         "completed_case_id": completed.case_id,
+        "public_parser_case_id": public_parser_completed.case_id,
+        "public_parser_preview_platform": public_parser_preview.platform,
+        "public_parser_preview_post_count": public_parser_preview.post_count,
+        "public_parser_preview_comment_count": public_parser_preview.comment_count,
         "case_count": len(cases),
         "snapshot_count": len(snapshots),
         "alert_count": len(alerts),

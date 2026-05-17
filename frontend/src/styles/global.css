@@ -829,6 +829,78 @@ body {
   word-break: break-word;
 }
 
+.llm-safety-card,
+.llm-provider-section,
+.llm-safety-flags-card,
+.llm-usage-card {
+  border-color: rgba(66, 245, 215, 0.22);
+}
+
+.llm-metric-card h2 {
+  margin: 4px 0 8px;
+  color: #42f5d7;
+  font-size: 30px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.llm-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.llm-provider-card {
+  display: flex;
+  min-height: 150px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.llm-provider-card.active {
+  border-color: rgba(66, 245, 215, 0.54);
+  box-shadow: 0 0 26px rgba(66, 245, 215, 0.1);
+}
+
+.llm-provider-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.llm-provider-note {
+  margin-bottom: 0 !important;
+  color: #9aa6bf;
+  line-height: 1.58;
+}
+
+.llm-usage-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.llm-usage-summary > div {
+  display: flex;
+  min-height: 78px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.llm-safety-list .ant-list-item {
+  padding: 10px 0;
+}
+
 @media print {
   html,
   body,

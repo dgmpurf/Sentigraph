@@ -19,6 +19,7 @@ from app.services.llm.schemas import (
     TopicExtractionResult,
     TopicItem,
 )
+from app.services.llm.usage_guardrails import record_mock_call
 
 
 NEGATIVE_TERMS = {
@@ -137,13 +138,19 @@ class MockProvider(BaseLLMProvider):
                 f"{normalized} \u8206\u60c5",
             ]
 
-        return KeywordExpansionResult(
+        result = KeywordExpansionResult(
             original_keyword=normalized,
             expanded_keywords=_dedupe(expanded),
             search_queries=_dedupe(queries),
             language=language,
             provider=self.provider_id,
         )
+        self._record_usage(
+            "expand_keywords",
+            input_chars=len(keyword),
+            output_chars=sum(len(value) for value in result.expanded_keywords + result.search_queries),
+        )
+        return result
 
     def analyze_sentiment(self, text: str, language: str = "auto") -> LLMSentimentResult:
         normalized = text.lower()
@@ -173,7 +180,7 @@ class MockProvider(BaseLLMProvider):
             stance = "neutral"
             tags = ["uncertainty"]
 
-        return LLMSentimentResult(
+        result = LLMSentimentResult(
             sentiment=sentiment,
             sentiment_score=round(score, 4),
             emotion_tags=tags,
@@ -183,6 +190,12 @@ class MockProvider(BaseLLMProvider):
             language=language,
             provider=self.provider_id,
         )
+        self._record_usage(
+            "analyze_sentiment",
+            input_chars=len(text),
+            output_chars=len(result.reason) + sum(len(tag) for tag in result.emotion_tags),
+        )
+        return result
 
     def extract_topics(self, texts: Sequence[str], language: str = "auto") -> TopicExtractionResult:
         buckets: Counter[str] = Counter()
@@ -211,7 +224,13 @@ class MockProvider(BaseLLMProvider):
             )
             for topic, count in buckets.most_common()
         ]
-        return TopicExtractionResult(topics=topics, language=language, provider=self.provider_id)
+        result = TopicExtractionResult(topics=topics, language=language, provider=self.provider_id)
+        self._record_usage(
+            "extract_topics",
+            input_chars=sum(len(str(text)) for text in texts),
+            output_chars=sum(len(topic.topic) + len(topic.summary) for topic in result.topics),
+        )
+        return result
 
     def summarize_cluster(
         self,
@@ -226,13 +245,19 @@ class MockProvider(BaseLLMProvider):
             summary = f"{len(texts)} public comment(s) mainly discuss {leading_topic.lower()}."
         else:
             summary = f"{len(texts)}\u6761\u516c\u5f00\u8bc4\u8bba\u4e3b\u8981\u805a\u7126\u4e8e{leading_topic}\u3002"
-        return ClusterSummaryResult(
+        result = ClusterSummaryResult(
             summary=summary,
             key_terms=key_terms,
             comment_count=len(texts),
             language=language,
             provider=self.provider_id,
         )
+        self._record_usage(
+            "summarize_cluster",
+            input_chars=sum(len(text) for text in texts),
+            output_chars=len(result.summary) + sum(len(term) for term in result.key_terms),
+        )
+        return result
 
     def generate_report(self, context: dict[str, Any], language: str = "zh-CN") -> LLMReportResult:
         project_id = str(context.get("project_id", "offline_project"))
@@ -258,7 +283,7 @@ class MockProvider(BaseLLMProvider):
                 "\u6301\u7eed\u89c2\u5bdf\u4e0b\u4e00\u4e2a\u66f4\u65b0\u7a97\u53e3\u3002",
             ]
 
-        return LLMReportResult(
+        result = LLMReportResult(
             overall_summary=summary,
             key_findings=findings,
             recommended_actions=actions,
@@ -272,6 +297,16 @@ class MockProvider(BaseLLMProvider):
                 "risk_score": risk_score,
             },
         )
+        self._record_usage(
+            "generate_report",
+            input_chars=len(str(context)),
+            output_chars=(
+                len(result.overall_summary)
+                + len(result.suggested_public_response)
+                + sum(len(item) for item in result.key_findings + result.recommended_actions)
+            ),
+        )
+        return result
 
     def generate_recommendations(
         self,
@@ -301,7 +336,7 @@ class MockProvider(BaseLLMProvider):
             ]
             strategy = "\u91c7\u7528\u51b7\u9759\u3001\u53ef\u6838\u9a8c\u7684\u5bf9\u5916\u56de\u5e94\u3002"
 
-        return LLMRecommendationResult(
+        result = LLMRecommendationResult(
             recommendations=recommendations,
             response_strategy=strategy,
             escalation_level=escalation,
@@ -309,6 +344,12 @@ class MockProvider(BaseLLMProvider):
             language=language,
             provider=self.provider_id,
         )
+        self._record_usage(
+            "generate_recommendations",
+            input_chars=len(str(context)),
+            output_chars=len(result.response_strategy) + sum(len(item) for item in result.recommendations),
+        )
+        return result
 
     def suggest_selector_repair(
         self,
@@ -325,7 +366,7 @@ class MockProvider(BaseLLMProvider):
         if request.parser_error_summary:
             warnings.append("parser_error_summary_used")
 
-        return SelectorRepairSuggestion(
+        result = SelectorRepairSuggestion(
             platform_id=request.platform_id,
             status="suggested",
             candidates=candidates,
@@ -335,6 +376,12 @@ class MockProvider(BaseLLMProvider):
             applied=False,
             review_required=True,
         )
+        self._record_usage(
+            "suggest_selector_repair",
+            input_chars=len(request.sanitized_html) + len(request.parser_error_summary or ""),
+            output_chars=sum(len(candidate.selector) + len(candidate.target) for candidate in result.candidates),
+        )
+        return result
 
     def health_check(self) -> ProviderHealth:
         return ProviderHealth(
@@ -343,6 +390,15 @@ class MockProvider(BaseLLMProvider):
             real_calls_enabled=False,
             configured=True,
             message="MockProvider is deterministic, offline, and requires no API keys.",
+        )
+
+    def _record_usage(self, operation: str, *, input_chars: int, output_chars: int) -> None:
+        record_mock_call(
+            self.provider_id,
+            operation,
+            input_chars=input_chars,
+            output_chars=output_chars,
+            success=True,
         )
 
 

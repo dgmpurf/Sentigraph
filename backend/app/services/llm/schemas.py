@@ -27,6 +27,76 @@ class ProviderDiagnostics(BaseModel):
     credential_presence: dict[str, bool] = Field(default_factory=dict)
 
 
+class LLMGuardrailConfig(BaseModel):
+    tracking_enabled: bool = True
+    daily_call_limit: int = 100
+    daily_token_limit: int = 100000
+    max_input_chars: int = 20000
+    fail_closed_on_limit: bool = True
+    mode: str = "mock"
+
+
+class LLMGuardrailDecision(BaseModel):
+    allowed: bool
+    provider: str
+    operation: str
+    estimated_input_tokens: int
+    reason_category: str | None = None
+    daily_calls_remaining: int
+    daily_tokens_remaining: int
+    message: str
+
+
+class LLMUsageRecord(BaseModel):
+    provider: str
+    operation: str
+    input_chars: int
+    output_chars: int
+    estimated_input_tokens: int
+    estimated_output_tokens: int
+    timestamp: str
+    success: bool = True
+    failure_category: str | None = None
+
+
+class LLMUsageSummary(BaseModel):
+    tracking_enabled: bool
+    guardrail_mode: str
+    daily_call_limit: int
+    daily_token_limit: int
+    max_input_chars: int
+    total_calls: int
+    daily_calls: int
+    daily_input_tokens: int
+    daily_output_tokens: int
+    daily_total_tokens: int
+    recent_records: list[LLMUsageRecord] = Field(default_factory=list)
+
+
+class LLMProviderPublicStatus(BaseModel):
+    provider_name: str
+    provider_status: str
+    real_calls_enabled: bool
+    api_key_present: bool
+    api_key_required: bool
+    available: bool
+
+
+class LLMSafetyStatusResponse(BaseModel):
+    provider_name: str
+    provider_status: str
+    real_calls_enabled: bool
+    api_key_present: bool
+    available_providers: list[str]
+    providers: list[LLMProviderPublicStatus]
+    tracking_enabled: bool
+    daily_call_limit: int
+    daily_token_limit: int
+    max_input_chars: int
+    guardrail_mode: str
+    safety_flags: dict[str, bool] = Field(default_factory=dict)
+
+
 class KeywordExpansionResult(BaseModel):
     original_keyword: str
     expanded_keywords: list[str]

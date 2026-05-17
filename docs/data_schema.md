@@ -753,6 +753,116 @@ Rules:
 - Secret redaction helpers return `present` or `missing` only; no full or partial API key should appear in logs, tests, docs, or diagnostics.
 - OpenAI, DeepSeek, and Qwen providers remain placeholders until a future real-provider integration task adds reviewed HTTP clients, timeout/rate-limit/cost controls, mocked HTTP tests, and strict output validation.
 
+`LLMSafetyStatusResponse` is the public API shape used by `GET /api/v1/llm/status` and the frontend LLM Safety page:
+
+```json
+{
+  "provider_name": "mock",
+  "provider_status": "mock_ready",
+  "real_calls_enabled": false,
+  "api_key_present": false,
+  "available_providers": ["deepseek", "mock", "openai", "qwen"],
+  "providers": [
+    {
+      "provider_name": "mock",
+      "provider_status": "mock_ready",
+      "real_calls_enabled": false,
+      "api_key_present": false,
+      "api_key_required": false,
+      "available": true
+    }
+  ],
+  "tracking_enabled": true,
+  "daily_call_limit": 100,
+  "daily_token_limit": 100000,
+  "max_input_chars": 20000,
+  "guardrail_mode": "mock",
+  "safety_flags": {
+    "mock_default": true,
+    "real_calls_disabled_by_default": true,
+    "api_key_values_exposed": false,
+    "raw_prompt_logging": false,
+    "raw_user_content_logging": false
+  }
+}
+```
+
+Public LLM status responses intentionally omit credential variable names and values. They expose only provider ids, provider status, real-call enablement, and API key presence booleans.
+
+## 0.3 LLM Usage Guardrail Schemas
+
+LLM usage guardrails are offline metadata counters for future provider readiness. They do not store prompts, raw comments, raw HTML, model outputs, API keys, cookies, headers, or credentials.
+
+Default config:
+
+```json
+{
+  "tracking_enabled": true,
+  "daily_call_limit": 100,
+  "daily_token_limit": 100000,
+  "max_input_chars": 20000,
+  "fail_closed_on_limit": true,
+  "mode": "mock"
+}
+```
+
+`LLMGuardrailDecision`:
+
+```json
+{
+  "allowed": true,
+  "provider": "mock",
+  "operation": "expand_keywords",
+  "estimated_input_tokens": 5,
+  "reason_category": null,
+  "daily_calls_remaining": 99,
+  "daily_tokens_remaining": 99995,
+  "message": "LLM guardrail allowed call."
+}
+```
+
+`LLMUsageRecord`:
+
+```json
+{
+  "provider": "mock",
+  "operation": "expand_keywords",
+  "input_chars": 20,
+  "output_chars": 120,
+  "estimated_input_tokens": 5,
+  "estimated_output_tokens": 30,
+  "timestamp": "2026-05-17T12:00:00Z",
+  "success": true,
+  "failure_category": null
+}
+```
+
+`LLMUsageSummary`:
+
+```json
+{
+  "tracking_enabled": true,
+  "guardrail_mode": "mock",
+  "daily_call_limit": 100,
+  "daily_token_limit": 100000,
+  "max_input_chars": 20000,
+  "total_calls": 1,
+  "daily_calls": 1,
+  "daily_input_tokens": 5,
+  "daily_output_tokens": 30,
+  "daily_total_tokens": 35,
+  "recent_records": []
+}
+```
+
+Rules:
+
+- `estimate_tokens_from_chars()` uses deterministic character-based approximation for the scaffold.
+- `record_mock_call()` records metadata only when `LLM_USAGE_TRACKING_ENABLED=true`.
+- Future real providers should call `check_call_allowed()` before any external request.
+- When `LLM_FAIL_CLOSED_ON_LIMIT=true`, over-limit real calls must be blocked before network access.
+- Current OpenAI, DeepSeek, and Qwen providers remain disabled placeholders and make no external calls.
+
 ## 2. Raw Post
 
 ```json

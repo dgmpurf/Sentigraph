@@ -14,6 +14,7 @@ from app.services.llm.schemas import (
     ProviderHealth,
     TopicExtractionResult,
 )
+from app.services.llm.usage_guardrails import check_call_allowed
 from app.schemas.selector_repair import SelectorRepairRequest, SelectorRepairSuggestion
 
 
@@ -23,23 +24,23 @@ class PlaceholderLLMProvider(BaseLLMProvider):
     required_credentials: ClassVar[tuple[str, ...]] = ()
 
     def expand_keywords(self, keyword: str, language: str = "auto") -> KeywordExpansionResult:
-        self._raise_unavailable()
+        self._raise_unavailable("expand_keywords", len(keyword))
 
     def analyze_sentiment(self, text: str, language: str = "auto") -> LLMSentimentResult:
-        self._raise_unavailable()
+        self._raise_unavailable("analyze_sentiment", len(text))
 
     def extract_topics(self, texts: Sequence[str], language: str = "auto") -> TopicExtractionResult:
-        self._raise_unavailable()
+        self._raise_unavailable("extract_topics", sum(len(str(text)) for text in texts))
 
     def summarize_cluster(
         self,
         comments: Sequence[str | dict[str, Any]],
         language: str = "zh-CN",
     ) -> ClusterSummaryResult:
-        self._raise_unavailable()
+        self._raise_unavailable("summarize_cluster", sum(len(str(comment)) for comment in comments))
 
     def generate_report(self, context: dict[str, Any], language: str = "zh-CN") -> LLMReportResult:
-        self._raise_unavailable()
+        self._raise_unavailable("generate_report", len(str(context)))
 
     def generate_recommendations(
         self,
@@ -47,14 +48,16 @@ class PlaceholderLLMProvider(BaseLLMProvider):
         user_type: str = "brand",
         language: str = "zh-CN",
     ) -> LLMRecommendationResult:
-        self._raise_unavailable()
+        self._raise_unavailable("generate_recommendations", len(str(context)))
 
     def suggest_selector_repair(
         self,
         request: SelectorRepairRequest,
     ) -> SelectorRepairSuggestion:
-        del request
-        self._raise_unavailable()
+        self._raise_unavailable(
+            "suggest_selector_repair",
+            len(request.sanitized_html) + len(request.parser_error_summary or ""),
+        )
 
     def health_check(self) -> ProviderHealth:
         if not self.real_calls_enabled:
@@ -97,7 +100,7 @@ class PlaceholderLLMProvider(BaseLLMProvider):
     def _has_required_credentials(self) -> bool:
         return all(self.credential_presence().values())
 
-    def _raise_unavailable(self) -> None:
+    def _raise_unavailable(self, operation: str, input_chars: int) -> None:
         if not self.real_calls_enabled:
             raise LLMProviderNotEnabledError(
                 f"{self.display_name} real calls are disabled. Use MockProvider for the offline MVP.",
@@ -107,6 +110,13 @@ class PlaceholderLLMProvider(BaseLLMProvider):
             raise LLMProviderConfigError(
                 f"{self.display_name} credentials are not configured.",
                 category="not_configured",
+                provider=self.provider_id,
+            )
+        decision = check_call_allowed(self.provider_id, operation, input_chars)
+        if not decision.allowed:
+            raise LLMProviderNotEnabledError(
+                f"{self.display_name} request blocked by LLM guardrail: {decision.reason_category}.",
+                category=decision.reason_category or "guardrail_blocked",
                 provider=self.provider_id,
             )
         raise LLMProviderNotEnabledError(

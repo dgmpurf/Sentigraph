@@ -32,6 +32,7 @@ def test_llm_provider_module_files_exist() -> None:
         "qwen_provider.py",
         "provider_factory.py",
         "redaction.py",
+        "usage_guardrails.py",
         "schemas.py",
         "json_guard.py",
         "errors.py",

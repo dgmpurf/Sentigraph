@@ -32,6 +32,12 @@ class Settings(BaseModel):
     api_v1_prefix: str = "/api/v1"
     llm_provider: str = os.getenv("LLM_PROVIDER", "mock")
     llm_enable_real_calls: bool = _env_bool("LLM_ENABLE_REAL_CALLS", False)
+    llm_usage_tracking_enabled: bool = _env_bool("LLM_USAGE_TRACKING_ENABLED", True)
+    llm_daily_call_limit: int = _env_int("LLM_DAILY_CALL_LIMIT", 100)
+    llm_daily_token_limit: int = _env_int("LLM_DAILY_TOKEN_LIMIT", 100000)
+    llm_max_input_chars: int = _env_int("LLM_MAX_INPUT_CHARS", 20000)
+    llm_fail_closed_on_limit: bool = _env_bool("LLM_FAIL_CLOSED_ON_LIMIT", True)
+    llm_cost_guardrail_mode: str = os.getenv("LLM_COST_GUARDRAIL_MODE", "mock")
     sentiment_analyzer_mode: str = os.getenv("SENTIMENT_ANALYZER_MODE", "rule_based")
     topic_summary_mode: str = os.getenv("TOPIC_SUMMARY_MODE", "template")
     selector_repair_mode: str = os.getenv("SELECTOR_REPAIR_MODE", "mock")

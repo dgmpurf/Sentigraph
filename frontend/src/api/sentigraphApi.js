@@ -52,6 +52,16 @@ export async function previewSelectorRepair(payload) {
   return normalizeSelectorRepairPreview(data)
 }
 
+export async function getLlmStatus() {
+  const { data } = await apiClient.get(`${API_PREFIX}/llm/status`)
+  return normalizeLlmStatus(data)
+}
+
+export async function getLlmUsage() {
+  const { data } = await apiClient.get(`${API_PREFIX}/llm/usage`)
+  return normalizeLlmUsage(data)
+}
+
 export async function listAnalysisCases() {
   const { data } = await apiClient.get(`${API_PREFIX}/cases`)
   return Array.isArray(data) ? data : []
@@ -559,6 +569,103 @@ function normalizeSelectorRepairPreview(data) {
     warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
     suggestion: data.suggestion ? normalizeSelectorRepairSuggestion(data.suggestion) : null,
     profile_modified: Boolean(data.profile_modified),
+  }
+}
+
+function normalizeLlmStatus(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      provider_name: 'mock',
+      provider_status: 'unknown',
+      real_calls_enabled: false,
+      api_key_present: false,
+      available_providers: [],
+      providers: [],
+      tracking_enabled: true,
+      daily_call_limit: 100,
+      daily_token_limit: 100000,
+      max_input_chars: 20000,
+      guardrail_mode: 'mock',
+      safety_flags: {},
+    }
+  }
+  return {
+    ...data,
+    provider_name: String(data.provider_name || 'mock'),
+    provider_status: String(data.provider_status || 'unknown'),
+    real_calls_enabled: Boolean(data.real_calls_enabled),
+    api_key_present: Boolean(data.api_key_present),
+    available_providers: Array.isArray(data.available_providers)
+      ? data.available_providers.map((provider) => String(provider))
+      : [],
+    providers: Array.isArray(data.providers) ? data.providers.map(normalizeLlmProviderStatus).filter(Boolean) : [],
+    tracking_enabled: data.tracking_enabled !== false,
+    daily_call_limit: Number.isFinite(Number(data.daily_call_limit)) ? Number(data.daily_call_limit) : 100,
+    daily_token_limit: Number.isFinite(Number(data.daily_token_limit)) ? Number(data.daily_token_limit) : 100000,
+    max_input_chars: Number.isFinite(Number(data.max_input_chars)) ? Number(data.max_input_chars) : 20000,
+    guardrail_mode: String(data.guardrail_mode || 'mock'),
+    safety_flags: normalizeBooleanMap(data.safety_flags),
+  }
+}
+
+function normalizeLlmProviderStatus(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    provider_name: String(data.provider_name || ''),
+    provider_status: String(data.provider_status || 'unknown'),
+    real_calls_enabled: Boolean(data.real_calls_enabled),
+    api_key_present: Boolean(data.api_key_present),
+    api_key_required: Boolean(data.api_key_required),
+    available: Boolean(data.available),
+  }
+}
+
+function normalizeLlmUsage(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      tracking_enabled: true,
+      guardrail_mode: 'mock',
+      daily_call_limit: 100,
+      daily_token_limit: 100000,
+      max_input_chars: 20000,
+      total_calls: 0,
+      daily_calls: 0,
+      daily_input_tokens: 0,
+      daily_output_tokens: 0,
+      daily_total_tokens: 0,
+      recent_records: [],
+    }
+  }
+  return {
+    ...data,
+    tracking_enabled: data.tracking_enabled !== false,
+    guardrail_mode: String(data.guardrail_mode || 'mock'),
+    daily_call_limit: Number.isFinite(Number(data.daily_call_limit)) ? Number(data.daily_call_limit) : 100,
+    daily_token_limit: Number.isFinite(Number(data.daily_token_limit)) ? Number(data.daily_token_limit) : 100000,
+    max_input_chars: Number.isFinite(Number(data.max_input_chars)) ? Number(data.max_input_chars) : 20000,
+    total_calls: Number(data.total_calls || 0),
+    daily_calls: Number(data.daily_calls || 0),
+    daily_input_tokens: Number(data.daily_input_tokens || 0),
+    daily_output_tokens: Number(data.daily_output_tokens || 0),
+    daily_total_tokens: Number(data.daily_total_tokens || 0),
+    recent_records: Array.isArray(data.recent_records)
+      ? data.recent_records.map(normalizeLlmUsageRecord).filter(Boolean)
+      : [],
+  }
+}
+
+function normalizeLlmUsageRecord(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    provider: String(data.provider || ''),
+    operation: String(data.operation || ''),
+    input_chars: Number(data.input_chars || 0),
+    output_chars: Number(data.output_chars || 0),
+    estimated_input_tokens: Number(data.estimated_input_tokens || 0),
+    estimated_output_tokens: Number(data.estimated_output_tokens || 0),
+    timestamp: data.timestamp ? String(data.timestamp) : '',
+    success: data.success !== false,
+    failure_category: data.failure_category ? String(data.failure_category) : null,
   }
 }
 

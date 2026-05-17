@@ -548,6 +548,100 @@ Important:
 - The endpoints do not fetch live pages and do not call real platform APIs.
 - Active parser profiles are never modified automatically; human review is required before any profile edit.
 
+## 0.3 LLM Safety Status and Usage
+
+These endpoints expose frontend-safe LLM readiness and usage guardrail diagnostics. They do not call external LLM APIs and never expose API key values, `.env` values, raw prompts, raw user content, or raw LLM request bodies.
+
+### LLM Status
+
+```http
+GET /api/v1/llm/status
+```
+
+Response:
+
+```json
+{
+  "provider_name": "mock",
+  "provider_status": "mock_ready",
+  "real_calls_enabled": false,
+  "api_key_present": false,
+  "available_providers": ["deepseek", "mock", "openai", "qwen"],
+  "providers": [
+    {
+      "provider_name": "mock",
+      "provider_status": "mock_ready",
+      "real_calls_enabled": false,
+      "api_key_present": false,
+      "api_key_required": false,
+      "available": true
+    },
+    {
+      "provider_name": "openai",
+      "provider_status": "provider_not_enabled",
+      "real_calls_enabled": false,
+      "api_key_present": false,
+      "api_key_required": true,
+      "available": false
+    }
+  ],
+  "tracking_enabled": true,
+  "daily_call_limit": 100,
+  "daily_token_limit": 100000,
+  "max_input_chars": 20000,
+  "guardrail_mode": "mock",
+  "safety_flags": {
+    "mock_default": true,
+    "real_calls_disabled_by_default": true,
+    "api_key_values_exposed": false,
+    "raw_prompt_logging": false,
+    "raw_user_content_logging": false
+  }
+}
+```
+
+### LLM Usage
+
+```http
+GET /api/v1/llm/usage
+```
+
+Response:
+
+```json
+{
+  "tracking_enabled": true,
+  "guardrail_mode": "mock",
+  "daily_call_limit": 100,
+  "daily_token_limit": 100000,
+  "max_input_chars": 20000,
+  "total_calls": 1,
+  "daily_calls": 1,
+  "daily_input_tokens": 5,
+  "daily_output_tokens": 30,
+  "daily_total_tokens": 35,
+  "recent_records": [
+    {
+      "provider": "mock",
+      "operation": "expand_keywords",
+      "input_chars": 20,
+      "output_chars": 120,
+      "estimated_input_tokens": 5,
+      "estimated_output_tokens": 30,
+      "timestamp": "2026-05-17T12:00:00Z",
+      "success": true,
+      "failure_category": null
+    }
+  ]
+}
+```
+
+Important:
+
+- `api_key_present` is a boolean only; API key names and values are not exposed by these endpoints.
+- `recent_records` are metadata-only usage records. They must not include prompts, raw comments, sanitized HTML bodies, response bodies, cookies, headers, credentials, or `.env` values.
+- `real_calls_enabled=false` is the default. The frontend LLM Safety page must not expose a real-call toggle or API key input field.
+
 ## 1. Keyword Expansion
 
 ### Endpoint

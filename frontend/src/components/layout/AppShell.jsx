@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Wrench,
 } from 'lucide-react'
@@ -30,6 +31,7 @@ const navItems = [
   { key: 'publicParsers', label: '公开页面解析', icon: <FileSearch size={17} /> },
   { key: 'platformIntegrations', label: '平台接入总览', icon: <Globe2 size={17} /> },
   { key: 'selectorRepair', label: 'Selector 修复工具', icon: <Wrench size={17} /> },
+  { key: 'llmSafety', label: '大模型安全状态', icon: <ShieldCheck size={17} /> },
 ]
 
 const riskLevelLabels = {

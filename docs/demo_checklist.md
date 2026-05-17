@@ -2,6 +2,8 @@
 
 Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
 
+Latest v3.9 hardening validation: 2026-05-17. Backend tests passed with `409 passed in 3.39s`. Frontend production build passed in 7.68s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The new `LLM Safety` / `大模型安全状态` page is read-only and displays MockProvider/default status, disabled real-call status, API key presence booleans only, and metadata-only usage summaries. Local smoke tooling now includes LLM status/usage and public parser preview checks, and demo seeding now creates a Hupu fixture-parser demo case. No real LLM API, real platform API, real crawler, live public fetch, real notification, authentication, `.env` modification, API key printing, or raw prompt logging is introduced.
+
 Latest pre-v1.0 hardening validation: 2026-05-15. Backend tests passed with `92 passed in 2.82s`. Frontend production build passed in 7.75s with the existing non-blocking Ant Design/ECharts vendor chunk warning. API smoke check passed with `26 passed, 0 failed` against a temporary local backend and temporary project-local JSON store. New local demo utilities are available for safe runtime data reset, deterministic demo seeding, and local API smoke validation. No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push, crawler, platform API, Reddit credential, MongoDB, Redis, or external LLM call is made.
 
 Latest optional MongoDB persistence QA validation: 2026-05-15. Focused persistence and case API tests passed with `20 passed in 1.11s`; full backend validation passed with `179 passed in 3.35s`. The default backend remains `CASE_STORE_BACKEND=local_json`; MongoDB is used only when `CASE_STORE_BACKEND=mongodb` is explicitly configured. Fake-backed tests verify MongoDB store selection, unknown-backend errors, safe connection failure errors, index creation, case/report/Markdown/snapshot/alert/notification persistence, reset behavior, and MongoDB-safe document keys without requiring a real MongoDB server.
@@ -89,9 +91,10 @@ python scripts\seed_demo_cases.py --reset-first
 
 Expected result:
 
-- Creates two deterministic demo cases.
+- Creates three deterministic demo cases.
 - One case is completed with mock analysis, V1.5 topic risks, Chinese report, Markdown export data, snapshots, alerts, scheduler state, and local in-app notifications.
 - One case remains a draft/demo watch case.
+- One Hupu public-parser demo case is completed, and the script prints fixture preview post/comment counts without live fetching.
 
 Run the local API smoke check after starting the backend:
 
@@ -102,8 +105,21 @@ python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
 
 Expected result:
 
-- Health, platforms, keyword/crawl/analysis, case run, Markdown export, monitoring, scheduler, alerts, notifications, and report endpoints pass.
+- Health, platforms, public parser status/preview, LLM status/usage, keyword/crawl/analysis, case run, Markdown export, monitoring, scheduler, alerts, notifications, and report endpoints pass.
 - The script prints a clear pass/fail summary and exits nonzero on failure.
+
+## 0.6 LLM Safety Page Check
+
+Open the frontend and choose `LLM Safety` / `大模型安全状态` from the sidebar.
+
+Expected result:
+
+- The page shows `当前 Provider`, `真实调用`, `API Key 状态`, `调用次数`, `Token 估算`, `今日限制`, and `Mock 模式`.
+- MockProvider is the active default unless local config was explicitly changed.
+- OpenAI, DeepSeek, and Qwen are shown as future/disabled placeholders.
+- API key state is displayed as booleans only; no key values or `.env` values are shown.
+- The page shows a safety notice that it does not call real LLMs, does not display API keys, and does not record raw prompts.
+- There is no button or input that enables real LLM calls, enters API keys, or modifies `.env`.
 
 ## 0.5 Optional MongoDB Persistence Check
 

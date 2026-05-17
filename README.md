@@ -32,6 +32,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - 文本清洗、重复检测、用户聚合。
 - deterministic mock sentiment/topic/bot/risk analysis services。
 - mock-first LLM provider interface scaffold：`LLM_PROVIDER=mock` 默认启用离线 `MockProvider`，OpenAI / DeepSeek / Qwen 仅为未来占位，不需要 API key，也不会调用外部 LLM API。
+- LLM usage/cost guardrail scaffold：默认只记录 mock provider 的安全元数据计数，不保存 prompt、原文、密钥或响应正文；真实 LLM 调用仍然关闭。
 - public parser selector repair mock scaffold：`SELECTOR_REPAIR_MODE=mock` 默认只使用已清洗的公开 fixture HTML 和离线 `MockProvider` 生成候选 selector，不会自动修改 parser profile。
 - 可视化数据构建，包括情绪趋势、风险雷达、热力图、话题聚类、传播图谱、疑似水军影响。
 - 模板化 summary/recommendation/report builder。
@@ -80,6 +81,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - v0.7 lightweight monitoring foundation: completed cases can save local analysis snapshots, run deterministic mock monitoring checks, and show threshold-based alert events in Risk Monitor.
 - v0.8 scheduler foundation: completed cases can store monitoring schedule config, show enabled/paused status, and manually run due mock monitoring jobs without starting a background worker.
 - v0.9 notification foundation: alert events can create local in-app notification outbox items; notifications can be marked read and simulate-sent without external delivery.
+- LLM Safety / 大模型安全状态 page: displays mock-first provider readiness, real-call disabled status, API key presence booleans only, and metadata-only usage guardrail summaries. It has no real-call toggle, API key input, or `.env` modification path.
 
 ### Planned Features
 
@@ -426,6 +428,8 @@ Base path:
 - `GET /api/v1/health`
 - `GET /api/v1/platforms`
 - `GET /api/v1/platforms/status`
+- `GET /api/v1/llm/status`
+- `GET /api/v1/llm/usage`
 - `POST /api/v1/keywords/expand`
 - `POST /api/v1/crawl/start`
 - `POST /api/v1/analysis/run`
@@ -468,6 +472,7 @@ Base path:
 - no real crawlers yet。
 - no real platform APIs yet。
 - no OpenAI API or external LLM API required；`LLM_PROVIDER=mock` 和 `LLM_ENABLE_REAL_CALLS=false` 是默认安全模式。
+- LLM usage guardrails currently record metadata only：provider/operation labels、字符数、估算 token、timestamp、success/failure category；不记录 prompt、原文、密钥、cookie、headers 或响应正文。
 - no login bypass。
 - no captcha bypass。
 - no anti-bot evasion。

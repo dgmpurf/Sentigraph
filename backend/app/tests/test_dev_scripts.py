@@ -42,11 +42,15 @@ def test_seed_demo_cases_creates_complete_notification_ready_store(tmp_path) -> 
     data = json.loads(store_path.read_text(encoding="utf-8"))
 
     assert result["mock_only"] is True
-    assert result["case_count"] >= 2
+    assert result["case_count"] >= 3
     assert result["snapshot_count"] >= 3
     assert result["alert_count"] >= 1
     assert result["notification_count"] >= 1
     assert result["completed_case_id"] in data["cases"]
+    assert result["public_parser_case_id"] in data["cases"]
+    assert result["public_parser_preview_platform"] == "hupu"
+    assert result["public_parser_preview_post_count"] >= 1
+    assert result["public_parser_preview_comment_count"] >= 1
     assert data["cases"][result["completed_case_id"]]["status"] == "completed"
     assert data["markdown_reports"][result["completed_case_id"]]["markdown"]
     assert data["notifications"]

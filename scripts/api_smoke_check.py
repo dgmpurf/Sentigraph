@@ -47,11 +47,29 @@ def run_smoke_check(base_url: str = DEFAULT_BASE_URL) -> list[SmokeResult]:
         try:
             detail = fn()
             results.append(SmokeResult(name=name, passed=True, detail=str(detail or "ok")))
-        except (AssertionError, HTTPError, URLError, TimeoutError, OSError) as exc:
+        except Exception as exc:
             results.append(SmokeResult(name=name, passed=False, detail=str(exc)))
 
     check("health", lambda: _expect_key(client.request("GET", "/health"), "status"))
     check("platforms", lambda: _check_platforms(client.request("GET", "/platforms")))
+    check("platform status", lambda: _expect_key(client.request("GET", "/platforms/status"), "platforms"))
+    check(
+        "public parser status",
+        lambda: _expect_key(client.request("GET", "/public-parsers/status"), "parsers"),
+    )
+    check(
+        "public parser preview",
+        lambda: _expect_key(
+            client.request(
+                "POST",
+                "/public-parsers/preview",
+                {"platform": "hupu", "limit": 3, "use_live_fetch": False},
+            ),
+            "sample_posts",
+        ),
+    )
+    check("llm status", lambda: _expect_key(client.request("GET", "/llm/status"), "provider_name"))
+    check("llm usage", lambda: _expect_key(client.request("GET", "/llm/usage"), "total_calls"))
     check(
         "keyword expansion",
         lambda: _expect_key(
@@ -71,6 +89,7 @@ def run_smoke_check(base_url: str = DEFAULT_BASE_URL) -> list[SmokeResult]:
         lambda: _expect_key(client.request("POST", "/analysis/run", {"project_id": "project_001"}), "analysis_task_id"),
     )
     check("analysis result", lambda: _expect_key(client.request("GET", "/analysis/project_001"), "risk_model_version"))
+    check("list cases", lambda: len(client.request("GET", "/cases")))
 
     def create_case() -> str:
         case = client.request(
