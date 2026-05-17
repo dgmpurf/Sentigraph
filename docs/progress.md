@@ -865,9 +865,40 @@ Known limitations:
 
 Next recommended task: expand parser regression fixtures into a larger per-platform corpus, then add a human-labeled report quality dataset and optional LLM-as-judge design only after real-provider safety controls are ready.
 
+## 6.7 v4.5 Parser Regression Corpus Expansion
+
+Update date: 2026-05-17.
+
+Status: implemented and validated.
+
+What changed:
+
+- Expanded `benchmarks/parser_fixture_cases.json` from 12 to 46 synthetic parser fixture cases across `the_paper`, `jiemian`, `hupu`, `tieba`, `nga`, and `maimai`.
+- Added per-platform variants for missing author, missing `created_at`, no comments, extra whitespace, nested content, changed outer container classes, and partial/malformed HTML where practical.
+- Kept all new parser examples synthetic, sanitized, and fixture-only. No real platform APIs, live public fetching, crawlers, cookies, login/captcha bypass, proxy rotation, or private data collection were added.
+- Updated `scripts/run_offline_benchmarks.py` so the `public_parser_fixtures` suite reports per-platform corpus status (`fixture_cases`, `check_count`, `passed`, `failed`) in both in-memory and generated safe summaries.
+- Added parser regression test coverage for missing optional fields, no-comment/nested fixtures, malformed selector-missing fixtures, and safe per-platform benchmark status.
+
+Validation:
+
+- Focused parser/benchmark tests passed: `46 passed in 0.82s`.
+- Full backend validation passed: `436 passed in 3.98s`.
+- Offline benchmark passed with generated summary/history output: `390 passed, 0 failed, 0 warnings`; `public_parser_fixtures` passed with `156 cases, 156 passed, 0 failed, 0 warnings`; latest regression status was `no_regression`.
+- Generated safe summary includes per-platform parser status: `the_paper` 7 fixtures / 24 checks, `jiemian` 7 / 24, `hupu` 8 / 27, `tieba` 8 / 27, `nga` 8 / 27, and `maimai` 8 / 27.
+- Frontend build was not run because no frontend files changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- No real LLM APIs, real platform APIs, live public fetch, crawlers, cookies, login/captcha bypass, proxy rotation, API-key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced.
+
+Known limitations:
+
+- The corpus is synthetic and selector-focused; it does not use live pages or real-world crawled data.
+- Per-case payloads remain omitted from generated benchmark summaries by design, so detailed fixture inspection still happens in source fixtures and local test output.
+
+Next recommended task: after QA, add a human-labeled report quality dataset or topic-clustering quality metrics while keeping evaluation offline-only.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: expand parser regression fixtures into a larger per-platform corpus, then add a human-labeled report quality dataset. Keep it offline-only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, and do not start real API integrations.
+Recommended next development task: QA-stabilize the expanded parser regression corpus, then add a human-labeled report quality dataset or topic-clustering quality metrics. Keep it offline-only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, and do not start real API integrations.
 
 Suggested scope:
 

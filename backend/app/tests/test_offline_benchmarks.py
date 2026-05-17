@@ -36,6 +36,17 @@ def test_offline_benchmark_runner_passes_without_server_or_external_calls() -> N
         "platform_adapter_mocks",
     }
     assert all(suite["case_count"] == suite["passed"] + suite["failed"] for suite in result["suites"])
+    parser_suite = next(suite for suite in result["suites"] if suite["suite"] == "public_parser_fixtures")
+    assert parser_suite["platform_status"].keys() == {
+        "the_paper",
+        "jiemian",
+        "hupu",
+        "tieba",
+        "nga",
+        "maimai",
+    }
+    assert all(status["status"] == "pass" for status in parser_suite["platform_status"].values())
+    assert all(status["fixture_cases"] >= 7 for status in parser_suite["platform_status"].values())
 
 
 def test_offline_benchmark_runner_can_write_safe_json_summary(tmp_path) -> None:
@@ -54,6 +65,10 @@ def test_offline_benchmark_runner_can_write_safe_json_summary(tmp_path) -> None:
     assert history["source"] == "offline_benchmark"
     assert all("case_count" in suite for suite in summary["suites"])
     assert all("case_count" in suite for suite in history["suites"])
+    summary_parser_suite = next(suite for suite in summary["suites"] if suite["suite"] == "public_parser_fixtures")
+    history_parser_suite = next(suite for suite in history["suites"] if suite["suite"] == "public_parser_fixtures")
+    assert summary_parser_suite["platform_status"]["hupu"]["fixture_cases"] >= 7
+    assert history_parser_suite["platform_status"]["hupu"]["fixture_cases"] >= 7
     assert history["benchmark_id"] == summary["benchmark_id"]
     assert history["regression_detected"] is False
     assert summary["regression_summary"]["status"] == "no_history"

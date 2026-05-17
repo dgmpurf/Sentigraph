@@ -544,9 +544,11 @@ def _run_selector_repair_benchmark(fixture_root: Path) -> dict[str, Any]:
 def _run_public_parser_benchmark(fixture_root: Path) -> dict[str, Any]:
     recorder = SuiteRecorder("public_parser_fixtures")
     cases = _load_json(fixture_root / "parser_fixture_cases.json")
+    platform_status: dict[str, dict[str, int | str]] = {}
     for case in cases:
         platform = case["platform_id"]
         safe_limit = int(case.get("limit", 3))
+        case_start = len(recorder.cases)
         if case.get("fixture_html"):
             profile = load_selector_profile(platform)
             parser = BasePublicParser(
@@ -622,7 +624,43 @@ def _run_public_parser_benchmark(fixture_root: Path) -> dict[str, Any]:
                     "expected": case["expected_fallback_reason_category"],
                 },
             )
-    return recorder.summary()
+        _record_parser_platform_status(platform_status, platform, recorder.cases[case_start:])
+    summary = recorder.summary()
+    summary["platform_status"] = _build_parser_platform_status(platform_status)
+    return summary
+
+
+def _record_parser_platform_status(
+    platform_status: dict[str, dict[str, int | str]],
+    platform: str,
+    case_checks: list[dict[str, Any]],
+) -> None:
+    status = platform_status.setdefault(
+        platform,
+        {
+            "fixture_cases": 0,
+            "check_count": 0,
+            "passed": 0,
+            "failed": 0,
+        },
+    )
+    status["fixture_cases"] = int(status["fixture_cases"]) + 1
+    status["check_count"] = int(status["check_count"]) + len(case_checks)
+    status["passed"] = int(status["passed"]) + sum(1 for check in case_checks if check.get("passed") is True)
+    status["failed"] = int(status["failed"]) + sum(1 for check in case_checks if check.get("passed") is not True)
+
+
+def _build_parser_platform_status(platform_status: dict[str, dict[str, int | str]]) -> dict[str, dict[str, int | str]]:
+    return {
+        platform: {
+            "status": "pass" if int(stats.get("failed", 0)) == 0 else "fail",
+            "fixture_cases": int(stats.get("fixture_cases", 0)),
+            "check_count": int(stats.get("check_count", 0)),
+            "passed": int(stats.get("passed", 0)),
+            "failed": int(stats.get("failed", 0)),
+        }
+        for platform, stats in sorted(platform_status.items())
+    }
 
 
 def _run_adapter_mock_benchmark(fixture_root: Path) -> dict[str, Any]:
@@ -952,7 +990,7 @@ def _safe_benchmark_summary(result: dict[str, Any]) -> dict[str, Any]:
 
 def _safe_suite_summary(suite: dict[str, Any]) -> dict[str, Any]:
     warnings = suite.get("warnings")
-    return {
+    summary = {
         "suite": str(suite.get("suite") or "unknown"),
         "status": str(suite.get("status") or "unknown"),
         "case_count": _safe_int(suite.get("case_count"), fallback=_safe_int(suite.get("passed")) + _safe_int(suite.get("failed"))),
@@ -960,6 +998,20 @@ def _safe_suite_summary(suite: dict[str, Any]) -> dict[str, Any]:
         "failed": _safe_int(suite.get("failed")),
         "warnings": [str(warning)[:300] for warning in warnings] if isinstance(warnings, list) else [],
     }
+    platform_status = suite.get("platform_status")
+    if isinstance(platform_status, dict):
+        summary["platform_status"] = {
+            str(platform): {
+                "status": str(stats.get("status") or "unknown"),
+                "fixture_cases": _safe_int(stats.get("fixture_cases")),
+                "check_count": _safe_int(stats.get("check_count")),
+                "passed": _safe_int(stats.get("passed")),
+                "failed": _safe_int(stats.get("failed")),
+            }
+            for platform, stats in sorted(platform_status.items())
+            if isinstance(stats, dict)
+        }
+    return summary
 
 
 def build_regression_summary(

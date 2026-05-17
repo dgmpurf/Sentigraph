@@ -91,5 +91,292 @@
     "min_posts": 1,
     "min_comments": 0,
     "fixture_html": "<html><body><article class=\"maimai-post\"><h1 class=\"post-title\">   Workplace topic with whitespace   </h1><span class=\"post-author\"> fixture_author </span><time class=\"post-created-at\"> 2026-05-17T00:00:00Z </time><div class=\"post-content\">   Employees discuss public workplace communication with extra whitespace.   </div></article></body></html>"
+  },
+  {
+    "case_id": "parser_the_paper_missing_created_at_variant",
+    "platform_id": "the_paper",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "expect_default_created_at": true,
+    "fixture_html": "<html><body><article><h1 class=\"article-title\">The Paper missing date fixture</h1><span class=\"article-author\">synthetic newsroom</span><section class=\"article-content\">A sanitized article fixture keeps title, author, and content while omitting the date.</section></article></body></html>"
+  },
+  {
+    "case_id": "parser_the_paper_no_comments_variant",
+    "platform_id": "the_paper",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><article><h1 class=\"article-title\">The Paper no comments fixture</h1><span class=\"article-author\">synthetic newsroom</span><time class=\"article-date\">2026-05-17T01:00:00Z</time><section class=\"article-content\">The article fixture intentionally contains no public comment nodes.</section></article></body></html>"
+  },
+  {
+    "case_id": "parser_the_paper_extra_whitespace_nested_variant",
+    "platform_id": "the_paper",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><article><h1 class=\"article-title\">   The Paper nested whitespace fixture   </h1><span class=\"article-author\"> synthetic newsroom </span><time class=\"article-date\"> 2026-05-17T01:05:00Z </time><section class=\"article-content\">   First paragraph with extra spaces. <p><span>Nested public context remains extractable.</span></p>   </section></article></body></html>"
+  },
+  {
+    "case_id": "parser_the_paper_changed_container_variant",
+    "platform_id": "the_paper",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><main class=\"story-shell-v2\"><article class=\"article-renamed\"><h1 class=\"article-title\">The Paper changed container fixture</h1><span class=\"article-author\">synthetic newsroom</span><time class=\"article-date\">2026-05-17T01:10:00Z</time><section class=\"article-content\">The outer container class changed while stable content selectors remain available.</section></article></main></body></html>"
+  },
+  {
+    "case_id": "parser_the_paper_malformed_partial_variant",
+    "platform_id": "the_paper",
+    "limit": 3,
+    "min_posts": 0,
+    "min_comments": 0,
+    "expected_fallback_reason_category": "selector_missing",
+    "fixture_html": "<html><body><article><h2>Malformed The Paper fixture without expected selectors</h2><section>Missing article-content class"
+  },
+  {
+    "case_id": "parser_jiemian_missing_author_variant",
+    "platform_id": "jiemian",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "expect_default_author": true,
+    "fixture_html": "<html><body><article><h1 class=\"article-title\">Jiemian missing author fixture</h1><time class=\"article-date\">2026-05-17T02:00:00Z</time><div class=\"article-content\">This sanitized business article omits source or author text.</div></article></body></html>"
+  },
+  {
+    "case_id": "parser_jiemian_no_comments_variant",
+    "platform_id": "jiemian",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><article><h1 class=\"article-title\">Jiemian no comments fixture</h1><span class=\"article-source\">fixture_source</span><time class=\"article-date\">2026-05-17T02:05:00Z</time><div class=\"article-content\">The page fixture remains article-only because public comments are unavailable.</div></article></body></html>"
+  },
+  {
+    "case_id": "parser_jiemian_extra_whitespace_nested_variant",
+    "platform_id": "jiemian",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><article><h1 class=\"article-title\">   Jiemian nested whitespace fixture   </h1><span class=\"article-source\"> fixture_source </span><time class=\"article-date\"> 2026-05-17T02:10:00Z </time><div class=\"article-content\">   Market discussion <p><strong>nested but public</strong> context is preserved.</p>   </div></article></body></html>"
+  },
+  {
+    "case_id": "parser_jiemian_changed_container_variant",
+    "platform_id": "jiemian",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><main class=\"content-frame-v2\"><article class=\"article-new-layout\"><h1 class=\"article-title\">Jiemian changed container fixture</h1><span class=\"article-source\">fixture_source</span><time class=\"article-date\">2026-05-17T02:15:00Z</time><div class=\"article-content\">Stable article selectors continue to parse after wrapper layout changes.</div></article></main></body></html>"
+  },
+  {
+    "case_id": "parser_jiemian_malformed_partial_variant",
+    "platform_id": "jiemian",
+    "limit": 3,
+    "min_posts": 0,
+    "min_comments": 0,
+    "expected_fallback_reason_category": "selector_missing",
+    "fixture_html": "<html><body><article><h2>Malformed Jiemian fixture</h2><div>No article-content selector is present"
+  },
+  {
+    "case_id": "parser_hupu_missing_author_variant",
+    "platform_id": "hupu",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "expect_default_author": true,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">Hupu missing author fixture</h1><time class=\"thread-created-at\">2026-05-17T03:00:00Z</time><div class=\"thread-content\">Visible thread content is present while author is omitted.</div><div class=\"reply-item\" data-comment-id=\"hupu_missing_author_reply_001\"><span class=\"reply-author\">fixture_reply_user</span><time class=\"reply-created-at\">2026-05-17T03:05:00Z</time><p class=\"reply-content\">Reply remains visible and public.</p><span class=\"reply-light-count\">3</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_hupu_missing_created_at_variant",
+    "platform_id": "hupu",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "expect_default_created_at": true,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">Hupu missing date fixture</h1><span class=\"thread-author\">fixture_author</span><div class=\"thread-content\">Thread content is available but the created_at field is missing.</div><div class=\"reply-item\" data-comment-id=\"hupu_missing_date_reply_001\"><span class=\"reply-author\">fixture_reply_user</span><p class=\"reply-content\">Reply date is optional in this sanitized fixture.</p><span class=\"reply-light-count\">5</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_hupu_extra_whitespace_variant",
+    "platform_id": "hupu",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">   Hupu whitespace fixture   </h1><span class=\"thread-author\"> fixture_author </span><time class=\"thread-created-at\"> 2026-05-17T03:10:00Z </time><div class=\"thread-content\">   A public thread contains padded text and visible replies.   </div><div class=\"reply-item\" data-comment-id=\"hupu_whitespace_reply_001\"><span class=\"reply-author\"> reply_user </span><time class=\"reply-created-at\"> 2026-05-17T03:11:00Z </time><p class=\"reply-content\">   Trim this public reply.   </p><span class=\"reply-light-count\"> 9 </span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_hupu_nested_content_variant",
+    "platform_id": "hupu",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">Hupu nested content fixture</h1><span class=\"thread-author\">fixture_author</span><time class=\"thread-created-at\">2026-05-17T03:15:00Z</time><div class=\"thread-content\"><p>Outer public concern.</p><blockquote><span>Nested quality discussion remains visible.</span></blockquote></div><div class=\"reply-item\" data-comment-id=\"hupu_nested_reply_001\"><span class=\"reply-author\">reply_user</span><time class=\"reply-created-at\">2026-05-17T03:16:00Z</time><p class=\"reply-content\"><span>Nested reply content parses.</span></p><span class=\"reply-light-count\">2</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_hupu_changed_container_variant",
+    "platform_id": "hupu",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"thread-v2\"><h1 class=\"thread-title\">Hupu changed container fixture</h1><span class=\"thread-author\">fixture_author</span><time class=\"thread-created-at\">2026-05-17T03:20:00Z</time><div class=\"thread-content\">The outer thread class changed but field selectors are still visible.</div><div class=\"reply-item\" data-comment-id=\"hupu_changed_container_reply_001\"><span class=\"reply-author\">reply_user</span><time class=\"reply-created-at\">2026-05-17T03:21:00Z</time><p class=\"reply-content\">Reply selector still works under the changed wrapper.</p><span class=\"reply-light-count\">4</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_hupu_malformed_partial_variant",
+    "platform_id": "hupu",
+    "limit": 3,
+    "min_posts": 0,
+    "min_comments": 0,
+    "expected_fallback_reason_category": "selector_missing",
+    "fixture_html": "<html><body><article><h2>Malformed Hupu fixture</h2><div class=\"thread-body\">Missing title and thread-content selectors"
+  },
+  {
+    "case_id": "parser_tieba_missing_author_variant",
+    "platform_id": "tieba",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "expect_default_author": true,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">Tieba missing author fixture</h1><time class=\"thread-created-at\">2026-05-17T04:00:00Z</time><div class=\"thread-content\">The post omits thread-author but keeps public content.</div><div class=\"reply-item\" data-comment-id=\"tieba_missing_author_reply_001\"><span class=\"reply-author\">reply_user</span><time class=\"reply-created-at\">2026-05-17T04:05:00Z</time><p class=\"reply-content\">Reply remains parseable.</p><span class=\"reply-like-count\">7</span><span class=\"reply-floor\">2F</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_tieba_missing_created_at_variant",
+    "platform_id": "tieba",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "expect_default_created_at": true,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">Tieba missing date fixture</h1><span class=\"thread-author\">fixture_author</span><div class=\"thread-content\">The post omits created_at and should use a deterministic fallback.</div><div class=\"reply-item\" data-comment-id=\"tieba_missing_date_reply_001\"><span class=\"reply-author\">reply_user</span><p class=\"reply-content\">Reply also omits date safely.</p><span class=\"reply-like-count\">6</span><span class=\"reply-floor\">3F</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_tieba_no_comments_variant",
+    "platform_id": "tieba",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">Tieba no comments fixture</h1><span class=\"thread-author\">fixture_author</span><time class=\"thread-created-at\">2026-05-17T04:10:00Z</time><div class=\"thread-content\">This public thread fixture intentionally contains no reply-item nodes.</div></article></body></html>"
+  },
+  {
+    "case_id": "parser_tieba_extra_whitespace_variant",
+    "platform_id": "tieba",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">   Tieba whitespace fixture   </h1><span class=\"thread-author\"> fixture_author </span><time class=\"thread-created-at\"> 2026-05-17T04:15:00Z </time><div class=\"thread-content\">   Padded public thread text.   </div><div class=\"reply-item\" data-comment-id=\"tieba_whitespace_reply_001\"><span class=\"reply-author\"> reply_user </span><time class=\"reply-created-at\"> 2026-05-17T04:16:00Z </time><p class=\"reply-content\">   Padded public reply text.   </p><span class=\"reply-like-count\"> 11 </span><span class=\"reply-floor\"> 4F </span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_tieba_changed_container_variant",
+    "platform_id": "tieba",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"thread-layout-v2\"><h1 class=\"thread-title\">Tieba changed container fixture</h1><span class=\"thread-author\">fixture_author</span><time class=\"thread-created-at\">2026-05-17T04:20:00Z</time><div class=\"thread-content\">Wrapper class changed while field selectors remain stable.</div><div class=\"reply-item\" data-comment-id=\"tieba_changed_container_reply_001\"><span class=\"reply-author\">reply_user</span><time class=\"reply-created-at\">2026-05-17T04:21:00Z</time><p class=\"reply-content\">Reply parser keeps working.</p><span class=\"reply-like-count\">1</span><span class=\"reply-floor\">5F</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_tieba_malformed_partial_variant",
+    "platform_id": "tieba",
+    "limit": 3,
+    "min_posts": 0,
+    "min_comments": 0,
+    "expected_fallback_reason_category": "selector_missing",
+    "fixture_html": "<html><body><article><h2>Malformed Tieba fixture</h2><div class=\"post-body\">Missing expected title/content selectors"
+  },
+  {
+    "case_id": "parser_nga_missing_author_variant",
+    "platform_id": "nga",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "expect_default_author": true,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">NGA missing author fixture</h1><time class=\"thread-created-at\">2026-05-17T05:00:00Z</time><div class=\"thread-content\">The synthetic thread omits author but keeps public content.</div><div class=\"reply-item\" data-comment-id=\"nga_missing_author_reply_001\"><span class=\"reply-author\">reply_user</span><time class=\"reply-created-at\">2026-05-17T05:05:00Z</time><p class=\"reply-content\">Reply remains visible.</p><span class=\"reply-like-count\">5</span><span class=\"reply-floor\">2F</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_nga_no_comments_variant",
+    "platform_id": "nga",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">NGA no comments fixture</h1><span class=\"thread-author\">fixture_author</span><time class=\"thread-created-at\">2026-05-17T05:10:00Z</time><div class=\"thread-content\">This public thread fixture has no reply-item nodes.</div></article></body></html>"
+  },
+  {
+    "case_id": "parser_nga_extra_whitespace_variant",
+    "platform_id": "nga",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">   NGA whitespace fixture   </h1><span class=\"thread-author\"> fixture_author </span><time class=\"thread-created-at\"> 2026-05-17T05:15:00Z </time><div class=\"thread-content\">   Padded forum content remains parseable.   </div><div class=\"reply-item\" data-comment-id=\"nga_whitespace_reply_001\"><span class=\"reply-author\"> reply_user </span><time class=\"reply-created-at\"> 2026-05-17T05:16:00Z </time><p class=\"reply-content\">   Padded reply text.   </p><span class=\"reply-like-count\"> 10 </span><span class=\"reply-floor\"> 4F </span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_nga_nested_content_variant",
+    "platform_id": "nga",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"thread\"><h1 class=\"thread-title\">NGA nested content fixture</h1><span class=\"thread-author\">fixture_author</span><time class=\"thread-created-at\">2026-05-17T05:20:00Z</time><div class=\"thread-content\"><p>Visible public discussion.</p><div><span>Nested expansion keeps context.</span></div></div><div class=\"reply-item\" data-comment-id=\"nga_nested_reply_001\"><span class=\"reply-author\">reply_user</span><time class=\"reply-created-at\">2026-05-17T05:21:00Z</time><p class=\"reply-content\"><span>Nested reply content parses.</span></p><span class=\"reply-like-count\">3</span><span class=\"reply-floor\">5F</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_nga_changed_container_variant",
+    "platform_id": "nga",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"thread-layout-v2\"><h1 class=\"thread-title\">NGA changed container fixture</h1><span class=\"thread-author\">fixture_author</span><time class=\"thread-created-at\">2026-05-17T05:25:00Z</time><div class=\"thread-content\">Wrapper changed while content selectors stay stable.</div><div class=\"reply-item\" data-comment-id=\"nga_changed_container_reply_001\"><span class=\"reply-author\">reply_user</span><time class=\"reply-created-at\">2026-05-17T05:26:00Z</time><p class=\"reply-content\">Reply parser remains stable.</p><span class=\"reply-like-count\">2</span><span class=\"reply-floor\">6F</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_nga_malformed_partial_variant",
+    "platform_id": "nga",
+    "limit": 3,
+    "min_posts": 0,
+    "min_comments": 0,
+    "expected_fallback_reason_category": "selector_missing",
+    "fixture_html": "<html><body><article><h2>Malformed NGA fixture</h2><section>Missing expected title/content selectors"
+  },
+  {
+    "case_id": "parser_maimai_missing_author_variant",
+    "platform_id": "maimai",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "expect_default_author": true,
+    "fixture_html": "<html><body><article class=\"maimai-post\"><h1 class=\"post-title\">Maimai missing author fixture</h1><time class=\"post-created-at\">2026-05-17T06:00:00Z</time><div class=\"post-content\">Workplace discussion omits the post author.</div><div class=\"comment-item\" data-comment-id=\"maimai_missing_author_comment_001\"><span class=\"comment-author\">reply_user</span><time class=\"comment-created-at\">2026-05-17T06:05:00Z</time><p class=\"comment-content\">Visible public-style comment remains parseable.</p><span class=\"comment-like-count\">6</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_maimai_missing_created_at_variant",
+    "platform_id": "maimai",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "expect_default_created_at": true,
+    "fixture_html": "<html><body><article class=\"maimai-post\"><h1 class=\"post-title\">Maimai missing date fixture</h1><span class=\"post-author\">fixture_author</span><div class=\"post-content\">Workplace discussion omits created_at and uses the deterministic fallback.</div><div class=\"comment-item\" data-comment-id=\"maimai_missing_date_comment_001\"><span class=\"comment-author\">reply_user</span><p class=\"comment-content\">Comment date is optional in this fixture.</p><span class=\"comment-like-count\">4</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_maimai_no_comments_variant",
+    "platform_id": "maimai",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 0,
+    "fixture_html": "<html><body><article class=\"maimai-post\"><h1 class=\"post-title\">Maimai no comments fixture</h1><span class=\"post-author\">fixture_author</span><time class=\"post-created-at\">2026-05-17T06:10:00Z</time><div class=\"post-content\">This workplace discussion has no comment-item nodes.</div></article></body></html>"
+  },
+  {
+    "case_id": "parser_maimai_nested_content_variant",
+    "platform_id": "maimai",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"maimai-post\"><h1 class=\"post-title\">Maimai nested content fixture</h1><span class=\"post-author\">fixture_author</span><time class=\"post-created-at\">2026-05-17T06:15:00Z</time><div class=\"post-content\"><p>Visible workplace context.</p><div><span>Nested team discussion remains public in this fixture.</span></div></div><div class=\"comment-item\" data-comment-id=\"maimai_nested_comment_001\"><span class=\"comment-author\">reply_user</span><time class=\"comment-created-at\">2026-05-17T06:16:00Z</time><p class=\"comment-content\"><span>Nested comment content parses.</span></p><span class=\"comment-like-count\">8</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_maimai_changed_container_variant",
+    "platform_id": "maimai",
+    "limit": 3,
+    "min_posts": 1,
+    "min_comments": 1,
+    "fixture_html": "<html><body><article class=\"feed-card-v2\"><h1 class=\"post-title\">Maimai changed container fixture</h1><span class=\"post-author\">fixture_author</span><time class=\"post-created-at\">2026-05-17T06:20:00Z</time><div class=\"post-content\">The outer post class changed while field selectors remain stable.</div><div class=\"comment-item\" data-comment-id=\"maimai_changed_container_comment_001\"><span class=\"comment-author\">reply_user</span><time class=\"comment-created-at\">2026-05-17T06:21:00Z</time><p class=\"comment-content\">Comment selector remains stable under new wrapper.</p><span class=\"comment-like-count\">1</span></div></article></body></html>"
+  },
+  {
+    "case_id": "parser_maimai_malformed_partial_variant",
+    "platform_id": "maimai",
+    "limit": 3,
+    "min_posts": 0,
+    "min_comments": 0,
+    "expected_fallback_reason_category": "selector_missing",
+    "fixture_html": "<html><body><article><h2>Malformed Maimai fixture</h2><div class=\"feed-body\">Missing expected post-title and post-content selectors"
   }
 ]

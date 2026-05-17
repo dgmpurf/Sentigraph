@@ -1,6 +1,6 @@
 # Sentigraph Offline Benchmarks
 
-Status: v4.4 report quality rubric added.
+Status: v4.5 parser regression corpus expanded.
 
 ## Purpose
 
@@ -17,7 +17,7 @@ The current benchmark suites cover:
 - report quality rubric checks across completeness, risk explanation quality, actionability, safety/professionalism, and language/formatting
 - Markdown export sections for every report-builder scenario
 - selector repair mock flow using sanitized fixture HTML for missing title/content selectors, changed containers, unavailable comments, and malformed HTML
-- public parser fixture parsing and edge fixtures for `the_paper`, `jiemian`, `hupu`, `tieba`, `nga`, and `maimai`
+- public parser fixture parsing and per-platform regression variants for `the_paper`, `jiemian`, `hupu`, `tieba`, `nga`, and `maimai`
 - platform mock adapter normalization for `reddit`, `bilibili`, `weibo`, `douyin`, `kuaishou`, `xiaohongshu`, `zhihu`, `douban`, and `toutiao`
 
 Each suite summary includes:
@@ -29,7 +29,7 @@ failed
 warnings
 ```
 
-Current v4.4 suite counts after adding the report quality rubric:
+Current v4.5 suite counts after expanding the parser regression corpus:
 
 ```text
 sentiment: 28
@@ -39,7 +39,7 @@ report_builder: 15
 report_quality_rubric: 27
 markdown_export: 5
 selector_repair: 30
-public_parser_fixtures: 39
+public_parser_fixtures: 156
 platform_adapter_mocks: 54
 ```
 
@@ -124,6 +124,29 @@ The rubric dimensions are:
 
 The current benchmark fixtures cover a high-quality report, missing recommended actions, raw JSON dump detection, vague recommendations/public response, unsafe overclaim detection, representative comment preservation, and Markdown report quality. See `docs/report_quality_rubric.md` for detailed scoring guidance.
 
+## Parser Regression Corpus
+
+The `public_parser_fixtures` suite now includes a synthetic per-platform parser corpus for:
+
+- `the_paper`
+- `jiemian`
+- `hupu`
+- `tieba`
+- `nga`
+- `maimai`
+
+Each platform has a normal/default fixture plus compact regression variants where practical:
+
+- missing author
+- missing `created_at`
+- no comments
+- extra whitespace
+- nested content
+- changed outer container class
+- partial or malformed HTML with missing selectors
+
+The malformed/missing-selector variants are expected to fail safely with `selector_missing`, zero extracted posts/comments, schema-valid empty output, and live fetch disabled. The benchmark runner records per-platform parser corpus status in the generated summary under `platform_status`, including fixture-case count, check count, passed checks, and failed checks. Generated summaries still avoid raw HTML payloads.
+
 ## Synthetic Data Policy
 
 The v4.3 corpus is synthetic or fixture-based. It intentionally avoids real personal information, private data, live scraped content, and platform API payloads. Chinese crisis/risk examples are written as fictional public-opinion scenarios, such as product quality complaints, delayed official responses, workplace complaints, and repeated-script amplification. These examples are for regression protection only and should not be treated as production labels.
@@ -145,7 +168,7 @@ The current v4.x harness is intentionally small and coarse. It does not replace:
 - topic clustering quality metrics such as purity, recall, or NMI
 - report quality review by humans
 - real LLM-as-judge report evaluation
-- large parser regression corpora
+- large real-world parser regression corpora
 - real LLM output evaluation
 - real provider latency, cost, timeout, retry, or rate-limit testing
 - real platform integration benchmarks

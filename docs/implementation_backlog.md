@@ -581,6 +581,8 @@ Completed:
 - Added `case_count` to suite-level benchmark summaries and safe benchmark API schema normalization. Generated summaries still omit per-case payloads and raw fixture content.
 - Expanded dataset QA is complete for the current v4.3 corpus, including malformed fixture-case fail-safe behavior and no raw fixture-text echoing in suite-level failure metadata.
 - Added the v4.4 deterministic report quality rubric with a `report_quality_rubric` offline benchmark suite. The rubric checks completeness, risk explanation quality, actionability, safety/professionalism, language/formatting, representative comment preservation, and Markdown report quality without using real LLMs.
+- Expanded the v4.5 public parser regression corpus with synthetic per-platform variants for missing author, missing `created_at`, no comments, extra whitespace, nested content, changed container classes, and partial/malformed HTML across `the_paper`, `jiemian`, `hupu`, `tieba`, `nga`, and `maimai`.
+- Added per-platform parser corpus status to the offline benchmark summary so fixture-case/check pass-fail counts can be tracked without exposing raw HTML payloads.
 
 Validation:
 
@@ -593,6 +595,7 @@ Validation:
 - v4.3 dataset QA stabilization passed with focused benchmark tests (`15 passed in 0.93s`), full backend tests (`424 passed in 3.37s`), and offline benchmarks (`246 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
 - v4.4 report quality rubric validation passed with focused rubric/benchmark tests (`23 passed in 0.91s`), full backend tests (`432 passed in 3.54s`), and offline benchmarks (`273 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
 - v4.4 report quality rubric QA stabilization passed with focused rubric/benchmark route tests (`24 passed in 0.92s`), full backend tests (`433 passed in 3.52s`), and offline benchmarks (`273 passed, 0 failed, 0 warnings`, `report_quality_rubric: 27 passed`, `no_regression`). QA coverage now explicitly checks dimension-key completeness, secret/private-data finding codes, and benchmark regression tracking for the `report_quality_rubric` suite. Frontend build was not run because no frontend files changed.
+- v4.5 parser regression corpus validation passed with parser/benchmark tests (`46 passed in 0.82s`), full backend tests (`436 passed in 3.98s`), and offline benchmarks with generated summary/history output (`390 passed, 0 failed, 0 warnings`, `public_parser_fixtures: 156 passed`, `no_regression`). Frontend build was not run because no frontend files changed.
 - GitHub Actions CI remains intentionally disabled unless explicitly requested later.
 
 Future evaluation tasks:
@@ -601,7 +604,8 @@ Future evaluation tasks:
 - Add topic clustering quality metrics and fixture-level expected groupings.
 - Expand the report quality rubric with a human-labeled report quality dataset.
 - Add optional LLM-as-judge report evaluation only after real-provider safety gates, redaction, budget controls, and human review are ready.
-- Build a parser regression corpus with more fixture variants per platform.
+- Continue expanding the parser regression corpus with larger synthetic/sanitized fixture coverage before any real live fetch QA.
+- Keep real live fetch QA as future work behind explicit approval, safety review, and mocked regression coverage.
 - Add dedicated markdown export rubric checks if report format begins to diverge by report type.
 - Expand benchmark history UX with charts after the local file-based history format is stable.
 - Add benchmark drill-down views only after a safe redaction/review model for per-case payloads exists.

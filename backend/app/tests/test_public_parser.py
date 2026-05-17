@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import urllib.request
 from pathlib import Path
 
@@ -20,6 +21,7 @@ HUPU_FIXTURE_PATH = FIXTURE_DIR / "hupu_thread.html"
 MAIMAI_FIXTURE_PATH = FIXTURE_DIR / "maimai_post.html"
 TIEBA_FIXTURE_PATH = FIXTURE_DIR / "tieba_thread.html"
 NGA_FIXTURE_PATH = FIXTURE_DIR / "nga_thread.html"
+PARSER_BENCHMARK_CASES_PATH = Path(__file__).resolve().parents[3] / "benchmarks" / "parser_fixture_cases.json"
 
 
 def _fixture_html() -> str:
@@ -44,6 +46,27 @@ def _tieba_fixture_html() -> str:
 
 def _nga_fixture_html() -> str:
     return NGA_FIXTURE_PATH.read_text(encoding="utf-8")
+
+
+def _parser_benchmark_case(case_id: str) -> dict:
+    cases = json.loads(PARSER_BENCHMARK_CASES_PATH.read_text(encoding="utf-8"))
+    return next(case for case in cases if case["case_id"] == case_id)
+
+
+def _parse_inline_benchmark_case(case_id: str):
+    case = _parser_benchmark_case(case_id)
+    profile = load_selector_profile(case["platform_id"])
+    parser = BasePublicParser(
+        profile,
+        fetcher=PublicFetcher(live_fetch_enabled=False, rate_limit_seconds=0),
+    )
+    return parser.parse_html(
+        case["fixture_html"],
+        source_url=profile.fixture_url or profile.base_url,
+        keyword="benchmark",
+        limit=case.get("limit", 3),
+        metadata_extra={"fetch_status": "inline_fixture"},
+    )
 
 
 class FakeLiveFetcher:
@@ -940,3 +963,58 @@ def test_the_paper_live_enabled_valid_html_returns_raw_post() -> None:
     assert isinstance(result.posts[0], RawPost)
     assert result.posts[0].platform == "the_paper"
     assert result.posts[0].raw_data["mode"] == "public_parser_live"
+
+
+def test_public_parser_regression_corpus_handles_missing_optional_fields() -> None:
+    for case_id in [
+        "parser_the_paper_missing_author_edge",
+        "parser_jiemian_missing_created_at_edge",
+        "parser_hupu_missing_author_variant",
+        "parser_tieba_missing_created_at_variant",
+        "parser_nga_missing_author_variant",
+        "parser_maimai_missing_created_at_variant",
+    ]:
+        result = _parse_inline_benchmark_case(case_id)
+
+        assert len(result.posts) == 1
+        assert all(RawPost.model_validate(post.model_dump(mode="json")) for post in result.posts)
+        assert all(RawComment.model_validate(comment.model_dump(mode="json")) for comment in result.comments)
+        assert result.metadata["live_fetch_enabled"] is False
+        assert result.metadata["schema_valid"] is True
+
+
+def test_public_parser_regression_corpus_handles_no_comments_and_nested_content() -> None:
+    for case_id in [
+        "parser_hupu_no_comments_edge",
+        "parser_tieba_no_comments_variant",
+        "parser_nga_nested_content_variant",
+        "parser_maimai_nested_content_variant",
+    ]:
+        case = _parser_benchmark_case(case_id)
+        result = _parse_inline_benchmark_case(case_id)
+
+        assert len(result.posts) >= case["min_posts"]
+        assert len(result.comments) >= case["min_comments"]
+        assert all(RawPost.model_validate(post.model_dump(mode="json")) for post in result.posts)
+        assert all(RawComment.model_validate(comment.model_dump(mode="json")) for comment in result.comments)
+        assert result.metadata["live_fetch_enabled"] is False
+        assert result.metadata["schema_valid"] is True
+
+
+def test_public_parser_regression_corpus_malformed_variants_fail_safely() -> None:
+    for case_id in [
+        "parser_the_paper_malformed_partial_variant",
+        "parser_jiemian_malformed_partial_variant",
+        "parser_hupu_malformed_partial_variant",
+        "parser_tieba_malformed_partial_variant",
+        "parser_nga_malformed_partial_variant",
+        "parser_maimai_malformed_partial_variant",
+    ]:
+        result = _parse_inline_benchmark_case(case_id)
+
+        assert result.posts == []
+        assert result.comments == []
+        assert result.metadata["fallback_used"] is True
+        assert result.metadata["fallback_reason_category"] == "selector_missing"
+        assert result.metadata["live_fetch_enabled"] is False
+        assert result.metadata["schema_valid"] is True
