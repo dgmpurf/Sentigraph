@@ -22,6 +22,7 @@ class Settings(BaseModel):
     api_v1_prefix: str = "/api/v1"
     llm_provider: str = os.getenv("LLM_PROVIDER", "mock")
     llm_enable_real_calls: bool = _env_bool("LLM_ENABLE_REAL_CALLS", False)
+    sentiment_analyzer_mode: str = os.getenv("SENTIMENT_ANALYZER_MODE", "rule_based")
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

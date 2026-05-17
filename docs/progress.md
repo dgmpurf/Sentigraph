@@ -1,6 +1,6 @@
 # Sentigraph Progress
 
-Last updated: 2026-05-16
+Last updated: 2026-05-17
 
 ## 1. Current Project Status
 
@@ -15,6 +15,8 @@ keyword input -> mock pipeline analysis -> backend report/visualization APIs -> 
 ```
 
 Real crawlers, real OpenAI/LLM calls, production database hardening, and complex ML models have not been implemented yet. The MVP remains runnable offline with mock data and deterministic rule/template logic.
+
+Latest sentiment analyzer LLM-provider QA stabilization update: revalidated optional sentiment LLM-provider mode while keeping `SENTIMENT_ANALYZER_MODE=rule_based` as the default. Added regression coverage that proves rule-based mode does not call the LLM provider factory, unknown sentiment modes fall back safely to `rule_based`, `mock_llm` handles deterministic English, Chinese, and neutral inputs through the offline MockProvider path, missing real-provider keys do not crash, MockProvider failures fall back to rule-based output, and `future_real_llm` remains a no-call placeholder. Existing output fields remain unchanged (`comment_id`, `sentiment`, `sentiment_score`, `emotion_tags`, `stance`, `confidence`, `reason`), and V1.5 topic-risk analysis plus the report builder still pass. Focused sentiment/LLM validation passed with `42 passed`; full backend validation passed with `python -m pytest` (`353 passed in 3.01s`). Frontend build was not run because no frontend files changed. GitHub Actions CI remains intentionally disabled, `.github/workflows/ci.yml` was not recreated, no real LLM APIs were called, no API keys were printed, no real platform APIs were called, and live public fetching remains disabled by default.
 
 Latest keyword expansion LLM-provider QA stabilization update: revalidated `POST /api/v1/keywords/expand` through the dedicated keyword service and MockProvider-only policy. Added regression coverage for provider-factory invocation, default MockProvider behavior, deterministic Tesla / 特斯拉 / Bilibili / unknown Chinese keyword outputs, old response-schema compatibility, disabled/missing-key real-provider safety, and no real-provider method invocation. The keyword response still exposes only `original_keyword`, `expanded_keywords`, and `search_queries`; no provider metadata was added, so API/data-schema fields remain unchanged. Focused keyword/LLM contract validation passed with `32 passed`; full backend validation passed with `python -m pytest` (`341 passed in 3.46s`). Frontend build was not run because no frontend files changed. GitHub Actions CI remains intentionally disabled, `.github/workflows/ci.yml` was not recreated, no real LLM APIs were called, no API keys were printed, no real platform APIs were called, and live public fetching remains disabled by default.
 

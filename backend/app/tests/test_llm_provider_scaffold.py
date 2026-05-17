@@ -111,11 +111,15 @@ def test_mock_provider_sentiment_output_is_stable() -> None:
     negative = MockProvider().analyze_sentiment("The product has a serious quality problem.")
     positive = MockProvider().analyze_sentiment("Great support resolved the issue.")
     neutral = MockProvider().analyze_sentiment("Users are discussing the topic.")
+    questioning = MockProvider().analyze_sentiment("Why are users uncertain about this?")
 
     assert negative.sentiment == "negative"
     assert negative.sentiment_score < 0
     assert positive.sentiment in {"positive", "mixed"}
     assert neutral.sentiment == "neutral"
+    assert questioning.sentiment == "neutral"
+    assert questioning.stance == "questioning"
+    assert "questioning" in questioning.emotion_tags
 
 
 def test_mock_provider_topics_and_cluster_summary_are_deterministic() -> None:

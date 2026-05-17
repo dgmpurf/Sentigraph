@@ -44,6 +44,21 @@ POSITIVE_TERMS = {
     "\u4fe1\u4efb",
     "\u89e3\u51b3",
 }
+QUESTION_TERMS = {
+    "?",
+    "concern",
+    "how",
+    "maybe",
+    "question",
+    "uncertain",
+    "why",
+    "\u5417",
+    "\u662f\u5426",
+    "\u662f\u4e0d\u662f",
+    "\u4e3a\u4ec0\u4e48",
+    "\u7591\u95ee",
+    "\u62c5\u5fc3",
+}
 TOPIC_TERMS: dict[str, tuple[str, ...]] = {
     "Product quality issues": ("quality", "broken", "defect", "issue", "problem", "\u8d28\u91cf", "\u95ee\u9898"),
     "Official response": ("response", "official", "statement", "\u56de\u5e94", "\u5b98\u65b9", "\u58f0\u660e"),
@@ -129,6 +144,7 @@ class MockProvider(BaseLLMProvider):
         normalized = text.lower()
         negative_hits = _count_hits(normalized, NEGATIVE_TERMS)
         positive_hits = _count_hits(normalized, POSITIVE_TERMS)
+        question_hits = _count_hits(normalized, QUESTION_TERMS)
         score = _clamp((positive_hits - negative_hits) / 4)
 
         if score <= -0.15:
@@ -143,6 +159,10 @@ class MockProvider(BaseLLMProvider):
             sentiment = "mixed"
             stance = "mixed"
             tags = ["uncertainty", "questioning"]
+        elif question_hits:
+            sentiment = "neutral"
+            stance = "questioning"
+            tags = ["uncertainty", "questioning"]
         else:
             sentiment = "neutral"
             stance = "neutral"
@@ -153,7 +173,7 @@ class MockProvider(BaseLLMProvider):
             sentiment_score=round(score, 4),
             emotion_tags=tags,
             stance=stance,
-            confidence=round(min(0.95, 0.6 + 0.08 * (positive_hits + negative_hits)), 4),
+            confidence=round(min(0.95, 0.6 + 0.08 * (positive_hits + negative_hits + question_hits)), 4),
             reason="Deterministic mock provider used keyword sentiment signals only.",
             language=language,
             provider=self.provider_id,
