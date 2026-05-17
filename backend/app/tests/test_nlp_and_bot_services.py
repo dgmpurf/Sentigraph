@@ -5,9 +5,10 @@ from app.schemas.comment import CleanComment, UserAggregationResult
 from app.schemas.risk import TOPIC_RISK_MODEL_VERSION
 from app.services.bot_detection.bot_score_service import calculate_bot_scores
 from app.services.llm.errors import LLMProviderError
-from app.services.llm.schemas import LLMSentimentResult
+from app.services.llm.schemas import ClusterSummaryResult, LLMSentimentResult
 from app.services.mock_pipeline import build_mock_pipeline, build_pipeline_analysis
 from app.services.nlp import sentiment_analyzer as sentiment_module
+from app.services.nlp import topic_clusterer as topic_module
 from app.services.nlp.sentiment_analyzer import (
     FUTURE_REAL_LLM_MODE,
     MOCK_LLM_MODE,
@@ -15,7 +16,14 @@ from app.services.nlp.sentiment_analyzer import (
     SentimentAnalyzer,
     get_sentiment_analyzer_mode,
 )
-from app.services.nlp.topic_clusterer import SimpleKeywordEmbeddingProvider, TopicClusterer
+from app.services.nlp.topic_clusterer import (
+    FUTURE_REAL_LLM_TOPIC_SUMMARY_MODE,
+    MOCK_LLM_TOPIC_SUMMARY_MODE,
+    TEMPLATE_TOPIC_SUMMARY_MODE,
+    SimpleKeywordEmbeddingProvider,
+    TopicClusterer,
+    get_topic_summary_mode,
+)
 from app.services.recommendation.report_builder import build_public_opinion_report
 
 
@@ -281,6 +289,193 @@ def test_topic_clusterer_has_embedding_compatible_interface() -> None:
         "Delayed official response",
     }
     assert all(cluster.cluster_id.startswith("topic_") for cluster in clusters)
+
+
+def test_topic_summary_defaults_to_template_mode(monkeypatch) -> None:
+    monkeypatch.delenv("TOPIC_SUMMARY_MODE", raising=False)
+    clusterer = TopicClusterer()
+    clusters = clusterer.cluster(
+        [_clean_comment("clean_001", "author_a", "quality issue defect")]
+    )
+
+    assert get_topic_summary_mode() == TEMPLATE_TOPIC_SUMMARY_MODE
+    assert clusterer.summary_mode == TEMPLATE_TOPIC_SUMMARY_MODE
+    assert clusters[0].summary == (
+        "1 comment(s) are grouped under product quality issues by deterministic keyword embeddings."
+    )
+
+
+def test_template_topic_summary_does_not_use_llm_provider(monkeypatch) -> None:
+    monkeypatch.setenv("TOPIC_SUMMARY_MODE", TEMPLATE_TOPIC_SUMMARY_MODE)
+    monkeypatch.setattr(
+        topic_module,
+        "get_llm_provider",
+        lambda: pytest.fail("template topic summary mode must not call the LLM provider factory"),
+    )
+
+    clusters = TopicClusterer().cluster(
+        [_clean_comment("clean_001", "author_a", "official response silence")]
+    )
+
+    assert clusters[0].topic == "Delayed official response"
+    assert clusters[0].summary == (
+        "1 comment(s) are grouped under delayed official response by deterministic keyword embeddings."
+    )
+
+
+def test_unknown_topic_summary_mode_falls_back_to_template() -> None:
+    comment = _clean_comment("clean_001", "author_a", "quality issue defect")
+
+    fallback = TopicClusterer(summary_mode="not_a_mode")
+    template = TopicClusterer(summary_mode=TEMPLATE_TOPIC_SUMMARY_MODE).cluster([comment])
+
+    assert get_topic_summary_mode("not_a_mode") == TEMPLATE_TOPIC_SUMMARY_MODE
+    assert fallback.summary_mode == TEMPLATE_TOPIC_SUMMARY_MODE
+    assert fallback.cluster([comment])[0].model_dump() == template[0].model_dump()
+
+
+def test_mock_llm_topic_summary_mode_uses_provider_factory(monkeypatch) -> None:
+    calls: list[tuple[list[dict[str, str]], str]] = []
+
+    class RecordingMockProvider:
+        provider_id = "mock"
+
+        def summarize_cluster(
+            self,
+            comments: list[dict[str, str]],
+            language: str = "zh-CN",
+        ) -> ClusterSummaryResult:
+            calls.append((comments, language))
+            return ClusterSummaryResult(
+                summary="recording mock cluster summary",
+                key_terms=["quality"],
+                comment_count=len(comments),
+                language=language,
+                provider="mock",
+            )
+
+    monkeypatch.setenv("TOPIC_SUMMARY_MODE", MOCK_LLM_TOPIC_SUMMARY_MODE)
+    monkeypatch.setattr(topic_module, "get_llm_provider", lambda: RecordingMockProvider())
+    comment = _clean_comment("clean_001", "author_a", "quality issue defect")
+
+    cluster = TopicClusterer().cluster([comment])[0]
+
+    assert calls == [([{"content": comment.clean_text}], "zh-CN")]
+    assert cluster.summary == "recording mock cluster summary"
+
+
+def test_mock_llm_topic_summary_mode_is_deterministic(monkeypatch) -> None:
+    monkeypatch.setenv("TOPIC_SUMMARY_MODE", MOCK_LLM_TOPIC_SUMMARY_MODE)
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    comments = [
+        _clean_comment("clean_001", "author_a", "quality issue defect"),
+        _clean_comment("clean_002", "author_b", "quality problem response"),
+    ]
+
+    first = TopicClusterer().cluster(comments)
+    second = TopicClusterer().cluster(comments)
+
+    assert [cluster.model_dump() for cluster in first] == [cluster.model_dump() for cluster in second]
+    assert first[0].summary == "2\u6761\u516c\u5f00\u8bc4\u8bba\u4e3b\u8981\u805a\u7126\u4e8eProduct quality issues\u3002"
+
+
+def test_mock_llm_topic_summary_handles_chinese_english_and_mixed_comments(monkeypatch) -> None:
+    monkeypatch.setenv("TOPIC_SUMMARY_MODE", MOCK_LLM_TOPIC_SUMMARY_MODE)
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    comments = [
+        _clean_comment(
+            "clean_zh",
+            "author_cn",
+            "\u8fd9\u4e2a\u4ea7\u54c1\u8d28\u91cf\u95ee\u9898\u592a\u660e\u663e",
+        ),
+        _clean_comment("clean_en", "author_en", "quality issue defect"),
+        _clean_comment("clean_mixed", "author_mix", "\u8d28\u91cf issue needs response"),
+    ]
+
+    cluster = TopicClusterer().cluster(comments)[0]
+    dumped = cluster.model_dump()
+
+    assert set(dumped) == {
+        "cluster_id",
+        "topic",
+        "summary",
+        "comment_count",
+        "average_sentiment_score",
+        "representative_comments",
+    }
+    assert "keywords" not in dumped
+    assert "sentiment" not in dumped
+    assert cluster.topic == "Product quality issues"
+    assert cluster.comment_count == 3
+    assert cluster.summary == "3\u6761\u516c\u5f00\u8bc4\u8bba\u4e3b\u8981\u805a\u7126\u4e8eProduct quality issues\u3002"
+    assert cluster.representative_comments == [
+        "\u8fd9\u4e2a\u4ea7\u54c1\u8d28\u91cf\u95ee\u9898\u592a\u660e\u663e",
+        "quality issue defect",
+    ]
+
+
+def test_mock_llm_topic_summary_handles_empty_or_missing_representatives(monkeypatch) -> None:
+    monkeypatch.setenv("TOPIC_SUMMARY_MODE", MOCK_LLM_TOPIC_SUMMARY_MODE)
+    monkeypatch.setattr(
+        topic_module,
+        "get_llm_provider",
+        lambda: pytest.fail("empty cluster summary should not call the LLM provider factory"),
+    )
+
+    assert TopicClusterer().cluster([]) == []
+    cluster = TopicClusterer().cluster([_clean_comment("clean_empty", "author_empty", "")])[0]
+
+    assert cluster.topic == "General discussion"
+    assert cluster.comment_count == 1
+    assert cluster.representative_comments == []
+    assert cluster.summary == "1 comment(s) discuss the monitored keyword without a strong topic signal."
+
+
+def test_future_real_llm_topic_summary_never_calls_provider_factory(monkeypatch) -> None:
+    monkeypatch.setenv("TOPIC_SUMMARY_MODE", FUTURE_REAL_LLM_TOPIC_SUMMARY_MODE)
+    monkeypatch.setattr(
+        topic_module,
+        "get_llm_provider",
+        lambda: pytest.fail("future_real_llm topic summary placeholder must not call a provider"),
+    )
+
+    cluster = TopicClusterer().cluster(
+        [_clean_comment("clean_001", "author_a", "quality issue defect")]
+    )[0]
+
+    assert cluster.summary == (
+        "1 comment(s) are grouped under product quality issues by deterministic keyword embeddings."
+    )
+
+
+def test_mock_llm_topic_summary_missing_real_provider_keys_do_not_crash(monkeypatch) -> None:
+    monkeypatch.setenv("TOPIC_SUMMARY_MODE", MOCK_LLM_TOPIC_SUMMARY_MODE)
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_ENABLE_REAL_CALLS", "true")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    cluster = TopicClusterer().cluster(
+        [_clean_comment("clean_001", "author_a", "quality issue defect")]
+    )[0]
+
+    assert cluster.summary == "1\u6761\u516c\u5f00\u8bc4\u8bba\u4e3b\u8981\u805a\u7126\u4e8eProduct quality issues\u3002"
+
+
+def test_mock_llm_topic_summary_failure_falls_back_to_template(monkeypatch) -> None:
+    class BrokenMockProvider:
+        provider_id = "mock"
+
+        def summarize_cluster(self, comments, language: str = "zh-CN") -> ClusterSummaryResult:
+            raise LLMProviderError("mock cluster failure", provider="mock")
+
+    comment = _clean_comment("clean_001", "author_a", "quality issue defect")
+    template = TopicClusterer(summary_mode=TEMPLATE_TOPIC_SUMMARY_MODE).cluster([comment])[0]
+    monkeypatch.setenv("TOPIC_SUMMARY_MODE", MOCK_LLM_TOPIC_SUMMARY_MODE)
+    monkeypatch.setattr(topic_module, "get_llm_provider", lambda: BrokenMockProvider())
+
+    result = TopicClusterer().cluster([comment])[0]
+
+    assert result.model_dump() == template.model_dump()
 
 
 def test_bot_score_service_uses_rule_based_features() -> None:

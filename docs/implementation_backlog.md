@@ -1,6 +1,6 @@
 # Sentigraph Implementation Backlog
 
-Last updated: 2026-05-16
+Last updated: 2026-05-17
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
 
@@ -485,9 +485,11 @@ Implemented:
 - Keyword expansion now routes through `backend/app/services/keyword/keyword_expander.py`, calls the safe provider factory, and uses `MockProvider` only for current deterministic expansion.
 - MockProvider keyword expansion is active for the keyword API and includes deterministic Tesla, Bilibili, Chinese-language, and generic public-opinion variants while preserving the existing keyword response schema.
 - Sentiment analysis now supports `SENTIMENT_ANALYZER_MODE=rule_based|mock_llm|future_real_llm`; `rule_based` remains the default, `mock_llm` uses the deterministic offline MockProvider path with rule-based fallback, and `future_real_llm` is a no-call placeholder.
+- Topic cluster summaries now support `TOPIC_SUMMARY_MODE=template|mock_llm|future_real_llm`; `template` remains the default, `mock_llm` uses deterministic offline MockProvider cluster summaries with template fallback, and `future_real_llm` is a no-call placeholder.
 - QA coverage verifies module presence, deterministic mock outputs, provider factory defaults and unknown-provider errors, provider-factory invocation from keyword expansion, disabled real-provider behavior, missing-key endpoint safety, secret redaction, safe keyword fallback, old keyword response-schema compatibility, and JSON guard fallback behavior.
 - QA coverage also verifies sentiment default mode, rule-based provider isolation, unknown-mode fallback, deterministic English/Chinese/neutral mock LLM mode, disabled/missing-key real-provider safety, failure fallback, no future-real provider calls, V1.5 topic-risk pipeline compatibility, and report-builder compatibility.
-- Latest backend validation passed with `python -m pytest` (`353 passed in 3.01s`).
+- QA coverage also verifies topic summary default template mode, template provider isolation, unknown-mode fallback, deterministic mock LLM cluster summaries, Chinese/English/mixed-input handling, empty-comment and empty-cluster safety, disabled/missing-key real-provider safety, failure fallback, no future-real provider calls, V1.5 topic-risk pipeline compatibility, and report-builder compatibility.
+- Latest backend validation passed with `python -m pytest` (`363 passed in 3.50s`).
 
 Future real LLM integration tasks:
 
@@ -496,7 +498,9 @@ Future real LLM integration tasks:
 - Keep real Qwen integration as a future task.
 - Keep real LLM keyword expansion as a future task; current keyword expansion must remain MockProvider-only until an explicit real-provider integration task is approved.
 - Keep real LLM sentiment analysis as a future task; current sentiment analysis must remain `rule_based` by default and `mock_llm` must stay offline/deterministic.
+- Keep real LLM topic summary generation as a future task; current topic summaries must remain `template` by default and `mock_llm` must stay offline/deterministic.
 - Add prompt calibration and a labeled sentiment evaluation dataset before any real-provider sentiment mode is considered.
+- Add topic-summary prompt calibration and fixture evaluation before any real-provider topic summary mode is considered.
 - Keep any frontend or API LLM selector repair/status UI as a future task unless explicitly requested.
 - Add provider-specific HTTP clients only behind explicit `LLM_ENABLE_REAL_CALLS=true` and selected provider configuration.
 - Add strict prompt/output schemas for keyword expansion, topic labeling, risk explanations, report drafts, and recommendations.

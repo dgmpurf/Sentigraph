@@ -1,11 +1,29 @@
+import os
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.core.environment import load_project_env
 from app.schemas.analysis import SentimentResult, TopicCluster
 from app.schemas.comment import CleanComment
+from app.services.llm.errors import LLMProviderError
+from app.services.llm.mock_provider import MockProvider
+from app.services.llm.provider_factory import get_llm_provider
 
 
+TEMPLATE_TOPIC_SUMMARY_MODE = "template"
+MOCK_LLM_TOPIC_SUMMARY_MODE = "mock_llm"
+FUTURE_REAL_LLM_TOPIC_SUMMARY_MODE = "future_real_llm"
+SUPPORTED_TOPIC_SUMMARY_MODES = {
+    TEMPLATE_TOPIC_SUMMARY_MODE,
+    MOCK_LLM_TOPIC_SUMMARY_MODE,
+    FUTURE_REAL_LLM_TOPIC_SUMMARY_MODE,
+}
+TOPIC_SUMMARY_MODE_ALIASES = {
+    "rule": TEMPLATE_TOPIC_SUMMARY_MODE,
+    "rule_based": TEMPLATE_TOPIC_SUMMARY_MODE,
+    "rules": TEMPLATE_TOPIC_SUMMARY_MODE,
+}
 TOPIC_DEFINITIONS: dict[str, tuple[str, ...]] = {
     "Product quality issues": ("quality", "broken", "defect", "issue", "problem", "\u8d28\u91cf", "\u95ee\u9898"),
     "Delayed official response": ("response", "respond", "official", "silence", "\u56de\u5e94", "\u5b98\u65b9"),
@@ -42,11 +60,16 @@ class SimpleKeywordEmbeddingProvider:
 
 
 class TopicClusterer:
-    def __init__(self, embedding_provider: EmbeddingProvider | None = None) -> None:
+    def __init__(
+        self,
+        embedding_provider: EmbeddingProvider | None = None,
+        summary_mode: str | None = None,
+    ) -> None:
         self.embedding_provider = embedding_provider or SimpleKeywordEmbeddingProvider()
         self.dimensions = tuple(
             getattr(self.embedding_provider, "dimensions", tuple(TOPIC_DEFINITIONS.keys()))
         )
+        self.summary_mode = get_topic_summary_mode(summary_mode)
 
     def cluster(
         self,
@@ -71,12 +94,12 @@ class TopicClusterer:
                 if comment.clean_comment_id in sentiment_by_comment
             ]
             average_score = sum(scores) / len(scores) if scores else 0.0
-            representatives = [comment.clean_text for comment in topic_comments[:2]]
+            representatives = [comment.clean_text for comment in topic_comments if comment.clean_text.strip()][:2]
             clusters.append(
                 TopicCluster(
                     cluster_id=f"topic_{index:03d}",
                     topic=topic,
-                    summary=self._summary(topic, total_count),
+                    summary=self._summary(topic, total_count, topic_comments),
                     comment_count=total_count,
                     average_sentiment_score=round(average_score, 4),
                     representative_comments=representatives,
@@ -91,8 +114,45 @@ class TopicClusterer:
         best_index = min(vector.index(max(vector)), len(self.dimensions) - 1)
         return self.dimensions[best_index]
 
+    def _summary(self, topic: str, count: int, comments: list[CleanComment]) -> str:
+        if self.summary_mode == MOCK_LLM_TOPIC_SUMMARY_MODE:
+            return self._mock_llm_summary(topic, count, comments)
+        return self._template_summary(topic, count)
+
+    def _mock_llm_summary(self, topic: str, count: int, comments: list[CleanComment]) -> str:
+        try:
+            payload = [
+                {"content": comment.clean_text}
+                for comment in comments
+                if comment.clean_text.strip()
+            ]
+            if not payload:
+                return self._template_summary(topic, count)
+            provider = get_llm_provider()
+            if getattr(provider, "provider_id", None) != "mock":
+                provider = MockProvider()
+            summary = provider.summarize_cluster(
+                payload,
+                language="zh-CN",
+            )
+            return summary.summary or self._template_summary(topic, count)
+        except LLMProviderError:
+            return self._template_summary(topic, count)
+        except Exception:
+            return self._template_summary(topic, count)
+
     @staticmethod
-    def _summary(topic: str, count: int) -> str:
+    def _template_summary(topic: str, count: int) -> str:
         if topic == "General discussion":
             return f"{count} comment(s) discuss the monitored keyword without a strong topic signal."
         return f"{count} comment(s) are grouped under {topic.lower()} by deterministic keyword embeddings."
+
+
+def get_topic_summary_mode(mode: str | None = None) -> str:
+    load_project_env()
+    raw_mode = mode if mode is not None else os.getenv("TOPIC_SUMMARY_MODE", TEMPLATE_TOPIC_SUMMARY_MODE)
+    normalized = (raw_mode or TEMPLATE_TOPIC_SUMMARY_MODE).strip().lower()
+    normalized = TOPIC_SUMMARY_MODE_ALIASES.get(normalized, normalized)
+    if normalized not in SUPPORTED_TOPIC_SUMMARY_MODES:
+        return TEMPLATE_TOPIC_SUMMARY_MODE
+    return normalized
