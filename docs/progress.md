@@ -634,7 +634,7 @@ Known limitations:
 
 Update date: 2026-05-17.
 
-Status: implemented and validated.
+Status: implemented, validated, and QA-stabilized.
 
 What changed:
 
@@ -779,7 +779,7 @@ Next recommended task: expand the offline benchmark corpus with larger labeled s
 
 Update date: 2026-05-17.
 
-Status: implemented and validated.
+Status: implemented, validated, and QA-stabilized.
 
 What changed:
 
@@ -820,9 +820,54 @@ Known limitations:
 
 Next recommended task: add a report quality rubric and fixture-level scoring checks, then expand parser regression fixtures into a larger per-platform corpus while keeping the harness offline-only.
 
+## 6.6 v4.4 Report Quality Rubric
+
+Update date: 2026-05-17.
+
+Status: implemented, validated, and QA-stabilized.
+
+What changed:
+
+- Added `backend/app/services/evaluation/report_quality_rubric.py`, a deterministic offline report-quality evaluator with five 20-point dimensions: completeness, risk explanation quality, actionability, safety/professionalism, and language/formatting.
+- The rubric returns `total_score`, `grade`, `dimension_scores`, `findings`, `missing_sections`, and `warnings` without calling any LLM or external service.
+- Added `benchmarks/report_quality_cases.json` covering high-quality report output, missing recommended actions, raw JSON dumps, vague recommendations/public response, unsafe overclaims, representative comment preservation, and Markdown report quality.
+- Added the `report_quality_rubric` suite to `scripts/run_offline_benchmarks.py`. Generated summaries still expose only suite/case pass-fail metadata and safe finding codes, not raw report text.
+- Added unit coverage for complete reports, missing sections, raw JSON detection, vague recommendations, unsafe overclaims, representative comment preservation, Markdown section checks, and 0-100 score clamping.
+- Added `docs/report_quality_rubric.md` and updated the offline benchmark documentation.
+
+Validation:
+
+- Focused rubric tests passed: `8 passed in 0.14s`.
+- Offline benchmark dry run passed: `273 passed, 0 failed, 0 warnings`.
+- Focused rubric/benchmark route tests passed: `23 passed in 0.91s`.
+- Full backend validation passed: `432 passed in 3.54s`.
+- Offline benchmark passed with generated summary/history output: `273 passed, 0 failed, 0 warnings`; latest regression status was `no_regression`.
+- Frontend build was not run because no frontend files changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- No real LLM APIs, real platform APIs, crawlers, live public fetch, real notifications, API-key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced.
+
+QA stabilization update, 2026-05-17:
+
+- Revalidated the rule-based rubric return shape: `total_score`, `grade`, `dimension_scores`, `findings`, `missing_sections`, and `warnings`.
+- Added regression coverage that confirms all five dimension keys are present, secret/API-key and private-contact patterns are explicitly flagged, and benchmark regression tracking can report the `report_quality_rubric` suite when it changes from pass to fail.
+- Focused rubric/benchmark route tests passed: `24 passed in 0.92s`.
+- Full backend validation passed: `433 passed in 3.52s`.
+- Offline benchmark passed with generated summary/history output: `273 passed, 0 failed, 0 warnings`; `report_quality_rubric` passed with `27 cases, 27 passed, 0 failed, 0 warnings`; latest regression status was `no_regression`.
+- Frontend build was not run because no frontend files changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- No real LLM APIs, real platform APIs, crawlers, live public fetch, real notifications, API-key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced.
+
+Known limitations:
+
+- The rubric is deterministic and coarse; it catches obvious structure/safety regressions but does not replace human PR/legal review.
+- It does not perform factual verification against live sources.
+- It is not an LLM-as-judge evaluator; real LLM evaluation remains future work behind explicit safety gates.
+
+Next recommended task: expand parser regression fixtures into a larger per-platform corpus, then add a human-labeled report quality dataset and optional LLM-as-judge design only after real-provider safety controls are ready.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: add a deterministic report quality rubric and fixture-level scoring checks, then expand parser regression fixtures into a larger per-platform corpus. Keep it offline-only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, and do not start real API integrations.
+Recommended next development task: expand parser regression fixtures into a larger per-platform corpus, then add a human-labeled report quality dataset. Keep it offline-only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, and do not start real API integrations.
 
 Suggested scope:
 

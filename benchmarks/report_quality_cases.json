@@ -1,0 +1,72 @@
+[
+  {
+    "case_id": "report_quality_high_quality_brand_product",
+    "source_report_case_id": "report_brand_product_crisis",
+    "mutation": "none",
+    "expected_grade": "pass",
+    "min_score": 80
+  },
+  {
+    "case_id": "report_quality_missing_recommended_actions",
+    "source_report_case_id": "report_brand_product_crisis",
+    "mutation": "remove_recommended_actions",
+    "expected_grade": "warning",
+    "max_score": 95,
+    "expected_finding_codes": ["missing_recommended_actions", "vague_recommendations"],
+    "expected_missing_sections": ["recommended_actions"]
+  },
+  {
+    "case_id": "report_quality_raw_json_dump",
+    "source_report_case_id": "report_public_figure_controversy",
+    "mutation": "inject_raw_json",
+    "expected_grade": "fail",
+    "max_score": 90,
+    "expected_finding_codes": ["raw_json_dump"]
+  },
+  {
+    "case_id": "report_quality_vague_response",
+    "source_report_case_id": "report_company_workplace_complaint",
+    "mutation": "vague_response",
+    "expected_grade": "warning",
+    "max_score": 95,
+    "expected_finding_codes": ["vague_recommendations", "vague_public_response"]
+  },
+  {
+    "case_id": "report_quality_unsafe_overclaim",
+    "source_report_case_id": "report_suspected_bot_amplification",
+    "mutation": "unsafe_overclaim",
+    "expected_grade": "fail",
+    "max_score": 95,
+    "expected_finding_codes": ["unsupported_overclaim"]
+  },
+  {
+    "case_id": "report_quality_preserves_representatives",
+    "source_report_case_id": "report_safety_legal_issue",
+    "mutation": "none",
+    "expected_grade": "pass",
+    "min_score": 80
+  },
+  {
+    "case_id": "report_quality_markdown_report",
+    "source_report_case_id": "report_brand_product_crisis",
+    "mutation": "none",
+    "include_markdown": true,
+    "required_markdown_sections": [
+      "title",
+      "keyword",
+      "platforms",
+      "risk score",
+      "risk level",
+      "risk model version",
+      "summary",
+      "key findings",
+      "top risk topics",
+      "representative comments",
+      "recommended actions",
+      "suggested public response"
+    ],
+    "expected_grade": "pass",
+    "min_score": 80,
+    "expect_markdown_valid": true
+  }
+]

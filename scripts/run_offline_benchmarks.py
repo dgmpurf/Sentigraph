@@ -39,6 +39,7 @@ from app.services.crawling.public_parser.selector_repair.selector_repair_service
     preview_suggestion,
     suggest_selectors,
 )
+from app.services.evaluation.report_quality_rubric import evaluate_report_quality  # noqa: E402
 from app.services.llm.usage_guardrails import reset_usage_for_tests  # noqa: E402
 from app.services.nlp.sentiment_analyzer import SentimentAnalyzer  # noqa: E402
 from app.services.nlp.topic_clusterer import TopicClusterer  # noqa: E402
@@ -54,6 +55,7 @@ EXPECTED_FIXTURE_FILES = (
     "topic_cluster_cases.json",
     "topic_risk_cases.json",
     "report_builder_cases.json",
+    "report_quality_cases.json",
     "selector_repair_cases.json",
     "parser_fixture_cases.json",
     "adapter_mock_cases.json",
@@ -123,6 +125,7 @@ def run_all_benchmarks(
         _safe_run_suite("topic_cluster", lambda: _run_topic_cluster_benchmark(fixture_root)),
         _safe_run_suite("topic_risk", lambda: _run_topic_risk_benchmark(fixture_root)),
         _safe_run_suite("report_builder", lambda: _run_report_builder_benchmark(fixture_root)),
+        _safe_run_suite("report_quality_rubric", lambda: _run_report_quality_rubric_benchmark(fixture_root)),
         _safe_run_suite("markdown_export", lambda: _run_markdown_export_benchmark(fixture_root)),
         _safe_run_suite("selector_repair", lambda: _run_selector_repair_benchmark(fixture_root)),
         _safe_run_suite("public_parser_fixtures", lambda: _run_public_parser_benchmark(fixture_root)),
@@ -363,6 +366,106 @@ def _run_report_builder_benchmark(fixture_root: Path) -> dict[str, Any]:
             "{" not in combined_report_text and "}" not in combined_report_text,
             "report text does not degrade into a raw JSON dump",
         )
+    return recorder.summary()
+
+
+def _run_report_quality_rubric_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("report_quality_rubric")
+    cases = _load_json(fixture_root / "report_quality_cases.json")
+    report_contexts = {
+        report_case["case_id"]: (report_case, analysis, report)
+        for report_case, analysis, report in _iter_report_contexts(fixture_root)
+    }
+    for case in cases:
+        source_case_id = str(case["source_report_case_id"])
+        if source_case_id not in report_contexts:
+            recorder.check(
+                f"{case['case_id']}:source_case",
+                False,
+                "report quality fixture references an unknown report_builder case",
+                {"source_case_id": source_case_id},
+            )
+            continue
+
+        report_case, analysis, base_report = report_contexts[source_case_id]
+        report = _mutate_report_for_quality_case(base_report, str(case.get("mutation") or "none"))
+        markdown = None
+        markdown_expected_values: list[str] = []
+        if case.get("include_markdown"):
+            markdown = _markdown_for_report_case(report_case, analysis, report)
+            markdown_expected_values = [
+                str(report_case.get("title") or ""),
+                str(report_case.get("keyword") or ""),
+                ", ".join(report_case.get("platforms") or []),
+            ]
+
+        result = evaluate_report_quality(
+            report,
+            markdown=markdown,
+            expected_representative_comments=report_case.get("representative_comments"),
+            required_markdown_sections=case.get("required_markdown_sections"),
+            markdown_expected_values=markdown_expected_values,
+        )
+        finding_codes = set(result.finding_codes())
+        missing_sections = set(result.missing_sections)
+        details = {
+            "score": result.total_score,
+            "grade": result.grade,
+            "finding_codes": sorted(finding_codes),
+            "missing_sections": sorted(missing_sections),
+            "dimension_scores": result.dimension_scores,
+        }
+
+        recorder.check(
+            f"{case['case_id']}:score_range",
+            0 <= result.total_score <= 100,
+            "report quality rubric score stays in 0-100",
+            details,
+        )
+        if case.get("expected_grade"):
+            recorder.check(
+                f"{case['case_id']}:grade",
+                result.grade == case["expected_grade"],
+                "report quality rubric grade matches coarse expectation",
+                details,
+            )
+        if "min_score" in case:
+            recorder.check(
+                f"{case['case_id']}:min_score",
+                result.total_score >= int(case["min_score"]),
+                "report quality score meets minimum coarse threshold",
+                details,
+            )
+        if "max_score" in case:
+            recorder.check(
+                f"{case['case_id']}:max_score",
+                result.total_score <= int(case["max_score"]),
+                "report quality score stays below maximum coarse threshold",
+                details,
+            )
+        expected_finding_codes = set(case.get("expected_finding_codes") or [])
+        if expected_finding_codes:
+            recorder.check(
+                f"{case['case_id']}:finding_codes",
+                expected_finding_codes.issubset(finding_codes),
+                "report quality rubric emits expected finding codes",
+                details,
+            )
+        expected_missing_sections = set(case.get("expected_missing_sections") or [])
+        if expected_missing_sections:
+            recorder.check(
+                f"{case['case_id']}:missing_sections",
+                expected_missing_sections.issubset(missing_sections),
+                "report quality rubric reports expected missing sections",
+                details,
+            )
+        if case.get("expect_markdown_valid"):
+            recorder.check(
+                f"{case['case_id']}:markdown_quality",
+                "markdown_missing_sections" not in finding_codes,
+                "Markdown report quality check passes expected sections",
+                details,
+            )
     return recorder.summary()
 
 
@@ -682,6 +785,32 @@ def _markdown_has_required_sections(markdown: str, case: dict[str, Any], report:
     if report.recommended_actions:
         required_values.append(report.recommended_actions[0])
     return all(value in markdown for value in required_values if value)
+
+
+def _mutate_report_for_quality_case(report: Any, mutation: str) -> Any:
+    normalized = (mutation or "none").strip().lower()
+    if normalized == "none":
+        return report
+    if normalized == "remove_recommended_actions":
+        return report.model_copy(update={"recommended_actions": []})
+    if normalized == "inject_raw_json":
+        return report.model_copy(update={"overall_summary": '{"risk": "high", "status": "mock"}'})
+    if normalized == "vague_response":
+        return report.model_copy(
+            update={
+                "recommended_actions": ["Monitor.", "Follow up."],
+                "suggested_public_response": "We care.",
+            }
+        )
+    if normalized == "unsafe_overclaim":
+        return report.model_copy(
+            update={
+                "suggested_public_response": (
+                    "We confirmed fraud and criminal conduct before the mock review has verified facts."
+                )
+            }
+        )
+    return report
 
 
 def _comment_from_fixture(item: dict[str, Any]) -> CleanComment:

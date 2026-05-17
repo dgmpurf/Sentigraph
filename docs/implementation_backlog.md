@@ -580,6 +580,7 @@ Completed:
 - Expanded the v4.3 synthetic offline evaluation dataset across Chinese crisis/risk sentiment cases, richer topic-cluster scenarios, V1.5 topic-risk edge cases, report/Markdown contexts, selector repair failures, public parser edge fixtures, and adapter mock normalization cases.
 - Added `case_count` to suite-level benchmark summaries and safe benchmark API schema normalization. Generated summaries still omit per-case payloads and raw fixture content.
 - Expanded dataset QA is complete for the current v4.3 corpus, including malformed fixture-case fail-safe behavior and no raw fixture-text echoing in suite-level failure metadata.
+- Added the v4.4 deterministic report quality rubric with a `report_quality_rubric` offline benchmark suite. The rubric checks completeness, risk explanation quality, actionability, safety/professionalism, language/formatting, representative comment preservation, and Markdown report quality without using real LLMs.
 
 Validation:
 
@@ -590,13 +591,16 @@ Validation:
 - Latest v4.2 QA stabilization passed with focused benchmark tests (`14 passed in 0.77s`), full backend tests (`423 passed in 3.40s`), offline benchmarks (`78 passed, 0 failed, 0 warnings`, `no_regression`), and frontend build in 7.43s with the same non-blocking vendor chunk warning.
 - v4.3 dataset expansion validation passed with full backend tests (`423 passed in 3.70s`) and offline benchmarks (`246 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
 - v4.3 dataset QA stabilization passed with focused benchmark tests (`15 passed in 0.93s`), full backend tests (`424 passed in 3.37s`), and offline benchmarks (`246 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
+- v4.4 report quality rubric validation passed with focused rubric/benchmark tests (`23 passed in 0.91s`), full backend tests (`432 passed in 3.54s`), and offline benchmarks (`273 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
+- v4.4 report quality rubric QA stabilization passed with focused rubric/benchmark route tests (`24 passed in 0.92s`), full backend tests (`433 passed in 3.52s`), and offline benchmarks (`273 passed, 0 failed, 0 warnings`, `report_quality_rubric: 27 passed`, `no_regression`). QA coverage now explicitly checks dimension-key completeness, secret/private-data finding codes, and benchmark regression tracking for the `report_quality_rubric` suite. Frontend build was not run because no frontend files changed.
 - GitHub Actions CI remains intentionally disabled unless explicitly requested later.
 
 Future evaluation tasks:
 
 - Expand to a larger human-labeled sentiment dataset.
 - Add topic clustering quality metrics and fixture-level expected groupings.
-- Add a report quality rubric and deterministic scoring checks.
+- Expand the report quality rubric with a human-labeled report quality dataset.
+- Add optional LLM-as-judge report evaluation only after real-provider safety gates, redaction, budget controls, and human review are ready.
 - Build a parser regression corpus with more fixture variants per platform.
 - Add dedicated markdown export rubric checks if report format begins to diverge by report type.
 - Expand benchmark history UX with charts after the local file-based history format is stable.

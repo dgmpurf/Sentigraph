@@ -1,6 +1,6 @@
 # Sentigraph Offline Benchmarks
 
-Status: v4.3 offline evaluation dataset expanded.
+Status: v4.4 report quality rubric added.
 
 ## Purpose
 
@@ -14,6 +14,7 @@ The current benchmark suites cover:
 - topic clustering and template summaries across product quality, delayed official response, pricing complaint, safety concern, customer service issue, suspected coordinated amplification, neutral product discussion, fan/supporter conflict, and workplace issue scenarios
 - V1.5 topic risk scoring for low-risk neutral discussion, medium product complaint, safety/legal concern, repeated-script manipulation, organic negative crisis, polarized conflict, and small high-severity topics that should not be diluted
 - report builder output shape across brand/product crisis, public figure controversy, workplace complaint, suspected bot amplification, and safety/legal issue report contexts
+- report quality rubric checks across completeness, risk explanation quality, actionability, safety/professionalism, and language/formatting
 - Markdown export sections for every report-builder scenario
 - selector repair mock flow using sanitized fixture HTML for missing title/content selectors, changed containers, unavailable comments, and malformed HTML
 - public parser fixture parsing and edge fixtures for `the_paper`, `jiemian`, `hupu`, `tieba`, `nga`, and `maimai`
@@ -28,13 +29,14 @@ failed
 warnings
 ```
 
-Current v4.3 suite counts after expansion:
+Current v4.4 suite counts after adding the report quality rubric:
 
 ```text
 sentiment: 28
 topic_cluster: 24
 topic_risk: 51
 report_builder: 15
+report_quality_rubric: 27
 markdown_export: 5
 selector_repair: 30
 public_parser_fixtures: 39
@@ -97,6 +99,31 @@ The harness is designed to remain offline and deterministic:
 
 The script applies safe process-local defaults for mock/offline behavior. It does not modify `.env`.
 
+## Report Quality Rubric
+
+The `report_quality_rubric` suite evaluates generated Chinese public-opinion reports with deterministic rules only. It does not use real LLMs and does not call any external service.
+
+The rubric returns:
+
+```text
+total_score: 0-100
+grade: pass / warning / fail
+dimension_scores
+findings
+missing_sections
+warnings
+```
+
+The rubric dimensions are:
+
+- completeness
+- risk explanation quality
+- actionability
+- safety / professionalism
+- language and formatting
+
+The current benchmark fixtures cover a high-quality report, missing recommended actions, raw JSON dump detection, vague recommendations/public response, unsafe overclaim detection, representative comment preservation, and Markdown report quality. See `docs/report_quality_rubric.md` for detailed scoring guidance.
+
 ## Synthetic Data Policy
 
 The v4.3 corpus is synthetic or fixture-based. It intentionally avoids real personal information, private data, live scraped content, and platform API payloads. Chinese crisis/risk examples are written as fictional public-opinion scenarios, such as product quality complaints, delayed official responses, workplace complaints, and repeated-script amplification. These examples are for regression protection only and should not be treated as production labels.
@@ -117,6 +144,7 @@ The current v4.x harness is intentionally small and coarse. It does not replace:
 - a human-labeled sentiment evaluation dataset
 - topic clustering quality metrics such as purity, recall, or NMI
 - report quality review by humans
+- real LLM-as-judge report evaluation
 - large parser regression corpora
 - real LLM output evaluation
 - real provider latency, cost, timeout, retry, or rate-limit testing

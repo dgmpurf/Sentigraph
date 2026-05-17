@@ -29,6 +29,7 @@ def test_offline_benchmark_runner_passes_without_server_or_external_calls() -> N
         "topic_cluster",
         "topic_risk",
         "report_builder",
+        "report_quality_rubric",
         "markdown_export",
         "selector_repair",
         "public_parser_fixtures",
@@ -102,6 +103,61 @@ def test_offline_benchmark_runner_detects_regression_from_previous_history() -> 
     assert "total_passed_decreased" in regression["reason_categories"]
     assert "suite_pass_to_fail" in regression["reason_categories"]
     assert regression["changed_suites"][0]["suite"] == "sentiment"
+
+
+def test_offline_benchmark_regression_tracks_report_quality_suite() -> None:
+    script = _load_script("run_offline_benchmarks.py")
+    latest = {
+        "benchmark_id": "benchmark_latest",
+        "generated_at": "2026-05-17T01:00:00Z",
+        "total_passed": 26,
+        "total_failed": 1,
+        "total_warnings": 0,
+        "suites": [
+            {
+                "suite": "report_quality_rubric",
+                "status": "fail",
+                "case_count": 27,
+                "passed": 26,
+                "failed": 1,
+                "warnings": [],
+            },
+        ],
+    }
+    previous = {
+        "benchmark_id": "benchmark_previous",
+        "generated_at": "2026-05-17T00:00:00Z",
+        "total_passed": 27,
+        "total_failed": 0,
+        "total_warnings": 0,
+        "suites": [
+            {
+                "suite": "report_quality_rubric",
+                "status": "pass",
+                "case_count": 27,
+                "passed": 27,
+                "failed": 0,
+                "warnings": [],
+            },
+        ],
+    }
+
+    regression = script.build_regression_summary(latest, previous)
+
+    assert regression["regression_detected"] is True
+    assert regression["changed_suites"] == [
+        {
+            "suite": "report_quality_rubric",
+            "change_types": ["suite_pass_to_fail", "new_failures"],
+            "previous_status": "pass",
+            "latest_status": "fail",
+            "previous_failed": 0,
+            "latest_failed": 1,
+            "previous_warnings": 0,
+            "latest_warnings": 0,
+        }
+    ]
+    assert "suite_pass_to_fail" in regression["reason_categories"]
 
 
 def test_offline_benchmark_runner_reports_missing_fixture_safely(tmp_path) -> None:
