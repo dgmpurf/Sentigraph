@@ -486,6 +486,9 @@ Implemented:
 - MockProvider keyword expansion is active for the keyword API and includes deterministic Tesla, Bilibili, Chinese-language, and generic public-opinion variants while preserving the existing keyword response schema.
 - Sentiment analysis now supports `SENTIMENT_ANALYZER_MODE=rule_based|mock_llm|future_real_llm`; `rule_based` remains the default, `mock_llm` uses the deterministic offline MockProvider path with rule-based fallback, and `future_real_llm` is a no-call placeholder.
 - Topic cluster summaries now support `TOPIC_SUMMARY_MODE=template|mock_llm|future_real_llm`; `template` remains the default, `mock_llm` uses deterministic offline MockProvider cluster summaries with template fallback, and `future_real_llm` is a no-call placeholder.
+- Public parser selector repair now has a mock-first backend scaffold: sanitized fixture HTML requests, deterministic `MockProvider.suggest_selector_repair()` candidates, preview against fixture HTML, and explicit `profile_modified=false` behavior.
+- `.env.example` documents `SELECTOR_REPAIR_MODE=mock`, `SELECTOR_REPAIR_ENABLE_REAL_LLM=false`, and `SELECTOR_REPAIR_MAX_HTML_CHARS=20000`.
+- `docs/selector_repair_design.md` documents the sanitized HTML requirement, no-bypass policy, no automatic profile application, and future human-review workflow.
 - QA coverage verifies module presence, deterministic mock outputs, provider factory defaults and unknown-provider errors, provider-factory invocation from keyword expansion, disabled real-provider behavior, missing-key endpoint safety, secret redaction, safe keyword fallback, old keyword response-schema compatibility, and JSON guard fallback behavior.
 - QA coverage also verifies sentiment default mode, rule-based provider isolation, unknown-mode fallback, deterministic English/Chinese/neutral mock LLM mode, disabled/missing-key real-provider safety, failure fallback, no future-real provider calls, V1.5 topic-risk pipeline compatibility, and report-builder compatibility.
 - QA coverage also verifies topic summary default template mode, template provider isolation, unknown-mode fallback, deterministic mock LLM cluster summaries, Chinese/English/mixed-input handling, empty-comment and empty-cluster safety, disabled/missing-key real-provider safety, failure fallback, no future-real provider calls, V1.5 topic-risk pipeline compatibility, and report-builder compatibility.
@@ -499,9 +502,11 @@ Future real LLM integration tasks:
 - Keep real LLM keyword expansion as a future task; current keyword expansion must remain MockProvider-only until an explicit real-provider integration task is approved.
 - Keep real LLM sentiment analysis as a future task; current sentiment analysis must remain `rule_based` by default and `mock_llm` must stay offline/deterministic.
 - Keep real LLM topic summary generation as a future task; current topic summaries must remain `template` by default and `mock_llm` must stay offline/deterministic.
+- Keep real LLM selector repair as a future task; current selector repair must remain `mock` mode, fixture-only, sanitized, and review-required.
 - Add prompt calibration and a labeled sentiment evaluation dataset before any real-provider sentiment mode is considered.
 - Add topic-summary prompt calibration and fixture evaluation before any real-provider topic summary mode is considered.
-- Keep any frontend or API LLM selector repair/status UI as a future task unless explicitly requested.
+- Keep any frontend LLM selector repair/status UI as a future task unless explicitly requested.
+- Add durable draft storage and review/approval workflow before allowing any profile update from selector repair output.
 - Add provider-specific HTTP clients only behind explicit `LLM_ENABLE_REAL_CALLS=true` and selected provider configuration.
 - Add strict prompt/output schemas for keyword expansion, topic labeling, risk explanations, report drafts, and recommendations.
 - Add mocked HTTP tests, timeout handling, retry limits, rate limits, and redacted diagnostics before any live provider call.

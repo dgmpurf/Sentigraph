@@ -15,6 +15,16 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 class Settings(BaseModel):
     app_name: str = "Sentigraph"
     app_version: str = "0.1.0"
@@ -24,6 +34,9 @@ class Settings(BaseModel):
     llm_enable_real_calls: bool = _env_bool("LLM_ENABLE_REAL_CALLS", False)
     sentiment_analyzer_mode: str = os.getenv("SENTIMENT_ANALYZER_MODE", "rule_based")
     topic_summary_mode: str = os.getenv("TOPIC_SUMMARY_MODE", "template")
+    selector_repair_mode: str = os.getenv("SELECTOR_REPAIR_MODE", "mock")
+    selector_repair_enable_real_llm: bool = _env_bool("SELECTOR_REPAIR_ENABLE_REAL_LLM", False)
+    selector_repair_max_html_chars: int = _env_int("SELECTOR_REPAIR_MAX_HTML_CHARS", 20000)
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

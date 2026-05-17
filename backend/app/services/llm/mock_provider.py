@@ -3,6 +3,11 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any, Sequence
 
+from app.schemas.selector_repair import (
+    SelectorCandidate,
+    SelectorRepairRequest,
+    SelectorRepairSuggestion,
+)
 from app.services.llm.base_provider import BaseLLMProvider
 from app.services.llm.schemas import (
     ClusterSummaryResult,
@@ -305,6 +310,32 @@ class MockProvider(BaseLLMProvider):
             provider=self.provider_id,
         )
 
+    def suggest_selector_repair(
+        self,
+        request: SelectorRepairRequest,
+    ) -> SelectorRepairSuggestion:
+        candidates: list[SelectorCandidate] = []
+        targets = request.extraction_targets or ["title", "content"]
+        for target in targets:
+            candidates.extend(_selector_candidates_for_target(target))
+
+        warnings = ["human_review_required", "active_profiles_not_modified"]
+        if not request.sanitized_html:
+            warnings.append("empty_sanitized_html")
+        if request.parser_error_summary:
+            warnings.append("parser_error_summary_used")
+
+        return SelectorRepairSuggestion(
+            platform_id=request.platform_id,
+            status="suggested",
+            candidates=candidates,
+            warnings=warnings,
+            provider=self.provider_id,
+            generated_by_mock=True,
+            applied=False,
+            review_required=True,
+        )
+
     def health_check(self) -> ProviderHealth:
         return ProviderHealth(
             provider=self.provider_id,
@@ -391,3 +422,37 @@ def _comment_text(comment: str | dict[str, Any]) -> str:
     if isinstance(comment, dict):
         return str(comment.get("content") or comment.get("text") or "").strip()
     return str(comment).strip()
+
+
+def _selector_candidates_for_target(target: str) -> list[SelectorCandidate]:
+    normalized_target = target.strip().lower()
+    selector_map: dict[str, list[str]] = {
+        "article": ["article", "article.thread", ".article", ".thread"],
+        "title": ["h1", "h1.article-title", "h1.thread-title", ".post-title"],
+        "content": ["article", ".article-content", ".thread-content", ".post-content"],
+        "author": [".author", ".article-author", ".thread-author", ".post-author"],
+        "created_at": [".article-date", ".created-at", ".publish-time", "time"],
+        "like_count": [".like-count", ".thread-light-count", ".upvote-count", ".interaction-count"],
+        "reply_count": [".reply-count", ".thread-reply-count", ".comment-count"],
+        "comment": [".comment-item", ".reply-item", ".comment", ".reply"],
+        "comment_content": [".comment-content", ".reply-content"],
+        "comment_author": [".comment-author", ".reply-author"],
+        "comment_created_at": [".comment-created-at", ".reply-created-at"],
+        "comment_like": [".comment-like-count", ".reply-light-count", ".like-count"],
+        "comment_floor": [".reply-floor", ".comment-floor"],
+    }
+    selectors = selector_map.get(
+        normalized_target,
+        [f".{normalized_target}", f".{normalized_target.replace('_', '-')}", normalized_target],
+    )
+    return [
+        SelectorCandidate(
+            target=normalized_target,
+            selector=selector,
+            selector_type="css",
+            confidence=round(max(0.4, 0.82 - index * 0.08), 2),
+            rationale="Deterministic mock selector candidate for fixture-only repair review.",
+            source="mock_provider",
+        )
+        for index, selector in enumerate(selectors[:4])
+    ]

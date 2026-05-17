@@ -14,6 +14,7 @@ from app.services.llm.schemas import (
     ProviderHealth,
     TopicExtractionResult,
 )
+from app.schemas.selector_repair import SelectorRepairRequest, SelectorRepairSuggestion
 
 
 class PlaceholderLLMProvider(BaseLLMProvider):
@@ -46,6 +47,13 @@ class PlaceholderLLMProvider(BaseLLMProvider):
         user_type: str = "brand",
         language: str = "zh-CN",
     ) -> LLMRecommendationResult:
+        self._raise_unavailable()
+
+    def suggest_selector_repair(
+        self,
+        request: SelectorRepairRequest,
+    ) -> SelectorRepairSuggestion:
+        del request
         self._raise_unavailable()
 
     def health_check(self) -> ProviderHealth:

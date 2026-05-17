@@ -645,6 +645,83 @@ Rules:
 - NGA fixture output normalizes a public fixture thread into `RawPost` and visible fixture replies into `RawComment`, including author, content, created time, parent id when present, like count when present, and forum floor number in `RawComment.raw_data.floor_number`.
 - Parser code must not use login, cookies, captcha bypass, anti-bot evasion, proxy rotation, private messages, hidden data, or authentication-gated pages.
 
+### Selector Repair Schemas
+
+Selector repair is a mock-first maintenance scaffold for public parser profiles. It uses sanitized public fixture HTML and deterministic `MockProvider` suggestions only. Active selector profiles are not modified automatically.
+
+`SelectorRepairRequest`:
+
+```json
+{
+  "platform_id": "hupu",
+  "sanitized_html": "<article class=\"thread\"><h1 class=\"thread-title\">Fixture title</h1></article>",
+  "current_profile": {
+    "title_selector": ".old-title"
+  },
+  "extraction_targets": ["title", "content"],
+  "parser_error_summary": "title selector did not match",
+  "mode": "mock",
+  "max_html_chars": 20000
+}
+```
+
+`SelectorCandidate`:
+
+```json
+{
+  "target": "title",
+  "selector": "h1.thread-title",
+  "selector_type": "css",
+  "confidence": 0.9,
+  "rationale": "Deterministic mock selector candidate for fixture-only repair review.",
+  "source": "mock_provider"
+}
+```
+
+`SelectorRepairSuggestion`:
+
+```json
+{
+  "platform_id": "hupu",
+  "status": "suggested",
+  "candidates": [],
+  "warnings": ["human_review_required", "active_profiles_not_modified"],
+  "provider": "mock",
+  "generated_by_mock": true,
+  "applied": false,
+  "review_required": true,
+  "draft_id": null
+}
+```
+
+`SelectorRepairPreviewResult`:
+
+```json
+{
+  "platform_id": "hupu",
+  "status": "preview_ok",
+  "matched_targets": {
+    "title": true
+  },
+  "sample_values": {
+    "title": "Fixture title"
+  },
+  "warnings": [],
+  "suggestion": null,
+  "profile_modified": false
+}
+```
+
+Allowed `SelectorRepairStatus` values are `suggested`, `draft`, `preview_ok`, `preview_failed`, `invalid_platform`, `provider_not_enabled`, `not_configured`, and `error`.
+
+Rules:
+
+- Sanitized HTML removes scripts, styles, inline event handlers, obvious token/cookie/authorization fields, and caps length through `SELECTOR_REPAIR_MAX_HTML_CHARS`.
+- `SELECTOR_REPAIR_MODE=mock` and `SELECTOR_REPAIR_ENABLE_REAL_LLM=false` are the default safe settings.
+- `future_real_llm` mode is disabled until a future explicit integration task.
+- `profile_modified` must remain false for suggestion and preview flows.
+- Credential values, cookies, and private data must never be included.
+
 ## 2. Raw Post
 
 ```json

@@ -12,6 +12,7 @@ from app.services.llm.schemas import (
     ProviderHealth,
     TopicExtractionResult,
 )
+from app.schemas.selector_repair import SelectorRepairRequest, SelectorRepairSuggestion
 
 
 class BaseLLMProvider(ABC):
@@ -59,6 +60,13 @@ class BaseLLMProvider(ABC):
         language: str = "zh-CN",
     ) -> LLMRecommendationResult:
         """Generate response recommendations from already-normalized context."""
+
+    @abstractmethod
+    def suggest_selector_repair(
+        self,
+        request: SelectorRepairRequest,
+    ) -> SelectorRepairSuggestion:
+        """Suggest selector candidates from sanitized public fixture HTML."""
 
     def health_check(self) -> ProviderHealth:
         return ProviderHealth(
