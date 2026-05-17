@@ -16,6 +16,10 @@ keyword input -> mock pipeline analysis -> backend report/visualization APIs -> 
 
 Real crawlers, real OpenAI/LLM calls, production database hardening, and complex ML models have not been implemented yet. The MVP remains runnable offline with mock data and deterministic rule/template logic.
 
+Latest roadmap freeze / consolidation update: created `docs/current_project_status.md`, `docs/next_stage_roadmap.md`, `docs/api_application_plan.md`, and `docs/demo_readiness_checklist.md` to freeze the current v4.x state and stop default scaffold expansion. The current phase is now roadmap freeze / consolidation: Sentigraph can demo a full offline mock MVP with cases, V1.5 topic risk, Chinese reports, Markdown export, monitoring snapshots, alerts, local notifications, platform readiness pages, LLM safety diagnostics, selector repair mock tooling, and offline benchmark reporting. The recommended immediate next task is Track A: prepare a stable demo build by running reset/seed/smoke, backend tests, offline benchmarks, frontend build, UI label polish, and screenshot/demo-story preparation. Tasks to stop doing for now: adding more official API scaffolds, adding more public parser platforms, adding more LLM provider abstractions, expanding benchmarks without a direct demo or real-data decision need, and writing real-mode code before console permissions plus approved official payload fixtures are confirmed. Track B remains real data access, starting with Douyin/Xiaohongshu API permission audits. Track C remains intelligence-layer work, but real LLM calls should wait until a real data path is stable and benchmarks can evaluate the change.
+
+Latest Douyin/Xiaohongshu real API capability audit: created `docs/real_api_capability_audit.md` and recorded user-reported developer access for Douyin and Xiaohongshu while keeping both adapters mock-only. Douyin now reports `developer_access_status="obtained"`, `comment_api_status="unknown_or_permission_required"`, and `real_mode_blocker="permission_not_verified"`; Xiaohongshu reports `developer_access_status="obtained"`, `comment_api_status="unknown_or_not_confirmed"`, and `real_mode_blocker="permission_not_verified"`. `DOUYIN_ADAPTER_MODE=real` and `XIAOHONGSHU_ADAPTER_MODE=real` still make no real API calls and return mock data with safe blocked-real-mode metadata. Updated platform registry schema/docs, platform source docs, API/data schema docs, README/development notes, and backlog tasks for future console permission verification and minimal real-mode implementation only after comment/note-comment permissions are confirmed. Focused adapter/registry validation passed with `64 passed in 0.90s`; full backend validation passed with `python -m pytest` (`436 passed in 3.74s`). Frontend build was not run because no frontend files changed. GitHub Actions CI remains intentionally disabled, `.github/workflows/ci.yml` was not recreated, no real Douyin/Xiaohongshu APIs were called, no real platform APIs were called, no scraping path was added, no API keys were printed, and `.env` was not modified. Next recommended task: verify Douyin console scopes (`item.comment` or equivalent, interaction/comment management, keyword video comment management if applicable, and user authorization limits) and Xiaohongshu console API product availability (note/content/comment/interaction data, comment access limits, and app-key/app-secret mapping).
+
 Latest v3.9 hardening QA stabilization update: revalidated the read-only LLM safety backend endpoints (`GET /api/v1/llm/status` and `GET /api/v1/llm/usage`), the desktop `LLM Safety` / `大模型安全状态` frontend page, and the local smoke/reset/seed scripts. The backend endpoints still expose only provider readiness, real-call disabled state, API key presence booleans, usage guardrail limits, and metadata-only usage summaries; they do not expose API key values, `.env` values, raw prompts, raw user content, or raw LLM request bodies. The frontend page still shows MockProvider/OpenAI/DeepSeek/Qwen status, API key presence booleans only, daily call/token limits, current usage summary, and explicit safety notices; it has no real-call toggle, no API key input, and no `.env` modification path. `reset_local_data.py` remains limited to project-local runtime JSON files under `backend/data`, `seed_demo_cases.py` remains deterministic/mock-only with a Hupu fixture preview, and `api_smoke_check.py` targets only a caller-supplied local backend URL. Backend validation passed with `python -m pytest` (`409 passed in 3.73s`). Frontend validation passed with `npm run build` from `frontend` (`built in 7.84s`) with the existing non-blocking Ant Design/ECharts large vendor chunk warning. API smoke script was reviewed but not auto-run because it requires a running backend; use `python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000` after starting the backend. GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated. No real LLM APIs, real platform APIs, real crawlers, live public fetch, real notifications, authentication, API key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced. Known non-blocking issues: Vite still reports large vendor chunks for Ant Design/ECharts, and the LLM usage guardrail remains in-process/mock-only rather than durable. Next recommended task: run a browser click-through QA pass for the LLM Safety page plus Platform Integration Overview, Selector Repair Tool, Public Parser Status, and Keyword Search data-source selectors before moving to mocked provider HTTP client harnesses.
 
 Latest LLM usage guardrail QA stabilization update: revalidated the offline usage/cost guardrail scaffold and tightened the future real-provider placeholder path. Placeholder OpenAI / DeepSeek / Qwen providers still make no network calls, but when real calls are explicitly enabled and credentials are present they now consult `check_call_allowed()` before returning the current no-call placeholder error, preserving a fail-closed pattern for future HTTP clients. Added coverage for keyword, sentiment, topic summary, report, recommendation, and selector-repair mock usage recording; safe usage-record field shape; raw prompt/user-content/HTML exclusion; over-limit call/input/token blocking; fail-open mode; reset behavior; no API-key leakage; and disabled real-provider safety. Focused LLM guardrail/provider validation passed with `python -m pytest backend/app/tests/test_llm_usage_guardrails.py backend/app/tests/test_llm_provider_scaffold.py` (`50 passed in 0.58s`); full backend validation passed with `python -m pytest` (`405 passed in 3.35s`). Frontend build was not run because no frontend files changed in this QA task. GitHub Actions CI remains intentionally disabled, `.github/workflows/ci.yml` was not recreated, no real LLM APIs were called, no API keys were printed, no raw prompts or raw user content were logged, no real platform APIs were called, and live public fetching remains disabled by default. Next recommended task: add mocked provider HTTP client harnesses plus provider-specific pricing/token-accounting fixtures before any real OpenAI / DeepSeek / Qwen implementation.
@@ -896,9 +900,63 @@ Known limitations:
 
 Next recommended task: after QA, add a human-labeled report quality dataset or topic-clustering quality metrics while keeping evaluation offline-only.
 
+## 6.8 v4.5 Public Opinion Forecasting Foundation
+
+Update date: 2026-05-17.
+
+Status: implemented, locally validated, and QA-stabilized.
+
+What changed:
+
+- Added `backend/app/services/forecasting/`, a deterministic MVP forecasting layer over persisted monitoring snapshots.
+- Added `ForecastResult`, `RiskForecast`, `TopicRiskForecast`, trend-feature, confidence, and input-snapshot schemas.
+- Added `GET /api/v1/cases/{case_id}/forecast` and `POST /api/v1/cases/{case_id}/forecast/run`.
+- Forecasts now compute latest risk, moving average, slope, acceleration, volatility, trend direction, four horizons, predicted real-crisis risk, predicted manipulation risk, and topic-level forecasts when `top_risk_topics` are present.
+- Updated Risk Monitor with a Chinese `风险预测` panel and `运行风险预测` action.
+- Added `benchmarks/forecast_cases.json` and a `forecasting` suite to `scripts/run_offline_benchmarks.py`.
+- Added `docs/forecasting_design.md` plus API, schema, and benchmark documentation.
+
+Validation:
+
+- Focused forecasting/benchmark tests passed: `20 passed`.
+- Offline benchmark dry run passed: `447 passed, 0 failed, 0 warnings`; `forecasting` passed with `57 cases, 57 passed, 0 failed, 0 warnings`.
+- Full backend tests passed: `450 passed in 4.54s`.
+- Offline benchmark passed with generated summary/history output: `447 passed, 0 failed, 0 warnings`; `forecasting` passed with `57 cases, 57 passed, 0 failed, 0 warnings`; latest regression status was `no_regression`.
+- Frontend production build passed in 8.02s with the existing non-blocking Ant Design/ECharts vendor chunk warning.
+
+QA stabilization update, 2026-05-17:
+
+- Revalidated forecast service modules, schema exports, case forecast endpoints, no/one/multiple snapshot behavior, horizon generation, risk-score clamping, risk-level mapping, topic forecasts, real-crisis forecasts, manipulation-risk forecasts, and conservative confidence rules.
+- Added regression coverage for the `4+ snapshots -> medium confidence` rule and verified all four horizons remain present.
+- Rechecked Risk Monitor source wiring for the forecast panel, `运行风险预测` action, insufficient-history state, and required Chinese labels.
+- Browser smoke on a temporary local backend/Vite pair opened a seeded completed case, navigated through Cases into Risk Monitor, clicked `运行风险预测`, and confirmed forecast score plus the required forecast labels rendered. The only browser console warnings were the existing shared Ant Design `Spin` tip warnings.
+- Revalidated the offline `forecasting` benchmark suite for insufficient history, one-snapshot low confidence, rising/falling/stable trends, acceleration, manipulation-risk rise, real-crisis-risk rise, and topic-risk rise.
+- Full backend validation passed with `python -m pytest` (`451 passed in 4.30s`).
+- Offline benchmark validation passed with `python scripts/run_offline_benchmarks.py` (`447 passed, 0 failed, 0 warnings`; `forecasting: 57 passed`; latest regression status `no_regression`).
+- Frontend production build passed with `npm run build` from `frontend` (`built in 7.79s`); the existing non-blocking Ant Design/ECharts vendor chunk warning remains.
+
+Forecasting dashboard polish update, 2026-05-17:
+
+- Improved the Risk Monitor `风险预测` panel with a `预测解释` section that explains forecast status, why risk is rising/falling/stable/uncertain, primary deterministic drivers, history sufficiency, confidence meaning, and recommended action.
+- Added the visible disclaimer: current forecasting is a deterministic MVP trend extrapolation based on historical snapshots and does not guarantee future events.
+- Empty, insufficient-history, one-snapshot, missing-topic, and missing-confidence states remain safe and conservative.
+- Frontend production build passed with `npm run build` from `frontend` (`built in 7.62s`); the existing non-blocking Ant Design/ECharts vendor chunk warning remains.
+- Browser smoke on a temporary local backend/Vite pair opened a seeded completed case, navigated through Cases into Risk Monitor, clicked `运行风险预测`, and confirmed `预测解释`, the deterministic-MVP disclaimer, trend-rationale card, `主要驱动因素`, `历史数据是否足够`, `置信度说明`, recommended action text, and no `[object Object]` rendering.
+- Backend tests and offline benchmarks were not rerun for this polish because only frontend presentation and documentation changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated. No real LLM APIs, real platform APIs, crawlers, live public fetch, machine-learning dependencies, API-key printing, `.env` printing/modification, raw prompt logging, or raw user-content logging was introduced.
+
+Known limitations:
+
+- Forecasting is deterministic and rule-based; it is a triage aid, not a guaranteed prediction.
+- Forecast persistence is intentionally not added yet; results are derived from existing snapshots.
+- Confidence is capped at `medium` until larger evaluated historical datasets exist.
+- No real platform APIs, real LLM APIs, crawlers, or live public fetching were added.
+
+Next recommended task: run a browser/manual Risk Monitor forecast explanation click-through on seeded local data, then draft Simulation Lab / advanced V2 forecasting requirements without implementing the lab or enabling real APIs.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: QA-stabilize the expanded parser regression corpus, then add a human-labeled report quality dataset or topic-clustering quality metrics. Keep it offline-only: do not add real LLM calls, do not add real platform calls, do not enable live public fetching, and do not start real API integrations.
+Recommended next development task: run a browser/manual Risk Monitor forecast explanation click-through on seeded local data, then prepare Simulation Lab / advanced V2 forecasting requirements without enabling real LLM calls, real platform calls, live public fetching, or real API integrations.
 
 Suggested scope:
 

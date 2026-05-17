@@ -11,6 +11,7 @@ import {
   generateSummary,
   getAnalysisCase,
   getAlerts,
+  getCaseForecast,
   getAnalysisResult,
   getCaseMonitoringConfig,
   getCaseMarkdownReport,
@@ -26,6 +27,7 @@ import {
   markNotificationRead,
   runDueMonitoringJobs,
   runAnalysisCase,
+  runCaseForecast,
   runCaseMonitoringCheck,
   simulateSendNotification,
   simulateSendPendingNotifications,
@@ -96,6 +98,8 @@ function App() {
   const [markdownReport, setMarkdownReport] = useState(null)
   const [markdownLoading, setMarkdownLoading] = useState(false)
   const [caseSnapshots, setCaseSnapshots] = useState([])
+  const [caseForecast, setCaseForecast] = useState(null)
+  const [forecastLoading, setForecastLoading] = useState(false)
   const [monitoringConfig, setMonitoringConfig] = useState(null)
   const [monitoringStatus, setMonitoringStatus] = useState(null)
   const [monitoringLoading, setMonitoringLoading] = useState(false)
@@ -128,6 +132,7 @@ function App() {
     setProjectId(caseDetail.project_id || DEFAULT_PROJECT_ID)
     setKeyword(caseDetail.keyword || 'Tesla')
     setMarkdownReport(null)
+    setCaseForecast(null)
     setMonitoringStatus(null)
     setMonitoringConfig(caseDetail.monitoring_config || null)
 
@@ -160,9 +165,25 @@ function App() {
     return { notifications: caseNotifications, outboxStatus }
   }, [])
 
+  const refreshCaseForecast = useCallback(async (caseId) => {
+    if (!caseId) {
+      setCaseForecast(null)
+      return null
+    }
+    try {
+      const forecast = await getCaseForecast(caseId)
+      setCaseForecast(forecast)
+      return forecast
+    } catch {
+      setCaseForecast(null)
+      return null
+    }
+  }, [])
+
   const loadCaseMonitoring = useCallback(async (caseId) => {
     if (!caseId) {
       setCaseSnapshots([])
+      setCaseForecast(null)
       setAlerts([])
       setNotifications([])
       setNotificationOutboxStatus(null)
@@ -171,17 +192,18 @@ function App() {
       return { snapshots: [], alerts: [] }
     }
 
-    const [snapshots, caseAlertEvents, config, notificationState] = await Promise.all([
+    const [snapshots, caseAlertEvents, config, notificationState, forecast] = await Promise.all([
       listCaseSnapshots(caseId),
       listCaseAlerts(caseId),
       getCaseMonitoringConfig(caseId),
       refreshNotificationOutbox(caseId),
+      refreshCaseForecast(caseId),
     ])
     setCaseSnapshots(snapshots)
     setAlerts(caseAlertEvents)
     setMonitoringConfig(config)
-    return { snapshots, alerts: caseAlertEvents, notifications: notificationState.notifications }
-  }, [refreshNotificationOutbox])
+    return { snapshots, alerts: caseAlertEvents, notifications: notificationState.notifications, forecast }
+  }, [refreshCaseForecast, refreshNotificationOutbox])
 
   const loadProjectData = useCallback(async (nextProjectId = DEFAULT_PROJECT_ID) => {
     setLoading(true)
@@ -220,6 +242,7 @@ function App() {
       setNotifications([])
       setNotificationOutboxStatus(await getNotificationOutboxStatus())
       setCaseSnapshots([])
+      setCaseForecast(null)
       setMonitoringConfig(null)
       setMonitoringStatus(null)
     } catch (requestError) {
@@ -368,6 +391,25 @@ function App() {
       setMonitoringLoading(false)
     }
   }, [currentCase, loadCaseMonitoring])
+
+  const handleRunForecast = useCallback(async () => {
+    if (!currentCase?.case_id) {
+      setError('Please create or open a case before running a forecast.')
+      return null
+    }
+    setForecastLoading(true)
+    setError('')
+    try {
+      const forecast = await runCaseForecast(currentCase.case_id)
+      setCaseForecast(forecast)
+      return forecast
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to run deterministic risk forecast.')
+      return null
+    } finally {
+      setForecastLoading(false)
+    }
+  }, [currentCase])
 
   const handleEnableMonitoring = useCallback(async () => {
     if (!currentCase?.case_id) {
@@ -547,6 +589,8 @@ function App() {
     keyword,
     loading,
     caseSnapshots,
+    caseForecast,
+    forecastLoading,
     markdownLoading,
     markdownReport,
     monitoringConfig,
@@ -566,6 +610,7 @@ function App() {
     onRefreshCases: refreshCases,
     onRunCase: handleRunCase,
     onRunDueMonitoringJobs: handleRunDueMonitoringJobs,
+    onRunForecast: handleRunForecast,
     onRunMonitoringCheck: handleRunMonitoringCheck,
     onSimulateSendNotification: handleSimulateSendNotification,
     onSimulateSendPendingNotifications: handleSimulateSendPendingNotifications,

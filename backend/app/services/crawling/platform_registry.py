@@ -15,6 +15,9 @@ from app.services.crawling.douban_adapter import (
 )
 from app.services.crawling.douyin_adapter import (
     DOUYIN_API_APPROVAL_STATUS,
+    DOUYIN_COMMENT_API_STATUS,
+    DOUYIN_DEVELOPER_ACCESS_STATUS,
+    DOUYIN_REAL_MODE_BLOCKER,
     DOUYIN_REQUIRED_CREDENTIALS,
 )
 from app.services.crawling.kuaishou_adapter import (
@@ -29,6 +32,9 @@ from app.services.crawling.toutiao_adapter import (
 from app.services.crawling.weibo_adapter import WEIBO_API_APPROVAL_STATUS, WEIBO_REQUIRED_CREDENTIALS
 from app.services.crawling.xiaohongshu_adapter import (
     XIAOHONGSHU_API_APPROVAL_STATUS,
+    XIAOHONGSHU_COMMENT_API_STATUS,
+    XIAOHONGSHU_DEVELOPER_ACCESS_STATUS,
+    XIAOHONGSHU_REAL_MODE_BLOCKER,
     XIAOHONGSHU_REQUIRED_CREDENTIALS,
 )
 from app.services.crawling.zhihu_adapter import ZHIHU_API_APPROVAL_STATUS, ZHIHU_REQUIRED_CREDENTIALS
@@ -60,6 +66,9 @@ class PlatformRegistryItem:
     real_mode_available: bool = False
     api_approval_required: bool = False
     api_approval_status: str = API_APPROVAL_NOT_REQUIRED
+    developer_access_status: str | None = None
+    comment_api_status: str | None = None
+    real_mode_blocker: str | None = None
     credentials_required: tuple[str, ...] = ()
     selectable_for_real: bool = False
 
@@ -77,6 +86,9 @@ class PlatformRegistryItem:
             real_mode_available=self.real_mode_available,
             api_approval_required=self.api_approval_required,
             api_approval_status=self.api_approval_status,
+            developer_access_status=self.developer_access_status,
+            comment_api_status=self.comment_api_status,
+            real_mode_blocker=self.real_mode_blocker,
             credentials_required=list(self.credentials_required),
             credentials_present=credentials_present,
             api_pending=self.api_pending,
@@ -204,11 +216,15 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         official_platform_url="https://developer.open-douyin.com",
         notes=(
             "Selectable for offline Douyin-style mock short-video/comment analysis. "
-            "Real official API mode is disabled until credentials, approval, and "
-            "the compliant API implementation are added. No page scraping is implemented."
+            "Developer access is reported as obtained, but official comment permission is "
+            "not yet verified. Real official API mode is disabled until the comment scope "
+            "and compliant API implementation are confirmed. No page scraping is implemented."
         ),
         api_approval_required=True,
         api_approval_status=DOUYIN_API_APPROVAL_STATUS,
+        developer_access_status=DOUYIN_DEVELOPER_ACCESS_STATUS,
+        comment_api_status=DOUYIN_COMMENT_API_STATUS,
+        real_mode_blocker=DOUYIN_REAL_MODE_BLOCKER,
         credentials_required=DOUYIN_REQUIRED_CREDENTIALS,
     ),
     PlatformRegistryItem(
@@ -246,11 +262,16 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         official_platform_url="https://open.xiaohongshu.com",
         notes=(
             "Selectable for offline Xiaohongshu-style mock lifestyle/community note analysis. "
-            "Real official API mode is disabled until credentials, approval, and "
-            "the compliant API implementation are added. No page scraping is implemented."
+            "Developer access is reported as obtained, but note/comment API availability "
+            "and permission are not yet verified. Real official API mode is disabled until "
+            "the official data product and compliant API implementation are confirmed. "
+            "No page scraping is implemented."
         ),
         api_approval_required=True,
         api_approval_status=XIAOHONGSHU_API_APPROVAL_STATUS,
+        developer_access_status=XIAOHONGSHU_DEVELOPER_ACCESS_STATUS,
+        comment_api_status=XIAOHONGSHU_COMMENT_API_STATUS,
+        real_mode_blocker=XIAOHONGSHU_REAL_MODE_BLOCKER,
         credentials_required=XIAOHONGSHU_REQUIRED_CREDENTIALS,
     ),
     PlatformRegistryItem(

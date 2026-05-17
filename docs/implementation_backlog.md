@@ -421,7 +421,8 @@ Completed:
 - Douyin official API adapter scaffold is implemented in mock mode.
 - `adapter_factory.get_adapter("douyin")` returns the Douyin adapter.
 - `/api/v1/crawl/start` can return Douyin-style normalized mock short-video `RawPost` and visible-comment `RawComment` data with safe adapter metadata.
-- `DOUYIN_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Douyin API calls are made.
+- `DOUYIN_ADAPTER_MODE=real` is safely blocked as `api_pending:permission_not_verified` when credentials are present or `config_error` when credentials are missing; no real Douyin API calls are made.
+- Douyin developer access is recorded as obtained by the user, but comment permission is not yet verified.
 - Douyin scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
 - Douyin scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Latest local/Codex validation passed with focused Douyin/adapter/crawl/registry checks (`20 passed in 0.67s`) and full `python -m pytest` (`213 passed in 3.10s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
@@ -435,7 +436,8 @@ Completed:
 - Xiaohongshu official API adapter scaffold is implemented in mock mode.
 - `adapter_factory.get_adapter("xiaohongshu")` returns the Xiaohongshu adapter.
 - `/api/v1/crawl/start` can return Xiaohongshu-style normalized mock lifestyle/community note `RawPost` and visible-comment `RawComment` data with safe adapter metadata.
-- `XIAOHONGSHU_ADAPTER_MODE=real` is safely blocked as `api_pending` or `config_error`; no real Xiaohongshu API calls are made.
+- `XIAOHONGSHU_ADAPTER_MODE=real` is safely blocked as `api_pending:permission_not_verified` when credentials are present or `config_error` when credentials are missing; no real Xiaohongshu API calls are made.
+- Xiaohongshu developer access is recorded as obtained by the user, but official note/comment API availability is not yet verified.
 - Xiaohongshu scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
 - Xiaohongshu scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Latest local/Codex validation passed with focused Xiaohongshu/adapter/crawl/registry checks (`63 passed in 0.77s`) and full `python -m pytest` (`237 passed in 2.90s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
@@ -471,8 +473,11 @@ Near-term candidates:
 - Frontend/API mock data source selector QA for Keyword Search and case creation across Reddit plus all eight official API scaffolds
 - Weibo official API application and approved implementation, only after permission scopes and compliance review are complete
 - Bilibili real API application and approved implementation
+- Douyin comment API permission verification in the Douyin developer console, including interaction/comment management, `item.comment` or equivalent scope, keyword video comment management if applicable, and user authorization limits
+- Douyin real-mode minimal integration only after comment permission and official payload shapes are confirmed
 - Kuaishou real API application and approved implementation, only after permission scopes and compliance review are complete
-- Xiaohongshu real API application and approved implementation, only after permission scopes and compliance review are complete
+- Xiaohongshu note/comment API permission verification in the Xiaohongshu developer console, including whether comments are available through an official API and whether access is limited to own account, merchant, Ark, ad, or approved creator content
+- Xiaohongshu real-mode minimal integration only after note/comment API availability, scope, and official payload shapes are confirmed
 - Zhihu real API application and approved implementation, only after permission scopes and compliance review are complete
 - Douban real API application and approved implementation, only after permission scopes and compliance review are complete
 - Toutiao real API application and approved implementation, only after permission scopes and compliance review are complete
@@ -583,6 +588,7 @@ Completed:
 - Added the v4.4 deterministic report quality rubric with a `report_quality_rubric` offline benchmark suite. The rubric checks completeness, risk explanation quality, actionability, safety/professionalism, language/formatting, representative comment preservation, and Markdown report quality without using real LLMs.
 - Expanded the v4.5 public parser regression corpus with synthetic per-platform variants for missing author, missing `created_at`, no comments, extra whitespace, nested content, changed container classes, and partial/malformed HTML across `the_paper`, `jiemian`, `hupu`, `tieba`, `nga`, and `maimai`.
 - Added per-platform parser corpus status to the offline benchmark summary so fixture-case/check pass-fail counts can be tracked without exposing raw HTML payloads.
+- Added the v4.5 deterministic public-opinion forecasting foundation over persisted monitoring snapshots, including forecast schemas, case forecast endpoints, Risk Monitor UI panel, and an offline `forecasting` benchmark suite.
 
 Validation:
 
@@ -596,6 +602,9 @@ Validation:
 - v4.4 report quality rubric validation passed with focused rubric/benchmark tests (`23 passed in 0.91s`), full backend tests (`432 passed in 3.54s`), and offline benchmarks (`273 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
 - v4.4 report quality rubric QA stabilization passed with focused rubric/benchmark route tests (`24 passed in 0.92s`), full backend tests (`433 passed in 3.52s`), and offline benchmarks (`273 passed, 0 failed, 0 warnings`, `report_quality_rubric: 27 passed`, `no_regression`). QA coverage now explicitly checks dimension-key completeness, secret/private-data finding codes, and benchmark regression tracking for the `report_quality_rubric` suite. Frontend build was not run because no frontend files changed.
 - v4.5 parser regression corpus validation passed with parser/benchmark tests (`46 passed in 0.82s`), full backend tests (`436 passed in 3.98s`), and offline benchmarks with generated summary/history output (`390 passed, 0 failed, 0 warnings`, `public_parser_fixtures: 156 passed`, `no_regression`). Frontend build was not run because no frontend files changed.
+- v4.5 forecasting foundation validation passed with forecast/benchmark tests (`20 passed`), full backend tests (`450 passed in 4.54s`), offline benchmarks with generated summary/history output (`447 passed, 0 failed, 0 warnings`, `forecasting: 57 passed`, `no_regression`), and frontend build in 8.02s with the existing non-blocking vendor chunk warning.
+- v4.5 deterministic forecasting QA stabilization is complete. The pass revalidated no/one/multiple snapshot behavior, conservative confidence rules, risk-level mapping, score clamping, topic forecasts, real-crisis/manipulation forecasts, Risk Monitor forecast-panel source wiring and browser smoke, forecast endpoints, and the offline forecasting benchmark suite. Full backend tests passed with `451 passed in 4.30s`, offline benchmarks passed with `447 passed, 0 failed, 0 warnings`, and frontend build passed in 7.79s with the existing non-blocking vendor chunk warning.
+- Forecasting dashboard explanation polish is complete. The Risk Monitor forecast panel now explains forecast status, trend rationale, primary deterministic drivers, history sufficiency, confidence meaning, and recommended action, with an explicit deterministic-MVP disclaimer. Frontend build passed in 7.62s, and browser smoke confirmed the explanation cards on seeded local data; backend tests and offline benchmarks were not rerun because no backend or benchmark code changed.
 - GitHub Actions CI remains intentionally disabled unless explicitly requested later.
 
 Future evaluation tasks:
@@ -609,6 +618,9 @@ Future evaluation tasks:
 - Add dedicated markdown export rubric checks if report format begins to diverge by report type.
 - Expand benchmark history UX with charts after the local file-based history format is stable.
 - Add benchmark drill-down views only after a safe redaction/review model for per-case payloads exists.
+- Add larger synthetic/historical forecast evaluation cases before any advanced forecasting work.
+- Draft a Simulation Lab / forecast scenario design before implementation, including safe mock-only controls, no real-data calls, and benchmark expectations.
+- Add V2 dynamic risk forecasting only after topic history, baselines, and benchmark expectations are stable.
 - Add LLM output evaluation fixtures before any real LLM provider is enabled.
 - Add platform-specific integration benchmarks with mocked clients before any real platform API is enabled.
 - Keep GitHub Actions CI intentionally disabled unless explicitly requested later.

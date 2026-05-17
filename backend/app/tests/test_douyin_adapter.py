@@ -7,6 +7,10 @@ import pytest
 from app.schemas.comment import RawComment, RawPost
 from app.services.crawling.adapter_factory import get_adapter, has_platform_adapter
 from app.services.crawling.douyin_adapter import (
+    DOUYIN_API_APPROVAL_STATUS,
+    DOUYIN_COMMENT_API_STATUS,
+    DOUYIN_DEVELOPER_ACCESS_STATUS,
+    DOUYIN_REAL_MODE_BLOCKER,
     DOUYIN_REQUIRED_CREDENTIALS,
     DouyinAdapter,
     DouyinCredentials,
@@ -182,6 +186,10 @@ def test_douyin_real_mode_missing_credentials_does_not_crash(monkeypatch: pytest
     assert metadata["sanitized_error_category"] == "config_error"
     assert metadata["real_mode_available"] is False
     assert metadata["api_pending"] is True
+    assert metadata["api_approval_status"] == DOUYIN_API_APPROVAL_STATUS
+    assert metadata["developer_access_status"] == DOUYIN_DEVELOPER_ACCESS_STATUS
+    assert metadata["comment_api_status"] == DOUYIN_COMMENT_API_STATUS
+    assert metadata["real_mode_blocker"] == DOUYIN_REAL_MODE_BLOCKER
     assert posts[0].platform == "douyin"
 
 
@@ -203,10 +211,14 @@ def test_douyin_real_mode_returns_api_pending_without_network(monkeypatch: pytes
     assert adapter.has_required_credentials() is True
     assert adapter.is_real_mode_enabled() is False
     assert adapter.supports_real_mode() is False
-    assert adapter.fallback_reason == "api_pending:douyin_official_api_not_implemented"
+    assert adapter.fallback_reason == "api_pending:permission_not_verified"
     assert health.real_mode_available is False
     assert metadata["fetch_status"] == "api_pending"
     assert metadata["sanitized_error_category"] == "api_pending"
+    assert metadata["api_approval_status"] == DOUYIN_API_APPROVAL_STATUS
+    assert metadata["developer_access_status"] == DOUYIN_DEVELOPER_ACCESS_STATUS
+    assert metadata["comment_api_status"] == DOUYIN_COMMENT_API_STATUS
+    assert metadata["real_mode_blocker"] == DOUYIN_REAL_MODE_BLOCKER
     assert metadata["real_mode_reached"] is False
     assert posts[0].raw_data["mode"] == "mock"
 

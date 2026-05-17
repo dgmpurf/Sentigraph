@@ -16,7 +16,10 @@ DOUYIN_REQUIRED_CREDENTIALS = (
     "DOUYIN_CLIENT_SECRET",
     "DOUYIN_ACCESS_TOKEN",
 )
-DOUYIN_API_APPROVAL_STATUS = "planned"
+DOUYIN_API_APPROVAL_STATUS = "developer_access_obtained_permission_unverified"
+DOUYIN_DEVELOPER_ACCESS_STATUS = "obtained"
+DOUYIN_COMMENT_API_STATUS = "unknown_or_permission_required"
+DOUYIN_REAL_MODE_BLOCKER = "permission_not_verified"
 DOUYIN_MOCK_POST_LIMIT = 100
 DOUYIN_MOCK_COMMENT_LIMIT = 500
 
@@ -61,7 +64,7 @@ class DouyinAdapter(BasePlatformAdapter):
         if self.requested_mode == "real" and not self.credentials:
             self.fallback_reason = "config_error:missing_douyin_credentials"
         elif self.requested_mode == "real":
-            self.fallback_reason = "api_pending:douyin_official_api_not_implemented"
+            self.fallback_reason = "api_pending:permission_not_verified"
 
         super().__init__(mode="mock")
 
@@ -84,7 +87,10 @@ class DouyinAdapter(BasePlatformAdapter):
     def health_check(self) -> AdapterHealth:
         if self.requested_mode == "real":
             if self.has_required_credentials():
-                message = "Douyin official API mode is planned but disabled until approval and implementation are added."
+                message = (
+                    "Douyin official API mode is planned but disabled until comment API "
+                    "permission is verified and implementation is added."
+                )
             else:
                 message = "Douyin official API mode was requested, but credentials are missing; using mock data."
         else:
@@ -115,6 +121,9 @@ class DouyinAdapter(BasePlatformAdapter):
             "real_mode_available": False,
             "api_approval_required": self.api_approval_required,
             "api_approval_status": self.api_approval_status,
+            "developer_access_status": DOUYIN_DEVELOPER_ACCESS_STATUS,
+            "comment_api_status": DOUYIN_COMMENT_API_STATUS,
+            "real_mode_blocker": DOUYIN_REAL_MODE_BLOCKER,
             "api_pending": self.api_pending,
             "real_mode_disabled": self.real_mode_disabled,
             "selectable_for_real": self.selectable_for_real,

@@ -24,9 +24,10 @@ from app.schemas.analysis import (  # noqa: E402
     BotScore,
     RiskBrief,
 )
+from app.schemas.alert import AnalysisSnapshot  # noqa: E402
 from app.schemas.case import AnalysisCaseDetail  # noqa: E402
 from app.schemas.comment import CleanComment, RawComment, RawPost  # noqa: E402
-from app.schemas.risk import TOPIC_RISK_MODEL_VERSION, TopicRiskScoreResult  # noqa: E402
+from app.schemas.risk import TOPIC_RISK_MODEL_VERSION, TopicRiskScore, TopicRiskScoreResult  # noqa: E402
 from app.services.case_store import _build_markdown  # noqa: E402
 from app.services.crawling.adapter_factory import get_adapter  # noqa: E402
 from app.services.crawling.public_parser.base_public_parser import BasePublicParser  # noqa: E402
@@ -40,6 +41,7 @@ from app.services.crawling.public_parser.selector_repair.selector_repair_service
     suggest_selectors,
 )
 from app.services.evaluation.report_quality_rubric import evaluate_report_quality  # noqa: E402
+from app.services.forecasting.forecast_service import compute_forecast_from_snapshots  # noqa: E402
 from app.services.llm.usage_guardrails import reset_usage_for_tests  # noqa: E402
 from app.services.nlp.sentiment_analyzer import SentimentAnalyzer  # noqa: E402
 from app.services.nlp.topic_clusterer import TopicClusterer  # noqa: E402
@@ -59,6 +61,7 @@ EXPECTED_FIXTURE_FILES = (
     "selector_repair_cases.json",
     "parser_fixture_cases.json",
     "adapter_mock_cases.json",
+    "forecast_cases.json",
 )
 SAFE_ENV_DEFAULTS = {
     "LLM_PROVIDER": "mock",
@@ -127,6 +130,7 @@ def run_all_benchmarks(
         _safe_run_suite("report_builder", lambda: _run_report_builder_benchmark(fixture_root)),
         _safe_run_suite("report_quality_rubric", lambda: _run_report_quality_rubric_benchmark(fixture_root)),
         _safe_run_suite("markdown_export", lambda: _run_markdown_export_benchmark(fixture_root)),
+        _safe_run_suite("forecasting", lambda: _run_forecasting_benchmark(fixture_root)),
         _safe_run_suite("selector_repair", lambda: _run_selector_repair_benchmark(fixture_root)),
         _safe_run_suite("public_parser_fixtures", lambda: _run_public_parser_benchmark(fixture_root)),
         _safe_run_suite("platform_adapter_mocks", lambda: _run_adapter_mock_benchmark(fixture_root)),
@@ -479,6 +483,163 @@ def _run_markdown_export_benchmark(fixture_root: Path) -> dict[str, Any]:
             "Markdown export includes required benchmark sections",
             {"markdown_length": len(markdown)},
         )
+    return recorder.summary()
+
+
+def _run_forecasting_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("forecasting")
+    cases = _load_json(fixture_root / "forecast_cases.json")
+    for case in cases:
+        case_id = str(case["case_id"])
+        snapshots = _forecast_snapshots_from_fixture(case)
+        forecast = compute_forecast_from_snapshots(case_id, snapshots)
+        expected = case.get("expected", {})
+        details = {
+            "snapshot_count": forecast.snapshot_count,
+            "forecast_status": forecast.forecast_status,
+            "forecast_confidence": forecast.forecast_confidence,
+            "trend_direction": forecast.trend_direction,
+            "predicted_risk_score": forecast.predicted_risk_score,
+            "predicted_real_crisis_risk": forecast.predicted_real_crisis_risk,
+            "predicted_manipulation_risk": forecast.predicted_manipulation_risk,
+            "topic_forecast_count": len(forecast.topic_forecasts),
+        }
+        recorder.check(
+            f"{case_id}:score_range",
+            0 <= forecast.predicted_risk_score <= 100
+            and 0 <= forecast.predicted_real_crisis_risk <= 100
+            and 0 <= forecast.predicted_manipulation_risk <= 100
+            and all(0 <= item.predicted_risk_score <= 100 for item in forecast.risk_forecasts)
+            and all(0 <= item.predicted_topic_risk_score <= 100 for item in forecast.topic_forecasts),
+            "forecast scores stay clamped to 0-100",
+            details,
+        )
+        recorder.check(
+            f"{case_id}:horizons",
+            forecast.forecast_status == "insufficient_history"
+            or [item.horizon for item in forecast.risk_forecasts] == ["next_check", "1h", "6h", "24h"],
+            "ready forecasts include deterministic next_check, 1h, 6h, and 24h horizons",
+            {"horizons": [item.horizon for item in forecast.risk_forecasts]},
+        )
+        if expected.get("forecast_status"):
+            recorder.check(
+                f"{case_id}:status",
+                forecast.forecast_status == expected["forecast_status"],
+                "forecast status matches coarse expectation",
+                details,
+            )
+        if expected.get("forecast_confidence"):
+            recorder.check(
+                f"{case_id}:confidence",
+                forecast.forecast_confidence == expected["forecast_confidence"],
+                "forecast confidence follows snapshot-count policy",
+                details,
+            )
+        if expected.get("trend_direction"):
+            recorder.check(
+                f"{case_id}:trend",
+                forecast.trend_direction == expected["trend_direction"],
+                "risk trend direction matches deterministic fixture expectation",
+                details,
+            )
+        if "min_predicted_risk" in expected:
+            recorder.check(
+                f"{case_id}:min_predicted",
+                forecast.predicted_risk_score >= float(expected["min_predicted_risk"]),
+                "predicted risk meets minimum coarse threshold",
+                details,
+            )
+        if "max_predicted_risk" in expected:
+            recorder.check(
+                f"{case_id}:max_predicted",
+                forecast.predicted_risk_score <= float(expected["max_predicted_risk"]),
+                "predicted risk stays below maximum coarse threshold",
+                details,
+            )
+        if expected.get("prediction_above_latest"):
+            recorder.check(
+                f"{case_id}:above_latest",
+                forecast.predicted_risk_score > forecast.latest_risk,
+                "rising or accelerating risk projects above the latest snapshot",
+                details,
+            )
+        if expected.get("prediction_below_latest"):
+            recorder.check(
+                f"{case_id}:below_latest",
+                forecast.predicted_risk_score < forecast.latest_risk,
+                "falling risk projects below the latest snapshot",
+                details,
+            )
+        if "min_acceleration" in expected:
+            recorder.check(
+                f"{case_id}:acceleration",
+                forecast.acceleration >= float(expected["min_acceleration"]),
+                "high acceleration fixture produces a positive acceleration signal",
+                details,
+            )
+        if expected.get("real_crisis_trend_direction"):
+            recorder.check(
+                f"{case_id}:real_crisis_trend",
+                forecast.real_crisis_trend_direction == expected["real_crisis_trend_direction"],
+                "real-crisis risk trend direction is forecast separately",
+                details,
+            )
+        if "min_predicted_real_crisis_risk" in expected:
+            recorder.check(
+                f"{case_id}:real_crisis_min",
+                forecast.predicted_real_crisis_risk >= float(expected["min_predicted_real_crisis_risk"]),
+                "real-crisis forecast meets minimum coarse threshold",
+                details,
+            )
+        if expected.get("manipulation_trend_direction"):
+            recorder.check(
+                f"{case_id}:manipulation_trend",
+                forecast.manipulation_trend_direction == expected["manipulation_trend_direction"],
+                "manipulation risk trend direction is forecast separately",
+                details,
+            )
+        if "min_predicted_manipulation_risk" in expected:
+            recorder.check(
+                f"{case_id}:manipulation_min",
+                forecast.predicted_manipulation_risk >= float(expected["min_predicted_manipulation_risk"]),
+                "manipulation forecast meets minimum coarse threshold",
+                details,
+            )
+        if "min_topic_forecasts" in expected:
+            recorder.check(
+                f"{case_id}:topic_count",
+                len(forecast.topic_forecasts) >= int(expected["min_topic_forecasts"]),
+                "topic-level forecast is generated when top risk topics are present",
+                details,
+            )
+        if expected.get("top_topic") and forecast.topic_forecasts:
+            topic_forecast = forecast.topic_forecasts[0]
+            recorder.check(
+                f"{case_id}:top_topic",
+                topic_forecast.topic == expected["top_topic"],
+                "expected top forecast topic remains deterministic",
+                {"topic": topic_forecast.topic, "predicted_topic_risk_score": topic_forecast.predicted_topic_risk_score},
+            )
+            if expected.get("topic_trend_direction"):
+                recorder.check(
+                    f"{case_id}:topic_trend",
+                    topic_forecast.trend_direction == expected["topic_trend_direction"],
+                    "topic forecast trend direction matches expected fixture direction",
+                    {
+                        "topic": topic_forecast.topic,
+                        "trend_direction": topic_forecast.trend_direction,
+                    },
+                )
+            if "min_predicted_topic_risk" in expected:
+                recorder.check(
+                    f"{case_id}:topic_min",
+                    topic_forecast.predicted_topic_risk_score >= float(expected["min_predicted_topic_risk"]),
+                    "topic forecast risk meets minimum coarse threshold",
+                    {
+                        "topic": topic_forecast.topic,
+                        "predicted_topic_risk_score": topic_forecast.predicted_topic_risk_score,
+                    },
+                )
     return recorder.summary()
 
 
@@ -905,6 +1066,67 @@ def _raw_comment_from_fixture(item: dict[str, Any]) -> RawComment:
         url=f"https://example.invalid/benchmark/{comment_id}",
         raw_data={"mode": "offline_benchmark"},
     )
+
+
+def _forecast_snapshots_from_fixture(case: dict[str, Any]) -> list[AnalysisSnapshot]:
+    base_time = datetime(2026, 5, 17, 12, 0, tzinfo=timezone.utc)
+    snapshots = []
+    for index, item in enumerate(case.get("snapshots") or [], start=1):
+        risk_score = float(item.get("risk_score", 0.0))
+        snapshots.append(
+            AnalysisSnapshot(
+                snapshot_id=f"{case['case_id']}_snapshot_{index:03d}",
+                case_id=str(case["case_id"]),
+                created_at=base_time.replace(minute=min(index, 59)),
+                run_index=index,
+                risk_score=risk_score,
+                overall_risk=risk_score,
+                risk_level=_risk_level_for_score(risk_score),
+                risk_model_version=TOPIC_RISK_MODEL_VERSION,
+                real_crisis_risk=float(item.get("real_crisis_risk", 0.0)),
+                manipulation_risk=float(item.get("manipulation_risk", 0.0)),
+                top_risk_topics=[
+                    _forecast_topic_from_fixture(topic, topic_index)
+                    for topic_index, topic in enumerate(item.get("topic_risks") or [], start=1)
+                ],
+                summary="Synthetic offline benchmark forecast snapshot.",
+            )
+        )
+    return snapshots
+
+
+def _forecast_topic_from_fixture(item: dict[str, Any], index: int) -> TopicRiskScore:
+    score = float(item.get("topic_risk_score", 0.0))
+    topic_id = str(item.get("topic_id") or f"topic_{index}")
+    topic = str(item.get("topic") or "Synthetic forecast topic")
+    return TopicRiskScore(
+        topic_id=topic_id,
+        cluster_id=str(item.get("cluster_id") or topic_id),
+        topic=topic,
+        comment_count=int(item.get("comment_count", 12)),
+        negative_ratio=float(item.get("negative_ratio", 0.55)),
+        average_sentiment_score=float(item.get("average_sentiment_score", -0.35)),
+        neg_severity=float(item.get("neg_severity", 0.45)),
+        spread_signal=float(item.get("spread_signal", 0.45)),
+        controversy_signal=float(item.get("controversy_signal", 0.25)),
+        bot_signal=float(item.get("bot_signal", 0.1)),
+        influence_proxy=float(item.get("influence_proxy", 0.4)),
+        topic_risk_score=score,
+        topic_risk_level=_risk_level_for_score(score),
+        risk_explanation=str(item.get("risk_explanation") or "Synthetic benchmark topic forecast signal."),
+        risk_score=score,
+        risk_level=_risk_level_for_score(score),
+    )
+
+
+def _risk_level_for_score(score: float) -> str:
+    if score >= 85:
+        return "critical"
+    if score >= 70:
+        return "high"
+    if score >= 40:
+        return "medium"
+    return "low"
 
 
 def _find_topic(result: TopicRiskScoreResult, topic_name: str):

@@ -25,6 +25,7 @@ import {
   RadioTower,
   Send,
   ShieldAlert,
+  TrendingUp,
 } from 'lucide-react'
 
 import { PlatformHeatmapChart } from '../components/charts/PlatformHeatmapChart.jsx'
@@ -85,6 +86,32 @@ const channelTypeLabels = {
   slack_placeholder: 'Slack 占位',
   enterprise_wechat_placeholder: '企业微信占位',
   feishu_placeholder: '飞书占位',
+}
+
+const trendDirectionLabels = {
+  rising: '上升',
+  falling: '下降',
+  stable: '稳定',
+  unknown: '未知',
+}
+
+const forecastConfidenceLabels = {
+  insufficient_history: '历史不足',
+  low: '低',
+  medium_low: '中低',
+  medium: '中等',
+}
+
+const forecastHorizonLabels = {
+  next_check: '下一检查点',
+  '1h': '1 小时',
+  '6h': '6 小时',
+  '24h': '24 小时',
+}
+
+const forecastStatusLabels = {
+  ready: '可用',
+  insufficient_history: '历史不足',
 }
 
 const radarLabels = [
@@ -220,12 +247,330 @@ function buildTopDrivers(report, latestSnapshot, riskRadar) {
   return [...topicDrivers, ...signalDrivers].slice(0, 5)
 }
 
+function signedScore(value) {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return '0.0'
+  return `${numericValue > 0 ? '+' : ''}${numericValue.toFixed(1)}`
+}
+
+function getPrimaryForecastReason(forecast, horizonForecasts = []) {
+  const primary = horizonForecasts.find((item) => item.horizon === forecast?.horizon) || horizonForecasts[0]
+  return primary?.forecast_reason || ''
+}
+
+function getTrendExplanationTitle(direction) {
+  if (direction === 'rising') return '为什么风险上升'
+  if (direction === 'falling') return '为什么风险下降'
+  if (direction === 'stable') return '为什么风险稳定'
+  return '为什么趋势不确定'
+}
+
+function buildTrendExplanation(forecast) {
+  const snapshotCount = Number(forecast?.snapshot_count || 0)
+  if (snapshotCount < 2) {
+    return '历史快照数量不足，当前只能把最新风险值作为低置信度基线，暂不判断明确上升或下降。'
+  }
+
+  const slopeText = signedScore(forecast?.slope)
+  const accelerationText = signedScore(forecast?.acceleration)
+  const predictedText = scoreText(forecast?.predicted_risk_score)
+
+  if (forecast?.trend_direction === 'rising') {
+    return `最近 ${snapshotCount} 个监控快照的平均斜率为 ${slopeText}，加速度为 ${accelerationText}，下一检查点预测风险为 ${predictedText}/100，因此标记为上升趋势。`
+  }
+  if (forecast?.trend_direction === 'falling') {
+    return `最近 ${snapshotCount} 个监控快照的平均斜率为 ${slopeText}，风险压力正在回落，下一检查点预测风险为 ${predictedText}/100，因此标记为下降趋势。`
+  }
+  if (forecast?.trend_direction === 'stable') {
+    return `最近 ${snapshotCount} 个监控快照变化幅度较小，斜率为 ${slopeText}，波动为 ${scoreText(forecast?.volatility)}，因此标记为稳定趋势。`
+  }
+  return '趋势方向仍不明确，建议继续运行监控以积累更多快照后再判断。'
+}
+
+function buildHistoryExplanation(forecast) {
+  const snapshotCount = Number(forecast?.snapshot_count || 0)
+  if (snapshotCount <= 0) return '历史不足：当前没有可用于预测的监控快照。'
+  if (snapshotCount === 1) return '历史不足：只有 1 个快照，只能形成低置信度基线。'
+  if (snapshotCount <= 3) return `可做初步外推：已有 ${snapshotCount} 个快照，但仍建议继续积累历史。`
+  return `历史数据较充分：已有 ${snapshotCount} 个快照，当前 MVP 最高只给到中等置信度。`
+}
+
+function buildConfidenceExplanation(forecast) {
+  const confidence = forecast?.forecast_confidence
+  if (confidence === 'insufficient_history') return '没有历史快照时不输出确定趋势，只提示继续运行监控。'
+  if (confidence === 'low') return '仅有 1 个快照，预测只作为当前状态的低置信度基线。'
+  if (confidence === 'medium_low') return '已有 2-3 个快照，可以观察初步方向，但仍不适合过度解读。'
+  if (confidence === 'medium') return '已有 4 个以上快照，足以做中等置信度的确定性趋势外推。'
+  return '置信度缺失时按保守结果展示，不把预测解释为确定事实。'
+}
+
+function buildForecastDrivers(forecast, topicForecasts = []) {
+  const drivers = []
+  const slope = Number(forecast?.slope || 0)
+  const acceleration = Number(forecast?.acceleration || 0)
+  const volatility = Number(forecast?.volatility || 0)
+
+  if (Math.abs(slope) >= 1) {
+    drivers.push({
+      label: '总体风险斜率',
+      value: signedScore(slope),
+      detail: slope > 0 ? '近期快照风险均值上移。' : '近期快照风险均值回落。',
+    })
+  }
+  if (Math.abs(acceleration) >= 1) {
+    drivers.push({
+      label: '风险加速度',
+      value: signedScore(acceleration),
+      detail: acceleration > 0 ? '最新变化比上一轮更快。' : '最新变化速度正在放缓。',
+    })
+  }
+  if (volatility >= 4) {
+    drivers.push({
+      label: '波动性',
+      value: scoreText(volatility),
+      detail: '最近快照围绕移动均值的波动较明显。',
+    })
+  }
+  if (forecast?.real_crisis_trend_direction === 'rising') {
+    drivers.push({
+      label: '真实危机风险',
+      value: `${scoreText(forecast.predicted_real_crisis_risk)}/100`,
+      detail: '事实争议、服务体验或合规安全信号正在抬升。',
+    })
+  }
+  if (forecast?.manipulation_trend_direction === 'rising') {
+    drivers.push({
+      label: '操纵传播风险',
+      value: `${scoreText(forecast.predicted_manipulation_risk)}/100`,
+      detail: '重复话术、协同扩散或异常传播信号正在抬升。',
+    })
+  }
+
+  topicForecasts.slice(0, 2).forEach((topic) => {
+    drivers.push({
+      label: topic.topic || '未来高风险话题',
+      value: `${scoreText(topic.predicted_topic_risk_score)}/100`,
+      detail: topic.forecast_reason || '话题预测沿用同一话题在历史快照中的风险变化。',
+    })
+  })
+
+  if (!drivers.length) {
+    drivers.push({
+      label: '主要驱动因素',
+      value: '暂无显著单项驱动',
+      detail: '当前预测主要沿用最新监控快照和低波动趋势。建议继续积累监控快照。',
+    })
+  }
+  return drivers.slice(0, 5)
+}
+
+function ForecastExplanationSection({ forecast, horizonForecasts = [], topicForecasts = [] }) {
+  const drivers = buildForecastDrivers(forecast, topicForecasts)
+  const primaryReason = getPrimaryForecastReason(forecast, horizonForecasts)
+  const recommendedAction = forecast?.recommended_action || '建议继续运行监控以积累快照。'
+
+  return (
+    <Space direction="vertical" size={12} className="forecast-explanation-section">
+      <Alert
+        className="forecast-disclaimer-alert"
+        message="预测解释"
+        description="当前预测为基于历史快照的确定性 MVP 趋势外推，不代表真实未来必然发生。"
+        type="info"
+        showIcon
+      />
+      <div className="forecast-explanation-grid">
+        <div className="forecast-explanation-card">
+          <Space className="analysis-signal-line" wrap>
+            <Title level={5}>{getTrendExplanationTitle(forecast?.trend_direction)}</Title>
+            <Tag color="cyan">{forecastStatusLabels[forecast?.forecast_status] || forecast?.forecast_status || '未知'}</Tag>
+          </Space>
+          <Paragraph>{buildTrendExplanation(forecast)}</Paragraph>
+          {primaryReason ? <Text type="secondary">算法说明：{primaryReason}</Text> : null}
+        </div>
+
+        <div className="forecast-explanation-card">
+          <Title level={5}>主要驱动因素</Title>
+          <div className="forecast-driver-list">
+            {drivers.map((driver) => (
+              <div className="forecast-driver-chip" key={`${driver.label}-${driver.value}`}>
+                <Space className="analysis-signal-line" wrap>
+                  <Text strong>{driver.label}</Text>
+                  <Tag color="geekblue">{driver.value}</Tag>
+                </Space>
+                <Text type="secondary">{driver.detail}</Text>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="forecast-explanation-card">
+          <Title level={5}>历史数据是否足够</Title>
+          <Paragraph>{buildHistoryExplanation(forecast)}</Paragraph>
+          <Text type="secondary">建议继续运行监控以积累快照，尤其是在舆情快速变化时提高检查频率。</Text>
+        </div>
+
+        <div className="forecast-explanation-card">
+          <Title level={5}>置信度说明</Title>
+          <Paragraph>{buildConfidenceExplanation(forecast)}</Paragraph>
+          <Text type="secondary">建议动作：{recommendedAction}</Text>
+        </div>
+      </div>
+    </Space>
+  )
+}
+
+function ForecastPanel({ forecast, loading = false, onRunForecast }) {
+  const isInsufficient = forecast?.forecast_status === 'insufficient_history'
+  const topicForecasts = forecast?.topic_forecasts || []
+  const horizonForecasts = forecast?.risk_forecasts || []
+
+  return (
+    <Card className="panel-card forecast-panel-card">
+      <div className="panel-heading">
+        <Space>
+          <TrendingUp size={18} />
+          <Title level={4}>风险预测</Title>
+        </Space>
+        <Space wrap>
+          <Tag color="cyan">Deterministic MVP</Tag>
+          <Button icon={<TrendingUp size={15} />} loading={loading} onClick={onRunForecast}>
+            运行风险预测
+          </Button>
+        </Space>
+      </div>
+      {loading ? (
+        <Skeleton active paragraph={{ rows: 5 }} title={false} />
+      ) : !forecast ? (
+        <Empty description="暂无风险预测结果。运行监控检查后可生成 deterministic mock 预测。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      ) : isInsufficient ? (
+        <Space direction="vertical" size={14} className="full-width">
+          <Alert
+            message="历史不足，需更多监控快照"
+            description={forecast.recommended_action || forecast.message}
+            type="warning"
+            showIcon
+          />
+          <Text type="secondary">
+            当前快照数：{forecast.snapshot_count || 0}。预测仅基于已持久化的监控快照，不会调用真实平台或大模型。
+          </Text>
+          <ForecastExplanationSection forecast={forecast} horizonForecasts={horizonForecasts} topicForecasts={topicForecasts} />
+        </Space>
+      ) : (
+        <Space direction="vertical" size={18} className="full-width">
+          <div className="forecast-metric-grid">
+            <div className="forecast-metric-tile">
+              <Text type="secondary">预测风险</Text>
+              <Title level={3}>{scoreText(forecast.predicted_risk_score)}/100</Title>
+              <Progress
+                percent={scorePercent(forecast.predicted_risk_score)}
+                showInfo={false}
+                strokeColor="#ff5d8f"
+                trailColor="#283043"
+              />
+            </div>
+            <div className="forecast-metric-tile">
+              <Text type="secondary">预测等级</Text>
+              <Tag color={riskTone(forecast.predicted_risk_level)} className="large-tag">
+                {riskLevelLabels[forecast.predicted_risk_level] || forecast.predicted_risk_level}
+              </Tag>
+              <Text>{forecastHorizonLabels[forecast.horizon] || forecast.horizon}</Text>
+            </div>
+            <div className="forecast-metric-tile">
+              <Text type="secondary">趋势方向</Text>
+              <Title level={4}>{trendDirectionLabels[forecast.trend_direction] || forecast.trend_direction}</Title>
+              <Text type="secondary">斜率 {scoreText(forecast.slope)} · 波动 {scoreText(forecast.volatility)}</Text>
+            </div>
+            <div className="forecast-metric-tile">
+              <Text type="secondary">预测置信度</Text>
+              <Title level={4}>{forecastConfidenceLabels[forecast.forecast_confidence] || forecast.forecast_confidence}</Title>
+              <Text type="secondary">基于 {forecast.snapshot_count} 个监控快照</Text>
+            </div>
+          </div>
+
+          <Row gutter={[12, 12]}>
+            <Col span={12}>
+              <div className="forecast-risk-signal">
+                <Text type="secondary">真实危机风险预测</Text>
+                <Space wrap>
+                  <Text strong>{scoreText(forecast.predicted_real_crisis_risk)}/100</Text>
+                  <Tag color="gold">{trendDirectionLabels[forecast.real_crisis_trend_direction] || forecast.real_crisis_trend_direction}</Tag>
+                </Space>
+              </div>
+            </Col>
+            <Col span={12}>
+              <div className="forecast-risk-signal">
+                <Text type="secondary">操纵传播风险预测</Text>
+                <Space wrap>
+                  <Text strong>{scoreText(forecast.predicted_manipulation_risk)}/100</Text>
+                  <Tag color="cyan">{trendDirectionLabels[forecast.manipulation_trend_direction] || forecast.manipulation_trend_direction}</Tag>
+                </Space>
+              </div>
+            </Col>
+          </Row>
+
+          <Paragraph className="dashboard-summary-copy">
+            {forecast.message || forecast.recommended_action || 'Deterministic MVP 预测已生成。'}
+          </Paragraph>
+
+          <ForecastExplanationSection forecast={forecast} horizonForecasts={horizonForecasts} topicForecasts={topicForecasts} />
+
+          <div>
+            <Space className="analysis-signal-line" wrap>
+              <Title level={5}>未来高风险话题</Title>
+              <Tag color="geekblue">{topicForecasts.length}</Tag>
+            </Space>
+            <List
+              className="forecast-topic-list"
+              grid={{ gutter: 12, column: 3 }}
+              dataSource={topicForecasts.slice(0, 3)}
+              locale={{ emptyText: '暂无话题级预测。需要监控快照中包含 top_risk_topics。' }}
+              renderItem={(topic) => (
+                <List.Item>
+                  <div className={`forecast-topic-card risk-${topic.predicted_topic_risk_level}`}>
+                    <Space direction="vertical" className="full-width" size={8}>
+                      <Space className="analysis-signal-line" wrap>
+                        <Text strong>{topic.topic}</Text>
+                        <Tag color={riskTone(topic.predicted_topic_risk_level)}>
+                          {riskLevelLabels[topic.predicted_topic_risk_level] || topic.predicted_topic_risk_level}
+                        </Tag>
+                      </Space>
+                      <Text>
+                        当前 {scoreText(topic.current_topic_risk_score)} → 预测 {scoreText(topic.predicted_topic_risk_score)}
+                      </Text>
+                      <Text type="secondary">趋势方向：{trendDirectionLabels[topic.trend_direction] || topic.trend_direction}</Text>
+                      <Paragraph className="topic-risk-explanation">{topic.forecast_reason}</Paragraph>
+                    </Space>
+                  </div>
+                </List.Item>
+              )}
+            />
+          </div>
+
+          <div className="forecast-horizon-list">
+            {horizonForecasts.map((item) => (
+              <div key={item.horizon}>
+                <Text type="secondary">{forecastHorizonLabels[item.horizon] || item.horizon}</Text>
+                <Text strong>{scoreText(item.predicted_risk_score)}/100</Text>
+                <Tag color={riskTone(item.predicted_risk_level)}>
+                  {riskLevelLabels[item.predicted_risk_level] || item.predicted_risk_level}
+                </Tag>
+              </div>
+            ))}
+          </div>
+        </Space>
+      )}
+    </Card>
+  )
+}
+
 export function RiskMonitor({
   alerts = [],
   analysis,
+  caseForecast,
   caseSnapshots = [],
   currentCase,
   error,
+  forecastLoading = false,
   loading,
   monitoringConfig,
   monitoringLoading = false,
@@ -237,6 +582,7 @@ export function RiskMonitor({
   onEnableMonitoring,
   onMarkNotificationRead,
   onRunDueMonitoringJobs,
+  onRunForecast,
   onRunMonitoringCheck,
   onSimulateSendNotification,
   onSimulateSendPendingNotifications,
@@ -286,7 +632,7 @@ export function RiskMonitor({
   const pendingNotifications =
     notificationOutboxStatus?.pending ?? notifications.filter((item) => item.status === 'pending').length
 
-  if (!visualization && !latestSnapshot) {
+  if (!visualization && !latestSnapshot && !caseForecast) {
     return (
       <Card className="panel-card">
         {error ? <Alert message="风险监控数据加载失败" description={error} type="error" showIcon /> : null}
@@ -316,6 +662,9 @@ export function RiskMonitor({
             type="primary"
           >
             Run Mock Monitoring Check
+          </Button>
+          <Button icon={<TrendingUp size={16} />} loading={forecastLoading} onClick={onRunForecast}>
+            运行风险预测
           </Button>
           <Tag color={riskTone(riskLevel)} className="large-tag">
             {riskLevelLabels[riskLevel] || riskLevel}
@@ -438,6 +787,8 @@ export function RiskMonitor({
           </Card>
         </Col>
       </Row>
+
+      <ForecastPanel forecast={caseForecast} loading={forecastLoading} onRunForecast={onRunForecast} />
 
       <Row gutter={[16, 16]}>
         <Col span={14}>

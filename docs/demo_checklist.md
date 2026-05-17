@@ -1030,6 +1030,32 @@ Expected result:
 - Simulated sends only update local JSON state.
 - No real email, Slack, webhook, Enterprise WeChat, Feishu, SMS, push service, crawler, platform API, or external LLM is called.
 
+## 8.8 Run Deterministic Risk Forecast
+
+With a completed case selected:
+
+1. Open Risk Monitor.
+2. If the case has no snapshots yet, confirm the forecast panel shows `历史不足，需更多监控快照` or the equivalent insufficient-history state.
+3. Click `Run Mock Monitoring Check` at least twice, or use the backend monitor command below to create deterministic snapshots.
+4. Click `运行风险预测`.
+5. Confirm the `风险预测` panel shows `预测风险`, `预测等级`, `趋势方向`, `预测置信度`, `真实危机风险预测`, `操纵传播风险预测`, and `未来高风险话题` when topic data is available.
+6. Confirm the `预测解释` area shows the deterministic-MVP disclaimer, `为什么风险上升` / `为什么风险下降` / stable-or-unknown explanation, `主要驱动因素`, `历史数据是否足够`, `置信度说明`, and `建议继续运行监控以积累快照` when history is thin.
+
+Backend smoke commands:
+
+```cmd
+powershell -Command "$case = Invoke-RestMethod -Method Post 'http://127.0.0.1:8000/api/v1/cases' -ContentType 'application/json' -Body '{\"keyword\":\"Tesla\",\"platforms\":[\"reddit\",\"weibo\"],\"title\":\"v4.5 Forecast Demo\"}'; Invoke-RestMethod -Method Post \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/run\"; Invoke-RestMethod -Method Post \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/monitor/run\"; Invoke-RestMethod -Method Post \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/monitor/run\"; Invoke-RestMethod -Method Post \"http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/forecast/run\" | ConvertTo-Json -Depth 8"
+```
+
+Expected result:
+
+- `GET /api/v1/cases/{case_id}/forecast` and `POST /api/v1/cases/{case_id}/forecast/run` return deterministic offline forecasts from persisted monitoring snapshots.
+- Zero snapshots returns `forecast_status=insufficient_history` with a safe recommendation.
+- One snapshot returns a conservative low-confidence baseline forecast.
+- Multiple snapshots expose latest risk, moving average, slope, acceleration, volatility, trend direction, four horizons, real-crisis forecast, manipulation-risk forecast, and topic forecasts when topic history exists.
+- The Risk Monitor frontend explains why the trend is rising, falling, stable, or uncertain without adding a real LLM, real platform call, or machine-learning dependency.
+- Predicted scores are clamped to `0-100`, confidence never exceeds `medium`, and no real platform API, real LLM API, crawler, live public fetch, or real notification service is used.
+
 ## 9. Open PropagationGraph
 
 Open Propagation Graph.
@@ -1140,7 +1166,7 @@ Demo steps:
 1. Open `http://127.0.0.1:5173`.
 2. Click `Benchmarks / 离线评测` in the sidebar.
 3. Confirm the page shows `总通过`, `总失败`, `警告`, `评测套件`, `最近结果`, and `回归风险`.
-4. Confirm the suites appear: sentiment, topic_cluster, topic_risk, report_builder, markdown_export, selector_repair, public_parser_fixtures, and platform_adapter_mocks.
+4. Confirm the suites appear: sentiment, topic_cluster, topic_risk, report_builder, report_quality_rubric, markdown_export, forecasting, selector_repair, public_parser_fixtures, and platform_adapter_mocks.
 5. Confirm missing summary state appears clearly if `.benchmarks/offline_benchmark_summary.json` has not been generated.
 6. Optionally verify the safe summary endpoint directly:
 

@@ -299,7 +299,10 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert douyin["mock_available"] is True
     assert douyin["real_mode_available"] is False
     assert douyin["api_approval_required"] is True
-    assert douyin["api_approval_status"] == "planned"
+    assert douyin["api_approval_status"] == "developer_access_obtained_permission_unverified"
+    assert douyin["developer_access_status"] == "obtained"
+    assert douyin["comment_api_status"] == "unknown_or_permission_required"
+    assert douyin["real_mode_blocker"] == "permission_not_verified"
     assert douyin["credentials_required"] == [
         "DOUYIN_CLIENT_KEY",
         "DOUYIN_CLIENT_SECRET",
@@ -337,7 +340,10 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert xiaohongshu["mock_available"] is True
     assert xiaohongshu["real_mode_available"] is False
     assert xiaohongshu["api_approval_required"] is True
-    assert xiaohongshu["api_approval_status"] == "planned"
+    assert xiaohongshu["api_approval_status"] == "developer_access_obtained_permission_unverified"
+    assert xiaohongshu["developer_access_status"] == "obtained"
+    assert xiaohongshu["comment_api_status"] == "unknown_or_not_confirmed"
+    assert xiaohongshu["real_mode_blocker"] == "permission_not_verified"
     assert xiaohongshu["credentials_required"] == [
         "XIAOHONGSHU_CLIENT_ID",
         "XIAOHONGSHU_CLIENT_SECRET",
@@ -504,6 +510,9 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
         "DOUYIN_ACCESS_TOKEN": False,
     }
     assert douyin["real_mode_available"] is False
+    assert douyin["developer_access_status"] == "obtained"
+    assert douyin["comment_api_status"] == "unknown_or_permission_required"
+    assert douyin["real_mode_blocker"] == "permission_not_verified"
     assert kuaishou["credentials_present"] == {
         "KUAISHOU_CLIENT_ID": False,
         "KUAISHOU_CLIENT_SECRET": False,
@@ -516,6 +525,9 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
         "XIAOHONGSHU_ACCESS_TOKEN": False,
     }
     assert xiaohongshu["real_mode_available"] is False
+    assert xiaohongshu["developer_access_status"] == "obtained"
+    assert xiaohongshu["comment_api_status"] == "unknown_or_not_confirmed"
+    assert xiaohongshu["real_mode_blocker"] == "permission_not_verified"
     assert zhihu["credentials_present"] == {
         "ZHIHU_CLIENT_ID": False,
         "ZHIHU_CLIENT_SECRET": False,

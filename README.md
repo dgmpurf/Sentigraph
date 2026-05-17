@@ -81,6 +81,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - v0.7 lightweight monitoring foundation: completed cases can save local analysis snapshots, run deterministic mock monitoring checks, and show threshold-based alert events in Risk Monitor.
 - v0.8 scheduler foundation: completed cases can store monitoring schedule config, show enabled/paused status, and manually run due mock monitoring jobs without starting a background worker.
 - v0.9 notification foundation: alert events can create local in-app notification outbox items; notifications can be marked read and simulate-sent without external delivery.
+- v4.5 deterministic forecasting foundation: Risk Monitor can compute mock/offline risk forecasts from persisted monitoring snapshots and display predicted total risk, real-crisis risk, manipulation risk, and topic-risk movement.
 - LLM Safety / 大模型安全状态 page: displays mock-first provider readiness, real-call disabled status, API key presence booleans only, and metadata-only usage guardrail summaries. It has no real-call toggle, API key input, or `.env` modification path.
 
 ### Planned Features
@@ -132,9 +133,9 @@ Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real ada
 - Douban
 - Toutiao
 
-这些平台当前只支持 mock workflow，不代表真实集成已经完成。Weibo、Bilibili、Douyin、Kuaishou、Xiaohongshu、Zhihu、Douban、Toutiao 已有 mock-only official API adapter scaffold；即使配置为 real mode，也只会返回安全的 `api_pending` / `config_error` 状态，不会调用真实平台 API。
+这些平台当前只支持 mock workflow，不代表真实集成已经完成。Weibo、Bilibili、Douyin、Kuaishou、Xiaohongshu、Zhihu、Douban、Toutiao 已有 mock-only official API adapter scaffold；即使配置为 real mode，也只会返回安全的 `api_pending` / `config_error` 状态，不会调用真实平台 API。Douyin 和 Xiaohongshu 已记录用户侧 developer access obtained，但评论/笔记评论 API 权限尚未核验，real mode 仍保持关闭。
 
-Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao. Real API modes remain disabled and return safe `api_pending` / `config_error` metadata until approval, credentials, scopes, and implementation are added.
+Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao. Real API modes remain disabled and return safe `api_pending` / `config_error` metadata until approval, credentials, scopes, and implementation are added. Douyin and Xiaohongshu developer access is recorded as obtained, but comment/note-comment permissions are not verified yet.
 
 ### Future Crawler-later
 
@@ -452,6 +453,8 @@ Base path:
 - `GET /api/v1/cases/{case_id}`
 - `POST /api/v1/cases/{case_id}/run`
 - `GET /api/v1/cases/{case_id}/snapshots`
+- `GET /api/v1/cases/{case_id}/forecast`
+- `POST /api/v1/cases/{case_id}/forecast/run`
 - `POST /api/v1/cases/{case_id}/monitor/run`
 - `GET /api/v1/cases/{case_id}/monitoring/config`
 - `PUT /api/v1/cases/{case_id}/monitoring/config`

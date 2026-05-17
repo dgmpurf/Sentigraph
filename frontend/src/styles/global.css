@@ -957,6 +957,125 @@ body {
   background: rgba(255, 161, 67, 0.06);
 }
 
+.forecast-panel-card {
+  border-color: rgba(66, 245, 215, 0.24);
+}
+
+.forecast-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.forecast-metric-tile,
+.forecast-risk-signal,
+.forecast-topic-card,
+.forecast-horizon-list > div {
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.forecast-metric-tile {
+  display: flex;
+  min-height: 142px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+}
+
+.forecast-metric-tile h3,
+.forecast-metric-tile h4 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.forecast-risk-signal {
+  display: flex;
+  min-height: 84px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px;
+}
+
+.forecast-topic-list .ant-list-item {
+  padding: 8px 0;
+}
+
+.forecast-topic-card {
+  width: 100%;
+  min-height: 184px;
+  padding: 14px;
+}
+
+.forecast-horizon-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.forecast-horizon-list > div {
+  display: flex;
+  min-height: 86px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.forecast-explanation-section {
+  width: 100%;
+}
+
+.forecast-disclaimer-alert {
+  border-color: rgba(66, 245, 215, 0.24);
+  background: rgba(66, 245, 215, 0.06);
+}
+
+.forecast-explanation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.forecast-explanation-card {
+  min-height: 192px;
+  padding: 14px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.forecast-explanation-card h5 {
+  margin: 0 0 8px;
+  letter-spacing: 0;
+}
+
+.forecast-explanation-card .ant-typography {
+  margin-bottom: 8px;
+}
+
+.forecast-driver-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.forecast-driver-chip {
+  padding: 8px;
+  border: 1px solid rgba(66, 245, 215, 0.16);
+  border-radius: 8px;
+  background: rgba(66, 245, 215, 0.04);
+}
+
+@media (max-width: 1280px) {
+  .forecast-explanation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media print {
   html,
   body,

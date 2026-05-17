@@ -25,6 +25,9 @@ MongoDB document keys must always be strings.
   "real_mode_available": false,
   "api_approval_required": true,
   "api_approval_status": "api_pending",
+  "developer_access_status": null,
+  "comment_api_status": null,
+  "real_mode_blocker": null,
   "credentials_required": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
   "credentials_present": {
     "REDDIT_CLIENT_ID": false,
@@ -48,7 +51,7 @@ crawler_later
 disabled_or_optional_future
 ```
 
-Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-only and must not trigger real crawlers or real platform APIs. `mock_available`, `real_mode_available`, `api_approval_required`, `api_approval_status`, `credentials_required`, `credentials_present`, `api_pending`, `real_mode_disabled`, and `selectable_for_real` are safe status fields for frontend/backend diagnostics. `credentials_present` must contain only booleans and must never expose credential values. Reddit currently has `mock_available=true`, `api_approval_status="api_pending"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao currently have `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `api_approval_status="planned"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`.
+Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-only and must not trigger real crawlers or real platform APIs. `mock_available`, `real_mode_available`, `api_approval_required`, `api_approval_status`, `developer_access_status`, `comment_api_status`, `real_mode_blocker`, `credentials_required`, `credentials_present`, `api_pending`, `real_mode_disabled`, and `selectable_for_real` are safe status fields for frontend/backend diagnostics. `credentials_present` must contain only booleans and must never expose credential values. Reddit currently has `mock_available=true`, `api_approval_status="api_pending"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Weibo, Bilibili, Kuaishou, Zhihu, Douban, and Toutiao currently have `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `api_approval_status="planned"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Douyin and Xiaohongshu additionally record `developer_access_status="obtained"` and `real_mode_blocker="permission_not_verified"`; Douyin uses `comment_api_status="unknown_or_permission_required"` and Xiaohongshu uses `comment_api_status="unknown_or_not_confirmed"` until console permissions are verified.
 
 ### PlatformStatusResponse
 
@@ -380,6 +383,144 @@ Alert evaluator rules:
 - Trigger real-crisis alerts when `real_crisis_risk` increases by at least `10`.
 - Trigger manipulation-risk alerts when `manipulation_risk` increases by at least `15`.
 - Trigger topic alerts when a new topic appears with `topic_risk_score >= 70`; use `critical` when the score is at least `85`.
+
+## 0.6.5 Deterministic Forecasting Foundation
+
+The v4.5 forecasting foundation derives near-future risk estimates from existing `AnalysisSnapshot` records. It is deterministic, offline-only, and does not call real platform APIs, real LLM APIs, crawlers, or live public fetch.
+
+### ForecastInputSnapshot
+
+Same core fields as `AnalysisSnapshot`, minus alert-only summary fields:
+
+```json
+{
+  "snapshot_id": "case_001_snapshot_003",
+  "case_id": "case_001",
+  "created_at": "2026-05-17T12:03:00Z",
+  "run_index": 3,
+  "risk_score": 61.0,
+  "overall_risk": 61.0,
+  "risk_level": "medium",
+  "risk_model_version": "v1_5_topic_risk_mvp",
+  "real_crisis_risk": 38.0,
+  "manipulation_risk": 24.0,
+  "top_risk_topics": []
+}
+```
+
+### TrendFeatures
+
+```json
+{
+  "latest_risk": 61.0,
+  "moving_average": 46.0,
+  "slope": 14.5,
+  "acceleration": 3.0,
+  "volatility": 9.67,
+  "snapshot_count": 3,
+  "trend_direction": "rising"
+}
+```
+
+Allowed `trend_direction` values:
+
+```text
+rising
+falling
+stable
+unknown
+```
+
+### RiskForecast
+
+```json
+{
+  "horizon": "next_check",
+  "predicted_risk_score": 77.0,
+  "predicted_risk_level": "high",
+  "predicted_real_crisis_risk": 46.0,
+  "predicted_manipulation_risk": 30.5,
+  "trend_direction": "rising",
+  "real_crisis_trend_direction": "rising",
+  "manipulation_trend_direction": "rising",
+  "forecast_confidence": "medium_low",
+  "forecast_reason": "Deterministic MVP forecast for next_check uses latest risk 61.0, slope 14.5, and acceleration 3.0; predicted risk is 77.0/100."
+}
+```
+
+Allowed `horizon` values:
+
+```text
+next_check
+1h
+6h
+24h
+```
+
+Allowed `forecast_confidence` values:
+
+```text
+insufficient_history
+low
+medium_low
+medium
+```
+
+### TopicRiskForecast
+
+```json
+{
+  "topic_id": "topic_safety",
+  "topic": "Safety concern",
+  "current_topic_risk_score": 73.0,
+  "predicted_topic_risk_score": 88.5,
+  "predicted_topic_risk_level": "critical",
+  "trend_direction": "rising",
+  "risk_explanation": "Synthetic benchmark topic forecast signal.",
+  "forecast_reason": "Topic forecast uses deterministic monitoring snapshot deltas for the same topic key."
+}
+```
+
+### ForecastResult
+
+```json
+{
+  "case_id": "case_001",
+  "forecast_status": "ready",
+  "generated_at": "2026-05-17T12:03:00Z",
+  "risk_model_version": "v1_5_topic_risk_mvp",
+  "snapshot_count": 3,
+  "latest_snapshot_id": "case_001_snapshot_003",
+  "horizon": "next_check",
+  "latest_risk": 61.0,
+  "moving_average": 46.0,
+  "slope": 14.5,
+  "acceleration": 3.0,
+  "volatility": 9.67,
+  "trend_direction": "rising",
+  "forecast_confidence": "medium_low",
+  "predicted_risk_score": 77.0,
+  "predicted_risk_level": "high",
+  "predicted_real_crisis_risk": 46.0,
+  "predicted_manipulation_risk": 30.5,
+  "real_crisis_trend_direction": "rising",
+  "manipulation_trend_direction": "rising",
+  "risk_forecasts": [],
+  "topic_forecasts": [],
+  "input_snapshots": [],
+  "recommended_action": "风险预测呈上升趋势，建议提高监控频率并优先复核高风险话题。",
+  "message": "Deterministic MVP 风险预测显示趋势上升，下一检查点预测风险为 77.0/100。"
+}
+```
+
+Allowed `forecast_status` values:
+
+```text
+ready
+insufficient_history
+```
+
+Score fields are clamped to `0-100`. With zero snapshots, `forecast_status` is `insufficient_history` and `recommended_action` asks the user to run monitoring checks first.
 
 ## 0.7 Monitoring Scheduler Foundation
 

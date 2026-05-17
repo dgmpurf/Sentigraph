@@ -57,6 +57,10 @@ OFFICIAL_PLATFORM_CONFIG: dict[str, dict[str, Any]] = {
             "DOUYIN_CLIENT_SECRET",
             "DOUYIN_ACCESS_TOKEN",
         ),
+        "api_approval_status": "developer_access_obtained_permission_unverified",
+        "developer_access_status": "obtained",
+        "comment_api_status": "unknown_or_permission_required",
+        "real_mode_blocker": "permission_not_verified",
     },
     "kuaishou": {
         "class": KuaishouAdapter,
@@ -75,6 +79,10 @@ OFFICIAL_PLATFORM_CONFIG: dict[str, dict[str, Any]] = {
             "XIAOHONGSHU_CLIENT_SECRET",
             "XIAOHONGSHU_ACCESS_TOKEN",
         ),
+        "api_approval_status": "developer_access_obtained_permission_unverified",
+        "developer_access_status": "obtained",
+        "comment_api_status": "unknown_or_not_confirmed",
+        "real_mode_blocker": "permission_not_verified",
     },
     "zhihu": {
         "class": ZhihuAdapter,
@@ -344,6 +352,14 @@ def test_platform_status_is_complete_and_does_not_expose_credentials(
         assert item["mock_available"] is True
         assert item["real_mode_available"] is False
         assert item["api_approval_required"] is True
+        if expected_status := OFFICIAL_PLATFORM_CONFIG[platform_id].get("api_approval_status"):
+            assert item["api_approval_status"] == expected_status
+        if expected_developer_status := OFFICIAL_PLATFORM_CONFIG[platform_id].get("developer_access_status"):
+            assert item["developer_access_status"] == expected_developer_status
+        if expected_comment_status := OFFICIAL_PLATFORM_CONFIG[platform_id].get("comment_api_status"):
+            assert item["comment_api_status"] == expected_comment_status
+        if expected_blocker := OFFICIAL_PLATFORM_CONFIG[platform_id].get("real_mode_blocker"):
+            assert item["real_mode_blocker"] == expected_blocker
         assert item["credentials_required"] == list(OFFICIAL_PLATFORM_CONFIG[platform_id]["credentials"])
         assert all(item["credentials_present"].values())
         assert item["selectable_for_mock"] is True

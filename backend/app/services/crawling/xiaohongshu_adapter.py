@@ -16,7 +16,10 @@ XIAOHONGSHU_REQUIRED_CREDENTIALS = (
     "XIAOHONGSHU_CLIENT_SECRET",
     "XIAOHONGSHU_ACCESS_TOKEN",
 )
-XIAOHONGSHU_API_APPROVAL_STATUS = "planned"
+XIAOHONGSHU_API_APPROVAL_STATUS = "developer_access_obtained_permission_unverified"
+XIAOHONGSHU_DEVELOPER_ACCESS_STATUS = "obtained"
+XIAOHONGSHU_COMMENT_API_STATUS = "unknown_or_not_confirmed"
+XIAOHONGSHU_REAL_MODE_BLOCKER = "permission_not_verified"
 XIAOHONGSHU_MOCK_POST_LIMIT = 100
 XIAOHONGSHU_MOCK_COMMENT_LIMIT = 500
 
@@ -61,7 +64,7 @@ class XiaohongshuAdapter(BasePlatformAdapter):
         if self.requested_mode == "real" and not self.credentials:
             self.fallback_reason = "config_error:missing_xiaohongshu_credentials"
         elif self.requested_mode == "real":
-            self.fallback_reason = "api_pending:xiaohongshu_official_api_not_implemented"
+            self.fallback_reason = "api_pending:permission_not_verified"
 
         super().__init__(mode="mock")
 
@@ -84,7 +87,10 @@ class XiaohongshuAdapter(BasePlatformAdapter):
     def health_check(self) -> AdapterHealth:
         if self.requested_mode == "real":
             if self.has_required_credentials():
-                message = "Xiaohongshu official API mode is planned but disabled until approval and implementation are added."
+                message = (
+                    "Xiaohongshu official API mode is planned but disabled until note/comment "
+                    "API availability and permission are verified and implementation is added."
+                )
             else:
                 message = "Xiaohongshu official API mode was requested, but credentials are missing; using mock data."
         else:
@@ -115,6 +121,9 @@ class XiaohongshuAdapter(BasePlatformAdapter):
             "real_mode_available": False,
             "api_approval_required": self.api_approval_required,
             "api_approval_status": self.api_approval_status,
+            "developer_access_status": XIAOHONGSHU_DEVELOPER_ACCESS_STATUS,
+            "comment_api_status": XIAOHONGSHU_COMMENT_API_STATUS,
+            "real_mode_blocker": XIAOHONGSHU_REAL_MODE_BLOCKER,
             "api_pending": self.api_pending,
             "real_mode_disabled": self.real_mode_disabled,
             "selectable_for_real": self.selectable_for_real,

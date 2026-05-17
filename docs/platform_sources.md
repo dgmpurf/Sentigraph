@@ -2,7 +2,7 @@
 
 Sentigraph now prioritizes Chinese public opinion platforms for future source integration while keeping Reddit visible in the project as a future real adapter candidate.
 
-The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao now have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao requests through the adapter layer and returns normalized mock data with safe status metadata.
+The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao now have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. Douyin and Xiaohongshu developer access is recorded as obtained by the user, but their comment/note-comment API permissions are not yet verified. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao requests through the adapter layer and returns normalized mock data with safe status metadata.
 
 Cross-platform adapter QA is now stabilized with a parametrized local test matrix. The matrix verifies factory registration, mock-only official adapter behavior, safe blocked real-mode metadata, credential redaction, `/crawl/start` metadata, public parser fixture preview, and schema-valid `RawPost` / `RawComment` output without making real platform API calls.
 
@@ -14,6 +14,9 @@ Sentigraph exposes platform readiness through `GET /api/v1/platforms/status`. Th
 - `real_mode_available`
 - `api_approval_required`
 - `api_approval_status`
+- `developer_access_status`
+- `comment_api_status`
+- `real_mode_blocker`
 - `credentials_required`
 - `credentials_present` as present/missing booleans only
 - `enabled_in_mvp`
@@ -27,9 +30,9 @@ Current global status:
 - Official API planned platforms: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao.
 - Weibo: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Bilibili: official API adapter scaffold available in mock mode; real API mode disabled and not called.
-- Douyin: official API adapter scaffold available in mock mode; real API mode disabled and not called.
+- Douyin: official API adapter scaffold available in mock mode; developer access obtained; comment permission not verified; real API mode disabled and not called.
 - Kuaishou: official API adapter scaffold available in mock mode; real API mode disabled and not called.
-- Xiaohongshu: official API adapter scaffold available in mock mode; real API mode disabled and not called.
+- Xiaohongshu: official API adapter scaffold available in mock mode; developer access obtained; note/comment API availability not verified; real API mode disabled and not called.
 - Zhihu: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Douban: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Toutiao: official API adapter scaffold available in mock mode; real API mode disabled and not called.
@@ -60,9 +63,9 @@ These platforms should be integrated through official API programs when credenti
 | --- | --- | --- | --- |
 | `weibo` | Weibo | https://open.weibo.com | mock adapter scaffold; real API pending credentials/approval |
 | `bilibili` | Bilibili | https://openhome.bilibili.com | mock adapter scaffold; real API pending credentials/approval |
-| `douyin` | Douyin | https://developer.open-douyin.com | mock adapter scaffold; real API pending credentials/approval |
+| `douyin` | Douyin | https://developer.open-douyin.com | mock adapter scaffold; developer access obtained; comment permission not verified |
 | `kuaishou` | Kuaishou | https://open.kuaishou.com | mock adapter scaffold; real API pending credentials/approval |
-| `xiaohongshu` | Xiaohongshu | https://open.xiaohongshu.com | mock adapter scaffold; real API pending credentials/approval |
+| `xiaohongshu` | Xiaohongshu | https://open.xiaohongshu.com | mock adapter scaffold; developer access obtained; note/comment API not verified |
 | `zhihu` | Zhihu | https://open.zhihu.com | mock adapter scaffold; real API pending credentials/approval |
 | `douban` | Douban | https://developers.douban.com | mock adapter scaffold; real API pending credentials/approval |
 | `toutiao` | Toutiao | https://open.toutiao.com | mock adapter scaffold; real API pending credentials/approval |
@@ -113,7 +116,7 @@ Factory behavior:
 
 - `get_adapter("reddit")` and `get_platform_adapter("reddit")` return the Reddit adapter.
 - Unknown platforms return a safe adapter registration error.
-- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have mock-only official API adapter scaffolds. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
+- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have mock-only official API adapter scaffolds. Douyin and Xiaohongshu now record developer access obtained but keep comment/note-comment permission as unverified. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
 - Crawler-later platforms remain inactive for real collection.
 
 Safety constraints:
@@ -198,8 +201,9 @@ Current behavior:
 - `get_adapter("douyin")` returns the Douyin adapter.
 - `POST /api/v1/crawl/start` uses the adapter when `platforms` contains `douyin`.
 - Mock mode returns deterministic Douyin-style short-video posts and visible public-comment mock data normalized as `RawPost` and `RawComment`.
-- If `DOUYIN_ADAPTER_MODE=real`, the adapter stays in mock mode and reports safe `api_pending` or `config_error` metadata. No network call is made.
-- Safe status metadata includes `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, and `real_mode_disabled=true`.
+- Developer access has been obtained by the user, but exact comment permissions are unknown.
+- If `DOUYIN_ADAPTER_MODE=real`, the adapter stays in mock mode and reports safe `api_pending:permission_not_verified` when credentials are present or safe `config_error` metadata when credentials are missing. No network call is made.
+- Safe status metadata includes `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, `real_mode_disabled=true`, `developer_access_status="obtained"`, `comment_api_status="unknown_or_permission_required"`, and `real_mode_blocker="permission_not_verified"`.
 - No Douyin page scraping, login, captcha handling, cookies, proxy rotation, private data access, or external LLM call is implemented.
 - Latest QA status: focused Douyin/adapter/crawl/registry validation passed with `20 passed in 0.67s`; full local backend validation passed with `213 passed in 3.10s`. The pass confirmed the adapter interface, mock output schema fields, platform registry status, `/crawl/start` metadata, and safe real-mode blocking.
 
@@ -214,6 +218,10 @@ DOUYIN_ACCESS_TOKEN
 
 Remaining before real Douyin integration:
 
+- verify in the Douyin developer console that interaction/comment management or the current equivalent product is enabled
+- verify `item.comment` or the current official equivalent comment scope
+- verify whether keyword video comment management is available and applicable
+- verify user authorization requirements and whether access is limited to authorized or owned items
 - official application/approval and permission-scope review
 - rate-limit and usage policy documentation
 - a reviewed official API client implementation
@@ -261,8 +269,9 @@ Current behavior:
 - `get_adapter("xiaohongshu")` returns the Xiaohongshu adapter.
 - `POST /api/v1/crawl/start` uses the adapter when `platforms` contains `xiaohongshu`.
 - Mock mode returns deterministic Xiaohongshu-style note posts and visible public-comment mock data normalized as `RawPost` and `RawComment`.
-- If `XIAOHONGSHU_ADAPTER_MODE=real`, the adapter stays in mock mode and reports safe `api_pending` or `config_error` metadata. No network call is made.
-- Safe status metadata includes `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, and `real_mode_disabled=true`.
+- Developer access has been obtained by the user, but the exact note/comment API product and scope are unknown. Current public official materials may be commerce/Ark oriented.
+- If `XIAOHONGSHU_ADAPTER_MODE=real`, the adapter stays in mock mode and reports safe `api_pending:permission_not_verified` when credentials are present or safe `config_error` metadata when credentials are missing. No network call is made.
+- Safe status metadata includes `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, `real_mode_disabled=true`, `developer_access_status="obtained"`, `comment_api_status="unknown_or_not_confirmed"`, and `real_mode_blocker="permission_not_verified"`.
 - No Xiaohongshu page scraping, login, captcha handling, cookies, proxy rotation, private data access, or external LLM call is implemented.
 
 Future Xiaohongshu credentials after approval:
@@ -276,6 +285,10 @@ XIAOHONGSHU_ACCESS_TOKEN
 
 Remaining before real Xiaohongshu integration:
 
+- verify in the Xiaohongshu developer console whether note/content/comment/interaction data APIs exist for the approved product
+- verify whether comments are available through official APIs
+- verify whether access is limited to own account, merchant, Ark, ad, or approved creator content
+- map app-key/app-secret terminology to the existing `XIAOHONGSHU_CLIENT_ID` / `XIAOHONGSHU_CLIENT_SECRET` placeholders if needed
 - official application/approval and permission-scope review
 - rate-limit and usage policy documentation
 - a reviewed official API client implementation

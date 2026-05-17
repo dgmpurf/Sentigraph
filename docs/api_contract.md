@@ -122,7 +122,10 @@ GET /api/v1/platforms
       "mock_available": true,
       "real_mode_available": false,
       "api_approval_required": true,
-      "api_approval_status": "planned",
+      "api_approval_status": "developer_access_obtained_permission_unverified",
+      "developer_access_status": "obtained",
+      "comment_api_status": "unknown_or_permission_required",
+      "real_mode_blocker": "permission_not_verified",
       "credentials_required": ["DOUYIN_CLIENT_KEY", "DOUYIN_CLIENT_SECRET", "DOUYIN_ACCESS_TOKEN"],
       "credentials_present": {
         "DOUYIN_CLIENT_KEY": false,
@@ -170,7 +173,10 @@ GET /api/v1/platforms
       "mock_available": true,
       "real_mode_available": false,
       "api_approval_required": true,
-      "api_approval_status": "planned",
+      "api_approval_status": "developer_access_obtained_permission_unverified",
+      "developer_access_status": "obtained",
+      "comment_api_status": "unknown_or_not_confirmed",
+      "real_mode_blocker": "permission_not_verified",
       "credentials_required": ["XIAOHONGSHU_CLIENT_ID", "XIAOHONGSHU_CLIENT_SECRET", "XIAOHONGSHU_ACCESS_TOKEN"],
       "credentials_present": {
         "XIAOHONGSHU_CLIENT_ID": false,
@@ -276,11 +282,12 @@ Important:
 - `mock_available=true` means the platform has safe local mock data behavior.
 - `real_mode_available=true` means the backend may use a real source path for that platform. In the current MVP this is false for all platforms.
 - `credentials_present` is a safe boolean map only. It must never contain credential values.
+- `developer_access_status`, `comment_api_status`, and `real_mode_blocker` are safe non-secret readiness fields. They describe console/access status only and must not expose credential values.
 - `api_pending=true` means any future real API path is still waiting for approval, credentials, permissions, or compliance review.
 - `real_mode_disabled=true` means the backend must not call the real platform API for that source.
 - Official API planned platforms may be selectable for mock analysis, but they must not trigger real API calls until credentials, permissions, and compliance checks are available.
 - Reddit is visible and mock-selectable as a future real adapter candidate, but its current real API status is `api_pending`.
-- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao are mock-selectable through official API adapter scaffolds. Their real API modes are disabled and not called until credentials, approval, and implementation are added.
+- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao are mock-selectable through official API adapter scaffolds. Their real API modes are disabled and not called until credentials, approval, permission verification, and implementation are added. Douyin and Xiaohongshu additionally show developer access obtained but comment/note-comment permission not verified.
 - Crawler-later platforms are not selectable for real crawling in the MVP.
 - YouTube is `disabled_or_optional_future` and is not an active MVP platform.
 
@@ -791,13 +798,13 @@ Important:
 - Bilibili real API mode is disabled. If `BILIBILI_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Bilibili API call.
 - When `platforms` contains `douyin`, the endpoint calls the Douyin official API adapter scaffold through `adapter_factory.get_adapter("douyin")`.
 - Douyin mock mode returns deterministic short-video-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
-- Douyin real API mode is disabled. If `DOUYIN_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Douyin API call.
+- Douyin real API mode is disabled. Developer access is recorded as obtained by the user, but comment permission is not verified. If `DOUYIN_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending:permission_not_verified` when credentials are present or `config_error` metadata when credentials are missing, and makes no real Douyin API call.
 - When `platforms` contains `kuaishou`, the endpoint calls the Kuaishou official API adapter scaffold through `adapter_factory.get_adapter("kuaishou")`.
 - Kuaishou mock mode returns deterministic short-video/livestream-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
 - Kuaishou real API mode is disabled. If `KUAISHOU_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Kuaishou API call.
 - When `platforms` contains `xiaohongshu`, the endpoint calls the Xiaohongshu official API adapter scaffold through `adapter_factory.get_adapter("xiaohongshu")`.
 - Xiaohongshu mock mode returns deterministic lifestyle/community-note-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
-- Xiaohongshu real API mode is disabled. If `XIAOHONGSHU_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Xiaohongshu API call.
+- Xiaohongshu real API mode is disabled. Developer access is recorded as obtained by the user, but note/comment API availability is not verified. If `XIAOHONGSHU_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending:permission_not_verified` when credentials are present or `config_error` metadata when credentials are missing, and makes no real Xiaohongshu API call.
 - When `platforms` contains `zhihu`, the endpoint calls the Zhihu official API adapter scaffold through `adapter_factory.get_adapter("zhihu")`.
 - Zhihu mock mode returns deterministic Q&A/article-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
 - Zhihu real API mode is disabled. If `ZHIHU_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Zhihu API call.
@@ -1473,6 +1480,73 @@ Response:
   }
 ]
 ```
+
+### Case Risk Forecast
+
+```http
+GET /api/v1/cases/{case_id}/forecast
+POST /api/v1/cases/{case_id}/forecast/run
+```
+
+`GET` returns the latest deterministic forecast computed from persisted monitoring snapshots. `POST /forecast/run` computes the same forecast explicitly. Forecasts are derived views over local snapshots and do not call real platform APIs, real LLM APIs, crawlers, or live public fetch.
+
+Response:
+
+```json
+{
+  "case_id": "case_001",
+  "forecast_status": "ready",
+  "generated_at": "2026-05-17T12:03:00Z",
+  "risk_model_version": "v1_5_topic_risk_mvp",
+  "snapshot_count": 3,
+  "latest_snapshot_id": "case_001_snapshot_003",
+  "horizon": "next_check",
+  "latest_risk": 61.0,
+  "moving_average": 46.0,
+  "slope": 14.5,
+  "acceleration": 3.0,
+  "volatility": 9.67,
+  "trend_direction": "rising",
+  "forecast_confidence": "medium_low",
+  "predicted_risk_score": 77.0,
+  "predicted_risk_level": "high",
+  "predicted_real_crisis_risk": 46.0,
+  "predicted_manipulation_risk": 30.5,
+  "real_crisis_trend_direction": "rising",
+  "manipulation_trend_direction": "rising",
+  "risk_forecasts": [
+    {
+      "horizon": "next_check",
+      "predicted_risk_score": 77.0,
+      "predicted_risk_level": "high",
+      "predicted_real_crisis_risk": 46.0,
+      "predicted_manipulation_risk": 30.5,
+      "trend_direction": "rising",
+      "real_crisis_trend_direction": "rising",
+      "manipulation_trend_direction": "rising",
+      "forecast_confidence": "medium_low",
+      "forecast_reason": "Deterministic MVP forecast for next_check uses latest risk 61.0, slope 14.5, and acceleration 3.0; predicted risk is 77.0/100."
+    }
+  ],
+  "topic_forecasts": [
+    {
+      "topic_id": "topic_safety",
+      "topic": "Safety concern",
+      "current_topic_risk_score": 73.0,
+      "predicted_topic_risk_score": 88.5,
+      "predicted_topic_risk_level": "critical",
+      "trend_direction": "rising",
+      "risk_explanation": "Synthetic benchmark topic forecast signal.",
+      "forecast_reason": "Topic forecast uses deterministic monitoring snapshot deltas for the same topic key."
+    }
+  ],
+  "input_snapshots": [],
+  "recommended_action": "风险预测呈上升趋势，建议提高监控频率并优先复核高风险话题。",
+  "message": "Deterministic MVP 风险预测显示趋势上升，下一检查点预测风险为 77.0/100。"
+}
+```
+
+When no snapshots exist, the endpoint returns `forecast_status="insufficient_history"`, `forecast_confidence="insufficient_history"`, and a recommendation to run monitoring checks first.
 
 ### Run Mock Monitoring Check
 

@@ -1,0 +1,169 @@
+[
+  {
+    "case_id": "forecast_insufficient_history",
+    "snapshots": [],
+    "expected": {
+      "forecast_status": "insufficient_history",
+      "forecast_confidence": "insufficient_history",
+      "trend_direction": "unknown",
+      "max_predicted_risk": 0
+    }
+  },
+  {
+    "case_id": "forecast_one_snapshot_low_confidence",
+    "snapshots": [
+      {
+        "risk_score": 48,
+        "real_crisis_risk": 35,
+        "manipulation_risk": 22,
+        "topic_risks": [
+          {
+            "topic_id": "topic_quality",
+            "topic": "Product quality issues",
+            "topic_risk_score": 48
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "forecast_status": "ready",
+      "forecast_confidence": "low",
+      "trend_direction": "unknown",
+      "min_predicted_risk": 48,
+      "max_predicted_risk": 48
+    }
+  },
+  {
+    "case_id": "forecast_rising_trend",
+    "snapshots": [
+      { "risk_score": 32, "real_crisis_risk": 22, "manipulation_risk": 16 },
+      { "risk_score": 45, "real_crisis_risk": 30, "manipulation_risk": 19 },
+      { "risk_score": 61, "real_crisis_risk": 38, "manipulation_risk": 24 }
+    ],
+    "expected": {
+      "forecast_status": "ready",
+      "forecast_confidence": "medium_low",
+      "trend_direction": "rising",
+      "prediction_above_latest": true,
+      "min_predicted_risk": 70
+    }
+  },
+  {
+    "case_id": "forecast_falling_trend",
+    "snapshots": [
+      { "risk_score": 76, "real_crisis_risk": 55, "manipulation_risk": 34 },
+      { "risk_score": 63, "real_crisis_risk": 46, "manipulation_risk": 30 },
+      { "risk_score": 51, "real_crisis_risk": 39, "manipulation_risk": 26 }
+    ],
+    "expected": {
+      "forecast_status": "ready",
+      "forecast_confidence": "medium_low",
+      "trend_direction": "falling",
+      "prediction_below_latest": true,
+      "max_predicted_risk": 45
+    }
+  },
+  {
+    "case_id": "forecast_stable_trend",
+    "snapshots": [
+      { "risk_score": 50, "real_crisis_risk": 31, "manipulation_risk": 22 },
+      { "risk_score": 51, "real_crisis_risk": 32, "manipulation_risk": 22 },
+      { "risk_score": 50, "real_crisis_risk": 32, "manipulation_risk": 23 }
+    ],
+    "expected": {
+      "forecast_status": "ready",
+      "forecast_confidence": "medium_low",
+      "trend_direction": "stable",
+      "min_predicted_risk": 47,
+      "max_predicted_risk": 53
+    }
+  },
+  {
+    "case_id": "forecast_high_acceleration",
+    "snapshots": [
+      { "risk_score": 18, "real_crisis_risk": 14, "manipulation_risk": 10 },
+      { "risk_score": 24, "real_crisis_risk": 18, "manipulation_risk": 12 },
+      { "risk_score": 49, "real_crisis_risk": 34, "manipulation_risk": 17 }
+    ],
+    "expected": {
+      "forecast_status": "ready",
+      "trend_direction": "rising",
+      "min_acceleration": 15,
+      "prediction_above_latest": true
+    }
+  },
+  {
+    "case_id": "forecast_manipulation_risk_rising",
+    "snapshots": [
+      { "risk_score": 39, "real_crisis_risk": 22, "manipulation_risk": 16 },
+      { "risk_score": 42, "real_crisis_risk": 23, "manipulation_risk": 34 },
+      { "risk_score": 45, "real_crisis_risk": 25, "manipulation_risk": 56 }
+    ],
+    "expected": {
+      "forecast_status": "ready",
+      "manipulation_trend_direction": "rising",
+      "min_predicted_manipulation_risk": 70
+    }
+  },
+  {
+    "case_id": "forecast_real_crisis_risk_rising",
+    "snapshots": [
+      { "risk_score": 42, "real_crisis_risk": 18, "manipulation_risk": 18 },
+      { "risk_score": 46, "real_crisis_risk": 36, "manipulation_risk": 20 },
+      { "risk_score": 52, "real_crisis_risk": 60, "manipulation_risk": 21 }
+    ],
+    "expected": {
+      "forecast_status": "ready",
+      "real_crisis_trend_direction": "rising",
+      "min_predicted_real_crisis_risk": 80
+    }
+  },
+  {
+    "case_id": "forecast_topic_risk_rising",
+    "snapshots": [
+      {
+        "risk_score": 40,
+        "real_crisis_risk": 25,
+        "manipulation_risk": 18,
+        "topic_risks": [
+          {
+            "topic_id": "topic_safety",
+            "topic": "Safety concern",
+            "topic_risk_score": 38
+          }
+        ]
+      },
+      {
+        "risk_score": 46,
+        "real_crisis_risk": 35,
+        "manipulation_risk": 20,
+        "topic_risks": [
+          {
+            "topic_id": "topic_safety",
+            "topic": "Safety concern",
+            "topic_risk_score": 56
+          }
+        ]
+      },
+      {
+        "risk_score": 54,
+        "real_crisis_risk": 46,
+        "manipulation_risk": 24,
+        "topic_risks": [
+          {
+            "topic_id": "topic_safety",
+            "topic": "Safety concern",
+            "topic_risk_score": 73
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "forecast_status": "ready",
+      "min_topic_forecasts": 1,
+      "top_topic": "Safety concern",
+      "topic_trend_direction": "rising",
+      "min_predicted_topic_risk": 85
+    }
+  }
+]

@@ -31,6 +31,7 @@ def test_offline_benchmark_runner_passes_without_server_or_external_calls() -> N
         "report_builder",
         "report_quality_rubric",
         "markdown_export",
+        "forecasting",
         "selector_repair",
         "public_parser_fixtures",
         "platform_adapter_mocks",

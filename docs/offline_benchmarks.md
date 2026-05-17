@@ -1,6 +1,6 @@
 # Sentigraph Offline Benchmarks
 
-Status: v4.5 parser regression corpus expanded.
+Status: v4.5 deterministic forecasting suite added after parser regression corpus expansion.
 
 ## Purpose
 
@@ -16,6 +16,7 @@ The current benchmark suites cover:
 - report builder output shape across brand/product crisis, public figure controversy, workplace complaint, suspected bot amplification, and safety/legal issue report contexts
 - report quality rubric checks across completeness, risk explanation quality, actionability, safety/professionalism, and language/formatting
 - Markdown export sections for every report-builder scenario
+- deterministic public-opinion forecasting over monitoring snapshots, including insufficient history, low confidence, rising/falling/stable trends, acceleration, real-crisis risk, manipulation risk, and topic-risk forecasts
 - selector repair mock flow using sanitized fixture HTML for missing title/content selectors, changed containers, unavailable comments, and malformed HTML
 - public parser fixture parsing and per-platform regression variants for `the_paper`, `jiemian`, `hupu`, `tieba`, `nga`, and `maimai`
 - platform mock adapter normalization for `reddit`, `bilibili`, `weibo`, `douyin`, `kuaishou`, `xiaohongshu`, `zhihu`, `douban`, and `toutiao`
@@ -29,7 +30,7 @@ failed
 warnings
 ```
 
-Current v4.5 suite counts after expanding the parser regression corpus:
+Current v4.5 suite counts after parser regression and forecasting additions:
 
 ```text
 sentiment: 28
@@ -38,6 +39,7 @@ topic_risk: 51
 report_builder: 15
 report_quality_rubric: 27
 markdown_export: 5
+forecasting: 57
 selector_repair: 30
 public_parser_fixtures: 156
 platform_adapter_mocks: 54
@@ -123,6 +125,22 @@ The rubric dimensions are:
 - language and formatting
 
 The current benchmark fixtures cover a high-quality report, missing recommended actions, raw JSON dump detection, vague recommendations/public response, unsafe overclaim detection, representative comment preservation, and Markdown report quality. See `docs/report_quality_rubric.md` for detailed scoring guidance.
+
+## Forecasting Benchmark Suite
+
+The `forecasting` suite exercises the deterministic MVP forecasting layer without a backend server and without live data. Fixture cases cover:
+
+- insufficient history
+- one snapshot with low confidence
+- rising trend
+- falling trend
+- stable trend
+- high acceleration
+- manipulation risk rising
+- real-crisis risk rising
+- topic risk rising
+
+The suite checks coarse regression-protection expectations only: status, confidence, direction, score clamping, horizon availability, and topic/real-crisis/manipulation forecast shape. It does not claim predictive accuracy.
 
 ## Parser Regression Corpus
 

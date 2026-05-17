@@ -13,6 +13,9 @@ class PlatformSource(BaseModel):
     real_mode_available: bool = False
     api_approval_required: bool = False
     api_approval_status: str = "not_required"
+    developer_access_status: str | None = None
+    comment_api_status: str | None = None
+    real_mode_blocker: str | None = None
     credentials_required: list[str] = Field(default_factory=list)
     credentials_present: dict[str, bool] = Field(default_factory=dict)
     api_pending: bool = False

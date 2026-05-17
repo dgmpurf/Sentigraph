@@ -110,6 +110,16 @@ export async function listCaseSnapshots(caseId) {
   return Array.isArray(data) ? data : []
 }
 
+export async function getCaseForecast(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/forecast`)
+  return normalizeForecast(data)
+}
+
+export async function runCaseForecast(caseId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/forecast/run`)
+  return normalizeForecast(data)
+}
+
 export async function runCaseMonitoringCheck(caseId) {
   const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/monitor/run`)
   return normalizeMonitoringStatus(data)
@@ -345,6 +355,102 @@ function normalizeSnapshot(data) {
     overall_risk: normalizeOptionalScore(data.overall_risk) ?? 0,
     real_crisis_risk: normalizeOptionalScore(data.real_crisis_risk) ?? 0,
     manipulation_risk: normalizeOptionalScore(data.manipulation_risk) ?? 0,
+  }
+}
+
+function normalizeForecast(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      forecast_status: 'insufficient_history',
+      generated_at: null,
+      risk_model_version: null,
+      snapshot_count: 0,
+      latest_snapshot_id: null,
+      horizon: 'next_check',
+      latest_risk: 0,
+      moving_average: 0,
+      slope: 0,
+      acceleration: 0,
+      volatility: 0,
+      trend_direction: 'unknown',
+      forecast_confidence: 'insufficient_history',
+      predicted_risk_score: 0,
+      predicted_risk_level: 'low',
+      predicted_real_crisis_risk: 0,
+      predicted_manipulation_risk: 0,
+      real_crisis_trend_direction: 'unknown',
+      manipulation_trend_direction: 'unknown',
+      risk_forecasts: [],
+      topic_forecasts: [],
+      input_snapshots: [],
+      recommended_action: '请先运行监控检查，生成监控快照后再运行风险预测。',
+      message: '历史不足，需更多监控快照。',
+    }
+  }
+  return {
+    ...data,
+    case_id: String(data.case_id || ''),
+    forecast_status: String(data.forecast_status || 'insufficient_history'),
+    generated_at: data.generated_at ? String(data.generated_at) : null,
+    risk_model_version: data.risk_model_version ? String(data.risk_model_version) : null,
+    snapshot_count: Number(data.snapshot_count || 0),
+    latest_snapshot_id: data.latest_snapshot_id ? String(data.latest_snapshot_id) : null,
+    horizon: String(data.horizon || 'next_check'),
+    latest_risk: normalizeOptionalScore(data.latest_risk) ?? 0,
+    moving_average: normalizeOptionalScore(data.moving_average) ?? 0,
+    slope: normalizeOptionalScore(data.slope) ?? 0,
+    acceleration: normalizeOptionalScore(data.acceleration) ?? 0,
+    volatility: normalizeOptionalScore(data.volatility) ?? 0,
+    trend_direction: String(data.trend_direction || 'unknown'),
+    forecast_confidence: String(data.forecast_confidence || 'insufficient_history'),
+    predicted_risk_score: normalizeOptionalScore(data.predicted_risk_score) ?? 0,
+    predicted_risk_level: String(data.predicted_risk_level || 'low'),
+    predicted_real_crisis_risk: normalizeOptionalScore(data.predicted_real_crisis_risk) ?? 0,
+    predicted_manipulation_risk: normalizeOptionalScore(data.predicted_manipulation_risk) ?? 0,
+    real_crisis_trend_direction: String(data.real_crisis_trend_direction || 'unknown'),
+    manipulation_trend_direction: String(data.manipulation_trend_direction || 'unknown'),
+    risk_forecasts: Array.isArray(data.risk_forecasts)
+      ? data.risk_forecasts.map(normalizeRiskForecast).filter(Boolean)
+      : [],
+    topic_forecasts: Array.isArray(data.topic_forecasts)
+      ? data.topic_forecasts.map(normalizeTopicRiskForecast).filter(Boolean)
+      : [],
+    input_snapshots: Array.isArray(data.input_snapshots)
+      ? data.input_snapshots.map(normalizeSnapshot).filter(Boolean)
+      : [],
+    recommended_action: String(data.recommended_action || ''),
+    message: String(data.message || ''),
+  }
+}
+
+function normalizeRiskForecast(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    horizon: String(data.horizon || 'next_check'),
+    predicted_risk_score: normalizeOptionalScore(data.predicted_risk_score) ?? 0,
+    predicted_risk_level: String(data.predicted_risk_level || 'low'),
+    predicted_real_crisis_risk: normalizeOptionalScore(data.predicted_real_crisis_risk) ?? 0,
+    predicted_manipulation_risk: normalizeOptionalScore(data.predicted_manipulation_risk) ?? 0,
+    trend_direction: String(data.trend_direction || 'unknown'),
+    real_crisis_trend_direction: String(data.real_crisis_trend_direction || 'unknown'),
+    manipulation_trend_direction: String(data.manipulation_trend_direction || 'unknown'),
+    forecast_confidence: String(data.forecast_confidence || 'insufficient_history'),
+    forecast_reason: String(data.forecast_reason || ''),
+  }
+}
+
+function normalizeTopicRiskForecast(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    topic_id: String(data.topic_id || ''),
+    topic: String(data.topic || '未命名话题'),
+    current_topic_risk_score: normalizeOptionalScore(data.current_topic_risk_score) ?? 0,
+    predicted_topic_risk_score: normalizeOptionalScore(data.predicted_topic_risk_score) ?? 0,
+    predicted_topic_risk_level: String(data.predicted_topic_risk_level || 'low'),
+    trend_direction: String(data.trend_direction || 'unknown'),
+    risk_explanation: String(data.risk_explanation || ''),
+    forecast_reason: String(data.forecast_reason || ''),
   }
 }
 
@@ -723,6 +829,7 @@ function normalizeBenchmarkSuite(data) {
   return {
     suite: String(data.suite || ''),
     status: String(data.status || 'unknown'),
+    case_count: Number(data.case_count || 0),
     passed: Number(data.passed || 0),
     failed: Number(data.failed || 0),
     warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],

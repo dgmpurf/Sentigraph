@@ -7,6 +7,10 @@ import pytest
 from app.schemas.comment import RawComment, RawPost
 from app.services.crawling.adapter_factory import get_adapter, has_platform_adapter
 from app.services.crawling.xiaohongshu_adapter import (
+    XIAOHONGSHU_API_APPROVAL_STATUS,
+    XIAOHONGSHU_COMMENT_API_STATUS,
+    XIAOHONGSHU_DEVELOPER_ACCESS_STATUS,
+    XIAOHONGSHU_REAL_MODE_BLOCKER,
     XIAOHONGSHU_REQUIRED_CREDENTIALS,
     XiaohongshuAdapter,
     XiaohongshuCredentials,
@@ -182,6 +186,10 @@ def test_xiaohongshu_real_mode_missing_credentials_does_not_crash(monkeypatch: p
     assert metadata["sanitized_error_category"] == "config_error"
     assert metadata["real_mode_available"] is False
     assert metadata["api_pending"] is True
+    assert metadata["api_approval_status"] == XIAOHONGSHU_API_APPROVAL_STATUS
+    assert metadata["developer_access_status"] == XIAOHONGSHU_DEVELOPER_ACCESS_STATUS
+    assert metadata["comment_api_status"] == XIAOHONGSHU_COMMENT_API_STATUS
+    assert metadata["real_mode_blocker"] == XIAOHONGSHU_REAL_MODE_BLOCKER
     assert posts[0].platform == "xiaohongshu"
 
 
@@ -203,10 +211,14 @@ def test_xiaohongshu_real_mode_returns_api_pending_without_network(monkeypatch: 
     assert adapter.has_required_credentials() is True
     assert adapter.is_real_mode_enabled() is False
     assert adapter.supports_real_mode() is False
-    assert adapter.fallback_reason == "api_pending:xiaohongshu_official_api_not_implemented"
+    assert adapter.fallback_reason == "api_pending:permission_not_verified"
     assert health.real_mode_available is False
     assert metadata["fetch_status"] == "api_pending"
     assert metadata["sanitized_error_category"] == "api_pending"
+    assert metadata["api_approval_status"] == XIAOHONGSHU_API_APPROVAL_STATUS
+    assert metadata["developer_access_status"] == XIAOHONGSHU_DEVELOPER_ACCESS_STATUS
+    assert metadata["comment_api_status"] == XIAOHONGSHU_COMMENT_API_STATUS
+    assert metadata["real_mode_blocker"] == XIAOHONGSHU_REAL_MODE_BLOCKER
     assert metadata["real_mode_reached"] is False
     assert posts[0].raw_data["mode"] == "mock"
 

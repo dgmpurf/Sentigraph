@@ -7,6 +7,7 @@ from app.schemas.case import (
     AnalysisCaseListItem,
     MarkdownExportResponse,
 )
+from app.schemas.forecast import ForecastResult
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.scheduler import MonitoringScheduleConfig
 from app.services.case_store import (
@@ -25,6 +26,7 @@ from app.services.monitoring.scheduler_service import (
     get_case_monitoring_config,
     update_case_monitoring_config,
 )
+from app.services.forecasting.forecast_service import get_case_forecast, run_case_forecast
 from app.services.notifications.notification_service import list_case_notifications
 
 router = APIRouter()
@@ -62,6 +64,22 @@ def get_case_snapshots(case_id: str) -> list[AnalysisSnapshot]:
     if snapshots is None:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return snapshots
+
+
+@router.get("/{case_id}/forecast", response_model=ForecastResult)
+def get_forecast(case_id: str) -> ForecastResult:
+    forecast = get_case_forecast(case_id)
+    if not forecast:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return forecast
+
+
+@router.post("/{case_id}/forecast/run", response_model=ForecastResult)
+def run_forecast(case_id: str) -> ForecastResult:
+    forecast = run_case_forecast(case_id)
+    if not forecast:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return forecast
 
 
 @router.post("/{case_id}/monitor/run", response_model=MonitoringStatus)
