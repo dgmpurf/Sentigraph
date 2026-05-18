@@ -148,6 +148,11 @@ def run_smoke_check(base_url: str = DEFAULT_BASE_URL) -> list[SmokeResult]:
         return len(alerts)
 
     check("monitor run", monitor_run)
+    check("forecast", lambda: _expect_key(client.request("GET", f"/cases/{state['case_id']}/forecast"), "forecast_status"))
+    check(
+        "forecast run",
+        lambda: _expect_key(client.request("POST", f"/cases/{state['case_id']}/forecast/run"), "predicted_risk_score"),
+    )
     check("case alerts", lambda: _expect_min_len(client.request("GET", f"/cases/{state['case_id']}/alerts"), 1))
     check("global alerts", lambda: _expect_min_len(client.request("GET", "/alerts"), 1))
     check("scheduler status", lambda: _expect_key(client.request("GET", "/scheduler/status"), "background_scheduler_running"))
@@ -178,6 +183,43 @@ def run_smoke_check(base_url: str = DEFAULT_BASE_URL) -> list[SmokeResult]:
         ),
     )
     check("simulate send pending", lambda: len(client.request("POST", "/notifications/simulate-send-pending")))
+
+    def simulation_run() -> str:
+        scenario = client.request("GET", "/simulation/demo-scenario")
+        _expect_key(scenario, "scenario_id")
+        state["simulation_scenario"] = scenario
+        result = client.request("POST", "/simulation/run", scenario)
+        _expect_key(result, "simulation_status")
+        state["simulation_run_result"] = result
+        return result["simulation_status"]
+
+    check("simulation demo scenario", lambda: _expect_key(client.request("GET", "/simulation/demo-scenario"), "scenario_id"))
+    check("simulation run", simulation_run)
+
+    def simulation_report_export() -> str:
+        report = client.request(
+            "POST",
+            "/simulation/report/markdown",
+            {
+                "simulation_mode": "single",
+                "scenario_name": state["simulation_run_result"].get("scenario_name", "Smoke demo scenario"),
+                "intervention_a": "clarification",
+                "run_result": state["simulation_run_result"],
+                "generated_from": "api_smoke_check",
+            },
+        )
+        markdown = _expect_key(report, "markdown")
+        for section in (
+            "# Simulation Lab Strategy Report",
+            "## Scenario Overview",
+            "## Ethical Risk Review",
+            "## Recommended Human Review Questions",
+            "## Limitations",
+        ):
+            assert section in markdown, f"simulation report missing {section}"
+        return "markdown ok"
+
+    check("simulation report export", simulation_report_export)
 
     return results
 

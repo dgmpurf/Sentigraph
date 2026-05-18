@@ -39,6 +39,9 @@ import { NotFound } from './pages/NotFound.jsx'
 const DEFAULT_PROJECT_ID = 'project_001'
 const DEFAULT_DATE_RANGE = { start: '2026-05-01', end: '2026-05-13' }
 const DEFAULT_REPORT_LANGUAGE = 'zh-CN'
+const DEMO_CASE_TITLE = 'Tesla Demo Case'
+const DEMO_CASE_KEYWORD = 'Tesla'
+const DEMO_CASE_PLATFORMS = ['reddit', 'weibo', 'bilibili']
 const DEFAULT_PLATFORMS = [
   'reddit',
   'weibo',
@@ -67,6 +70,7 @@ function lazyNamed(importer, exportName) {
 }
 
 const Dashboard = lazyNamed(() => import('./pages/Dashboard.jsx'), 'Dashboard')
+const DemoFlow = lazyNamed(() => import('./pages/DemoFlow.jsx'), 'DemoFlow')
 const Cases = lazyNamed(() => import('./pages/Cases.jsx'), 'Cases')
 const KeywordSearch = lazyNamed(() => import('./pages/KeywordSearch.jsx'), 'KeywordSearch')
 const AnalysisResult = lazyNamed(() => import('./pages/AnalysisResult.jsx'), 'AnalysisResult')
@@ -341,6 +345,67 @@ function App() {
     }
   }, [activeMvpPlatforms, applyCaseDetail, loadCaseMonitoring, refreshCases])
 
+  const handleLoadDemoCase = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const caseList = await refreshCases()
+      const existingDemoCase = caseList.find((item) => {
+        const title = String(item.title || '').toLowerCase()
+        const keywordValue = String(item.keyword || '').toLowerCase()
+        return title === DEMO_CASE_TITLE.toLowerCase() || keywordValue === DEMO_CASE_KEYWORD.toLowerCase()
+      })
+
+      let caseDetail = existingDemoCase
+        ? await getAnalysisCase(existingDemoCase.case_id)
+        : await createAnalysisCase({
+            title: DEMO_CASE_TITLE,
+            keyword: DEMO_CASE_KEYWORD,
+            platforms: DEMO_CASE_PLATFORMS,
+            report_language: DEFAULT_REPORT_LANGUAGE,
+          })
+
+      if (caseDetail.status !== 'completed') {
+        caseDetail = await runAnalysisCase(caseDetail.case_id)
+      }
+
+      applyCaseDetail(caseDetail)
+      let monitoringState = await loadCaseMonitoring(caseDetail.case_id)
+      if ((monitoringState.snapshots?.length || 0) < 3) {
+        await runCaseMonitoringCheck(caseDetail.case_id)
+        await runCaseMonitoringCheck(caseDetail.case_id)
+        monitoringState = await loadCaseMonitoring(caseDetail.case_id)
+      }
+
+      try {
+        const config = await enableCaseMonitoring(caseDetail.case_id)
+        setMonitoringConfig(config)
+      } catch {
+        // Demo prep remains usable even if schedule config is unavailable.
+      }
+
+      try {
+        const forecast = await runCaseForecast(caseDetail.case_id)
+        setCaseForecast(forecast)
+      } catch {
+        setCaseForecast(null)
+      }
+
+      const refreshedCase = await getAnalysisCase(caseDetail.case_id)
+      applyCaseDetail(refreshedCase)
+      await loadCaseMonitoring(refreshedCase.case_id)
+      setSchedulerStatus(await getSchedulerStatus())
+      await refreshCases()
+      setActivePage('demoFlow')
+      return refreshedCase
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to prepare the deterministic demo case.')
+      return null
+    } finally {
+      setLoading(false)
+    }
+  }, [applyCaseDetail, loadCaseMonitoring, refreshCases])
+
   const handleRunCase = useCallback(async (caseId, nextPage = 'dashboard') => {
     setLoading(true)
     setError('')
@@ -603,9 +668,11 @@ function App() {
     schedulerLoading,
     schedulerStatus,
     onGetMarkdownReport: handleGetMarkdownReport,
+    onLoadDemoCase: handleLoadDemoCase,
     onEnableMonitoring: handleEnableMonitoring,
     onDisableMonitoring: handleDisableMonitoring,
     onMarkNotificationRead: handleMarkNotificationRead,
+    onNavigate: setActivePage,
     onNavigateToKeyword: () => setActivePage('keyword'),
     onOpenCaseReport: handleOpenCaseReport,
     onRefreshCases: refreshCases,
@@ -627,6 +694,7 @@ function App() {
 
   const currentPage = {
     dashboard: <Dashboard {...pageProps} />,
+    demoFlow: <DemoFlow {...pageProps} />,
     cases: <Cases {...pageProps} />,
     keyword: <KeywordSearch {...pageProps} />,
     analysis: <AnalysisResult {...pageProps} />,

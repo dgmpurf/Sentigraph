@@ -382,6 +382,59 @@ body {
   width: 100%;
 }
 
+.demo-flow-page .ant-alert {
+  border-radius: 8px;
+}
+
+.demo-step-card {
+  min-height: 210px;
+}
+
+.demo-step-ready {
+  border-color: rgba(84, 245, 168, 0.38);
+}
+
+.demo-step-active {
+  border-color: rgba(66, 245, 215, 0.38);
+}
+
+.demo-step-header,
+.demo-step-footer,
+.demo-readiness-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.demo-step-header h4 {
+  margin: 0;
+}
+
+.demo-step-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(66, 245, 215, 0.36);
+  border-radius: 8px;
+  color: #42f5d7;
+  background: rgba(66, 245, 215, 0.08);
+}
+
+.demo-step-card .ant-typography {
+  color: #c7d2ea;
+}
+
+.demo-step-footer {
+  margin-top: 16px;
+}
+
+.demo-command-card code {
+  white-space: normal;
+  word-break: break-word;
+}
+
 .query-strip {
   display: flex;
   flex-wrap: wrap;

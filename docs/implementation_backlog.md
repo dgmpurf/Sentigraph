@@ -8,6 +8,35 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### v5.4 Demo Polish and One-Click Demo Flow
+
+Status: implemented and locally validated on 2026-05-18.
+
+Completed:
+
+- Added `Demo Flow / 演示流程` sidebar navigation and a desktop-first guided page for the local end-to-end demo.
+- Added a one-click frontend demo-prep action that creates or loads the deterministic Tesla mock case, runs offline mock analysis, prepares monitoring snapshots, enables local schedule metadata, and computes deterministic forecasting through existing local APIs.
+- Added cards for the demo story: create/load case, run mock analysis, inspect V1.5 risk, view Chinese report, export Markdown, initialize Simulation Lab, run A/B strategy comparison, export Simulation Lab strategy report, and verify Benchmarks plus LLM Safety.
+- Updated `scripts/seed_demo_cases.py` so seed output verifies forecast readiness and case-to-simulation initialization readiness.
+- Extended `scripts/api_smoke_check.py` to cover forecast endpoints, Simulation Lab demo scenario, Simulation Lab run, Simulation Lab strategy report export, latest benchmark summary, and LLM status/usage.
+- Updated demo documentation with exact Windows reset, seed, benchmark, backend, frontend, smoke, and page walkthrough steps.
+
+Acceptance:
+
+- `python -m pytest` passed with `511 passed in 4.88s`.
+- `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
+- `npm run build` passed from `frontend/` in 8.06s with the existing non-blocking Ant Design/ECharts large vendor chunk warning.
+- `python scripts/api_smoke_check.py --base-url http://127.0.0.1:8010` passed against a temporary local backend with `38 passed, 0 failed`.
+- No real API, real LLM API, live public fetch, real crawler, real notification, fake consensus, bot amplification, fake event, deceptive diversion, covert seeding, individual targeting, or account-level influenceability path was introduced.
+
+Future work:
+
+- Production onboarding remains future work.
+- Browser screenshot capture and a polished demo script remain future work.
+- Real API integrations remain future work and require official permission verification.
+- Real LLM integrations remain future work behind explicit provider gates and guardrails.
+- GitHub Actions CI remains intentionally disabled.
+
 ### Simulation Lab MVP Backend and Frontend Scaffold
 
 Status: backend implemented and QA-stabilized; frontend bubble visualization implemented and QA-stabilized; A/B intervention comparison implemented and QA-stabilized on 2026-05-18. Content visibility intervention backlash modeling is implemented and QA-stabilized on 2026-05-18. Event Frame and Audience Initialization design is documentation-complete and QA-stabilized on 2026-05-18.

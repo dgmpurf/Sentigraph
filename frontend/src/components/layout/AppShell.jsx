@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   ClipboardCheck,
+  ClipboardList,
   FileText,
   FileSearch,
   FolderKanban,
@@ -23,6 +24,7 @@ const { Text, Title } = Typography
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={17} /> },
+  { key: 'demoFlow', label: 'Demo Flow / 演示流程', icon: <ClipboardList size={17} /> },
   { key: 'cases', label: 'Cases', icon: <FolderKanban size={17} /> },
   { key: 'keyword', label: 'Keyword Search', icon: <Search size={17} /> },
   { key: 'analysis', label: 'Analysis Result', icon: <Activity size={17} /> },

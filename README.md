@@ -63,6 +63,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - 后端 deterministic mock analysis pipeline。
 - 情绪分析、话题聚类、重复话术/疑似水军信号、风险评分。
 - Dashboard、Keyword Search、Cases、Analysis Result、Propagation Graph、Risk Monitor、Summary Report、Public Parser Status、Platform Integration Overview、Selector Repair Tool 页面。
+- Demo Flow / 演示流程页面：一页引导本地端到端演示，包含 Tesla mock 案例准备、mock 分析、V1.5 风险、中文报告、Markdown 导出、Simulation Lab、离线评测和 LLM Safety 状态。
 - Public Parser Status 页面支持 `the_paper`、`jiemian`、`hupu`、`maimai`、`tieba`、`nga` 的 fixture-first 状态查看和安全预览；前端不会启用 live public fetching。
 - Platform Integration Overview 页面集中展示官方 API scaffold、公开页面解析、Reddit API-pending 状态和未来可选来源；凭证只显示 present/missing 布尔状态，前端不会启用真实模式或 live public fetching。
 - Selector Repair Tool 页面只使用 fixture/sanitized HTML 和 MockProvider selector 建议；不会抓取真实网页、调用真实 LLM API 或自动修改 parser profile。
@@ -385,6 +386,27 @@ npm run frontend:build
 ### Pre-v1.0 Local Demo Utilities
 
 These commands are optional local helpers for the mock MVP. They operate only on project-local runtime/demo data and do not call external APIs.
+
+### Local Demo Flow
+
+For the shortest end-to-end demo, reset and seed local runtime data, start the backend and frontend, then open `Demo Flow / 演示流程` in the sidebar.
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\reset_local_data.py --yes
+python scripts\seed_demo_cases.py --reset-first
+python scripts\run_offline_benchmarks.py
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+In a second terminal:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\frontend"
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`, choose `Demo Flow / 演示流程`, then use `一键准备演示数据` if the seeded Tesla case is not already selected. The page guides the demo through mock analysis, V1.5 risk results, Chinese report and Markdown export, Simulation Lab initialization, A/B strategy comparison, Simulation Lab strategy report export, Benchmark Dashboard, and LLM Safety status. The flow remains mock/offline only and does not call real platform APIs or real LLM APIs.
 
 Dry-run local data reset:
 

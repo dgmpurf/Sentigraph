@@ -24,7 +24,9 @@ from app.services.case_store import (
     run_monitoring_check,
 )
 from app.services.crawling.public_parser.parser_status_service import preview_public_parser
+from app.services.forecasting.forecast_service import run_case_forecast
 from app.services.monitoring.scheduler_service import enable_case_monitoring, run_due_monitoring_jobs
+from app.services.simulation.case_initializer import build_case_simulation_initialization
 from app.services.storage.local_json_store import LocalJsonCaseStore
 
 
@@ -86,6 +88,13 @@ def seed_demo_cases(
     snapshots = repository.list_analysis_snapshots(completed.case_id)
     alerts = repository.list_case_alerts(completed.case_id)
     notifications = repository.list_case_notifications(completed.case_id)
+    forecast = run_case_forecast(completed.case_id)
+    simulation_initialization = build_case_simulation_initialization(
+        completed,
+        snapshots=snapshots,
+        alerts=alerts,
+        forecast=forecast,
+    )
     cases = repository.list_cases()
 
     return {
@@ -100,6 +109,10 @@ def seed_demo_cases(
         "snapshot_count": len(snapshots),
         "alert_count": len(alerts),
         "notification_count": len(notifications),
+        "forecast_status": forecast.forecast_status if forecast else "missing",
+        "simulation_initialization_status": simulation_initialization.status,
+        "simulation_sub_issue_count": len(simulation_initialization.event_frame.sub_issues),
+        "simulation_audience_segment_count": len(simulation_initialization.audience_segments),
         "scheduler_executed_case_count": scheduler_result.executed_case_count,
         "mock_only": True,
     }

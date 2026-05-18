@@ -1,10 +1,81 @@
 # Sentigraph Local Demo Checklist
 
+Latest v5.4 demo polish validation: 2026-05-18. Added the `Demo Flow / 演示流程` page for one-page local walkthroughs, extended deterministic demo seeding with forecast and case-to-simulation readiness fields, and extended the local API smoke script to cover forecast plus Simulation Lab demo/run/report export. Backend tests passed with `python -m pytest` (`511 passed in 4.88s`), offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`; `no_regression`), frontend production build passed with `npm run build` from `frontend` in 8.06s with the existing non-blocking Ant Design/ECharts vendor chunk warning, and local API smoke passed against a temporary backend on port 8010 (`38 passed, 0 failed`). No real APIs, real LLM APIs, live public fetching, real crawlers, real notifications, or manipulation tactics were enabled.
+
 Latest Simulation Lab content visibility intervention QA stabilization: 2026-05-18. Backend tests passed with `python -m pytest` (`488 passed in 4.17s`), offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`483 passed, 0 failed, 0 warnings`; `simulation_lab: 36 cases`), and frontend production build passed with `npm run build` from `frontend` in 7.90s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser smoke against local backend/frontend verified the A/B default `no_response` vs `透明说明后内容移除` flow, the `内容可见性干预` panel labels, human-review copy, no real API/LLM copy, no automatic platform-action execution, and no forbidden tactic values in selectable options. Additional backend coverage now locks down reach sensitivity, reactance sensitivity, score clamping, required aggregate groups, API visibility-result shape, aggregate-only output, and target-list absence.
 
 Latest Simulation Lab content visibility intervention validation: 2026-05-18. Backend tests passed with `python -m pytest` (`482 passed in 4.47s`), offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`483 passed, 0 failed, 0 warnings`), and frontend production build passed with `npm run build` from `frontend` in 7.67s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser smoke against local backend/frontend verified the A/B default `no_response` vs `透明说明后内容移除` flow, the `内容可见性干预` panel labels, and that forbidden tactic values do not appear in selectable options. The Simulation Lab A/B UI now supports safe visibility tradeoff display for `content_removal_with_explanation`, `visibility_reduction`, and `platform_labeling` when exposed by the backend ethics policy; forbidden manipulation and illegal/covert suppression options remain unavailable.
 
 Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
+
+## 0.0 v5.4 One-Click Demo Flow
+
+Use this path when you want a clean end-to-end local demo without jumping manually across many pages first.
+
+1. Reset local runtime data:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\reset_local_data.py --yes
+```
+
+2. Seed deterministic demo cases:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\seed_demo_cases.py --reset-first
+```
+
+Expected seed output:
+
+- `completed_case_id` is a Tesla demo case using `reddit`, `weibo`, and `bilibili`.
+- `forecast_status` is `ready`.
+- `simulation_initialization_status` is `initialized`.
+- `snapshot_count`, `alert_count`, and `notification_count` are nonzero.
+- `mock_only` is `true`.
+
+3. Run offline benchmarks so the Benchmark Dashboard has a fresh result:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\run_offline_benchmarks.py
+```
+
+4. Start the backend:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+set CASE_STORE_BACKEND=local_json
+set PUBLIC_PARSER_LIVE_FETCH_ENABLED=false
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+5. Start the frontend:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\frontend"
+npm run dev
+```
+
+6. Optional smoke check after the backend is running:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
+```
+
+7. Open `http://127.0.0.1:5173` and click `Demo Flow / 演示流程`.
+8. Click `一键准备演示数据` if the Tesla demo case is not already selected.
+9. Walk through the cards in order:
+   - `创建/加载演示案例`
+   - `运行 mock 分析`
+   - `查看风险结果`
+   - `查看中文报告并导出 Markdown`
+   - `初始化沙盘`
+   - `A/B 策略对比`
+   - `导出策略预演报告`
+   - `查看离线评测与安全状态`
+10. Confirm the page-level safety note says the demo uses mock/offline data and does not call real platform APIs or real LLM APIs.
 
 Latest Simulation Lab frontend QA stabilization validation: 2026-05-18. Frontend production build passed with `npm run build` from `frontend` in 7.90s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser smoke against local `http://127.0.0.1:8000` and `http://127.0.0.1:5173` confirmed the `Simulation Lab / 舆情预演沙盘` route, sidebar navigation, left/center/right/bottom layout, event cards, bubble canvas, aggregate metrics, explanation cards, timeline, `运行模拟`, and `单步推进` flow. Backend tests and offline benchmarks were not rerun because no backend algorithm or benchmark logic changed. No real API, real LLM API, crawler, live public fetch, individual targeting, account-level influenceability scoring, or forbidden manipulation tactic was enabled.
 

@@ -46,6 +46,10 @@ def test_seed_demo_cases_creates_complete_notification_ready_store(tmp_path) -> 
     assert result["snapshot_count"] >= 3
     assert result["alert_count"] >= 1
     assert result["notification_count"] >= 1
+    assert result["forecast_status"] == "ready"
+    assert result["simulation_initialization_status"] == "initialized"
+    assert result["simulation_sub_issue_count"] >= 1
+    assert result["simulation_audience_segment_count"] >= 1
     assert result["completed_case_id"] in data["cases"]
     assert result["public_parser_case_id"] in data["cases"]
     assert result["public_parser_preview_platform"] == "hupu"
