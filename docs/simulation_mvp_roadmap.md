@@ -238,3 +238,17 @@ Remaining frontend roadmap items:
 - Richer animation and replay controls.
 - Assumption editor for safe aggregate parameters.
 - Historical replay only after validation and data-approval review.
+
+## Case-to-Simulation Initializer Checkpoint
+
+As of 2026-05-18, Simulation Lab can initialize a synthetic scenario from completed Sentigraph cases:
+
+- The backend converts aggregate case analysis outputs into EventFrame, SubIssue, AudienceSegment, PersonaCluster, FrameGapAnalysis, StrategyImplication, and SimulationScenario objects.
+- The frontend Simulation Lab page includes `从案例初始化沙盘`, initialization preview, and a compact event-frame/audience/gap summary.
+- The generated agents are synthetic audience bubbles only; they are not real accounts.
+- The initializer does not call real APIs, real LLM APIs, crawlers, or live public fetchers.
+- Outputs remain aggregate-level and human-review-oriented.
+
+Next Simulation Lab task:
+
+- QA-stabilize case initialization in the browser, then add a safe aggregate assumption editor or richer replay controls.

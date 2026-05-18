@@ -23,6 +23,8 @@ from app.schemas.analysis import (  # noqa: E402
     BotImpactSummary,
     BotScore,
     RiskBrief,
+    SentimentSummary,
+    TopicCluster,
 )
 from app.schemas.alert import AnalysisSnapshot  # noqa: E402
 from app.schemas.case import AnalysisCaseDetail  # noqa: E402
@@ -48,6 +50,10 @@ from app.services.nlp.topic_clusterer import TopicClusterer  # noqa: E402
 from app.services.recommendation.report_builder import build_public_opinion_report  # noqa: E402
 from app.services.scoring.topic_risk_score import calculate_topic_risk_score  # noqa: E402
 from app.services.simulation.errors import SimulationEthicsError  # noqa: E402
+from app.services.simulation.case_initializer import (  # noqa: E402
+    CaseAnalysisRequiredError,
+    build_case_simulation_initialization,
+)
 from app.services.simulation.simulation_engine import (  # noqa: E402
     create_brand_crisis_scenario,
     create_default_echo_chamber_scenario,
@@ -71,6 +77,7 @@ EXPECTED_FIXTURE_FILES = (
     "adapter_mock_cases.json",
     "forecast_cases.json",
     "simulation_lab_cases.json",
+    "case_to_simulation_initializer_cases.json",
 )
 SAFE_ENV_DEFAULTS = {
     "LLM_PROVIDER": "mock",
@@ -141,6 +148,10 @@ def run_all_benchmarks(
         _safe_run_suite("markdown_export", lambda: _run_markdown_export_benchmark(fixture_root)),
         _safe_run_suite("forecasting", lambda: _run_forecasting_benchmark(fixture_root)),
         _safe_run_suite("simulation_lab", lambda: _run_simulation_lab_benchmark(fixture_root)),
+        _safe_run_suite(
+            "case_to_simulation_initializer",
+            lambda: _run_case_to_simulation_initializer_benchmark(fixture_root),
+        ),
         _safe_run_suite("selector_repair", lambda: _run_selector_repair_benchmark(fixture_root)),
         _safe_run_suite("public_parser_fixtures", lambda: _run_public_parser_benchmark(fixture_root)),
         _safe_run_suite("platform_adapter_mocks", lambda: _run_adapter_mock_benchmark(fixture_root)),
@@ -820,6 +831,196 @@ def _simulation_scenario_from_case(case: dict[str, Any]):
 def _simulation_risk_proxy(result: Any) -> float:
     metrics = result.final_metrics
     return round(metrics.negative_ratio * 75 + metrics.false_belief_proxy * 20 + metrics.polarization_index * 5, 4)
+
+
+def _run_case_to_simulation_initializer_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("case_to_simulation_initializer")
+    cases = _load_json(fixture_root / "case_to_simulation_initializer_cases.json")
+    for case in cases:
+        case_id = str(case["case_id"])
+        expected = case.get("expected", {})
+        detail = _analysis_case_from_initializer_fixture(case)
+        try:
+            initialization = build_case_simulation_initialization(detail)
+        except CaseAnalysisRequiredError:
+            recorder.check(
+                f"{case_id}:analysis_required",
+                bool(expected.get("case_analysis_required")),
+                "incomplete case is rejected with a safe analysis-required state",
+                {"status": detail.status},
+            )
+            continue
+
+        result_text = initialization.model_dump_json()
+        scenario_result = run_simulation(initialization.simulation_scenario)
+        details = {
+            "status": initialization.status,
+            "primary_classification": initialization.frame_gap_analysis.primary_classification,
+            "sub_issue_count": len(initialization.event_frame.sub_issues),
+            "audience_segment_count": len(initialization.audience_segments),
+            "warning_count": len(initialization.warnings),
+            "simulation_status": scenario_result.simulation_status,
+        }
+        recorder.check(
+            f"{case_id}:initialized",
+            initialization.status in {"initialized", "partial"}
+            and bool(initialization.event_frame.sub_issues)
+            and bool(initialization.audience_segments)
+            and bool(initialization.persona_clusters),
+            "case initializer produces EventFrame, SubIssues, AudienceSegments, and PersonaClusters",
+            details,
+        )
+        recorder.check(
+            f"{case_id}:scenario_runs",
+            scenario_result.simulation_status == "completed"
+            and scenario_result.safe_mode["aggregate_level_only"] is True,
+            "generated SimulationScenario is accepted by the deterministic Simulation Lab engine",
+            details,
+        )
+        recorder.check(
+            f"{case_id}:safe_output",
+            "target_accounts" not in result_text
+            and "author_id" not in result_text
+            and "author_name" not in result_text
+            and "influenceability_score" not in result_text
+            and initialization.safe_mode["individual_targeting"] is False,
+            "initializer output remains aggregate-level and contains no named-user targeting fields",
+            initialization.safe_mode,
+        )
+        if expected.get("primary_classification"):
+            recorder.check(
+                f"{case_id}:classification",
+                initialization.frame_gap_analysis.primary_classification == expected["primary_classification"],
+                "frame gap classification matches coarse fixture expectation",
+                details,
+            )
+        if expected.get("min_sub_issues"):
+            recorder.check(
+                f"{case_id}:sub_issue_count",
+                len(initialization.event_frame.sub_issues) >= int(expected["min_sub_issues"]),
+                "topic risks are converted into enough SubIssue records",
+                details,
+            )
+        if expected.get("warning_contains"):
+            recorder.check(
+                f"{case_id}:warning",
+                expected["warning_contains"] in initialization.warnings,
+                "expected confidence/safety warning is present",
+                {"warnings": initialization.warnings},
+            )
+    return recorder.summary()
+
+
+def _analysis_case_from_initializer_fixture(case: dict[str, Any]) -> AnalysisCaseDetail:
+    now = datetime(2026, 5, 18, tzinfo=timezone.utc)
+    if not case.get("analysis"):
+        return AnalysisCaseDetail(
+            case_id=str(case["case_id"]),
+            project_id=str(case.get("project_id", "project_benchmark")),
+            title=str(case.get("title", case["case_id"])),
+            keyword=str(case.get("keyword", "benchmark")),
+            platforms=list(case.get("platforms", ["reddit"])),
+            status=str(case.get("status", "draft")),
+            created_at=now,
+            updated_at=now,
+            analysis_result=None,
+        )
+
+    analysis_payload = case["analysis"]
+    topic_risks = [_topic_risk_score_from_fixture(item, index) for index, item in enumerate(analysis_payload["topic_risks"], start=1)]
+    topics = [
+        TopicCluster(
+            cluster_id=str(item.get("cluster_id", f"cluster_{index}")),
+            topic=str(item["topic"]),
+            summary=str(item.get("summary", item["topic"])),
+            comment_count=int(item.get("comment_count", 0)),
+            average_sentiment_score=float(item.get("average_sentiment_score", -0.2)),
+            representative_comments=list(item.get("representative_comments", [])),
+        )
+        for index, item in enumerate(analysis_payload["topic_risks"], start=1)
+    ]
+    sentiment_payload = analysis_payload.get("sentiment") or {}
+    overall_risk = float(analysis_payload.get("overall_risk", max((topic.topic_risk_score for topic in topic_risks), default=35.0)))
+    risk_level = _risk_level_from_score(overall_risk)
+    analysis = AnalysisResultResponse(
+        project_id=str(case.get("project_id", "project_benchmark")),
+        summary=str(analysis_payload.get("summary", "Synthetic benchmark case analysis.")),
+        sentiment=SentimentSummary(
+            positive_ratio=float(sentiment_payload.get("positive_ratio", 0.2)),
+            neutral_ratio=float(sentiment_payload.get("neutral_ratio", 0.35)),
+            negative_ratio=float(sentiment_payload.get("negative_ratio", 0.45)),
+            average_sentiment_score=float(sentiment_payload.get("average_sentiment_score", -0.2)),
+        ),
+        topics=topics,
+        conflicts=[],
+        bot_score=BotImpactSummary(
+            suspected_bot_ratio=float(analysis_payload.get("suspected_bot_ratio", 0.0)),
+            suspected_bot_comment_ratio=float(analysis_payload.get("suspected_bot_comment_ratio", 0.0)),
+        ),
+        risk=RiskBrief(risk_score=int(round(overall_risk)), risk_level=risk_level),
+        sentiment_results=[],
+        ai_generated=[],
+        bot_accounts=[],
+        risk_model_version=TOPIC_RISK_MODEL_VERSION,
+        topic_risks=topic_risks,
+        top_risk_topics=topic_risks[:3],
+        max_topic_risk=max((topic.topic_risk_score for topic in topic_risks), default=0.0),
+        average_topic_risk=round(
+            sum(topic.topic_risk_score for topic in topic_risks) / max(1, len(topic_risks)),
+            4,
+        ),
+        overall_risk=overall_risk,
+        real_crisis_risk=float(analysis_payload.get("real_crisis_risk", overall_risk)),
+        manipulation_risk=float(analysis_payload.get("manipulation_risk", 0.0)),
+        risk_explanation=str(analysis_payload.get("risk_explanation", "Synthetic benchmark risk explanation.")),
+    )
+    return AnalysisCaseDetail(
+        case_id=str(case["case_id"]),
+        project_id=str(case.get("project_id", "project_benchmark")),
+        title=str(case.get("title", case["case_id"])),
+        keyword=str(case.get("keyword", "benchmark")),
+        platforms=list(case.get("platforms", ["reddit"])),
+        status="completed",
+        created_at=now,
+        updated_at=now,
+        risk_score=overall_risk,
+        risk_level=risk_level,
+        risk_model_version=TOPIC_RISK_MODEL_VERSION,
+        analysis_result=analysis,
+        markdown_available=False,
+    )
+
+
+def _topic_risk_score_from_fixture(item: dict[str, Any], index: int) -> TopicRiskScore:
+    score = float(item.get("topic_risk_score", item.get("risk_score", 45.0)))
+    return TopicRiskScore(
+        topic_id=str(item.get("topic_id", f"topic_{index}")),
+        cluster_id=str(item.get("cluster_id", f"cluster_{index}")),
+        topic=str(item["topic"]),
+        comment_count=int(item.get("comment_count", 8)),
+        negative_ratio=float(item.get("negative_ratio", 0.45)),
+        average_sentiment_score=float(item.get("average_sentiment_score", -0.2)),
+        neg_severity=float(item.get("neg_severity", 45.0)),
+        spread_signal=float(item.get("spread_signal", 35.0)),
+        controversy_signal=float(item.get("controversy_signal", 30.0)),
+        bot_signal=float(item.get("bot_signal", 0.0)),
+        influence_proxy=float(item.get("influence_proxy", 30.0)),
+        topic_risk_score=score,
+        topic_risk_level=str(item.get("topic_risk_level", _risk_level_from_score(score))),
+        risk_explanation=str(item.get("risk_explanation", "Synthetic topic risk fixture.")),
+        risk_score=score,
+        risk_level=str(item.get("topic_risk_level", _risk_level_from_score(score))),
+    )
+
+
+def _risk_level_from_score(score: float) -> str:
+    if score >= 85:
+        return "critical"
+    if score >= 70:
+        return "high"
+    if score >= 40:
+        return "medium"
+    return "low"
 
 
 def _run_selector_repair_benchmark(fixture_root: Path) -> dict[str, Any]:

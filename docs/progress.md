@@ -1229,9 +1229,81 @@ Safety and scope:
 
 Next recommended task: implement a case-to-simulation EventFrame and AudienceInitialization initializer that consumes existing aggregate case outputs and synthetic fixtures, then add offline benchmark cases for aligned, negative-skewed, positive-skewed, polarized, manipulation-suspected, and insufficient-data frames.
 
+## 6.16 Case-to-Simulation Initializer
+
+Update date: 2026-05-18.
+
+Status: implemented and validated.
+
+What changed:
+
+- Added a deterministic backend initializer that converts completed case analysis outputs into `EventFrame`, `SubIssue`, `AudienceSegment`, `PersonaCluster`, `FrameGapAnalysis`, `StrategyImplication`, and a compatible `SimulationScenario`.
+- Added case endpoints:
+  - `GET /api/v1/cases/{case_id}/simulation/initialization-preview`
+  - `POST /api/v1/cases/{case_id}/simulation/initialize`
+- Added Simulation Lab UI controls for `从案例初始化沙盘`, including case selection/manual `case_id`, initialization preview, and an aggregate-only initialization summary.
+- Added an offline benchmark suite `case_to_simulation_initializer` with completed, incomplete, high-manipulation, more-negative-frame, and aligned-frame synthetic cases.
+
+Safety boundaries:
+
+- Uses only existing aggregate case outputs and synthetic defaults.
+- Does not call real APIs, real LLM APIs, crawlers, or live public fetch.
+- Does not output named user targeting, account lists, individual persuasion profiles, account-level influenceability scores, or automatic action execution.
+- Manipulation-related outputs are aggregate repeated-script pressure warnings only; they do not label real accounts.
+
+Known limitations:
+
+- Ordinary-public baseline and persona cluster weights are deterministic defaults, not empirical calibration.
+- The initializer is suitable for local demo and scenario rehearsal, not production prediction.
+- Real calibration and broader public baselines remain future work.
+
+Validation:
+
+- Backend tests passed with `python -m pytest` (`498 passed in 4.60s`).
+- Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`505 passed, 0 failed, 0 warnings`; regression status `no_regression`).
+- Frontend build passed with `npm run build` from `frontend/`; the existing non-blocking Vite large chunk warning for Ant Design/ECharts remains.
+
+Next recommended task: add a human-review-only Simulation Lab strategy report export for case-initialized and A/B comparison scenarios.
+
+## 6.17 Case-to-Simulation Initializer QA Stabilization
+
+Update date: 2026-05-18.
+
+Status: QA complete.
+
+What passed:
+
+- Verified the initializer module and schemas are present for `EventFrame`, `SubIssue`, `AudienceSegment`, `BaselinePublicProfile`, `ObservedFrameProfile`, `FrameGapAnalysis`, `PersonaCluster`, `CaseSimulationInitializationResult`, and `CaseSimulationInitializerConfig`.
+- Verified completed case outputs initialize a deterministic aggregate `SimulationScenario`; cases without analysis return `case_analysis_required`; incomplete inputs return partial initialization with warnings.
+- Verified topic risks become `SubIssue` records, sentiment ratios become audience segments, manipulation risk creates aggregate warnings only, and generated scenarios run in the Simulation Lab engine.
+- Verified frontend case initialization controls remain aggregate-only and keep the demo scenario, single-scenario mode, A/B comparison, visibility intervention panel, and ethics policy flows intact.
+
+QA fixes:
+
+- Added `SubIssue.risk_score` as a compatibility alias for `topic_risk_score`.
+- Added aggregate real-crisis mappings for `harm_salience`, `loss_sensitivity`, `moral_outrage_sensitivity`, and `crisis_legitimacy_pressure` on observed frame/persona outputs.
+- Added regression tests for positive-skewed, polarized, insufficient-data, and real-crisis factor mapping cases.
+- Sanitized initializer strategy implication output so forbidden manipulation strings are not emitted as case-initialization guidance.
+- Updated frontend normalization and sub-issue display to use the explicit `risk_score` field when available.
+
+Validation:
+
+- Backend tests passed with `python -m pytest` (`502 passed in 4.70s`).
+- Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`505 passed, 0 failed, 0 warnings`; regression status `no_regression`).
+- Frontend build passed with `npm run build` from `frontend/` (`built in 7.76s`); the existing non-blocking Ant Design/ECharts large chunk warning remains.
+
+Safety and scope:
+
+- No GitHub Actions workflow was recreated.
+- No real platform APIs, real LLM APIs, crawlers, live public fetchers, API keys, `.env` values, raw prompts, or raw user content were used.
+- No manipulation tactics, named-user targeting, account-level influenceability scoring, or automatic action execution were implemented.
+- Outputs remain aggregate-level, synthetic where needed, and human-review-oriented.
+
+Next recommended task: implement a human-review-only Simulation Lab strategy report export that summarizes aggregate case initialization, A/B comparison deltas, assumptions, warnings, and ethics boundaries.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: implement the case-to-simulation EventFrame and AudienceInitialization initializer for Simulation Lab using synthetic fixtures and existing aggregate case outputs.
+Recommended next development task: implement a human-review-only Simulation Lab strategy report export for case-initialized and A/B comparison scenarios.
 
 Suggested scope:
 

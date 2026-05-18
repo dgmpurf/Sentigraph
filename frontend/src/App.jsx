@@ -638,7 +638,7 @@ function App() {
     selectorRepair: <SelectorRepairTool />,
     llmSafety: <LlmAdminStatus />,
     benchmarks: <BenchmarkDashboard />,
-    simulationLab: <SimulationLab />,
+    simulationLab: <SimulationLab cases={cases} currentCase={currentCase} />,
   }[activePage] || <NotFound activePage={activePage} onNavigate={setActivePage} />
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0

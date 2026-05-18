@@ -222,6 +222,26 @@ python scripts\run_offline_benchmarks.py
 
 Future real-provider work should add mocked HTTP tests, provider-specific cost accounting, prompt/output schema tests, and human review datasets before any live call path is activated.
 
+## Case-to-Simulation Initializer Suite
+
+The `case_to_simulation_initializer` suite validates that completed aggregate case outputs can initialize Simulation Lab safely.
+
+Fixture file:
+
+```text
+benchmarks/case_to_simulation_initializer_cases.json
+```
+
+Coverage:
+
+- completed brand/product crisis case
+- incomplete case returning `case_analysis_required`
+- high aggregate manipulation-risk case
+- frame more negative than ordinary-public baseline
+- aligned observed frame and ordinary-public baseline
+
+The suite checks that topic risks become `SubIssue` records, sentiment distributions become `AudienceSegment` records, the generated `SimulationScenario` runs in the deterministic simulation engine, and the output does not include named-user targeting fields. It does not call real APIs, real LLM APIs, crawlers, live public fetch, or real platform services.
+
 ## Viewing Results In The UI
 
 The Benchmark Dashboard / Evaluation Report page reads the latest generated summary through:

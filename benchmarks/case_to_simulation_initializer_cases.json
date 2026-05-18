@@ -1,0 +1,164 @@
+[
+  {
+    "case_id": "case_initializer_brand_crisis",
+    "title": "Synthetic battery safety complaint",
+    "keyword": "battery safety",
+    "platforms": ["reddit", "weibo", "bilibili"],
+    "analysis": {
+      "summary": "Synthetic aggregate discussion about battery overheating, response timing, and remediation expectations.",
+      "sentiment": {
+        "positive_ratio": 0.12,
+        "neutral_ratio": 0.28,
+        "negative_ratio": 0.60,
+        "average_sentiment_score": -0.46
+      },
+      "overall_risk": 76,
+      "real_crisis_risk": 82,
+      "manipulation_risk": 18,
+      "risk_explanation": "High safety concern and negative sentiment require transparent remediation.",
+      "topic_risks": [
+        {
+          "topic": "battery safety issue",
+          "comment_count": 18,
+          "negative_ratio": 0.72,
+          "topic_risk_score": 82,
+          "topic_risk_level": "high",
+          "risk_explanation": "Users describe overheating and ask for a safety explanation.",
+          "representative_comments": ["Battery got hot during charging; need a clear safety update."],
+          "influence_proxy": 55
+        },
+        {
+          "topic": "official response delay",
+          "comment_count": 12,
+          "negative_ratio": 0.64,
+          "topic_risk_score": 69,
+          "topic_risk_level": "medium",
+          "risk_explanation": "The official response is perceived as slow.",
+          "representative_comments": ["Why is there still no investigation timeline?"],
+          "influence_proxy": 42
+        }
+      ]
+    },
+    "expected": {
+      "primary_classification": "aligned_public_and_frame",
+      "min_sub_issues": 2
+    }
+  },
+  {
+    "case_id": "case_initializer_incomplete_case",
+    "title": "Draft case without analysis",
+    "keyword": "draft only",
+    "platforms": ["reddit"],
+    "status": "draft",
+    "expected": {
+      "case_analysis_required": true
+    }
+  },
+  {
+    "case_id": "case_initializer_high_manipulation",
+    "title": "Repeated script pressure case",
+    "keyword": "repeated script",
+    "platforms": ["weibo", "douyin"],
+    "analysis": {
+      "summary": "Synthetic aggregate case with repeated phrases and moderate organic complaints.",
+      "sentiment": {
+        "positive_ratio": 0.10,
+        "neutral_ratio": 0.30,
+        "negative_ratio": 0.60,
+        "average_sentiment_score": -0.42
+      },
+      "overall_risk": 71,
+      "real_crisis_risk": 48,
+      "manipulation_risk": 88,
+      "risk_explanation": "Repeated-script pressure is high, but organic concerns still need review.",
+      "topic_risks": [
+        {
+          "topic": "suspected coordinated repeated comments",
+          "comment_count": 20,
+          "negative_ratio": 0.68,
+          "topic_risk_score": 75,
+          "topic_risk_level": "high",
+          "risk_explanation": "Many comments repeat the same complaint structure.",
+          "bot_signal": 86,
+          "representative_comments": ["Same synthetic sentence appears repeatedly across posts."],
+          "influence_proxy": 50
+        }
+      ]
+    },
+    "expected": {
+      "primary_classification": "manipulation_suspected_frame",
+      "min_sub_issues": 1,
+      "warning_contains": "aggregate_repeated_script_or_manipulation_signal_detected"
+    }
+  },
+  {
+    "case_id": "case_initializer_more_negative_frame",
+    "title": "Pricing complaint echo chamber",
+    "keyword": "pricing dispute",
+    "platforms": ["xiaohongshu", "weibo"],
+    "analysis": {
+      "summary": "Synthetic discussion where the observed community is much more negative than the ordinary-public baseline.",
+      "sentiment": {
+        "positive_ratio": 0.04,
+        "neutral_ratio": 0.16,
+        "negative_ratio": 0.80,
+        "average_sentiment_score": -0.72
+      },
+      "overall_risk": 62,
+      "real_crisis_risk": 36,
+      "manipulation_risk": 10,
+      "risk_explanation": "High negativity is concentrated in a pricing complaint frame.",
+      "topic_risks": [
+        {
+          "topic": "pricing dispute",
+          "comment_count": 14,
+          "negative_ratio": 0.82,
+          "topic_risk_score": 63,
+          "topic_risk_level": "medium",
+          "risk_explanation": "Users compare prices and ask for refund clarity.",
+          "representative_comments": ["The price policy feels unfair; please explain refunds."],
+          "influence_proxy": 34
+        }
+      ]
+    },
+    "expected": {
+      "primary_classification": "frame_more_negative_than_public",
+      "min_sub_issues": 1
+    }
+  },
+  {
+    "case_id": "case_initializer_aligned_frame",
+    "title": "Neutral product FAQ discussion",
+    "keyword": "product FAQ",
+    "platforms": ["reddit", "zhihu"],
+    "analysis": {
+      "summary": "Synthetic mostly neutral discussion asking for configuration details.",
+      "sentiment": {
+        "positive_ratio": 0.28,
+        "neutral_ratio": 0.46,
+        "negative_ratio": 0.26,
+        "average_sentiment_score": 0.02
+      },
+      "overall_risk": 38,
+      "real_crisis_risk": 22,
+      "manipulation_risk": 5,
+      "risk_explanation": "Low-to-medium product discussion with no acute crisis signal.",
+      "topic_risks": [
+        {
+          "topic": "product configuration question",
+          "comment_count": 10,
+          "negative_ratio": 0.24,
+          "topic_risk_score": 32,
+          "topic_risk_level": "low",
+          "risk_explanation": "Users are asking product configuration questions.",
+          "representative_comments": ["Does the standard model include the new cable?"],
+          "influence_proxy": 22
+        }
+      ]
+    },
+    "expected": {
+      "primary_classification": "aligned_public_and_frame",
+      "min_sub_issues": 1
+    }
+  }
+]

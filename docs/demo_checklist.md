@@ -1261,3 +1261,31 @@ Safety checks:
 - The page must not output individual targeting recommendations or account-level influenceability scores.
 - The page should use only `GET /api/v1/simulation/ethics-policy`, `GET /api/v1/simulation/demo-scenario`, and `POST /api/v1/simulation/run`.
 - The ethics-policy text may mention forbidden categories as policy language; those categories must not appear as selectable intervention options.
+
+Case-to-simulation initialization demo steps:
+
+1. Create and run a case from the `Cases` page, or use the local seed script if demo cases already exist.
+2. Open `Simulation Lab / 舆情预演沙盘`.
+3. In `从案例初始化沙盘`, select a completed case or enter its `case_id`, for example `case_001`.
+4. Click `预览初始化`.
+5. Confirm the summary shows `事件框体`, `子议题`, `人群分布`, `普通公众基线`, `回音壁偏差`, `策略提示`, and any `数据不足` warnings.
+6. Confirm the safety copy says `仅基于聚合数据，不生成个体操控建议`.
+7. Click `从案例初始化沙盘`.
+8. Confirm the bubble canvas switches from the generic demo to a case-derived synthetic scenario.
+9. Click `运行模拟` or switch to `A/B 策略对比` and compare allowed interventions.
+10. Confirm no real API/LLM calls are made, no live fetch is enabled, and no account-level targeting fields appear.
+
+Endpoint checks:
+
+```cmd
+powershell -Command "Invoke-RestMethod http://127.0.0.1:8000/api/v1/cases/case_001/simulation/initialization-preview | ConvertTo-Json -Depth 10"
+powershell -Command "Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/v1/cases/case_001/simulation/initialize | ConvertTo-Json -Depth 10"
+```
+
+Case-to-simulation QA checklist:
+
+- Confirm `sub_issues` include both `topic_risk_score` and `risk_score`.
+- Confirm `observed_frame_profile` includes aggregate `harm_salience`, `loss_sensitivity`, `moral_outrage_sensitivity`, and `crisis_legitimacy_pressure`.
+- Confirm positive-skewed, polarized, insufficient-data, and manipulation-suspected cases are classified as aggregate frame states, not individual targeting guidance.
+- Confirm the response contains no `target_accounts`, `author_id`, `author_name`, `influenceability_score`, or automatic action execution fields.
+- Confirm strategy implications remain human-review-oriented and do not expose forbidden manipulation options as case-initialization guidance.

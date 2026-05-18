@@ -706,7 +706,32 @@ Forbidden implementation paths:
 
 Recommended next task:
 
-- Implement the case-to-simulation EventFrame and AudienceInitialization initializer while keeping the simulator offline, deterministic, aggregate-only, and ethics-bounded.
+- Implement a human-review-only Simulation Lab strategy report export for case-initialized and A/B comparison scenarios.
+
+Implemented in current checkpoint:
+
+- Case-to-simulation initializer backend scaffold converts completed case outputs into EventFrame, SubIssue, AudienceSegment, PersonaCluster, FrameGapAnalysis, StrategyImplication, and SimulationScenario objects.
+- Case endpoints expose initialization preview and initialization run without calling real APIs, real LLM APIs, crawlers, or live public fetchers.
+- Simulation Lab frontend can load a completed case into the bubble sandbox through `从案例初始化沙盘`.
+- Offline benchmark suite `case_to_simulation_initializer` covers complete, incomplete, high manipulation-risk, more-negative-frame, and aligned-frame synthetic cases.
+- User-level targeting remains forbidden; outputs stay aggregate-level and human-review-oriented.
+- GitHub Actions CI remains intentionally disabled.
+
+QA complete:
+
+- Case-to-Simulation Initializer QA is complete.
+- `SubIssue.risk_score` is available as a UI/benchmark compatibility alias for `topic_risk_score`.
+- Aggregate real-crisis factors are exposed as scenario-level/persona-cluster weights only: `harm_salience`, `loss_sensitivity`, `moral_outrage_sensitivity`, and `crisis_legitimacy_pressure`.
+- Positive-skewed, polarized, insufficient-data, and real-crisis mapping tests now guard frame-gap behavior.
+- Initializer output avoids named-user targeting, account-level influenceability scoring, forbidden manipulation guidance, and automatic action execution.
+
+Future work:
+
+- Empirically calibrate ordinary-public baselines from lawful, representative public datasets.
+- Expand case-to-simulation benchmarks for positive-skewed, polarized, and insufficient-history monitoring cases.
+- Add a human-reviewed simulation assumption editor.
+- Add Simulation Lab strategy report export for aggregate A/B comparison and case-initialization summaries.
+- Keep individual persuasion profiles, account-level influenceability scoring, covert influence, and automatic action execution out of scope.
 
 QA stabilization result, 2026-05-18:
 
@@ -715,6 +740,7 @@ QA stabilization result, 2026-05-18:
 - Event Frame design QA is complete; real empirical calibration remains future work and GitHub Actions CI remains intentionally disabled.
 - Documentation now explicitly preserves the project boundary: aggregate scenario rehearsal only, synthetic/offline MVP first, no real APIs, no real LLM APIs, no live fetching, and no manipulation tactic implementation.
 - Simulation Lab MVP backend and frontend scaffolds are implemented; frontend QA stabilization is complete.
+- Case-to-Simulation Initializer QA is complete; real empirical calibration remains future work, user-level targeting remains forbidden, and Simulation Lab strategy report export remains the next product-polish task.
 - Empirical calibration remains future work after synthetic fixtures, benchmark docking, sensitivity analysis, and historical replay planning are stable.
 - Real LLM narrative generation remains future work behind explicit safeguards, provider gates, redaction, usage guardrails, schema validation, and human review.
 - Validation passed with full backend tests (`451 passed in 4.37s`) and offline benchmarks (`447 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.

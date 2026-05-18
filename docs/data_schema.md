@@ -1765,3 +1765,109 @@ Forbidden intervention strings such as `fake_consensus`, `bot_amplification`, `f
 - `warnings`
 
 Run results intentionally omit individual targeting recommendations. `step_results.community_metrics` may include synthetic community aggregate metrics only.
+
+## 19. Case-to-Simulation Initializer Schemas
+
+The case-to-simulation initializer converts completed Sentigraph case outputs into a deterministic Simulation Lab scenario. It uses aggregate case data only and creates synthetic audience clusters; it never creates individual persuasion profiles or account-level influenceability scores.
+
+`EventFrame` includes:
+
+- `event_frame_id`
+- `case_id`
+- `event_title`
+- `event_summary`
+- `source_mode`
+- `data_safety`
+- `sub_issues`
+- `observed_frame_profile`
+- `baseline_public_profile`
+- `frame_gap_analysis`
+- `strategy_implications`
+- `initialization_hints`
+- `uncertainty_label`
+- `uncertainty_reasons`
+- `assumption_log`
+
+`SubIssue` includes:
+
+- `sub_issue_id`
+- `category`
+- `title`
+- `summary`
+- `observed_volume`
+- `negative_ratio`
+- `topic_risk_score`
+- `risk_score` (alias for the topic risk score used by UI and benchmark summaries)
+- `risk_level`
+- `real_crisis_signal`
+- `manipulation_signal`
+- `influence_proxy`
+- `evidence_quality`
+- `evidence_examples`
+
+`AudienceSegment` includes:
+
+- `segment_id`
+- `label`
+- `segment_type`
+- `proportion`
+- `stance_distribution`
+- `sentiment_distribution`
+- `color_hint`
+- `average_attention_level`
+- `opinion_baseline`
+- `action_threshold`
+- `influence_proxy`
+- `bridge_score`
+- `data_origin`
+- `warnings`
+
+`PersonaCluster` includes aggregate cluster weights only:
+
+- `confirmation_bias`
+- `authority_trust`
+- `conformity`
+- `reactance`
+- `negativity_weight`
+- `attention_fatigue`
+- `identity_attachment`
+- `loss_sensitivity`
+- `moral_outrage_sensitivity`
+- `harm_salience`
+- `crisis_legitimacy_pressure`
+- `platform_activity`
+- `no_individual_profile=true`
+
+`ObservedFrameProfile` includes aggregate real-crisis mappings:
+
+- `real_crisis_signal_score`
+- `harm_salience`
+- `loss_sensitivity`
+- `moral_outrage_sensitivity`
+- `crisis_legitimacy_pressure`
+- `suspected_manipulation_pressure`
+- `repetition_exposure`
+
+`FrameGapAnalysis.primary_classification` is one of:
+
+- `aligned_public_and_frame`
+- `frame_more_negative_than_public`
+- `frame_more_positive_than_public`
+- `polarized_frame`
+- `manipulation_suspected_frame`
+- `insufficient_data`
+
+`CaseSimulationInitializationResult` includes:
+
+- `case_id`
+- `status`
+- `event_frame`
+- `audience_segments`
+- `persona_clusters`
+- `frame_gap_analysis`
+- `strategy_implications`
+- `simulation_scenario`
+- `warnings`
+- `safe_mode`
+
+`safe_mode` must keep `real_api_calls=false`, `real_llm_calls=false`, `live_fetch_enabled=false`, `individual_targeting=false`, and `automatic_action_execution=false`.

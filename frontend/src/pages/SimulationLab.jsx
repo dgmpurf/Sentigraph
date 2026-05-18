@@ -4,6 +4,7 @@ import {
   Card,
   Col,
   Empty,
+  Input,
   InputNumber,
   List,
   Row,
@@ -32,6 +33,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getSimulationDemoScenario,
   getSimulationEthicsPolicy,
+  initializeCaseSimulation,
+  previewCaseSimulationInitialization,
   runSimulation,
 } from '../api/sentigraphApi.js'
 
@@ -1305,10 +1308,170 @@ function SafetyNotice({ policy }) {
   )
 }
 
-export function SimulationLab() {
+function CaseInitializationPanel({
+  caseOptions,
+  initializationLoading,
+  initializationResult,
+  onCaseIdChange,
+  onInitialize,
+  onPreview,
+  selectedCaseId,
+}) {
+  return (
+    <Card className="panel-card simulation-initializer-card">
+      <div className="panel-heading">
+        <Space>
+          <GitBranch size={18} />
+          <Title level={4}>从案例初始化沙盘</Title>
+        </Space>
+        <Tag color="cyan">aggregate</Tag>
+      </div>
+
+      <Space direction="vertical" size={12} className="full-width">
+        <Alert
+          message="仅基于聚合数据，不生成个体操控建议"
+          description="初始化会读取案例分析、话题风险、监控快照、预警和预测摘要；不会调用真实 API 或 LLM。"
+          type="info"
+          showIcon
+        />
+
+        <div>
+          <Text type="secondary">选择案例</Text>
+          <Select
+            allowClear
+            className="full-width"
+            notFoundContent="暂无案例列表，可在下方输入 case_id"
+            onChange={(value) => onCaseIdChange(value || '')}
+            options={caseOptions}
+            placeholder="选择已完成分析的案例"
+            showSearch
+            value={selectedCaseId || undefined}
+          />
+        </div>
+
+        <div>
+          <Text type="secondary">case_id</Text>
+          <Input
+            onChange={(event) => onCaseIdChange(event.target.value)}
+            placeholder="例如 case_001"
+            value={selectedCaseId}
+          />
+        </div>
+
+        <Space wrap>
+          <Button loading={initializationLoading} onClick={onPreview}>
+            预览初始化
+          </Button>
+          <Button loading={initializationLoading} onClick={onInitialize} type="primary">
+            从案例初始化沙盘
+          </Button>
+        </Space>
+
+        <InitializationSummaryCard result={initializationResult} />
+      </Space>
+    </Card>
+  )
+}
+
+function InitializationSummaryCard({ result }) {
+  if (!result) {
+    return (
+      <div className="simulation-initializer-empty">
+        <Text type="secondary">可先预览事件框体、人群分布与回音壁偏差，再加载为沙盘场景。</Text>
+      </div>
+    )
+  }
+  const eventFrame = result.event_frame || {}
+  const subIssues = eventFrame.sub_issues || []
+  const segments = result.audience_segments || []
+  const baseline = eventFrame.baseline_public_profile || {}
+  const gap = result.frame_gap_analysis || eventFrame.frame_gap_analysis || {}
+  const implications = result.strategy_implications || []
+  const warnings = result.warnings || []
+
+  return (
+    <div className="simulation-initializer-summary">
+      <div className="simulation-initializer-section">
+        <Text type="secondary">事件框体</Text>
+        <Title level={5}>{safeText(eventFrame.event_title, '未命名事件')}</Title>
+        <Paragraph>{safeText(eventFrame.event_summary, '暂无摘要')}</Paragraph>
+      </div>
+
+      <div className="simulation-initializer-section">
+        <Text type="secondary">子议题</Text>
+        <Space wrap>
+          {subIssues.slice(0, 4).map((issue) => {
+            const issueRiskScore = issue.risk_score ?? issue.topic_risk_score ?? 0
+            return (
+              <Tag color={issueRiskScore >= 70 ? 'red' : issueRiskScore >= 40 ? 'orange' : 'cyan'} key={issue.sub_issue_id}>
+                {issue.title} {Math.round(issueRiskScore)}
+              </Tag>
+            )
+          })}
+          {!subIssues.length ? <Tag>暂无子议题</Tag> : null}
+        </Space>
+      </div>
+
+      <div className="simulation-initializer-section">
+        <Text type="secondary">人群分布</Text>
+        <div className="simulation-audience-list">
+          {segments.slice(0, 6).map((segment) => (
+            <div className="simulation-audience-row" key={segment.segment_id}>
+              <span>{segment.label || segment.segment_id}</span>
+              <Tag color={segment.color_hint || 'default'}>{formatPercent(segment.proportion)}</Tag>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="simulation-initializer-section">
+        <Text type="secondary">普通公众基线</Text>
+        <Space wrap>
+          <Tag color="geekblue">{safeText(baseline.event_category, 'unknown')}</Tag>
+          <Tag>expected {formatNumber(baseline.expected_average_reaction ?? 0)}</Tag>
+        </Space>
+      </div>
+
+      <div className="simulation-initializer-section">
+        <Text type="secondary">回音壁偏差</Text>
+        <Space wrap>
+          <Tag color={gap.primary_classification === 'insufficient_data' ? 'orange' : 'cyan'}>
+            {safeText(gap.primary_classification, 'unknown')}
+          </Tag>
+          {(gap.secondary_classifications || []).map((item) => (
+            <Tag color="purple" key={item}>
+              {item}
+            </Tag>
+          ))}
+        </Space>
+        <Paragraph>{safeText(gap.summary, '暂无偏差说明')}</Paragraph>
+      </div>
+
+      <div className="simulation-initializer-section">
+        <Text type="secondary">策略提示</Text>
+        {implications.slice(0, 2).map((item) => (
+          <Paragraph key={item.implication_id}>{safeText(item.rationale)}</Paragraph>
+        ))}
+      </div>
+
+      {warnings.length ? (
+        <Alert
+          message="数据不足 / 初始化警告"
+          description={warnings.join('；')}
+          type="warning"
+          showIcon
+        />
+      ) : null}
+    </div>
+  )
+}
+
+export function SimulationLab({ cases = [], currentCase = null } = {}) {
   const [scenario, setScenario] = useState(null)
   const [originalScenario, setOriginalScenario] = useState(null)
   const [ethicsPolicy, setEthicsPolicy] = useState(null)
+  const [initializationResult, setInitializationResult] = useState(null)
+  const [selectedCaseId, setSelectedCaseId] = useState(currentCase?.case_id || '')
   const [viewMode, setViewMode] = useState('single')
   const [selectedIntervention, setSelectedIntervention] = useState('clarification')
   const [interventionA, setInterventionA] = useState('no_response')
@@ -1321,8 +1484,17 @@ export function SimulationLab() {
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [comparisonRunning, setComparisonRunning] = useState(false)
+  const [initializationLoading, setInitializationLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const caseOptions = useMemo(
+    () =>
+      (cases || []).map((item) => ({
+        label: item.title ? `${item.title} (${item.case_id})` : item.case_id,
+        value: item.case_id,
+      })),
+    [cases],
+  )
   const allowedOptions = useMemo(() => getAllowedOptions(ethicsPolicy), [ethicsPolicy])
   const activeStep = currentStepIndex >= 0 ? runResult?.step_results?.[currentStepIndex] : null
   const initialMetrics = runResult?.initial_metrics || deriveInitialMetrics(scenario?.agents || [])
@@ -1362,6 +1534,7 @@ export function SimulationLab() {
       setEthicsPolicy(policy)
       setScenario(demoScenario)
       setOriginalScenario(demoScenario)
+      setInitializationResult(null)
       const firstAllowed = demoScenario.interventions?.[0]?.intervention_type || 'clarification'
       const options = getAllowedOptions(policy)
       const optionValues = options.map((option) => option.value)
@@ -1390,6 +1563,72 @@ export function SimulationLab() {
   useEffect(() => {
     loadDemoScenario()
   }, [loadDemoScenario])
+
+  useEffect(() => {
+    if (currentCase?.case_id && !selectedCaseId) {
+      setSelectedCaseId(currentCase.case_id)
+    }
+  }, [currentCase, selectedCaseId])
+
+  const applyInitializationResult = useCallback(
+    (result) => {
+      setInitializationResult(result)
+      const initializedScenario = result?.simulation_scenario
+      if (initializedScenario?.scenario_id) {
+        setScenario(initializedScenario)
+        setOriginalScenario(initializedScenario)
+        setViewMode('single')
+        const preferred =
+          initializedScenario.interventions?.[0]?.intervention_type ||
+          result?.event_frame?.initialization_hints?.recommended_default_intervention ||
+          'clarification'
+        const optionValues = allowedOptions.map((option) => option.value)
+        setSelectedIntervention(optionValues.includes(preferred) ? preferred : optionValues[0] || 'clarification')
+        setInterventionA(optionValues.includes('no_response') ? 'no_response' : optionValues[0] || 'clarification')
+        setInterventionB(optionValues.includes(preferred) ? preferred : optionValues[1] || optionValues[0] || 'clarification')
+        setSteps(initializedScenario.config?.steps || 6)
+        setRunResult(null)
+        setComparisonResult(null)
+        setCurrentStepIndex(-1)
+        setComparisonStepIndex(-1)
+      }
+    },
+    [allowedOptions],
+  )
+
+  const handlePreviewCaseInitialization = useCallback(async () => {
+    if (!selectedCaseId) {
+      setError('请输入或选择 case_id 后再预览初始化。')
+      return
+    }
+    setInitializationLoading(true)
+    setError('')
+    try {
+      const result = await previewCaseSimulationInitialization(selectedCaseId)
+      setInitializationResult(result)
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, '无法预览案例初始化结果。'))
+    } finally {
+      setInitializationLoading(false)
+    }
+  }, [selectedCaseId])
+
+  const handleInitializeFromCase = useCallback(async () => {
+    if (!selectedCaseId) {
+      setError('请输入或选择 case_id 后再初始化沙盘。')
+      return
+    }
+    setInitializationLoading(true)
+    setError('')
+    try {
+      const result = await initializeCaseSimulation(selectedCaseId)
+      applyInitializationResult(result)
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, '无法从案例初始化 Simulation Lab。'))
+    } finally {
+      setInitializationLoading(false)
+    }
+  }, [applyInitializationResult, selectedCaseId])
 
   const handleRunSimulation = useCallback(async () => {
     if (!scenario) {
@@ -1468,6 +1707,7 @@ export function SimulationLab() {
 
   const handleReset = useCallback(() => {
     setScenario(originalScenario)
+    setInitializationResult(null)
     setRunResult(null)
     setComparisonResult(null)
     setCurrentStepIndex(-1)
@@ -1649,6 +1889,16 @@ export function SimulationLab() {
                   </Empty>
                 )}
               </Card>
+
+              <CaseInitializationPanel
+                caseOptions={caseOptions}
+                initializationLoading={initializationLoading}
+                initializationResult={initializationResult}
+                onCaseIdChange={(value) => setSelectedCaseId(value)}
+                onInitialize={handleInitializeFromCase}
+                onPreview={handlePreviewCaseInitialization}
+                selectedCaseId={selectedCaseId}
+              />
 
               <SafetyNotice policy={ethicsPolicy} />
 

@@ -2143,6 +2143,38 @@ GET /api/v1/simulation/ethics-policy
 
 Returns allowed intervention types, forbidden intervention types, a short policy summary, and `aggregate_level_only=true`. The policy endpoint is safe metadata only and does not expose credentials or environment values.
 
+### Case-to-Simulation Initialization
+
+```http
+GET /api/v1/cases/{case_id}/simulation/initialization-preview
+POST /api/v1/cases/{case_id}/simulation/initialize
+```
+
+Both endpoints build a deterministic `SimulationScenario` from an existing completed case analysis. They read only project-local aggregate case artifacts such as sentiment distribution, topic risks, top risk topics, monitoring snapshot count, alert count, and derived forecast status.
+
+Behavior:
+
+- If the case does not exist, return `404`.
+- If the case has not been analyzed, return `400` with `error=case_analysis_required`.
+- If optional data is missing, return a partial initialization with warnings rather than crashing.
+- Do not call real platform APIs, real LLM APIs, crawlers, or live public fetchers.
+- Do not expose named user targeting, account lists, private data, API keys, `.env` values, raw prompts, or automatic action execution.
+
+Response includes:
+
+- `event_frame`
+- `audience_segments`
+- `persona_clusters`
+- `frame_gap_analysis`
+- `strategy_implications`
+- `simulation_scenario`
+- `warnings`
+- `safe_mode`
+
+The generated `simulation_scenario.agents` are synthetic aggregate audience bubbles only. They are not real user accounts and must not be used for individual-level targeting.
+
+The `event_frame.sub_issues` records expose both `topic_risk_score` and `risk_score` for compatibility with benchmark/UI consumers. `observed_frame_profile` exposes only aggregate real-crisis mappings such as `harm_salience`, `loss_sensitivity`, `moral_outrage_sensitivity`, and `crisis_legitimacy_pressure`; these are not individual profiles.
+
 ## 11. API Rules
 
 1. Every endpoint should return JSON.

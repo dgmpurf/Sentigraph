@@ -1081,6 +1081,7 @@ body {
 }
 
 .simulation-control-card,
+.simulation-initializer-card,
 .simulation-safety-card,
 .simulation-mode-card,
 .simulation-ab-card,
@@ -1111,6 +1112,46 @@ body {
   margin: 8px 0 0 !important;
   color: #9aa6bf;
   line-height: 1.64;
+}
+
+.simulation-initializer-card .ant-card-body {
+  padding: 16px;
+}
+
+.simulation-initializer-empty,
+.simulation-initializer-summary {
+  padding: 10px;
+  border: 1px solid rgba(66, 245, 215, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.simulation-initializer-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.simulation-initializer-section {
+  display: grid;
+  gap: 6px;
+}
+
+.simulation-initializer-section h5,
+.simulation-initializer-section p {
+  margin: 0 !important;
+}
+
+.simulation-audience-list {
+  display: grid;
+  gap: 6px;
+}
+
+.simulation-audience-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #d6deef;
 }
 
 .simulation-event-strip {

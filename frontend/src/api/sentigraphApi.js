@@ -92,6 +92,16 @@ export async function runSimulation(scenario) {
   return normalizeSimulationRunResult(data)
 }
 
+export async function initializeCaseSimulation(caseId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/simulation/initialize`)
+  return normalizeCaseSimulationInitialization(data)
+}
+
+export async function previewCaseSimulationInitialization(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/simulation/initialization-preview`)
+  return normalizeCaseSimulationInitialization(data)
+}
+
 export async function listAnalysisCases() {
   const { data } = await apiClient.get(`${API_PREFIX}/cases`)
   return Array.isArray(data) ? data : []
@@ -1220,6 +1230,237 @@ function normalizeSimulationRunResult(data) {
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
     warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
   }
+}
+
+function normalizeCaseSimulationInitialization(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      status: 'partial',
+      generated_at: null,
+      model_version: 'case_to_simulation_initializer_v1',
+      event_frame: normalizeEventFrame(null),
+      audience_segments: [],
+      persona_clusters: [],
+      frame_gap_analysis: normalizeFrameGapAnalysis(null),
+      strategy_implications: [],
+      simulation_scenario: normalizeSimulationScenario(null),
+      warnings: [],
+      safe_mode: {},
+    }
+  }
+  return {
+    case_id: String(data.case_id || ''),
+    status: String(data.status || 'partial'),
+    generated_at: data.generated_at ? String(data.generated_at) : null,
+    model_version: String(data.model_version || 'case_to_simulation_initializer_v1'),
+    event_frame: normalizeEventFrame(data.event_frame),
+    audience_segments: Array.isArray(data.audience_segments)
+      ? data.audience_segments.map(normalizeAudienceSegment).filter(Boolean)
+      : [],
+    persona_clusters: Array.isArray(data.persona_clusters)
+      ? data.persona_clusters.map(normalizePersonaCluster).filter(Boolean)
+      : [],
+    frame_gap_analysis: normalizeFrameGapAnalysis(data.frame_gap_analysis),
+    strategy_implications: Array.isArray(data.strategy_implications)
+      ? data.strategy_implications.map(normalizeStrategyImplication).filter(Boolean)
+      : [],
+    simulation_scenario: normalizeSimulationScenario(data.simulation_scenario),
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEventFrame(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      event_frame_id: '',
+      case_id: '',
+      event_title: '',
+      event_summary: '',
+      sub_issues: [],
+      observed_frame_profile: {},
+      baseline_public_profile: {},
+      frame_gap_analysis: normalizeFrameGapAnalysis(null),
+      strategy_implications: [],
+      initialization_hints: {},
+      uncertainty_label: 'medium',
+      uncertainty_reasons: [],
+      assumption_log: {},
+    }
+  }
+  return {
+    event_frame_id: String(data.event_frame_id || ''),
+    case_id: data.case_id ? String(data.case_id) : '',
+    event_title: String(data.event_title || ''),
+    event_summary: String(data.event_summary || ''),
+    generated_at: data.generated_at ? String(data.generated_at) : null,
+    source_mode: String(data.source_mode || 'aggregate_case_output'),
+    data_safety: data.data_safety && typeof data.data_safety === 'object' ? normalizeBooleanMap(data.data_safety) : {},
+    sub_issues: Array.isArray(data.sub_issues) ? data.sub_issues.map(normalizeSubIssue).filter(Boolean) : [],
+    observed_frame_profile:
+      data.observed_frame_profile && typeof data.observed_frame_profile === 'object'
+        ? {
+            observed_comment_count: Number(data.observed_frame_profile.observed_comment_count || 0),
+            observed_platforms: Array.isArray(data.observed_frame_profile.observed_platforms)
+              ? data.observed_frame_profile.observed_platforms.map((platform) => String(platform))
+              : [],
+            sentiment_distribution: normalizeNumberMap(data.observed_frame_profile.sentiment_distribution),
+            manipulation_signal_score: Number(data.observed_frame_profile.manipulation_signal_score || 0),
+            real_crisis_signal_score: Number(data.observed_frame_profile.real_crisis_signal_score || 0),
+            harm_salience: normalizeRatio(data.observed_frame_profile.harm_salience, 0),
+            loss_sensitivity: normalizeRatio(data.observed_frame_profile.loss_sensitivity, 0),
+            moral_outrage_sensitivity: normalizeRatio(data.observed_frame_profile.moral_outrage_sensitivity, 0),
+            crisis_legitimacy_pressure: normalizeRatio(data.observed_frame_profile.crisis_legitimacy_pressure, 0),
+            uncertainty_label: String(data.observed_frame_profile.uncertainty_label || 'medium'),
+            confidence_warnings: Array.isArray(data.observed_frame_profile.confidence_warnings)
+              ? data.observed_frame_profile.confidence_warnings.map((warning) => String(warning))
+              : [],
+          }
+        : {},
+    baseline_public_profile:
+      data.baseline_public_profile && typeof data.baseline_public_profile === 'object'
+        ? {
+            baseline_id: String(data.baseline_public_profile.baseline_id || ''),
+            event_category: String(data.baseline_public_profile.event_category || 'unknown'),
+            expected_average_reaction: normalizeSignedScore(data.baseline_public_profile.expected_average_reaction),
+            expected_loss_sensitivity: normalizeRatio(data.baseline_public_profile.expected_loss_sensitivity, 0),
+            expected_authority_trust: normalizeRatio(data.baseline_public_profile.expected_authority_trust, 0),
+            limitations: Array.isArray(data.baseline_public_profile.limitations)
+              ? data.baseline_public_profile.limitations.map((item) => String(item))
+              : [],
+          }
+        : {},
+    frame_gap_analysis: normalizeFrameGapAnalysis(data.frame_gap_analysis),
+    strategy_implications: Array.isArray(data.strategy_implications)
+      ? data.strategy_implications.map(normalizeStrategyImplication).filter(Boolean)
+      : [],
+    initialization_hints:
+      data.initialization_hints && typeof data.initialization_hints === 'object' && !Array.isArray(data.initialization_hints)
+        ? data.initialization_hints
+        : {},
+    uncertainty_label: String(data.uncertainty_label || 'medium'),
+    uncertainty_reasons: Array.isArray(data.uncertainty_reasons)
+      ? data.uncertainty_reasons.map((reason) => String(reason))
+      : [],
+    assumption_log: data.assumption_log && typeof data.assumption_log === 'object' ? data.assumption_log : {},
+  }
+}
+
+function normalizeSubIssue(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    sub_issue_id: String(data.sub_issue_id || ''),
+    category: String(data.category || 'unknown'),
+    title: String(data.title || ''),
+    summary: String(data.summary || ''),
+    observed_volume: normalizeRatio(data.observed_volume, 0),
+    negative_ratio: normalizeRatio(data.negative_ratio, 0),
+    topic_risk_score: normalizeBounded(data.topic_risk_score, 0, 100, 0),
+    risk_score: normalizeBounded(data.risk_score ?? data.topic_risk_score, 0, 100, 0),
+    risk_level: String(data.risk_level || 'low'),
+    evidence_quality: String(data.evidence_quality || 'mixed'),
+    evidence_examples: Array.isArray(data.evidence_examples)
+      ? data.evidence_examples.map((example) => String(example))
+      : [],
+  }
+}
+
+function normalizeAudienceSegment(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    segment_id: String(data.segment_id || ''),
+    label: String(data.label || ''),
+    segment_type: String(data.segment_type || ''),
+    proportion: normalizeRatio(data.proportion, 0),
+    color_hint: String(data.color_hint || 'gray'),
+    average_attention_level: normalizeRatio(data.average_attention_level, 0),
+    opinion_baseline: normalizeSignedScore(data.opinion_baseline),
+    action_threshold: normalizeRatio(data.action_threshold, 0),
+    influence_proxy: normalizeBounded(data.influence_proxy, 0, 100, 0),
+    bridge_score: normalizeRatio(data.bridge_score, 0),
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
+  }
+}
+
+function normalizePersonaCluster(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    cluster_id: String(data.cluster_id || ''),
+    segment_id: String(data.segment_id || ''),
+    label: String(data.label || ''),
+    confirmation_bias: normalizeRatio(data.confirmation_bias, 0),
+    authority_trust: normalizeRatio(data.authority_trust, 0),
+    reactance: normalizeRatio(data.reactance, 0),
+    negativity_weight: normalizeRatio(data.negativity_weight, 0),
+    loss_sensitivity: normalizeRatio(data.loss_sensitivity, 0),
+    moral_outrage_sensitivity: normalizeRatio(data.moral_outrage_sensitivity, 0),
+    harm_salience: normalizeRatio(data.harm_salience, 0),
+    crisis_legitimacy_pressure: normalizeRatio(data.crisis_legitimacy_pressure, 0),
+    no_individual_profile: data.no_individual_profile !== false,
+  }
+}
+
+function normalizeFrameGapAnalysis(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      primary_classification: 'insufficient_data',
+      secondary_classifications: [],
+      gap_scores: {},
+      summary: '',
+      strategy_cautions: [],
+      monitoring_recommendations: [],
+      uncertainty_label: 'medium',
+    }
+  }
+  return {
+    analysis_id: String(data.analysis_id || ''),
+    primary_classification: String(data.primary_classification || 'insufficient_data'),
+    secondary_classifications: Array.isArray(data.secondary_classifications)
+      ? data.secondary_classifications.map((item) => String(item))
+      : [],
+    gap_scores: normalizeNumberMap(data.gap_scores),
+    summary: String(data.summary || ''),
+    strategy_cautions: Array.isArray(data.strategy_cautions)
+      ? data.strategy_cautions.map((item) => String(item))
+      : [],
+    monitoring_recommendations: Array.isArray(data.monitoring_recommendations)
+      ? data.monitoring_recommendations.map((item) => String(item))
+      : [],
+    uncertainty_label: String(data.uncertainty_label || 'medium'),
+    aggregate_only: data.aggregate_only !== false,
+    no_individual_targeting: data.no_individual_targeting !== false,
+  }
+}
+
+function normalizeStrategyImplication(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    implication_id: String(data.implication_id || ''),
+    frame_gap_classification: String(data.frame_gap_classification || ''),
+    recommended_simulation_options: Array.isArray(data.recommended_simulation_options)
+      ? data.recommended_simulation_options.map((item) => String(item))
+      : [],
+    discouraged_options: Array.isArray(data.discouraged_options)
+      ? data.discouraged_options.map((item) => String(item))
+      : [],
+    rationale: String(data.rationale || ''),
+    human_review_required: data.human_review_required !== false,
+    confidence_label: String(data.confidence_label || 'medium'),
+    safety_warnings: Array.isArray(data.safety_warnings)
+      ? data.safety_warnings.map((warning) => String(warning))
+      : [],
+  }
+}
+
+function normalizeNumberMap(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
+  return Object.fromEntries(
+    Object.entries(data).map(([key, value]) => [
+      String(key),
+      Number.isFinite(Number(value)) ? Number(value) : 0,
+    ]),
+  )
 }
 
 function normalizeSimulationEthicsCheck(data) {

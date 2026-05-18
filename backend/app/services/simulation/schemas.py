@@ -10,12 +10,221 @@ SimulationStatus = Literal["completed", "rejected"]
 SimulationTrend = Literal["improving", "worsening", "stable", "unknown"]
 AgentStatus = Literal["active", "fatigued", "inactive"]
 TargetScope = Literal["aggregate", "public", "community"]
+SubIssueCategory = Literal[
+    "product_quality",
+    "official_response_delay",
+    "pricing_dispute",
+    "safety_legal_issue",
+    "brand_trust",
+    "suspected_manipulation",
+    "public_figure_controversy",
+    "workplace_company_issue",
+    "unknown",
+]
+EvidenceQuality = Literal["weak", "mixed", "moderate", "strong"]
+UncertaintyLabel = Literal["low", "medium", "high", "insufficient_data"]
+FrameGapClassification = Literal[
+    "aligned_public_and_frame",
+    "frame_more_negative_than_public",
+    "frame_more_positive_than_public",
+    "polarized_frame",
+    "manipulation_suspected_frame",
+    "insufficient_data",
+]
 VisibilityRecommendation = Literal[
     "not_recommended",
     "conditional_human_review",
     "allowed_with_transparent_explanation",
     "prefer_labeling_or_clarification",
 ]
+
+
+class SubIssue(BaseModel):
+    sub_issue_id: str
+    category: SubIssueCategory = "unknown"
+    title: str
+    summary: str = ""
+    observed_volume: float = Field(default=0.0, ge=0.0, le=1.0)
+    negative_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    neutral_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    positive_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    topic_risk_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    risk_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    risk_level: str = "low"
+    real_crisis_signal: float = Field(default=0.0, ge=0.0, le=100.0)
+    manipulation_signal: float = Field(default=0.0, ge=0.0, le=100.0)
+    influence_proxy: float = Field(default=0.0, ge=0.0, le=100.0)
+    evidence_quality: EvidenceQuality = "mixed"
+    evidence_examples: list[str] = Field(default_factory=list)
+    uncertainty_reasons: list[str] = Field(default_factory=list)
+
+
+class AudienceSegment(BaseModel):
+    segment_id: str
+    label: str
+    segment_type: str
+    proportion: float = Field(default=0.0, ge=0.0, le=1.0)
+    stance_distribution: dict[str, float] = Field(default_factory=dict)
+    sentiment_distribution: dict[str, float] = Field(default_factory=dict)
+    color_hint: str = "gray"
+    average_attention_level: float = Field(default=0.5, ge=0.0, le=1.0)
+    opinion_baseline: float = Field(default=0.0, ge=-1.0, le=1.0)
+    action_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
+    influence_proxy: float = Field(default=20.0, ge=0.0, le=100.0)
+    attention_level_source: str = "assumed"
+    action_threshold_source: str = "assumed"
+    bridge_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    data_origin: str = "synthetic_default"
+    warnings: list[str] = Field(default_factory=list)
+
+
+class PersonaCluster(BaseModel):
+    cluster_id: str
+    segment_id: str
+    label: str
+    confirmation_bias: float = Field(default=0.45, ge=0.0, le=1.0)
+    authority_trust: float = Field(default=0.55, ge=0.0, le=1.0)
+    conformity: float = Field(default=0.45, ge=0.0, le=1.0)
+    reactance: float = Field(default=0.35, ge=0.0, le=1.0)
+    negativity_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+    attention_fatigue: float = Field(default=0.12, ge=0.0, le=1.0)
+    identity_attachment: float = Field(default=0.4, ge=0.0, le=1.0)
+    loss_sensitivity: float = Field(default=0.45, ge=0.0, le=1.0)
+    moral_outrage_sensitivity: float = Field(default=0.42, ge=0.0, le=1.0)
+    harm_salience: float = Field(default=0.0, ge=0.0, le=1.0)
+    crisis_legitimacy_pressure: float = Field(default=0.0, ge=0.0, le=1.0)
+    platform_activity: float = Field(default=0.5, ge=0.0, le=1.0)
+    source: str = "synthetic_default"
+    no_individual_profile: bool = True
+
+
+class BaselinePublicProfile(BaseModel):
+    baseline_id: str
+    baseline_version: str = "ordinary_public_baseline_v1"
+    event_category: SubIssueCategory = "unknown"
+    expected_average_reaction: float = Field(default=0.0, ge=-1.0, le=1.0)
+    expected_loss_sensitivity: float = Field(default=0.45, ge=0.0, le=1.0)
+    expected_authority_trust: float = Field(default=0.58, ge=0.0, le=1.0)
+    expected_reactance: float = Field(default=0.35, ge=0.0, le=1.0)
+    expected_moral_outrage: float = Field(default=0.42, ge=0.0, le=1.0)
+    expected_safety_legal_sensitivity: float = Field(default=0.48, ge=0.0, le=1.0)
+    expected_policy_enforcement_tolerance: float = Field(default=0.55, ge=0.0, le=1.0)
+    assumed_parameters: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
+class ObservedFrameProfile(BaseModel):
+    observed_frame_id: str
+    observed_comment_count: int = Field(default=0, ge=0)
+    observed_post_count: int = Field(default=0, ge=0)
+    observed_platforms: list[str] = Field(default_factory=list)
+    stance_distribution: dict[str, float] = Field(default_factory=dict)
+    sentiment_distribution: dict[str, float] = Field(default_factory=dict)
+    topic_distribution: dict[str, float] = Field(default_factory=dict)
+    top_risk_topics: list[str] = Field(default_factory=list)
+    manipulation_signal_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    real_crisis_signal_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    harm_salience: float = Field(default=0.0, ge=0.0, le=1.0)
+    loss_sensitivity: float = Field(default=0.45, ge=0.0, le=1.0)
+    moral_outrage_sensitivity: float = Field(default=0.42, ge=0.0, le=1.0)
+    crisis_legitimacy_pressure: float = Field(default=0.0, ge=0.0, le=1.0)
+    suspected_manipulation_pressure: float = Field(default=0.0, ge=0.0, le=1.0)
+    repetition_exposure: float = Field(default=0.0, ge=0.0, le=1.0)
+    influence_distribution_summary: dict[str, float] = Field(default_factory=dict)
+    audience_segments: list[AudienceSegment] = Field(default_factory=list)
+    persona_clusters: list[PersonaCluster] = Field(default_factory=list)
+    forecast_status: str = "not_available"
+    snapshot_count: int = Field(default=0, ge=0)
+    alert_count: int = Field(default=0, ge=0)
+    uncertainty_label: UncertaintyLabel = "medium"
+    confidence_warnings: list[str] = Field(default_factory=list)
+
+
+class FrameGapAnalysis(BaseModel):
+    analysis_id: str
+    event_frame_id: str
+    primary_classification: FrameGapClassification
+    secondary_classifications: list[FrameGapClassification] = Field(default_factory=list)
+    baseline_profile_id: str
+    observed_frame_id: str
+    gap_scores: dict[str, float] = Field(default_factory=dict)
+    summary: str
+    strategy_cautions: list[str] = Field(default_factory=list)
+    monitoring_recommendations: list[str] = Field(default_factory=list)
+    uncertainty_label: UncertaintyLabel = "medium"
+    uncertainty_reasons: list[str] = Field(default_factory=list)
+    aggregate_only: bool = True
+    no_individual_targeting: bool = True
+    no_manipulation_tactics: bool = True
+
+
+class StrategyImplication(BaseModel):
+    implication_id: str
+    frame_gap_classification: FrameGapClassification
+    recommended_simulation_options: list[str] = Field(default_factory=list)
+    discouraged_options: list[str] = Field(default_factory=list)
+    rationale: str
+    human_review_required: bool = True
+    confidence_label: UncertaintyLabel = "medium"
+    safety_warnings: list[str] = Field(default_factory=list)
+
+
+class EventFrame(BaseModel):
+    event_frame_id: str
+    case_id: str | None = None
+    event_title: str
+    event_summary: str = ""
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    source_mode: str = "aggregate_case_output"
+    data_safety: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "aggregate_only": True,
+            "no_real_account_targets": True,
+            "no_private_data": True,
+            "raw_payload_retained": False,
+        }
+    )
+    sub_issues: list[SubIssue] = Field(default_factory=list)
+    observed_frame_profile: ObservedFrameProfile
+    baseline_public_profile: BaselinePublicProfile
+    frame_gap_analysis: FrameGapAnalysis
+    strategy_implications: list[StrategyImplication] = Field(default_factory=list)
+    initialization_hints: dict[str, Any] = Field(default_factory=dict)
+    uncertainty_label: UncertaintyLabel = "medium"
+    uncertainty_reasons: list[str] = Field(default_factory=list)
+    assumption_log: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class CaseSimulationInitializerConfig(BaseModel):
+    min_observed_comments: int = Field(default=3, ge=0)
+    synthetic_agent_count: int = Field(default=14, ge=6, le=40)
+    include_representative_examples: bool = True
+    max_evidence_examples_per_issue: int = Field(default=2, ge=0, le=5)
+    model_version: str = "case_to_simulation_initializer_v1"
+
+
+class CaseSimulationInitializationResult(BaseModel):
+    case_id: str
+    status: Literal["initialized", "partial"]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    model_version: str = "case_to_simulation_initializer_v1"
+    event_frame: EventFrame
+    audience_segments: list[AudienceSegment] = Field(default_factory=list)
+    persona_clusters: list[PersonaCluster] = Field(default_factory=list)
+    frame_gap_analysis: FrameGapAnalysis
+    strategy_implications: list[StrategyImplication] = Field(default_factory=list)
+    simulation_scenario: "SimulationScenario"
+    warnings: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "aggregate_level_only": True,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "live_fetch_enabled": False,
+            "individual_targeting": False,
+            "automatic_action_execution": False,
+        }
+    )
 
 
 class SimulationAgent(BaseModel):

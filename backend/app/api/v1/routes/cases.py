@@ -10,6 +10,11 @@ from app.schemas.case import (
 from app.schemas.forecast import ForecastResult
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.scheduler import MonitoringScheduleConfig
+from app.services.simulation.case_initializer import (
+    CaseAnalysisRequiredError,
+    build_case_simulation_initialization,
+)
+from app.services.simulation.schemas import CaseSimulationInitializationResult
 from app.services.case_store import (
     create_case,
     export_case_markdown,
@@ -82,6 +87,16 @@ def run_forecast(case_id: str) -> ForecastResult:
     return forecast
 
 
+@router.get("/{case_id}/simulation/initialization-preview", response_model=CaseSimulationInitializationResult)
+def preview_case_simulation_initialization(case_id: str) -> CaseSimulationInitializationResult:
+    return _case_simulation_initialization(case_id)
+
+
+@router.post("/{case_id}/simulation/initialize", response_model=CaseSimulationInitializationResult)
+def initialize_case_simulation(case_id: str) -> CaseSimulationInitializationResult:
+    return _case_simulation_initialization(case_id)
+
+
 @router.post("/{case_id}/monitor/run", response_model=MonitoringStatus)
 def run_case_monitoring(case_id: str) -> MonitoringStatus:
     status = run_monitoring_check(case_id)
@@ -143,3 +158,31 @@ def get_case_markdown_report(case_id: str) -> MarkdownExportResponse:
     if not report:
         raise HTTPException(status_code=404, detail="Markdown report is not available for this case.")
     return report
+
+
+def _case_simulation_initialization(case_id: str) -> CaseSimulationInitializationResult:
+    case = get_case(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    snapshots = list_case_snapshots(case_id) or []
+    alerts = list_case_alerts(case_id) or []
+    forecast = get_case_forecast(case_id)
+    try:
+        return build_case_simulation_initialization(
+            case,
+            snapshots=snapshots,
+            alerts=alerts,
+            forecast=forecast,
+        )
+    except CaseAnalysisRequiredError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "case_analysis_required",
+                "message": "Run case analysis before initializing Simulation Lab from this case.",
+                "case_id": case_id,
+                "aggregate_level_only": True,
+                "real_api_calls": False,
+                "real_llm_calls": False,
+            },
+        ) from exc
