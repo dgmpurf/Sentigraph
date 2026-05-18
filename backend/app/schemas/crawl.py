@@ -35,6 +35,14 @@ class PlatformCrawlMetadata(BaseModel):
     dependency_available: bool = True
     exception_class: str | None = None
     sanitized_error_category: str | None = None
+    estimated_quota_units: int = 0
+    search_call_count: int = 0
+    videos_call_count: int = 0
+    comment_threads_call_count: int = 0
+    comments_call_count: int = 0
+    cache_hit: bool = False
+    cache_age_seconds: int | None = None
+    quota_guardrail_status: str | None = None
     post_count: int = 0
     comment_count: int = 0
     schema_valid: bool = True

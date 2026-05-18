@@ -738,6 +738,14 @@ POST /api/v1/crawl/start
       "dependency_available": true,
       "exception_class": null,
       "sanitized_error_category": null,
+      "estimated_quota_units": 0,
+      "search_call_count": 0,
+      "videos_call_count": 0,
+      "comment_threads_call_count": 0,
+      "comments_call_count": 0,
+      "cache_hit": false,
+      "cache_age_seconds": null,
+      "quota_guardrail_status": "mock_mode",
       "post_count": 3,
       "comment_count": 3,
       "schema_valid": true,
@@ -819,6 +827,13 @@ Important:
 - When `platforms` contains `youtube`, the endpoint calls the YouTube official Data API v3 adapter through `adapter_factory.get_adapter("youtube")`.
 - YouTube mock mode returns deterministic YouTube-style video `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `youtube_data_api_v3`.
 - YouTube real mode is enabled only when `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` is present locally. If the key is missing, the endpoint safely returns mock data plus `credential_present=false` and `fallback_reason_category=config_error`.
+- YouTube real mode uses tiny quota-guarded `search.list`, `videos.list`, and `commentThreads.list` requests. `search.list` is treated as expensive, so real-mode calls check the project-local cache before calling the official API.
+- YouTube cache and guardrail configuration is controlled by `YOUTUBE_CACHE_ENABLED`, `YOUTUBE_CACHE_TTL_SECONDS`, `YOUTUBE_MAX_SEARCH_RESULTS`, `YOUTUBE_MAX_COMMENTS_PER_VIDEO`, `YOUTUBE_MAX_REPLIES_PER_COMMENT`, `YOUTUBE_MAX_TOTAL_COMMENTS`, and `YOUTUBE_ENABLE_DEEP_REPLIES`. The defaults are cache enabled for 3600 seconds, at most 5 search results, 20 comments per video, 5 replies per top-level comment, 50 total comments, and deep replies disabled.
+- YouTube cache entries are stored under the ignored runtime path `backend/data/youtube_cache.json`; cache keys include only safe query fields such as keyword, video id, limit, order, and date range. API keys are never stored.
+- YouTube crawl metadata may include safe quota/cache fields: `estimated_quota_units`, `search_call_count`, `videos_call_count`, `comment_threads_call_count`, `comments_call_count`, `cache_hit`, `cache_age_seconds`, and `quota_guardrail_status`.
+- `quota_guardrail_status` may be `mock_mode`, `real_mode_blocked`, `real_mode_ready`, `cache_hit`, `partial_cache_hit`, `cache_miss_real_call`, `quota_error_fallback`, or `comments_unavailable_partial`.
+- If YouTube comments are disabled or unavailable, the adapter returns a safe partial result rather than crashing. If quota/auth/network/parsing errors happen in real mode, the adapter falls back safely with coarse error metadata.
+- `commentThreads.list` may include only a limited subset of replies; deeper reply expansion through `comments.list` with `parentId` remains future work behind strict limits and is disabled by default.
 - YouTube crawl metadata includes `credential_present` as a boolean only. It must never include the key value.
 - When `platforms` explicitly contains a registered public-parser scaffold such as `the_paper`, `jiemian`, `hupu`, `maimai`, `tieba`, or `nga`, the endpoint calls the public parser adapter through `adapter_factory.get_adapter(platform_id)`.
 - The Paper, Jiemian, Hupu, Maimai, Tieba, and NGA public parsers currently run in `fixture_only` mode and return safe fixture/mock `RawPost` data by default.
@@ -830,7 +845,7 @@ Important:
 - Tieba fixture output currently includes thread title, main post content, source/author, created time, permalink, like/upvote count, reply count, and visible fixture replies normalized to `RawComment`; floor numbers are stored in `RawComment.raw_data.floor_number`.
 - NGA fixture output currently includes thread title, main post content, source/author, created time, permalink, like/upvote count, reply count, and visible fixture replies normalized to `RawComment`; floor numbers are stored in `RawComment.raw_data.floor_number`.
 - Public parser metadata may include `source_type`, `parser_status`, `live_fetch_enabled`, `live_fetch_attempted`, `live_fetch_allowed`, `fetch_status`, `schema_valid`, `fallback_used`, and `fallback_reason_category`.
-- `fallback_reason_category` and `sanitized_error_category` are intentionally coarse and safe: `api_pending`, `dependency_error`, `auth_error`, `network_error`, `parsing_error`, `config_error`, or `adapter_error`. They must never include credentials, tokens, or secret values.
+- `fallback_reason_category` and `sanitized_error_category` are intentionally coarse and safe: `api_pending`, `dependency_error`, `auth_error`, `quota_error`, `comments_unavailable`, `network_error`, `parsing_error`, `config_error`, or `adapter_error`. They must never include credentials, tokens, or secret values.
 - Public parser fallback categories may also include `fixture_only`, `live_fetch_disabled`, `selector_missing`, `robots_disallowed`, `robots_unavailable_or_unclear`, `path_not_allowed_by_profile`, or `http_error`.
 - `exception_class` is a safe class name only, for example `ResponseException` or `JSONDecodeError`; it must not include exception messages or secret-bearing request data.
 - `real_mode_reached` indicates whether the adapter reached the real API code path.

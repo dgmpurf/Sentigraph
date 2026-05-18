@@ -367,7 +367,8 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
             "Selectable for offline YouTube-style mock analysis. Real mode uses the official "
             "YouTube Data API v3 only when YOUTUBE_ADAPTER_MODE=real and YOUTUBE_API_KEY is "
             "present in local environment or .env. The key must stay out of logs and git. "
-            "No scraping, cookies, login bypass, captcha bypass, or anti-bot evasion is implemented."
+            "Quota-safe cache and tiny-limit guardrails are enabled by default. No scraping, "
+            "cookies, login bypass, captcha bypass, or anti-bot evasion is implemented."
         ),
         real_mode_available=True,
         api_approval_required=False,

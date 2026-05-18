@@ -1,5 +1,9 @@
 # Sentigraph Local Demo Checklist
 
+Latest YouTube cache/guardrail QA validation: 2026-05-18. Cache and quota guardrails were revalidated with mocked YouTube clients only. Focused QA confirmed cache miss/hit/TTL expiry behavior, cache-hit call avoidance, limit clamping, disabled deep replies by default, total-comment caps, comments-disabled partial output, quota-error fallback, API-key redaction, and case raw-data ingestion compatibility. Full validation passed with `python -m pytest` (`542 passed in 5.14s`) and `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed. The manual cache demo remains: run the same tiny YouTube real-mode crawl twice, inspect `platform_metadata[0].cache_hit`, and clear only `backend/data/youtube_cache.json` if a fresh manual crawl is needed.
+
+Latest YouTube Real Data Full Demo QA validation: 2026-05-18. The manual real-data path is now documented end to end: start the backend with a local ignored YouTube key, create a YouTube case, explicitly attach tiny-limit crawl output through `POST /api/v1/cases/{case_id}/crawl/start`, run the case, verify `analysis_result.analysis_input_source=case_raw_data`, view/copy the Markdown report, run monitoring/forecast, initialize Simulation Lab, run deterministic A/B simulation, and export the Simulation Lab strategy report. Automated QA added mocked-real fallback checks for comments-disabled/quota/auth-style failures and network failures; tests never call the real YouTube API. Validation passed with `python -m pytest` (`533 passed in 5.30s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.66s`, existing large vendor chunk warning remains).
+
 Latest Case Raw Data Ingestion QA validation: 2026-05-18. `POST /api/v1/cases/{case_id}/crawl/start` can explicitly attach normalized YouTube/future adapter `RawPost` / `RawComment` output to a case. The next `POST /api/v1/cases/{case_id}/run` uses attached raw comments with `analysis_input_source=case_raw_data`; without attached raw comments it falls back to the deterministic mock dataset. QA coverage verifies local JSON reload persistence, MongoDB-shaped persistence through the fake store, YouTube-derived representative comments in Markdown, old mock comments not appearing when raw case comments exist, and no raw-data JSON dump in the user-facing Markdown report. Backend tests passed with `python -m pytest` (`531 passed in 5.22s`) and offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed. Automated tests use mocked crawl output only and do not call the real YouTube API.
 
 Latest browser smoke and demo story validation: 2026-05-18. Local validation passed with `npm run build` from `frontend` (`built in 8.17s`, existing non-blocking Ant Design/ECharts large vendor chunk warning remains), `python -m pytest` (`511 passed in 5.19s`), and `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`). `python scripts/api_smoke_check.py --base-url http://127.0.0.1:8000` passed against the local backend (`38 passed, 0 failed`). Browser smoke used an already-running backend on `127.0.0.1:8000` and a clean Vite dev server on an alternate local port because `5173` was occupied by a stale local process. Smoked pages: Demo Flow, Dashboard, Cases, Analysis Result, Summary Report, Risk Monitor, Simulation Lab, Benchmarks, LLM Safety, Platform Integration Overview, Public Parser Status, and Selector Repair Tool. Simulation Lab case initialization, single-scenario run, A/B comparison, content visibility tradeoff panel, strategy report export, and allowed-intervention dropdown were verified. No raw `[object Object]` rendering was observed. Forbidden Simulation Lab tactics were not selectable. A small Ant Design `rowKey` warning on the LLM Safety usage table was fixed. Screenshot/demo story documentation now lives in `docs/demo_story.md`; local smoke screenshots were captured under `.benchmarks/demo_smoke_screenshots/`.
@@ -429,10 +433,23 @@ Expected result:
 - `platform_metadata[0].source_type` is `youtube_data_api_v3`.
 - `platform_metadata[0].fallback_used=false`.
 - `platform_metadata[0].credential_present=true`, with no key value returned.
+- `platform_metadata[0].cache_hit` may be `false` on the first request and `true` on repeated requests within the cache TTL.
+- `platform_metadata[0].estimated_quota_units`, `search_call_count`, `videos_call_count`, `comment_threads_call_count`, and `quota_guardrail_status` show safe quota/call diagnostics only.
 - `post_count` and `comment_count` are tiny and schema-valid.
 - `raw_posts` contain normalized public YouTube video metadata.
 - `raw_comments` contain normalized public comment metadata.
 - No scraping, cookies, login bypass, captcha bypass, browser profile, private data access, or LLM call occurs.
+
+Cache behavior:
+
+- The default cache path is `backend/data/youtube_cache.json`; it is ignored by git.
+- Repeating the same tiny crawl within `YOUTUBE_CACHE_TTL_SECONDS` should avoid another official API call and return `cache_hit=true`.
+- The cache stores normalized `RawPost` / `RawComment` data and safe metadata only. It must not store `YOUTUBE_API_KEY`.
+- To clear the cache safely on Windows, stop the backend first, then delete only that runtime cache file:
+
+```powershell
+Remove-Item -LiteralPath "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\backend\data\youtube_cache.json" -Force -ErrorAction SilentlyContinue
+```
 
 Current real-data pipeline status:
 
@@ -484,6 +501,96 @@ Expected result:
 - Representative comments in the Chinese report can come from attached YouTube comments.
 - The same completed case can be used by Simulation Lab case initialization; the preview returns only aggregate event-frame, audience, and scenario data.
 - API key values are never returned; only boolean credential metadata is shown.
+
+Full YouTube real-data demo API path:
+
+```powershell
+$base = "http://127.0.0.1:8000/api/v1"
+
+$caseBody = @{
+  keyword = "Tesla"
+  platforms = @("youtube")
+  title = "YouTube Real Data Case"
+  report_language = "zh-CN"
+} | ConvertTo-Json
+
+$case = Invoke-RestMethod `
+  -Method Post `
+  -Uri "$base/cases" `
+  -ContentType "application/json" `
+  -Body $caseBody
+
+$crawlBody = @{ limit = 3 } | ConvertTo-Json
+$attached = Invoke-RestMethod `
+  -Method Post `
+  -Uri "$base/cases/$($case.case_id)/crawl/start" `
+  -ContentType "application/json" `
+  -Body $crawlBody
+
+$run = Invoke-RestMethod `
+  -Method Post `
+  -Uri "$base/cases/$($case.case_id)/run"
+
+$run.analysis_result.analysis_input_source
+$run.report.representative_comments | Select-Object -First 3
+
+$markdown = Invoke-RestMethod -Uri "$base/cases/$($case.case_id)/report/markdown"
+$monitor = Invoke-RestMethod -Method Post -Uri "$base/cases/$($case.case_id)/monitor/run"
+$forecast = Invoke-RestMethod -Method Post -Uri "$base/cases/$($case.case_id)/forecast/run"
+$init = Invoke-RestMethod -Method Post -Uri "$base/cases/$($case.case_id)/simulation/initialize"
+
+$scenarioA = $init.simulation_scenario | ConvertTo-Json -Depth 40 | ConvertFrom-Json
+$scenarioA.interventions[0].intervention_type = "no_response"
+$scenarioA.interventions[0].stance_direction = 0
+$scenarioA.interventions[0].evidence_strength = 0
+$scenarioA.interventions[0].transparency_level = 0
+
+$scenarioB = $init.simulation_scenario | ConvertTo-Json -Depth 40 | ConvertFrom-Json
+$scenarioB.interventions[0].intervention_type = "clarification"
+$scenarioB.interventions[0].stance_direction = 0.28
+$scenarioB.interventions[0].evidence_strength = 0.68
+$scenarioB.interventions[0].transparency_level = 0.72
+
+$resultA = Invoke-RestMethod `
+  -Method Post `
+  -Uri "$base/simulation/run" `
+  -ContentType "application/json" `
+  -Body ($scenarioA | ConvertTo-Json -Depth 40)
+
+$resultB = Invoke-RestMethod `
+  -Method Post `
+  -Uri "$base/simulation/run" `
+  -ContentType "application/json" `
+  -Body ($scenarioB | ConvertTo-Json -Depth 40)
+
+$strategyReportBody = @{
+  simulation_mode = "comparison"
+  scenario_name = $init.simulation_scenario.name
+  intervention_a = "no_response"
+  intervention_b = "clarification"
+  result_a = $resultA
+  result_b = $resultB
+} | ConvertTo-Json -Depth 60
+
+$strategyReport = Invoke-RestMethod `
+  -Method Post `
+  -Uri "$base/simulation/report/markdown" `
+  -ContentType "application/json" `
+  -Body $strategyReportBody
+
+$strategyReport.markdown.Substring(0, [Math]::Min(800, $strategyReport.markdown.Length))
+```
+
+Expected result:
+
+- `$run.analysis_result.analysis_input_source` is `case_raw_data` when YouTube returns and attaches public comments.
+- Representative comments can include YouTube public comments, while API keys and `.env` values never appear.
+- Monitoring and forecast endpoints continue to work from the completed case snapshot path.
+- Simulation Lab initialization returns aggregate event-frame, audience, persona-cluster, gap-analysis, and synthetic scenario data only.
+- The two simulation runs and Markdown strategy report remain deterministic, aggregate-level, and human-review-oriented.
+- If YouTube returns no comments or a quota/auth/network error, the adapter should fall back safely; inspect `crawl_metadata` for `fallback_used`, `fallback_reason_category`, and tiny counts.
+- If the same crawl is repeated during the cache TTL, inspect `crawl_metadata` for `cache_hit=true`, `estimated_quota_units=0`, and `quota_guardrail_status=cache_hit`.
+- For the visual A/B flow, open the frontend Simulation Lab page after this API smoke and load the case with `从案例初始化沙盘`.
 
 ## 4.5 Optional Reddit Mock Adapter Smoke Check
 

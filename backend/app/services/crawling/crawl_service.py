@@ -906,6 +906,14 @@ def _crawl_youtube(payload: CrawlStartRequest) -> tuple[list[RawPost], list[RawC
             dependency_available=bool(adapter_status.get("dependency_available", True)),
             exception_class=_safe_str(adapter_status.get("exception_class")),
             sanitized_error_category=fallback_category,
+            estimated_quota_units=_safe_int(adapter_status.get("estimated_quota_units")),
+            search_call_count=_safe_int(adapter_status.get("search_call_count")),
+            videos_call_count=_safe_int(adapter_status.get("videos_call_count")),
+            comment_threads_call_count=_safe_int(adapter_status.get("comment_threads_call_count")),
+            comments_call_count=_safe_int(adapter_status.get("comments_call_count")),
+            cache_hit=bool(adapter_status.get("cache_hit", False)),
+            cache_age_seconds=_safe_optional_int(adapter_status.get("cache_age_seconds")),
+            quota_guardrail_status=_safe_str(adapter_status.get("quota_guardrail_status")),
             post_count=len(posts),
             comment_count=len(comments),
             schema_valid=post_schema_valid and comment_schema_valid,
@@ -1192,6 +1200,24 @@ def _safe_str(value: object) -> str | None:
     return text or None
 
 
+def _safe_int(value: object, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _fallback_reason_category(fallback_reason: str | None) -> str | None:
     if not fallback_reason:
         return None
@@ -1213,6 +1239,8 @@ def _fallback_reason_category(fallback_reason: str | None) -> str | None:
         "robots_unavailable_or_unclear",
         "path_not_allowed_by_profile",
         "http_error",
+        "quota_error",
+        "comments_unavailable",
     }:
         return prefix
     if "approval_pending" in reason or "api_pending" in reason:
@@ -1223,6 +1251,10 @@ def _fallback_reason_category(fallback_reason: str | None) -> str | None:
         return "dependency_error"
     if "auth" in reason or "permission" in reason or "unauthorized" in reason or "forbidden" in reason:
         return "auth_error"
+    if "quota" in reason:
+        return "quota_error"
+    if "comment" in reason and "unavailable" in reason:
+        return "comments_unavailable"
     if "timeout" in reason or "connection" in reason or "network" in reason or "urlerror" in reason:
         return "network_error"
     if "parsing" in reason or "jsondecode" in reason or "validation" in reason:

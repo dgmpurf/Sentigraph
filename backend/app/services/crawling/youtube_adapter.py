@@ -14,6 +14,7 @@ from app.services.crawling.base_adapter import (
     BasePlatformAdapter,
     PlatformAdapterError,
 )
+from app.services.crawling.youtube_cache import YouTubeAdapterConfig, YouTubeResponseCache
 
 
 load_project_env()
@@ -40,6 +41,14 @@ class YouTubeAuthError(YouTubeRealModeError):
 
 class YouTubeNetworkError(YouTubeRealModeError):
     category = "network_error"
+
+
+class YouTubeQuotaError(YouTubeRealModeError):
+    category = "quota_error"
+
+
+class YouTubeCommentsDisabledError(YouTubeRealModeError):
+    category = "comments_unavailable"
 
 
 class YouTubeParsingError(YouTubeRealModeError):
@@ -83,10 +92,14 @@ class YouTubeAdapter(BasePlatformAdapter):
         mode: AdapterMode | None = None,
         credentials: YouTubeCredentials | None = None,
         http_client: YouTubeHttpClient | None = None,
+        config: YouTubeAdapterConfig | None = None,
+        cache: YouTubeResponseCache | None = None,
     ) -> None:
         self.env_mode: AdapterMode = _adapter_mode_from_env()
         self.requested_mode: AdapterMode = self.env_mode if mode is None else _normalize_adapter_mode(mode)
         self.credentials = credentials or YouTubeCredentials.from_env()
+        self.config = config or YouTubeAdapterConfig.from_env()
+        self.cache = cache or YouTubeResponseCache.from_config(self.config)
         self.fallback_reason = ""
         self.real_mode_reached = False
         self.exception_class: str | None = None
@@ -96,6 +109,13 @@ class YouTubeAdapter(BasePlatformAdapter):
         self.real_mode_disabled = False
         self.api_approval_required = False
         self.api_approval_status = YOUTUBE_API_APPROVAL_STATUS
+        self.search_call_count = 0
+        self.videos_call_count = 0
+        self.comment_threads_call_count = 0
+        self.comments_call_count = 0
+        self.cache_lookup_count = 0
+        self.cache_hit_count = 0
+        self.cache_age_seconds_values: list[int] = []
 
         env_allows_real = self.env_mode == "real"
         effective_mode: AdapterMode = (
@@ -176,6 +196,20 @@ class YouTubeAdapter(BasePlatformAdapter):
             "fetch_status": self.sanitized_error_category or fallback_category or ("real" if self.is_real_mode_enabled() else "mock"),
             "real_mode_blocked_reason": _real_mode_blocked_reason(fallback_category, self.mode),
             "credentials_present": _credential_presence(),
+            "estimated_quota_units": self.estimated_quota_units(),
+            "search_call_count": self.search_call_count,
+            "videos_call_count": self.videos_call_count,
+            "comment_threads_call_count": self.comment_threads_call_count,
+            "comments_call_count": self.comments_call_count,
+            "cache_enabled": self.config.cache_enabled,
+            "cache_hit": self.cache_lookup_count > 0 and self.cache_hit_count == self.cache_lookup_count,
+            "cache_age_seconds": max(self.cache_age_seconds_values) if self.cache_age_seconds_values else None,
+            "quota_guardrail_status": self.quota_guardrail_status(),
+            "max_search_results": self.config.max_search_results,
+            "max_comments_per_video": self.config.max_comments_per_video,
+            "max_replies_per_comment": self.config.max_replies_per_comment,
+            "max_total_comments": self.config.max_total_comments,
+            "deep_replies_enabled": self.config.enable_deep_replies,
         }
 
     def search_posts(
@@ -189,7 +223,7 @@ class YouTubeAdapter(BasePlatformAdapter):
         safe_limit = self.clamp_limit(
             limit,
             default=3,
-            maximum=YOUTUBE_REAL_POST_LIMIT if is_real else YOUTUBE_MOCK_POST_LIMIT,
+            maximum=self.config.max_search_results if is_real else YOUTUBE_MOCK_POST_LIMIT,
         )
         if not is_real:
             return [
@@ -197,15 +231,46 @@ class YouTubeAdapter(BasePlatformAdapter):
                 for raw in _mock_youtube_posts(keyword=keyword, sort=sort, date_range=date_range)[:safe_limit]
             ]
 
+        normalized_sort = _normalize_sort(sort)
+        cache_key_params = {
+            "keyword": keyword,
+            "limit": safe_limit,
+            "order": normalized_sort,
+            "date_range": date_range or None,
+        }
+        cache_key = self.cache.build_key("search_posts", cache_key_params)
+        cached = self.cache.get(cache_key)
+        self._record_cache_lookup(cached)
+        if cached.hit and cached.payload:
+            return [
+                RawPost.model_validate(raw_post)
+                for raw_post in cached.payload.get("raw_posts", [])
+                if isinstance(raw_post, Mapping)
+            ][:safe_limit]
+
         try:
             self.real_mode_reached = True
+            self.search_call_count += 1
             raw_posts = self.http_client.search_posts(
                 keyword,
                 limit=safe_limit,
-                sort=_normalize_sort(sort),
+                sort=normalized_sort,
                 date_range=date_range,
             )
-            return [self.normalize_post(raw) for raw in raw_posts[:safe_limit]]
+            if raw_posts:
+                self.videos_call_count += 1
+            posts = [self.normalize_post(raw) for raw in raw_posts[:safe_limit]]
+            self.cache.set(
+                cache_key,
+                safe_key=cache_key_params,
+                payload={
+                    "raw_posts": [post.model_dump(mode="json") for post in posts],
+                    "raw_comments": [],
+                    "crawl_metadata": self._cache_metadata_snapshot(),
+                },
+                source_type=YOUTUBE_SOURCE_TYPE,
+            )
+            return posts
         except Exception as exc:  # pragma: no cover - defensive fallback for live mode only
             self._record_real_mode_exception(exc)
             return [
@@ -218,17 +283,55 @@ class YouTubeAdapter(BasePlatformAdapter):
         safe_limit = self.clamp_limit(
             limit,
             default=10,
-            maximum=YOUTUBE_REAL_COMMENT_LIMIT if is_real else YOUTUBE_MOCK_COMMENT_LIMIT,
+            maximum=(
+                min(self.config.max_comments_per_video, self.config.max_total_comments)
+                if is_real
+                else YOUTUBE_MOCK_COMMENT_LIMIT
+            ),
         )
         if not is_real:
             return [self.normalize_comment(raw) for raw in _mock_youtube_comments(post_id)[:safe_limit]]
 
+        cache_key_params = {
+            "video_id": post_id,
+            "limit": safe_limit,
+            "deep_replies_enabled": self.config.enable_deep_replies,
+            "max_replies_per_comment": self.config.max_replies_per_comment,
+            "max_total_comments": self.config.max_total_comments,
+        }
+        cache_key = self.cache.build_key("fetch_comments", cache_key_params)
+        cached = self.cache.get(cache_key)
+        self._record_cache_lookup(cached)
+        if cached.hit and cached.payload:
+            return [
+                RawComment.model_validate(raw_comment)
+                for raw_comment in cached.payload.get("raw_comments", [])
+                if isinstance(raw_comment, Mapping)
+            ][:safe_limit]
+
         try:
             self.real_mode_reached = True
+            self.comment_threads_call_count += 1
             raw_comments = self.http_client.fetch_comments(post_id, limit=safe_limit)
-            return [self.normalize_comment(raw) for raw in raw_comments[:safe_limit]]
+            comments = self._apply_comment_guardrails(
+                [self.normalize_comment(raw) for raw in raw_comments],
+                limit=safe_limit,
+            )
+            self.cache.set(
+                cache_key,
+                safe_key=cache_key_params,
+                payload={
+                    "raw_posts": [],
+                    "raw_comments": [comment.model_dump(mode="json") for comment in comments],
+                    "crawl_metadata": self._cache_metadata_snapshot(),
+                },
+                source_type=YOUTUBE_SOURCE_TYPE,
+            )
+            return comments
         except Exception as exc:  # pragma: no cover - defensive fallback for live mode only
             self._record_real_mode_exception(exc)
+            if self.sanitized_error_category == "comments_unavailable":
+                return []
             return [self.normalize_comment(raw) for raw in _mock_youtube_comments(post_id)[:safe_limit]]
 
     def normalize_post(self, raw: Mapping[str, Any]) -> RawPost:
@@ -339,6 +442,67 @@ class YouTubeAdapter(BasePlatformAdapter):
         self.sanitized_error_category = category
         self.exception_class = safe_exception.__class__.__name__
         self.fallback_reason = f"{category}:{self.exception_class}"
+
+    def estimated_quota_units(self) -> int:
+        return (
+            self.search_call_count * 100
+            + self.videos_call_count
+            + self.comment_threads_call_count
+            + self.comments_call_count
+        )
+
+    def quota_guardrail_status(self) -> str:
+        if self.sanitized_error_category == "quota_error":
+            return "quota_error_fallback"
+        if self.sanitized_error_category == "comments_unavailable":
+            return "comments_unavailable_partial"
+        if not self.is_real_mode_enabled():
+            return "real_mode_blocked" if self.requested_mode == "real" else "mock_mode"
+        if self.cache_lookup_count:
+            if self.cache_hit_count == self.cache_lookup_count:
+                return "cache_hit"
+            if self.cache_hit_count:
+                return "partial_cache_hit"
+            return "cache_miss_real_call"
+        return "real_mode_ready"
+
+    def _record_cache_lookup(self, lookup) -> None:
+        if not self.config.cache_enabled:
+            return
+        self.cache_lookup_count += 1
+        if lookup.hit:
+            self.cache_hit_count += 1
+            if lookup.cache_age_seconds is not None:
+                self.cache_age_seconds_values.append(lookup.cache_age_seconds)
+
+    def _apply_comment_guardrails(self, comments: list[RawComment], *, limit: int) -> list[RawComment]:
+        total_limit = min(limit, self.config.max_total_comments)
+        if self.config.enable_deep_replies:
+            kept: list[RawComment] = []
+            replies_by_parent: dict[str, int] = {}
+            for comment in comments:
+                if comment.parent_id:
+                    current_reply_count = replies_by_parent.get(comment.parent_id, 0)
+                    if current_reply_count >= self.config.max_replies_per_comment:
+                        continue
+                    replies_by_parent[comment.parent_id] = current_reply_count + 1
+                kept.append(comment)
+                if len(kept) >= total_limit:
+                    break
+            return kept
+        top_level_comments = [comment for comment in comments if comment.parent_id is None]
+        return top_level_comments[:total_limit]
+
+    def _cache_metadata_snapshot(self) -> dict[str, object]:
+        return {
+            "source_type": YOUTUBE_SOURCE_TYPE,
+            "estimated_quota_units": self.estimated_quota_units(),
+            "search_call_count": self.search_call_count,
+            "videos_call_count": self.videos_call_count,
+            "comment_threads_call_count": self.comment_threads_call_count,
+            "comments_call_count": self.comments_call_count,
+            "quota_guardrail_status": self.quota_guardrail_status(),
+        }
 
 
 class _OfficialYouTubeClient:
@@ -661,12 +825,24 @@ def _fallback_reason_category(fallback_reason: str | None) -> str | None:
     if not fallback_reason:
         return None
     prefix = fallback_reason.split(":", 1)[0].strip().lower()
-    if prefix in {"auth_error", "network_error", "parsing_error", "adapter_error", "config_error"}:
+    if prefix in {
+        "auth_error",
+        "network_error",
+        "parsing_error",
+        "adapter_error",
+        "config_error",
+        "quota_error",
+        "comments_unavailable",
+    }:
         return prefix
     if "missing" in fallback_reason.lower() or "config" in fallback_reason.lower():
         return "config_error"
     if "auth" in fallback_reason.lower() or "key" in fallback_reason.lower():
         return "auth_error"
+    if "quota" in fallback_reason.lower():
+        return "quota_error"
+    if "comment" in fallback_reason.lower() and "unavailable" in fallback_reason.lower():
+        return "comments_unavailable"
     if "network" in fallback_reason.lower() or "timeout" in fallback_reason.lower():
         return "network_error"
     return "adapter_error"
@@ -696,6 +872,10 @@ def _typed_youtube_exception(exc: Exception) -> YouTubeRealModeError:
         return YouTubeAuthError("youtube_auth_error")
     if category == "network_error":
         return YouTubeNetworkError("youtube_network_error")
+    if category == "quota_error":
+        return YouTubeQuotaError("youtube_quota_error")
+    if category == "comments_unavailable":
+        return YouTubeCommentsDisabledError("youtube_comments_unavailable")
     if category == "parsing_error":
         return YouTubeParsingError("youtube_parsing_error")
     if isinstance(exc, YouTubeRealModeError):
@@ -709,6 +889,17 @@ def _real_mode_error_category(exc: Exception) -> str:
 
     status_code = _status_code_from_exception(exc)
     class_name = exc.__class__.__name__.lower()
+    safe_text = str(exc).lower()
+
+    if "quota" in safe_text or "quota" in class_name:
+        return "quota_error"
+    if (
+        "commentsdisabled" in safe_text
+        or "comments disabled" in safe_text
+        or "comments_unavailable" in safe_text
+        or "disabled_comment" in safe_text
+    ):
+        return "comments_unavailable"
 
     if status_code in {400, 401, 403}:
         return "auth_error"

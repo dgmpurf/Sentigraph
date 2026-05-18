@@ -227,14 +227,28 @@ YOUTUBE_API_KEY=
 
 Real mode is used only when both values are present. If the key is missing, the adapter safely falls back to mock mode and returns `credential_present=false` plus safe fallback metadata. A local real-mode smoke check has passed with tiny limits and key-redacted metadata only. Never print or commit the key.
 
+Quota-safe cache and guardrail defaults:
+
+```text
+YOUTUBE_CACHE_ENABLED=true
+YOUTUBE_CACHE_TTL_SECONDS=3600
+YOUTUBE_MAX_SEARCH_RESULTS=5
+YOUTUBE_MAX_COMMENTS_PER_VIDEO=20
+YOUTUBE_MAX_REPLIES_PER_COMMENT=5
+YOUTUBE_MAX_TOTAL_COMMENTS=50
+YOUTUBE_ENABLE_DEEP_REPLIES=false
+```
+
+The cache is stored at `backend/data/youtube_cache.json`, which is ignored by git. It stores normalized public posts/comments plus safe metadata only, never API keys. Stop the backend and delete only that file if you need to clear the local YouTube cache.
+
 Case ingestion boundary: `/api/v1/crawl/start` can return normalized public YouTube `RawPost` / `RawComment` data for diagnostics, and `POST /api/v1/cases/{case_id}/crawl/start` can explicitly attach normalized crawl output to a selected case. `POST /api/v1/cases/{case_id}/run` uses attached case raw comments when present and otherwise falls back to the deterministic mock dataset. Real YouTube crawling is never triggered automatically by case creation or case run.
 
 Official API concepts used by the minimal adapter:
 
 - `search.list` for tiny video search batches.
 - `videos.list` for video metadata when available.
-- `commentThreads.list` for top-level video comments.
-- Replies are optional and limited when included by the API response.
+- `commentThreads.list` for top-level video comments and limited included reply snippets.
+- `comments.list` with `parentId` is the official route for deeper reply expansion in future work; the current minimal adapter keeps reply crawling tiny and does not aggressively paginate.
 
 ### Optional Reddit Adapter Status
 

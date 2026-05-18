@@ -2,7 +2,7 @@
 
 Sentigraph now prioritizes Chinese public opinion platforms for future source integration while keeping Reddit visible in the project as a future real adapter candidate.
 
-The current MVP product flow remains mock-first by default. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. YouTube is the first real-capable official API adapter: mock mode remains default, and real mode uses the official YouTube Data API v3 only when `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured. Douyin and Xiaohongshu developer access is recorded as obtained by the user, but their comment/note-comment API permissions are not yet verified. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao, and YouTube requests through the adapter layer and returns normalized mock data or credential-gated official YouTube metadata with safe status metadata. `POST /api/v1/cases/{case_id}/crawl/start` can explicitly attach normalized crawl output to a case so the next case run uses stored `RawComment` data instead of the default mock dataset.
+The current MVP product flow remains mock-first by default. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. YouTube is the first real-capable official API adapter: mock mode remains default, and real mode uses the official YouTube Data API v3 only when `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured. YouTube real mode now includes quota-safe caching and tiny-limit guardrails by default. Douyin and Xiaohongshu developer access is recorded as obtained by the user, but their comment/note-comment API permissions are not yet verified. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao, and YouTube requests through the adapter layer and returns normalized mock data or credential-gated official YouTube metadata with safe status metadata. `POST /api/v1/cases/{case_id}/crawl/start` can explicitly attach normalized crawl output to a case so the next case run uses stored `RawComment` data instead of the default mock dataset.
 
 Cross-platform adapter QA is now stabilized with a parametrized local test matrix. The matrix verifies factory registration, mock-only official adapter behavior, YouTube mock and mocked-real normalization, safe blocked real-mode metadata, credential redaction, `/crawl/start` metadata, public parser fixture preview, and schema-valid `RawPost` / `RawComment` output without making real platform API calls.
 
@@ -144,17 +144,21 @@ Current behavior:
 - If the key is missing, the adapter safely falls back to mock mode and exposes only `credential_present=false`, `fallback_reason_category=config_error`, and safe mode metadata.
 - Local real-mode smoke has passed with `adapter_mode=real`, `fallback_used=false`, `credential_present=true`, `post_count=3`, `comment_count=3`, and valid normalized post/comment schema metadata. The key value was not printed or returned.
 - Real-mode output is normalized as public YouTube video `RawPost` items and public visible-comment `RawComment` items that are compatible with downstream analysis schemas.
+- Real mode is quota-guarded: requested search/comment limits are clamped to configured maxima, deep replies are disabled by default, total comments are capped, and comments-disabled/quota/network failures return safe partial or mock fallback metadata.
+- Project-local caching is enabled by default. Cache entries live in ignored runtime storage at `backend/data/youtube_cache.json`, expire after `YOUTUBE_CACHE_TTL_SECONDS`, and store normalized posts/comments plus safe crawl metadata only. Cache keys include only safe query fields such as keyword, video id, limit, order, and date range; the API key is never stored.
 - Case-specific ingestion is available through `POST /api/v1/cases/{case_id}/crawl/start`. It uses the case keyword/platforms by default, stores `raw_posts`, `raw_comments`, safe crawl metadata, `crawl_attached_at`, and `raw_data_status` on the case, and never returns credential values.
 - `POST /api/v1/cases/{case_id}/run` uses attached case `raw_comments` when present. If no raw comments are attached, the case run falls back to the deterministic mock dataset.
 - Real-mode tests use mocked HTTP/client responses only; the backend test suite does not call the real YouTube API.
+- Latest full-demo QA confirmed mocked-real fallback coverage for comments-disabled/quota/auth-style failures and network failures, plus the explicit case-to-analysis path with `analysis_input_source=case_raw_data`.
 - The key must never be printed, logged, committed, or returned in API responses.
 
 Official API concepts:
 
 - `search.list` for tiny video search batches.
 - `videos.list` for video metadata such as channel/title/published time/statistics when available.
-- `commentThreads.list` for top-level video comments.
-- Replies are optional and limited when included by the API response.
+- `commentThreads.list` for top-level video comments and the limited reply snippets that the endpoint may include.
+- `comments.list` with `parentId` is the official follow-up route for deeper reply expansion if future work needs it; the current minimal adapter does not aggressively paginate replies.
+- `commentThreads.list` may not include every reply in a large thread, so current real-mode output should be treated as a tiny public-comment sample rather than exhaustive YouTube comment coverage.
 - Public video/comment data only; no OAuth-only private data, cookies, browser sessions, or account-private fields are fetched.
 
 Local configuration:
@@ -162,6 +166,13 @@ Local configuration:
 ```text
 YOUTUBE_ADAPTER_MODE=mock
 YOUTUBE_API_KEY=
+YOUTUBE_CACHE_ENABLED=true
+YOUTUBE_CACHE_TTL_SECONDS=3600
+YOUTUBE_MAX_SEARCH_RESULTS=5
+YOUTUBE_MAX_COMMENTS_PER_VIDEO=20
+YOUTUBE_MAX_REPLIES_PER_COMMENT=5
+YOUTUBE_MAX_TOTAL_COMMENTS=50
+YOUTUBE_ENABLE_DEEP_REPLIES=false
 ```
 
 To test real mode locally after adding the key to an ignored `.env`:
@@ -177,6 +188,7 @@ Safety constraints:
 - Do not scrape YouTube pages.
 - Do not use cookies, browser profiles, login bypass, captcha bypass, anti-bot evasion, or private data.
 - Keep limits tiny: video search 3-5 items and comments 10-20 items.
+- Keep cache enabled for repeated local demos to avoid unnecessary `search.list` quota usage. To clear it safely, stop the backend and delete only `backend/data/youtube_cache.json`.
 - Treat API quota as a local operator responsibility; automated tests must stay mocked/offline.
 - Keep mock fallback available for tests and demos.
 
@@ -184,7 +196,7 @@ Current real-data demo boundary:
 
 - Manual YouTube real crawl: supported through `/api/v1/crawl/start` when local `.env` is configured.
 - Full case analysis from explicitly attached YouTube crawl output: implemented for the local case pipeline.
-- Recommended next task: add a small frontend control for case-specific real-data attachment or extend the demo flow with a guarded YouTube real-data walkthrough.
+- Recommended next task: capture manual real-data demo screenshots or add a small frontend control for case-specific real-data attachment if real-data demos become frequent.
 
 ### Weibo official API adapter scaffold
 

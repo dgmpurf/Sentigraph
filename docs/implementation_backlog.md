@@ -8,6 +8,37 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### YouTube Quota-Safe Cache and Real-Data Guardrails
+
+Status: implemented and QA-stabilized for the credential-gated YouTube official API adapter.
+
+Completed:
+
+- Added project-local YouTube cache support at `backend/data/youtube_cache.json`; runtime JSON cache files remain ignored by git and `backend/data/.gitkeep` is preserved.
+- Added `.env.example` guardrail defaults: `YOUTUBE_CACHE_ENABLED`, `YOUTUBE_CACHE_TTL_SECONDS`, `YOUTUBE_MAX_SEARCH_RESULTS`, `YOUTUBE_MAX_COMMENTS_PER_VIDEO`, `YOUTUBE_MAX_REPLIES_PER_COMMENT`, `YOUTUBE_MAX_TOTAL_COMMENTS`, and `YOUTUBE_ENABLE_DEEP_REPLIES`.
+- Added cache keys based only on safe query fields: keyword, video id, limit, order, and date range. API keys are not used in cache keys and are not stored in cache payloads.
+- Added crawl metadata for cache/quota diagnostics: `estimated_quota_units`, `search_call_count`, `videos_call_count`, `comment_threads_call_count`, `comments_call_count`, `cache_hit`, `cache_age_seconds`, and `quota_guardrail_status`.
+- Added guardrails for clamped limits, disabled deep replies by default, total-comment caps, comments-unavailable partial results, and quota-error fallback.
+- Added mocked-only regression coverage for cache miss/hit/expiry, limit clamping, reply limiting, quota fallback, comments-disabled partial output, cache metadata, and API-key redaction.
+- QA stabilization revalidated case raw-data ingestion compatibility so attached YouTube `RawPost` / `RawComment` data still drives `analysis_input_source=case_raw_data` while missing raw data safely falls back to mock data.
+
+Acceptance:
+
+- `python -m pytest` passed with `542 passed in 5.14s`.
+- `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
+- Frontend build was not run because no frontend files changed.
+- Automated tests use mocked YouTube clients only and do not call the real YouTube API.
+- No API key values are printed, returned, or stored in cache payloads.
+- `backend/data/youtube_cache.json` is ignored runtime data and was absent after automated validation; `backend/data/.gitkeep` remains preserved.
+- No scraping, browser-cookie use, login bypass, captcha bypass, anti-bot evasion, real LLM call, `.env` modification, or GitHub Actions workflow was introduced.
+
+Future work:
+
+- Add a small operator-facing quota/cache status panel only if repeated real-data demos need it.
+- Add deeper reply crawling through `comments.list` only behind explicit strict limits and mocked regression tests.
+- Add durable quota usage reporting after real-data demo patterns are better understood.
+- Keep GitHub Actions CI intentionally disabled.
+
 ### YouTube Official API Adapter Minimal Real Mode
 
 Status: implemented and QA-stabilized as the first real-capable official API adapter, mock-first by default.
@@ -19,16 +50,16 @@ Completed:
 - Wired `youtube` into `adapter_factory`, `platform_registry`, and `/api/v1/crawl/start`.
 - Added safe crawl metadata including `credential_present` as a boolean only; no key values are returned or logged.
 - Added `.env.example` placeholders for `YOUTUBE_ADAPTER_MODE=mock` and `YOUTUBE_API_KEY=`.
-- Added tests for mock search/comments, normalization, missing-key fallback, mocked real API response normalization, adapter factory registration, `/crawl/start` mock and missing-key metadata behavior, UTF-8/emoji text handling, and top-level/reply comment parent/default URL behavior.
+- Added tests for mock search/comments, normalization, missing-key fallback, mocked real API response normalization, adapter factory registration, `/crawl/start` mock and missing-key metadata behavior, UTF-8/emoji text handling, top-level/reply comment parent/default URL behavior, and mocked auth/network fallback behavior.
 - Verified a local real-mode smoke check with `adapter_mode=real`, `fallback_used=false`, `credential_present=true`, `post_count=3`, `comment_count=3`, and valid normalized post/comment schema metadata.
 - Verified the mocked-real `/crawl/start` output shape remains downstream-compatible with `RawPost` / `RawComment` consumers, with credential values redacted from response text and `raw_data`.
 - Added explicit case raw-data ingestion so normalized YouTube/future crawl output can be attached to a case and used by the next case analysis run.
 
 Acceptance:
 
-- `python -m pytest` passed with `522 passed in 4.94s`.
+- `python -m pytest` passed with `533 passed in 5.30s`.
 - `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
-- Frontend build was not run because no frontend files changed.
+- `npm run build` passed from `frontend/` in 7.66s with the existing non-blocking large vendor chunk warning.
 - Automated tests do not call the real YouTube API; real-mode test coverage uses mocked clients only.
 - No scraping, API-key printing, `.env` modification, real LLM call, login bypass, captcha bypass, anti-bot evasion, or GitHub Actions workflow was introduced.
 
@@ -55,18 +86,21 @@ Completed:
 - Simulation Lab case initialization can consume the resulting YouTube-based analysis through existing aggregate case outputs.
 - Added regression coverage for old-case compatibility, raw-data persistence, case-specific crawl attachment, raw-data analysis source metadata, report representative comments, fallback behavior, and Simulation Lab initialization.
 - QA stabilization added local JSON reload coverage, MongoDB-shaped persistence coverage through the fake store, Markdown provenance checks that keep YouTube-derived comments and exclude old mock comments when raw case comments exist, and a guard against raw-data JSON dumps in user-facing Markdown.
+- Full-demo QA added mocked-real fallback coverage for YouTube comments-disabled/quota/auth-style failures and network failures, and documented the end-to-end manual path from YouTube crawl attachment through case analysis, report export, monitoring/forecasting, Simulation Lab initialization, A/B simulation, and strategy report export.
 
 Acceptance:
 
-- `python -m pytest` passed with `531 passed in 5.22s`.
+- `python -m pytest` passed with `533 passed in 5.30s`.
 - `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
-- Frontend build was not run because no frontend files changed.
+- `npm run build` passed from `frontend/` in 7.66s with the existing non-blocking large vendor chunk warning.
 - Automated tests use mocked crawl output only and do not call the real YouTube API.
 - No scraping, API-key printing, `.env` modification, real LLM call, login bypass, captcha bypass, anti-bot evasion, or GitHub Actions workflow was introduced.
 
 Future work:
 
-- YouTube full real-data demo is the next recommended task and should remain manual, tiny-limit, key-redacted, and quota-aware.
+- Capture manual YouTube real-data demo screenshots from the documented case-ingestion path.
+- Extend quota-aware search strategy only if real-data demos need broader query controls.
+- Add deeper reply crawling through `comments.list` with strict per-video limits only if the demo needs more reply coverage.
 - Add an optional frontend button for case-specific crawl attachment.
 - Keep other platform real-mode ingestion behind official permissions, mocked regression tests, and key-redacted metadata.
 - GitHub Actions CI remains intentionally disabled.

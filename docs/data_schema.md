@@ -746,6 +746,14 @@ Rules:
       "dependency_available": true,
       "exception_class": null,
       "sanitized_error_category": null,
+      "estimated_quota_units": 0,
+      "search_call_count": 0,
+      "videos_call_count": 0,
+      "comment_threads_call_count": 0,
+      "comments_call_count": 0,
+      "cache_hit": false,
+      "cache_age_seconds": null,
+      "quota_guardrail_status": "mock_mode",
       "post_count": 3,
       "comment_count": 3,
       "schema_valid": true,
@@ -797,11 +805,12 @@ Rules:
 
 - `platform_metadata` records safe adapter status only; it must not include credentials, tokens, or request secrets.
 - `adapter_mode` is `mock` or `real`.
-- `fallback_reason_category` and `sanitized_error_category` may be `api_pending`, `dependency_error`, `auth_error`, `network_error`, `parsing_error`, `config_error`, `adapter_error`, or `null`.
+- `fallback_reason_category` and `sanitized_error_category` may be `api_pending`, `dependency_error`, `auth_error`, `quota_error`, `comments_unavailable`, `network_error`, `parsing_error`, `config_error`, `adapter_error`, or `null`.
 - `exception_class` is a safe exception class name only and must not include exception messages, request payloads, tokens, or credentials.
 - `real_mode_reached` indicates whether the real adapter path was reached.
 - `dependency_available` indicates whether required real-mode dependencies such as PRAW are importable.
 - `mock_available`, `api_pending`, `real_mode_disabled`, and `credential_present` communicate safe adapter/source status without exposing credentials. Reddit real API mode stays disabled while approval is pending. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao real official API modes stay disabled while credentials, approval, permission scopes, and implementation are pending. YouTube real mode is available only when `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` is present locally.
+- YouTube-specific crawl metadata may include safe quota/cache fields: `estimated_quota_units`, `search_call_count`, `videos_call_count`, `comment_threads_call_count`, `comments_call_count`, `cache_hit`, `cache_age_seconds`, and `quota_guardrail_status`. These fields are operational counters only and must not include API keys, `.env` values, request headers, or raw official API error bodies.
 - `real_mode_available`, `api_approval_required`, `api_approval_status`, `selectable_for_real`, and `real_mode_blocked_reason` describe why a real source path is or is not usable. Current valid blocked reasons include `api_pending`, `disabled`, `mock_only`, `credentials_missing`, and `approval_required`.
 - `raw_posts` uses the `RawPost` schema.
 - `raw_comments` uses the `RawComment` schema.
@@ -813,7 +822,7 @@ Rules:
 - Xiaohongshu uses `source_type="official_api_adapter_scaffold"` and may return Xiaohongshu-style mock lifestyle/community note `RawPost` and visible-comment `RawComment` items when selected in `/crawl/start`.
 - Zhihu uses `source_type="official_api_adapter_scaffold"` and may return Zhihu-style mock Q&A/article `RawPost` and visible-comment `RawComment` items when selected in `/crawl/start`.
 - Douban uses `source_type="official_api_adapter_scaffold"` and may return Douban-style mock review/group/topic `RawPost` and visible-comment `RawComment` items when selected in `/crawl/start`.
-- YouTube uses `source_type="youtube_data_api_v3"` and may return YouTube-style video `RawPost` and visible-comment `RawComment` items when selected in `/crawl/start`; real mode uses the official YouTube Data API v3 only when explicitly configured.
+- YouTube uses `source_type="youtube_data_api_v3"` and may return YouTube-style video `RawPost` and visible-comment `RawComment` items when selected in `/crawl/start`; real mode uses the official YouTube Data API v3 only when explicitly configured. The adapter checks the ignored project-local cache `backend/data/youtube_cache.json` before real API calls, clamps requested limits to safe configured maxima, uses tiny `search.list`, `videos.list`, and `commentThreads.list` requests, disables deep reply expansion by default, and stops at the configured total-comment limit. Exhaustive reply expansion through `comments.list` with `parentId` remains future work behind strict limits.
 
 ### Public Parser Metadata Extension
 

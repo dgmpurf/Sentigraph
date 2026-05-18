@@ -9,14 +9,25 @@ from app.schemas.comment import RawComment, RawPost
 from app.services.crawling.adapter_factory import get_adapter
 from app.services.crawling.youtube_adapter import (
     YouTubeAdapter,
+    YouTubeAuthError,
+    YouTubeCommentsDisabledError,
     YouTubeCredentials,
+    YouTubeNetworkError,
+    YouTubeQuotaError,
 )
+from app.services.crawling.youtube_cache import YouTubeAdapterConfig, YouTubeResponseCache
 
 
 client = TestClient(app)
 
 
 class FakeYouTubeClient:
+    def __init__(self) -> None:
+        self.search_call_count = 0
+        self.fetch_comments_call_count = 0
+        self.search_limits: list[int] = []
+        self.comment_limits: list[int] = []
+
     def search_posts(
         self,
         keyword: str,
@@ -26,6 +37,8 @@ class FakeYouTubeClient:
         date_range: dict[str, str] | None = None,
     ) -> list[Mapping[str, Any]]:
         del date_range
+        self.search_call_count += 1
+        self.search_limits.append(limit)
         return [
             {
                 "source_type": "youtube_data_api_v3",
@@ -48,7 +61,8 @@ class FakeYouTubeClient:
         ]
 
     def fetch_comments(self, post_id: str, *, limit: int) -> list[Mapping[str, Any]]:
-        del limit
+        self.fetch_comments_call_count += 1
+        self.comment_limits.append(limit)
         return [
             {
                 "id": "yt_real_comment_001",
@@ -63,6 +77,93 @@ class FakeYouTubeClient:
                 },
             }
         ]
+
+
+class ReplyRichYouTubeClient(FakeYouTubeClient):
+    def fetch_comments(self, post_id: str, *, limit: int) -> list[Mapping[str, Any]]:
+        self.fetch_comments_call_count += 1
+        self.comment_limits.append(limit)
+        comments: list[Mapping[str, Any]] = [
+            {
+                "id": "yt_real_comment_top_001",
+                "snippet": {
+                    "videoId": post_id,
+                    "authorChannelId": {"value": "yt_real_commenter_top"},
+                    "authorDisplayName": "Top Commenter",
+                    "textOriginal": "Top-level comment should remain.",
+                    "likeCount": "5",
+                    "publishedAt": "2026-05-17T12:05:00Z",
+                    "totalReplyCount": "6",
+                },
+            }
+        ]
+        comments.extend(
+            {
+                "id": f"yt_real_reply_{index:03d}",
+                "snippet": {
+                    "videoId": post_id,
+                    "parentId": "yt_real_comment_top_001",
+                    "authorChannelId": {"value": f"yt_real_reply_author_{index:03d}"},
+                    "authorDisplayName": f"Reply Commenter {index}",
+                    "textOriginal": f"Reply {index} should be limited by guardrails.",
+                    "likeCount": "1",
+                    "publishedAt": "2026-05-17T12:06:00Z",
+                },
+            }
+            for index in range(1, 8)
+        )
+        comments.append(
+            {
+                "id": "yt_real_comment_top_002",
+                "snippet": {
+                    "videoId": post_id,
+                    "authorChannelId": {"value": "yt_real_commenter_top_002"},
+                    "authorDisplayName": "Second Top Commenter",
+                    "textOriginal": "Second top-level comment.",
+                    "likeCount": "2",
+                    "publishedAt": "2026-05-17T12:07:00Z",
+                },
+            }
+        )
+        return comments[:limit]
+
+
+class AuthFailingYouTubeClient(FakeYouTubeClient):
+    def fetch_comments(self, post_id: str, *, limit: int) -> list[Mapping[str, Any]]:
+        del post_id, limit
+        raise YouTubeAuthError("youtube_comments_disabled_or_quota_error")
+
+
+class QuotaFailingYouTubeClient(FakeYouTubeClient):
+    def search_posts(
+        self,
+        keyword: str,
+        *,
+        limit: int,
+        sort: str,
+        date_range: dict[str, str] | None = None,
+    ) -> list[Mapping[str, Any]]:
+        del keyword, limit, sort, date_range
+        raise YouTubeQuotaError("youtube_quota_error")
+
+
+class CommentsDisabledYouTubeClient(FakeYouTubeClient):
+    def fetch_comments(self, post_id: str, *, limit: int) -> list[Mapping[str, Any]]:
+        del post_id, limit
+        raise YouTubeCommentsDisabledError("youtube_comments_unavailable")
+
+
+class NetworkFailingYouTubeClient(FakeYouTubeClient):
+    def search_posts(
+        self,
+        keyword: str,
+        *,
+        limit: int,
+        sort: str,
+        date_range: dict[str, str] | None = None,
+    ) -> list[Mapping[str, Any]]:
+        del keyword, limit, sort, date_range
+        raise YouTubeNetworkError("youtube_network_error")
 
 
 def test_youtube_mock_search_posts(monkeypatch) -> None:
@@ -272,6 +373,7 @@ def test_youtube_mocked_real_api_response_normalizes_without_network(monkeypatch
         mode="real",
         credentials=YouTubeCredentials(api_key="youtube-test-marker-should-not-appear"),
         http_client=FakeYouTubeClient(),
+        config=YouTubeAdapterConfig(cache_enabled=False),
     )
     posts = adapter.search_posts("Tesla", limit=3, sort="date")
     comments = adapter.fetch_comments(posts[0].post_id, limit=3)
@@ -291,6 +393,275 @@ def test_youtube_mocked_real_api_response_normalizes_without_network(monkeypatch
     RawComment.model_validate(comments[0].model_dump(mode="json"))
 
 
+def test_youtube_cache_miss_calls_mocked_real_client_and_stores_safe_payload(monkeypatch, tmp_path) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    cache_path = tmp_path / "youtube_cache.json"
+    fake_client = FakeYouTubeClient()
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=fake_client,
+        config=YouTubeAdapterConfig(cache_enabled=True, cache_ttl_seconds=3600),
+        cache=YouTubeResponseCache(path=cache_path, enabled=True, ttl_seconds=3600),
+    )
+
+    posts = adapter.search_posts("Tesla", limit=3)
+    metadata = adapter.get_status_metadata()
+
+    assert posts
+    assert fake_client.search_call_count == 1
+    assert metadata["cache_hit"] is False
+    assert metadata["search_call_count"] == 1
+    assert metadata["videos_call_count"] == 1
+    assert metadata["estimated_quota_units"] == 101
+    assert metadata["quota_guardrail_status"] == "cache_miss_real_call"
+    assert fake_key_marker not in cache_path.read_text(encoding="utf-8")
+
+
+def test_youtube_cache_hit_skips_mocked_real_client(monkeypatch, tmp_path) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    cache_path = tmp_path / "youtube_cache.json"
+    config = YouTubeAdapterConfig(cache_enabled=True, cache_ttl_seconds=3600)
+    cache = YouTubeResponseCache(path=cache_path, enabled=True, ttl_seconds=3600)
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    first_client = FakeYouTubeClient()
+    first_adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=first_client,
+        config=config,
+        cache=cache,
+    )
+    first_adapter.search_posts("Tesla", limit=3)
+
+    second_client = FakeYouTubeClient()
+    second_adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=second_client,
+        config=config,
+        cache=cache,
+    )
+    cached_posts = second_adapter.search_posts("Tesla", limit=3)
+    metadata = second_adapter.get_status_metadata()
+
+    assert cached_posts
+    assert first_client.search_call_count == 1
+    assert second_client.search_call_count == 0
+    assert metadata["cache_hit"] is True
+    assert metadata["cache_age_seconds"] is not None
+    assert metadata["estimated_quota_units"] == 0
+    assert metadata["quota_guardrail_status"] == "cache_hit"
+
+
+def test_youtube_cache_ttl_expiry_calls_mocked_real_client_again(monkeypatch, tmp_path) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    cache_path = tmp_path / "youtube_cache.json"
+    config = YouTubeAdapterConfig(cache_enabled=True, cache_ttl_seconds=0)
+    cache = YouTubeResponseCache(path=cache_path, enabled=True, ttl_seconds=0)
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    first_client = FakeYouTubeClient()
+    first_adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=first_client,
+        config=config,
+        cache=cache,
+    )
+    first_adapter.search_posts("Tesla", limit=3)
+
+    second_client = FakeYouTubeClient()
+    second_adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=second_client,
+        config=config,
+        cache=cache,
+    )
+    second_adapter.search_posts("Tesla", limit=3)
+    metadata = second_adapter.get_status_metadata()
+
+    assert first_client.search_call_count == 1
+    assert second_client.search_call_count == 1
+    assert metadata["cache_hit"] is False
+    assert metadata["quota_guardrail_status"] == "cache_miss_real_call"
+
+
+def test_youtube_requested_limits_are_clamped_by_guardrails(monkeypatch, tmp_path) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    fake_client = FakeYouTubeClient()
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=fake_client,
+        config=YouTubeAdapterConfig(
+            cache_enabled=False,
+            max_search_results=2,
+            max_comments_per_video=4,
+            max_total_comments=3,
+        ),
+        cache=YouTubeResponseCache(path=tmp_path / "youtube_cache.json", enabled=False),
+    )
+
+    posts = adapter.search_posts("Tesla", limit=99)
+    comments = adapter.fetch_comments("yt_real_video_001", limit=99)
+
+    assert posts
+    assert comments
+    assert fake_client.search_limits == [2]
+    assert fake_client.comment_limits == [3]
+
+
+def test_youtube_deep_replies_disabled_by_default(monkeypatch, tmp_path) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=ReplyRichYouTubeClient(),
+        config=YouTubeAdapterConfig(cache_enabled=False, enable_deep_replies=False),
+        cache=YouTubeResponseCache(path=tmp_path / "youtube_cache.json", enabled=False),
+    )
+
+    comments = adapter.fetch_comments("yt_real_video_001", limit=10)
+
+    assert comments
+    assert all(comment.parent_id is None for comment in comments)
+    assert len(comments) == 2
+
+
+def test_youtube_deep_replies_and_total_comments_are_strictly_limited(monkeypatch, tmp_path) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=ReplyRichYouTubeClient(),
+        config=YouTubeAdapterConfig(
+            cache_enabled=False,
+            enable_deep_replies=True,
+            max_replies_per_comment=2,
+            max_total_comments=3,
+        ),
+        cache=YouTubeResponseCache(path=tmp_path / "youtube_cache.json", enabled=False),
+    )
+
+    comments = adapter.fetch_comments("yt_real_video_001", limit=10)
+    reply_count = sum(1 for comment in comments if comment.parent_id)
+
+    assert len(comments) == 3
+    assert reply_count == 2
+
+
+def test_youtube_quota_error_falls_back_to_mock_with_safe_metadata(monkeypatch) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=QuotaFailingYouTubeClient(),
+        config=YouTubeAdapterConfig(cache_enabled=False),
+    )
+
+    posts = adapter.search_posts("Tesla", limit=3)
+    metadata = adapter.get_status_metadata()
+
+    assert posts
+    assert posts[0].raw_data["mode"] == "mock"
+    assert metadata["sanitized_error_category"] == "quota_error"
+    assert metadata["fetch_status"] == "quota_error"
+    assert metadata["quota_guardrail_status"] == "quota_error_fallback"
+    assert fake_key_marker not in str(metadata)
+
+
+def test_youtube_comments_disabled_returns_safe_partial_result(monkeypatch) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=CommentsDisabledYouTubeClient(),
+        config=YouTubeAdapterConfig(cache_enabled=False),
+    )
+
+    comments = adapter.fetch_comments("yt_real_video_001", limit=3)
+    metadata = adapter.get_status_metadata()
+
+    assert comments == []
+    assert metadata["sanitized_error_category"] == "comments_unavailable"
+    assert metadata["fetch_status"] == "comments_unavailable"
+    assert metadata["quota_guardrail_status"] == "comments_unavailable_partial"
+    assert fake_key_marker not in str(metadata)
+
+
+def test_youtube_real_comments_disabled_or_quota_error_falls_back_to_mock(monkeypatch) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=AuthFailingYouTubeClient(),
+        config=YouTubeAdapterConfig(cache_enabled=False),
+    )
+
+    comments = adapter.fetch_comments("yt_real_video_001", limit=3)
+    metadata = adapter.get_status_metadata()
+
+    assert comments
+    assert comments[0].raw_data["mode"] == "mock"
+    assert metadata["sanitized_error_category"] == "auth_error"
+    assert metadata["fetch_status"] == "auth_error"
+    assert metadata["exception_class"] == "YouTubeAuthError"
+    assert fake_key_marker not in str(comments)
+    assert fake_key_marker not in str(metadata)
+    RawComment.model_validate(comments[0].model_dump(mode="json"))
+
+
+def test_youtube_real_network_error_falls_back_to_mock(monkeypatch) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    adapter = YouTubeAdapter(
+        mode="real",
+        credentials=YouTubeCredentials(api_key=fake_key_marker),
+        http_client=NetworkFailingYouTubeClient(),
+        config=YouTubeAdapterConfig(cache_enabled=False),
+    )
+
+    posts = adapter.search_posts("Tesla", limit=3)
+    metadata = adapter.get_status_metadata()
+
+    assert posts
+    assert posts[0].raw_data["mode"] == "mock"
+    assert metadata["sanitized_error_category"] == "network_error"
+    assert metadata["fetch_status"] == "network_error"
+    assert metadata["exception_class"] == "YouTubeNetworkError"
+    assert fake_key_marker not in str(posts)
+    assert fake_key_marker not in str(metadata)
+    RawPost.model_validate(posts[0].model_dump(mode="json"))
+
+
 def test_crawl_start_youtube_mocked_real_output_is_downstream_compatible(monkeypatch) -> None:
     fake_key_marker = "youtube-test-marker-should-not-appear"
     monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
@@ -302,6 +673,7 @@ def test_crawl_start_youtube_mocked_real_output_is_downstream_compatible(monkeyp
             mode="real",
             credentials=YouTubeCredentials(api_key=fake_key_marker),
             http_client=FakeYouTubeClient(),
+            config=YouTubeAdapterConfig(cache_enabled=False),
         )
 
     monkeypatch.setattr("app.services.crawling.crawl_service.adapter_factory.get_adapter", fake_get_adapter)
@@ -365,6 +737,60 @@ def test_crawl_start_youtube_mocked_real_output_is_downstream_compatible(monkeyp
     assert "api_key" not in str(comment["raw_data"]).lower()
     RawPost.model_validate(post)
     RawComment.model_validate(comment)
+
+
+def test_crawl_start_youtube_includes_cache_and_quota_metadata(monkeypatch, tmp_path) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    fake_client = FakeYouTubeClient()
+    cache = YouTubeResponseCache(path=tmp_path / "youtube_cache.json", enabled=True, ttl_seconds=3600)
+    config = YouTubeAdapterConfig(cache_enabled=True, cache_ttl_seconds=3600)
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    def fake_get_adapter(platform_id: str) -> YouTubeAdapter:
+        assert platform_id == "youtube"
+        return YouTubeAdapter(
+            mode="real",
+            credentials=YouTubeCredentials(api_key=fake_key_marker),
+            http_client=fake_client,
+            config=config,
+            cache=cache,
+        )
+
+    monkeypatch.setattr("app.services.crawling.crawl_service.adapter_factory.get_adapter", fake_get_adapter)
+
+    first_response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["youtube"], "limit": 3},
+    )
+    second_response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["youtube"], "limit": 3},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert fake_key_marker not in first_response.text
+    assert fake_key_marker not in second_response.text
+    first_metadata = first_response.json()["platform_metadata"][0]
+    second_metadata = second_response.json()["platform_metadata"][0]
+
+    assert first_metadata["cache_hit"] is False
+    assert first_metadata["estimated_quota_units"] == 102
+    assert first_metadata["search_call_count"] == 1
+    assert first_metadata["videos_call_count"] == 1
+    assert first_metadata["comment_threads_call_count"] == 1
+    assert first_metadata["comments_call_count"] == 0
+    assert first_metadata["quota_guardrail_status"] == "cache_miss_real_call"
+
+    assert second_metadata["cache_hit"] is True
+    assert second_metadata["cache_age_seconds"] is not None
+    assert second_metadata["estimated_quota_units"] == 0
+    assert second_metadata["search_call_count"] == 0
+    assert second_metadata["comment_threads_call_count"] == 0
+    assert second_metadata["quota_guardrail_status"] == "cache_hit"
+    assert fake_client.search_call_count == 1
+    assert fake_client.fetch_comments_call_count == 1
 
 
 def test_adapter_factory_returns_youtube_adapter(monkeypatch) -> None:
