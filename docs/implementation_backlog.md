@@ -10,7 +10,7 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### Simulation Lab MVP Backend and Frontend Scaffold
 
-Status: backend implemented and QA-stabilized; frontend bubble visualization implemented and QA-stabilized on 2026-05-18.
+Status: backend implemented and QA-stabilized; frontend bubble visualization implemented and QA-stabilized; A/B intervention comparison implemented and QA-stabilized on 2026-05-18.
 
 Completed:
 
@@ -21,6 +21,7 @@ Completed:
 - Added `POST /api/v1/simulation/run`, `GET /api/v1/simulation/demo-scenario`, and `GET /api/v1/simulation/ethics-policy`.
 - Added backend tests and an offline `simulation_lab` benchmark suite.
 - Added `frontend/src/pages/SimulationLab.jsx` with scenario controls, synthetic bubble visualization, message/intervention event cards, aggregate metrics, explanation cards, and a step timeline.
+- Added frontend A/B comparison mode for two allowed interventions from the same initial scenario, with aggregate deltas and human-review-only recommendation.
 - Added Simulation Lab sidebar navigation and frontend API helpers for the existing simulation endpoints.
 
 QA coverage:
@@ -28,13 +29,14 @@ QA coverage:
 - Revalidated route registration, demo scenario, ethics policy, safe rejection errors, deterministic output, bounded opinions, model mechanics, aggregate metrics, and aggregate-only output shape.
 - Revalidated the offline `simulation_lab` benchmark suite.
 - Browser smoke with local backend/frontend servers revalidated the Simulation Lab route, sidebar navigation, API helper flow, left/center/right/bottom layout, event cards, bubble rendering, aggregate metrics, explanation cards, run/step controls, and timeline updates.
+- Browser smoke also revalidated A/B strategy comparison for `no_response` vs `clarification`, `no_response` vs `apology`, `no_response` vs `third_party_evidence`, and `clarification` vs `misinformation_correction`; forbidden intervention values remain absent from selectable controls.
 - Frontend build passed for the Simulation Lab page with the existing non-blocking Ant Design/ECharts chunk warning.
-- QA fixes normalized simulation numeric ranges, made `intervention_type` visible on event cards, strengthened deterministic/aggregate safety copy, and made both rising/falling explanation cards visible.
+- QA fixes normalized simulation numeric ranges, made `intervention_type` visible on event cards, strengthened deterministic/aggregate safety copy, made both rising/falling explanation cards visible, made A/B comparison scalar summary fields explicit, and removed noisy shared Ant Design `Spin` `tip` usage.
 
 Future work:
 
-- Add full A/B strategy comparison after preserving the current single-scenario QA baseline.
-- Add richer animation and replay controls after A/B comparison remains stable.
+- Add richer A/B replay controls or a safe aggregate assumption editor after A/B comparison remains stable.
+- Keep content visibility backlash modeling, initializing simulation from real monitoring cases, and advanced animation as future work.
 - Expand ABM validation with sensitivity, docking, ablation, and richer synthetic benchmarks.
 - Keep empirical calibration, dynamic network rewiring, cross-platform diffusion, and optional real LLM narrative generation as future work behind safeguards.
 - Keep GitHub Actions CI intentionally disabled unless explicitly requested.
@@ -678,7 +680,8 @@ Simulation Lab MVP implementation tasks:
 - Offline `simulation_lab` benchmark suite: complete for MVP.
 - Frontend 2D bubble visualization: complete for MVP.
 - Frontend QA stabilization: complete for MVP.
-- Full A/B comparison, richer animation, and empirical calibration remain future work.
+- Frontend A/B comparison: complete for MVP using the existing safe simulation run endpoint twice from the same initial scenario.
+- Richer animation, richer replay controls, and empirical calibration remain future work.
 
 Forbidden implementation paths:
 
@@ -688,7 +691,7 @@ Forbidden implementation paths:
 
 Recommended next task:
 
-- Add full A/B strategy comparison for allowed Simulation Lab intervention packages while keeping the simulator offline, deterministic, aggregate-only, and ethics-bounded.
+- Add richer A/B replay controls or a safe aggregate assumption editor while keeping the simulator offline, deterministic, aggregate-only, and ethics-bounded.
 
 QA stabilization result, 2026-05-18:
 

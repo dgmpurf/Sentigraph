@@ -659,7 +659,7 @@ function App() {
           riskScore={riskScore}
         >
           {error ? <Alert className="app-alert" message={error} type="error" showIcon /> : null}
-          <Spin spinning={loading} tip="Loading mock intelligence">
+          <Spin spinning={loading}>
             <motion.div
               key={activePage}
               initial={{ opacity: 0, y: 10 }}
@@ -667,7 +667,7 @@ function App() {
               transition={{ duration: 0.22, ease: 'easeOut' }}
             >
               <ErrorBoundary resetKey={activePage} onReset={() => setActivePage('dashboard')}>
-                <Suspense fallback={<Spin spinning tip="Loading page" />}>{currentPage}</Suspense>
+                <Suspense fallback={<Spin spinning />}>{currentPage}</Suspense>
               </ErrorBoundary>
             </motion.div>
           </Spin>

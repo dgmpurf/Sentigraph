@@ -8,6 +8,7 @@ import {
   List,
   Row,
   Select,
+  Segmented,
   Skeleton,
   Space,
   Statistic,
@@ -428,6 +429,91 @@ function getTrendDisplay(trend) {
   return displays[trend] || displays.unknown
 }
 
+function getFinalMetrics(result) {
+  return result?.final_metrics || result?.step_results?.[result.step_results.length - 1]?.metrics || null
+}
+
+function computeRiskProxy(metrics) {
+  if (!metrics) return null
+  const rawScore =
+    (metrics.negative_ratio ?? 0) * 52 +
+    (metrics.polarization_index ?? 0) * 28 +
+    (metrics.attention_level ?? 0) * 12 -
+    (metrics.trust_recovery_proxy ?? 0) * 14
+  return clamp(rawScore, 0, 100)
+}
+
+function computeBacklashRisk(metrics, interventionType) {
+  if (!metrics) return null
+  const isVisibilityAction = ['content_moderation', 'visibility_intervention'].includes(interventionType)
+  const baseline = isVisibilityAction ? 0.18 : 0.06
+  return clamp(
+    baseline +
+      (metrics.polarization_index ?? 0) * 0.46 +
+      (metrics.attention_level ?? 0) * 0.22 -
+      (metrics.trust_recovery_proxy ?? 0) * 0.12,
+    0,
+    1,
+  )
+}
+
+function formatDelta(value, { percent = false, signed = true } = {}) {
+  if (value === null || value === undefined || value === '') return '-'
+  if (!Number.isFinite(Number(value))) return '-'
+  const numericValue = Number(value)
+  const prefix = signed && numericValue > 0 ? '+' : ''
+  if (percent) return `${prefix}${Math.round(numericValue * 100)}%`
+  return `${prefix}${numericValue.toFixed(2)}`
+}
+
+function getDeltaTone(value, lowerIsBetter = true) {
+  if (value === null || value === undefined || value === '') return 'default'
+  if (!Number.isFinite(Number(value)) || Math.abs(value) < 0.005) return 'default'
+  const improved = lowerIsBetter ? value < 0 : value > 0
+  return improved ? 'green' : 'red'
+}
+
+function buildComparisonSummary(resultA, resultB, interventionA, interventionB) {
+  const metricsA = getFinalMetrics(resultA)
+  const metricsB = getFinalMetrics(resultB)
+  const riskA = computeRiskProxy(metricsA)
+  const riskB = computeRiskProxy(metricsB)
+  const riskDelta = riskA === null || riskB === null ? null : riskB - riskA
+  const negativeRatioDelta = (metricsB?.negative_ratio ?? 0) - (metricsA?.negative_ratio ?? 0)
+  const polarizationDelta = (metricsB?.polarization_index ?? 0) - (metricsA?.polarization_index ?? 0)
+  const trustRecoveryDelta = (metricsB?.trust_recovery_proxy ?? 0) - (metricsA?.trust_recovery_proxy ?? 0)
+  const backlashA = computeBacklashRisk(metricsA, interventionA)
+  const backlashB = computeBacklashRisk(metricsB, interventionB)
+  const backlashDelta = backlashA === null || backlashB === null ? null : backlashB - backlashA
+  const flags = [
+    ...(metricsA?.ethical_risk_flags || []).map((flag) => `A: ${flag}`),
+    ...(metricsB?.ethical_risk_flags || []).map((flag) => `B: ${flag}`),
+  ]
+
+  let betterOption = 'inconclusive'
+  if (riskDelta !== null) {
+    if (Math.abs(riskDelta) < 0.5) betterOption = 'tie'
+    else betterOption = riskDelta < 0 ? 'B' : 'A'
+  }
+
+  return {
+    better_option: betterOption,
+    risk_a: riskA,
+    risk_b: riskB,
+    risk_delta: riskDelta,
+    negative_ratio_delta: negativeRatioDelta,
+    polarization_delta: polarizationDelta,
+    trust_recovery_delta: trustRecoveryDelta,
+    backlash_risk_a: backlashA,
+    backlash_risk_b: backlashB,
+    backlash_risk_delta: backlashDelta,
+    ethical_risk_notes: flags.length
+      ? flags
+      : ['No additional ethical risk flags were returned by the deterministic aggregate simulation.'],
+    recommendation: 'human_review_required',
+  }
+}
+
 function getCommunityLabel(key) {
   return COMMUNITY_REGIONS[key]?.label || key
 }
@@ -479,7 +565,15 @@ function buildAgentVisuals(scenario, metrics, initialMetrics, stepResult) {
   })
 }
 
-function BubbleCanvas({ currentStepIndex, initialMetrics, metrics, scenario, stepResult }) {
+function BubbleCanvas({
+  compact = false,
+  currentStepIndex,
+  initialMetrics,
+  metrics,
+  scenario,
+  stepResult,
+  title = '舆情泡泡沙盘',
+}) {
   const visuals = useMemo(
     () => buildAgentVisuals(scenario, metrics, initialMetrics, stepResult),
     [initialMetrics, metrics, scenario, stepResult],
@@ -487,18 +581,18 @@ function BubbleCanvas({ currentStepIndex, initialMetrics, metrics, scenario, ste
 
   if (!scenario?.agents?.length) {
     return (
-      <Card className="panel-card simulation-canvas-card">
+      <Card className={`panel-card simulation-canvas-card ${compact ? 'simulation-canvas-compact' : ''}`}>
         <Empty description="请先加载安全演示场景" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       </Card>
     )
   }
 
   return (
-    <Card className="panel-card simulation-canvas-card">
+    <Card className={`panel-card simulation-canvas-card ${compact ? 'simulation-canvas-compact' : ''}`}>
       <div className="simulation-canvas-header">
         <Space>
           <Waves size={18} />
-          <Title level={4}>舆情泡泡沙盘</Title>
+          <Title level={4}>{title}</Title>
         </Space>
         <Space wrap>
           <Tag color="cyan">deterministic</Tag>
@@ -509,7 +603,7 @@ function BubbleCanvas({ currentStepIndex, initialMetrics, metrics, scenario, ste
         </Space>
       </div>
 
-      <div className="simulation-bubble-canvas">
+      <div className={`simulation-bubble-canvas ${compact ? 'simulation-bubble-canvas-compact' : ''}`}>
         {Object.entries(COMMUNITY_REGIONS).map(([key, region]) => (
           <div
             className={`simulation-community-region simulation-community-${key}`}
@@ -787,6 +881,192 @@ function TimelinePanel({ currentStepIndex, onSelectStep, result }) {
   )
 }
 
+function ComparisonDeltaCard({ label, value, percent = false, lowerIsBetter = true }) {
+  const tone = getDeltaTone(value, lowerIsBetter)
+  return (
+    <div className={`simulation-delta-card simulation-delta-${tone}`}>
+      <Text type="secondary">{label}</Text>
+      <strong>{formatDelta(value, { percent })}</strong>
+    </div>
+  )
+}
+
+function ComparisonSummaryPanel({ summary }) {
+  if (!summary) {
+    return (
+      <Card className="panel-card simulation-comparison-summary-card">
+        <Empty description="运行 A/B 策略对比后显示聚合差异" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      </Card>
+    )
+  }
+
+  const betterLabel = {
+    A: 'A 方案',
+    B: 'B 方案',
+    tie: '两方案接近',
+    inconclusive: '结果不足',
+  }[summary.better_option] || '结果不足'
+  const summaryFields = [
+    { name: 'better_option', value: summary.better_option || 'inconclusive' },
+    { name: 'risk_delta', value: formatDelta(summary.risk_delta) },
+    { name: 'negative_ratio_delta', value: formatDelta(summary.negative_ratio_delta, { percent: true }) },
+    { name: 'polarization_delta', value: formatDelta(summary.polarization_delta) },
+    { name: 'trust_recovery_delta', value: formatDelta(summary.trust_recovery_delta, { percent: true }) },
+    { name: 'ethical_risk_notes', value: `${summary.ethical_risk_notes?.length || 0} notes` },
+  ]
+
+  return (
+    <Card className="panel-card simulation-comparison-summary-card">
+      <div className="panel-heading">
+        <Space>
+          <GitBranch size={18} />
+          <Title level={4}>对比结果</Title>
+        </Space>
+        <Tag color={summary.better_option === 'B' ? 'green' : summary.better_option === 'A' ? 'blue' : 'default'}>
+          {betterLabel}
+        </Tag>
+      </div>
+      <Alert
+        className="simulation-disclaimer-alert"
+        message="当前为确定性沙盘模拟，不代表真实未来必然发生；推荐人工复核，不自动执行策略。"
+        type="info"
+        showIcon
+      />
+      <div className="simulation-delta-grid">
+        <ComparisonDeltaCard label="风险变化" value={summary.risk_delta} />
+        <ComparisonDeltaCard label="负面比例变化" value={summary.negative_ratio_delta} percent />
+        <ComparisonDeltaCard label="极化变化" value={summary.polarization_delta} />
+        <ComparisonDeltaCard
+          label="信任恢复"
+          lowerIsBetter={false}
+          value={summary.trust_recovery_delta}
+          percent
+        />
+        <ComparisonDeltaCard label="反弹风险" value={summary.backlash_risk_delta} percent />
+      </div>
+      <div className="simulation-summary-field-grid" aria-label="A/B comparison summary fields">
+        {summaryFields.map((field) => (
+          <span className="simulation-summary-field" key={field.name}>
+            <span className="simulation-summary-field-name">{field.name}</span>
+            <span className="simulation-summary-field-value">{field.value}</span>
+          </span>
+        ))}
+      </div>
+      <div className="simulation-review-note">
+        <Text strong>人工复核建议：</Text>
+        <Text> human_review_required。只用于透明危机响应方案比较，不输出个体定向建议。</Text>
+      </div>
+      <div className="simulation-ethics-notes">
+        {(summary.ethical_risk_notes || []).map((note) => (
+          <Tag color="geekblue" key={note}>
+            {note}
+          </Tag>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+function ComparisonScenarioPanel({
+  label,
+  interventionType,
+  metrics,
+  onInterventionChange,
+  options,
+  result,
+  scenario,
+  stepIndex,
+  stepResult,
+}) {
+  return (
+    <div className="simulation-comparison-panel">
+      <div className="simulation-comparison-header">
+        <Space direction="vertical" size={4}>
+          <Title level={4}>{label}</Title>
+          <Text type="secondary">{interventionLabelMap[interventionType] || interventionType}</Text>
+        </Space>
+        <Select
+          className="simulation-comparison-select"
+          onChange={onInterventionChange}
+          options={options}
+          value={interventionType}
+        />
+      </div>
+      <BubbleCanvas
+        compact
+        currentStepIndex={stepIndex}
+        initialMetrics={result?.initial_metrics || deriveInitialMetrics(scenario?.agents || [])}
+        metrics={metrics}
+        scenario={scenario}
+        stepResult={stepResult}
+        title={`${label} 泡泡视图`}
+      />
+      <div className="simulation-comparison-metrics">
+        <span>负面 {formatPercent(metrics?.negative_ratio)}</span>
+        <span>极化 {formatNumber(metrics?.polarization_index)}</span>
+        <span>注意力 {formatPercent(metrics?.attention_level)}</span>
+        <span>信任 {formatPercent(metrics?.trust_recovery_proxy)}</span>
+      </div>
+    </div>
+  )
+}
+
+function ComparisonTimelinePanel({ currentStepIndex, onSelectStep, resultA, resultB }) {
+  const stepsA = resultA?.step_results || []
+  const stepsB = resultB?.step_results || []
+  const maxSteps = Math.max(stepsA.length, stepsB.length)
+
+  if (!maxSteps) {
+    return (
+      <Card className="panel-card simulation-timeline-card">
+        <Empty description="运行 A/B 对比后显示 A timeline / B timeline" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="panel-card simulation-timeline-card">
+      <div className="panel-heading">
+        <Space>
+          <GitBranch size={18} />
+          <Title level={4}>A/B 时间线对比</Title>
+        </Space>
+        <Tag color="cyan">final step comparison</Tag>
+      </div>
+      <div className="simulation-comparison-timeline">
+        {Array.from({ length: maxSteps }).map((_, index) => {
+          const stepA = stepsA[index]
+          const stepB = stepsB[index]
+          const delta = (stepB?.metrics?.negative_ratio ?? 0) - (stepA?.metrics?.negative_ratio ?? 0)
+          return (
+            <button
+              className={`simulation-timeline-item ${index === currentStepIndex ? 'active' : ''}`}
+              key={`compare-step-${index + 1}`}
+              onClick={() => onSelectStep(index)}
+              type="button"
+            >
+              <Space direction="vertical" size={8} className="full-width">
+                <Space wrap>
+                  <Tag color="geekblue">Step {index + 1}</Tag>
+                  <Tag color={getDeltaTone(delta)}>B-A 负面 {formatDelta(delta, { percent: true })}</Tag>
+                </Space>
+                <div className="simulation-timeline-metrics">
+                  <span>A 负面 {formatPercent(stepA?.metrics?.negative_ratio)}</span>
+                  <span>B 负面 {formatPercent(stepB?.metrics?.negative_ratio)}</span>
+                  <span>A 极化 {formatNumber(stepA?.metrics?.polarization_index)}</span>
+                  <span>B 极化 {formatNumber(stepB?.metrics?.polarization_index)}</span>
+                  <span>A 注意力 {formatPercent(stepA?.metrics?.attention_level)}</span>
+                  <span>B 注意力 {formatPercent(stepB?.metrics?.attention_level)}</span>
+                </div>
+              </Space>
+            </button>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
 function SafetyNotice({ policy }) {
   return (
     <Card className="panel-card simulation-safety-card">
@@ -819,12 +1099,18 @@ export function SimulationLab() {
   const [scenario, setScenario] = useState(null)
   const [originalScenario, setOriginalScenario] = useState(null)
   const [ethicsPolicy, setEthicsPolicy] = useState(null)
+  const [viewMode, setViewMode] = useState('single')
   const [selectedIntervention, setSelectedIntervention] = useState('clarification')
+  const [interventionA, setInterventionA] = useState('no_response')
+  const [interventionB, setInterventionB] = useState('clarification')
   const [steps, setSteps] = useState(6)
   const [runResult, setRunResult] = useState(null)
+  const [comparisonResult, setComparisonResult] = useState(null)
   const [currentStepIndex, setCurrentStepIndex] = useState(-1)
+  const [comparisonStepIndex, setComparisonStepIndex] = useState(-1)
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
+  const [comparisonRunning, setComparisonRunning] = useState(false)
   const [error, setError] = useState('')
 
   const allowedOptions = useMemo(() => getAllowedOptions(ethicsPolicy), [ethicsPolicy])
@@ -835,6 +1121,25 @@ export function SimulationLab() {
     () => getEventCards(scenario, selectedIntervention),
     [scenario, selectedIntervention],
   )
+  const comparisonBaseScenario = originalScenario || scenario
+  const comparisonScenarioA = comparisonBaseScenario
+    ? buildScenarioForRun(comparisonBaseScenario, interventionA, steps)
+    : null
+  const comparisonScenarioB = comparisonBaseScenario
+    ? buildScenarioForRun(comparisonBaseScenario, interventionB, steps)
+    : null
+  const comparisonStepA =
+    comparisonStepIndex >= 0 ? comparisonResult?.resultA?.step_results?.[comparisonStepIndex] : null
+  const comparisonStepB =
+    comparisonStepIndex >= 0 ? comparisonResult?.resultB?.step_results?.[comparisonStepIndex] : null
+  const comparisonMetricsA =
+    comparisonStepA?.metrics ||
+    getFinalMetrics(comparisonResult?.resultA) ||
+    deriveInitialMetrics(comparisonBaseScenario?.agents || [])
+  const comparisonMetricsB =
+    comparisonStepB?.metrics ||
+    getFinalMetrics(comparisonResult?.resultB) ||
+    deriveInitialMetrics(comparisonBaseScenario?.agents || [])
 
   const loadDemoScenario = useCallback(async () => {
     setLoading(true)
@@ -851,9 +1156,15 @@ export function SimulationLab() {
       const options = getAllowedOptions(policy)
       const optionValues = options.map((option) => option.value)
       setSelectedIntervention(optionValues.includes(firstAllowed) ? firstAllowed : optionValues[0] || 'clarification')
+      setInterventionA(optionValues.includes('no_response') ? 'no_response' : optionValues[0] || 'clarification')
+      setInterventionB(
+        optionValues.includes('clarification') ? 'clarification' : optionValues[1] || optionValues[0] || 'clarification',
+      )
       setSteps(demoScenario.config?.steps || 6)
       setRunResult(null)
+      setComparisonResult(null)
       setCurrentStepIndex(-1)
+      setComparisonStepIndex(-1)
     } catch (requestError) {
       setError(getErrorMessage(requestError, '无法加载 Simulation Lab 演示场景。'))
       setScenario(null)
@@ -890,6 +1201,36 @@ export function SimulationLab() {
     }
   }, [scenario, selectedIntervention, steps])
 
+  const handleRunComparison = useCallback(async () => {
+    const baseScenario = originalScenario || scenario
+    if (!baseScenario) {
+      setError('请先加载演示场景。')
+      return
+    }
+    if (FORBIDDEN_INTERVENTIONS.has(interventionA) || FORBIDDEN_INTERVENTIONS.has(interventionB)) {
+      setError('A/B 对比中包含被伦理策略禁止的干预类型。')
+      return
+    }
+
+    setComparisonRunning(true)
+    setError('')
+    try {
+      const scenarioA = buildScenarioForRun(baseScenario, interventionA, steps)
+      const scenarioB = buildScenarioForRun(baseScenario, interventionB, steps)
+      const [resultA, resultB] = await Promise.all([runSimulation(scenarioA), runSimulation(scenarioB)])
+      setComparisonResult({
+        resultA,
+        resultB,
+        comparisonSummary: buildComparisonSummary(resultA, resultB, interventionA, interventionB),
+      })
+      setComparisonStepIndex(resultA.step_results.length || resultB.step_results.length ? 0 : -1)
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, '无法运行 A/B 策略对比。'))
+    } finally {
+      setComparisonRunning(false)
+    }
+  }, [interventionA, interventionB, originalScenario, scenario, steps])
+
   const handleStepForward = useCallback(async () => {
     if (!runResult) {
       await handleRunSimulation()
@@ -899,10 +1240,24 @@ export function SimulationLab() {
     setCurrentStepIndex(nextIndex)
   }, [currentStepIndex, handleRunSimulation, runResult])
 
+  const handleComparisonStepForward = useCallback(async () => {
+    if (!comparisonResult) {
+      await handleRunComparison()
+      return
+    }
+    const maxIndex = Math.max(
+      comparisonResult.resultA?.step_results?.length || 0,
+      comparisonResult.resultB?.step_results?.length || 0,
+    ) - 1
+    setComparisonStepIndex(Math.min(comparisonStepIndex + 1, Math.max(maxIndex, 0)))
+  }, [comparisonResult, comparisonStepIndex, handleRunComparison])
+
   const handleReset = useCallback(() => {
     setScenario(originalScenario)
     setRunResult(null)
+    setComparisonResult(null)
     setCurrentStepIndex(-1)
+    setComparisonStepIndex(-1)
     setError('')
     if (originalScenario?.config?.steps) {
       setSteps(originalScenario.config.steps)
@@ -932,8 +1287,33 @@ export function SimulationLab() {
       {error ? <Alert message="Simulation Lab 加载失败" description={error} type="error" showIcon /> : null}
 
       <Skeleton active loading={loading} paragraph={{ rows: 8 }}>
+        <Card className="panel-card simulation-mode-card">
+          <div className="simulation-mode-toolbar">
+            <Space direction="vertical" size={4}>
+              <Title level={4}>模拟模式</Title>
+              <Text type="secondary">单场景解释或 A/B 策略对比都基于同一份离线合成场景。</Text>
+            </Space>
+            <Segmented
+              onChange={setViewMode}
+              options={[
+                { label: '单场景模拟', value: 'single' },
+                { label: 'A/B 策略对比', value: 'comparison' },
+              ]}
+              value={viewMode}
+            />
+          </div>
+          {viewMode === 'comparison' ? (
+            <Alert
+              className="simulation-disclaimer-alert"
+              message="本模块只用于透明危机响应方案比较；不提供个体定向操控建议，不支持虚假共识、机器人放大、伪造事件或隐蔽操纵。"
+              type="info"
+              showIcon
+            />
+          ) : null}
+        </Card>
+
         <Row gutter={[16, 16]} align="stretch">
-          <Col span={6}>
+          <Col span={viewMode === 'comparison' ? 7 : 6}>
             <Space direction="vertical" size={16} className="full-width">
               <Card className="panel-card simulation-control-card">
                 <div className="panel-heading">
@@ -952,15 +1332,46 @@ export function SimulationLab() {
                       <Paragraph className="simulation-scenario-copy">{safeText(scenario.description)}</Paragraph>
                     </div>
 
-                    <div>
-                      <Text type="secondary">干预类型</Text>
-                      <Select
-                        className="full-width"
-                        onChange={setSelectedIntervention}
-                        options={allowedOptions}
-                        value={selectedIntervention}
-                      />
-                    </div>
+                    {viewMode === 'single' ? (
+                      <div>
+                        <Text type="secondary">干预类型</Text>
+                        <Select
+                          className="full-width"
+                          onChange={setSelectedIntervention}
+                          options={allowedOptions}
+                          value={selectedIntervention}
+                        />
+                      </div>
+                    ) : (
+                      <Space direction="vertical" size={12} className="full-width">
+                        <div>
+                          <Text type="secondary">A 方案</Text>
+                          <Select
+                            className="full-width"
+                            onChange={(value) => {
+                              setInterventionA(value)
+                              setComparisonResult(null)
+                              setComparisonStepIndex(-1)
+                            }}
+                            options={allowedOptions}
+                            value={interventionA}
+                          />
+                        </div>
+                        <div>
+                          <Text type="secondary">B 方案</Text>
+                          <Select
+                            className="full-width"
+                            onChange={(value) => {
+                              setInterventionB(value)
+                              setComparisonResult(null)
+                              setComparisonStepIndex(-1)
+                            }}
+                            options={allowedOptions}
+                            value={interventionB}
+                          />
+                        </div>
+                      </Space>
+                    )}
 
                     <div>
                       <Text type="secondary">模拟步数</Text>
@@ -968,7 +1379,11 @@ export function SimulationLab() {
                         className="full-width"
                         min={1}
                         max={24}
-                        onChange={(value) => setSteps(Number(value || 1))}
+                        onChange={(value) => {
+                          setSteps(Number(value || 1))
+                          setComparisonResult(null)
+                          setComparisonStepIndex(-1)
+                        }}
                         value={steps}
                       />
                     </div>
@@ -981,19 +1396,36 @@ export function SimulationLab() {
                         重置
                       </Button>
                     </Space>
-                    <Space wrap>
-                      <Button
-                        icon={<PlayCircle size={16} />}
-                        loading={running}
-                        onClick={handleRunSimulation}
-                        type="primary"
-                      >
-                        运行模拟
-                      </Button>
-                      <Button icon={<StepForward size={16} />} onClick={handleStepForward}>
-                        单步推进
-                      </Button>
-                    </Space>
+
+                    {viewMode === 'single' ? (
+                      <Space wrap>
+                        <Button
+                          icon={<PlayCircle size={16} />}
+                          loading={running}
+                          onClick={handleRunSimulation}
+                          type="primary"
+                        >
+                          运行模拟
+                        </Button>
+                        <Button icon={<StepForward size={16} />} onClick={handleStepForward}>
+                          单步推进
+                        </Button>
+                      </Space>
+                    ) : (
+                      <Space wrap>
+                        <Button
+                          icon={<PlayCircle size={16} />}
+                          loading={comparisonRunning}
+                          onClick={handleRunComparison}
+                          type="primary"
+                        >
+                          运行 A/B 对比
+                        </Button>
+                        <Button icon={<StepForward size={16} />} onClick={handleComparisonStepForward}>
+                          单步对比
+                        </Button>
+                      </Space>
+                    )}
                   </Space>
                 ) : (
                   <Empty description="未加载场景" image={Empty.PRESENTED_IMAGE_SIMPLE}>
@@ -1006,51 +1438,104 @@ export function SimulationLab() {
 
               <SafetyNotice policy={ethicsPolicy} />
 
-              <Card className="panel-card simulation-ab-card">
-                <Title level={4}>A/B 策略对比：后续版本</Title>
-                <Paragraph>
-                  当前 MVP 聚焦单场景可解释泡泡演示。后续版本会将多个合规回应方案并排比较。
-                </Paragraph>
-              </Card>
+              {viewMode === 'comparison' ? (
+                <Card className="panel-card simulation-ab-card">
+                  <Title level={4}>人工复核建议</Title>
+                  <Paragraph>
+                    A/B 结果只比较聚合指标，不会自动执行策略；真实处置需要结合事实、平台规则和人工审核。
+                  </Paragraph>
+                </Card>
+              ) : null}
             </Space>
           </Col>
 
-          <Col span={12}>
-            <Space direction="vertical" size={16} className="full-width">
-              <Card className="panel-card simulation-event-panel">
-                <div className="panel-heading">
-                  <Space>
-                    <Waves size={18} />
-                    <Title level={4}>消息 / 干预事件</Title>
-                  </Space>
-                  <Tag color="orange">step-based pulse</Tag>
+          {viewMode === 'single' ? (
+            <>
+              <Col span={12}>
+                <Space direction="vertical" size={16} className="full-width">
+                  <Card className="panel-card simulation-event-panel">
+                    <div className="panel-heading">
+                      <Space>
+                        <Waves size={18} />
+                        <Title level={4}>消息 / 干预事件</Title>
+                      </Space>
+                      <Tag color="orange">step-based pulse</Tag>
+                    </div>
+                    <EventCards events={eventCards} activeInterventionType={activeStep?.active_intervention_type} />
+                  </Card>
+                  <BubbleCanvas
+                    currentStepIndex={currentStepIndex}
+                    initialMetrics={initialMetrics}
+                    metrics={currentMetrics}
+                    scenario={scenario}
+                    stepResult={activeStep}
+                  />
+                </Space>
+              </Col>
+
+              <Col span={6}>
+                <Space direction="vertical" size={16} className="full-width">
+                  <MetricsPanel metrics={currentMetrics} result={runResult} />
+                  <ExplanationPanel
+                    metrics={currentMetrics}
+                    result={runResult}
+                    selectedInterventionType={selectedIntervention}
+                    stepResult={activeStep}
+                  />
+                </Space>
+              </Col>
+            </>
+          ) : (
+            <Col span={17}>
+              <Space direction="vertical" size={16} className="full-width">
+                <ComparisonSummaryPanel summary={comparisonResult?.comparisonSummary} />
+                <div className="simulation-comparison-grid">
+                  <ComparisonScenarioPanel
+                    interventionType={interventionA}
+                    label="A 方案"
+                    metrics={comparisonMetricsA}
+                    onInterventionChange={(value) => {
+                      setInterventionA(value)
+                      setComparisonResult(null)
+                      setComparisonStepIndex(-1)
+                    }}
+                    options={allowedOptions}
+                    result={comparisonResult?.resultA}
+                    scenario={comparisonScenarioA}
+                    stepIndex={comparisonStepIndex}
+                    stepResult={comparisonStepA}
+                  />
+                  <ComparisonScenarioPanel
+                    interventionType={interventionB}
+                    label="B 方案"
+                    metrics={comparisonMetricsB}
+                    onInterventionChange={(value) => {
+                      setInterventionB(value)
+                      setComparisonResult(null)
+                      setComparisonStepIndex(-1)
+                    }}
+                    options={allowedOptions}
+                    result={comparisonResult?.resultB}
+                    scenario={comparisonScenarioB}
+                    stepIndex={comparisonStepIndex}
+                    stepResult={comparisonStepB}
+                  />
                 </div>
-                <EventCards events={eventCards} activeInterventionType={activeStep?.active_intervention_type} />
-              </Card>
-              <BubbleCanvas
-                currentStepIndex={currentStepIndex}
-                initialMetrics={initialMetrics}
-                metrics={currentMetrics}
-                scenario={scenario}
-                stepResult={activeStep}
-              />
-            </Space>
-          </Col>
-
-          <Col span={6}>
-            <Space direction="vertical" size={16} className="full-width">
-              <MetricsPanel metrics={currentMetrics} result={runResult} />
-              <ExplanationPanel
-                metrics={currentMetrics}
-                result={runResult}
-                selectedInterventionType={selectedIntervention}
-                stepResult={activeStep}
-              />
-            </Space>
-          </Col>
+              </Space>
+            </Col>
+          )}
         </Row>
 
-        <TimelinePanel currentStepIndex={currentStepIndex} onSelectStep={setCurrentStepIndex} result={runResult} />
+        {viewMode === 'single' ? (
+          <TimelinePanel currentStepIndex={currentStepIndex} onSelectStep={setCurrentStepIndex} result={runResult} />
+        ) : (
+          <ComparisonTimelinePanel
+            currentStepIndex={comparisonStepIndex}
+            onSelectStep={setComparisonStepIndex}
+            resultA={comparisonResult?.resultA}
+            resultB={comparisonResult?.resultB}
+          />
+        )}
       </Skeleton>
     </div>
   )

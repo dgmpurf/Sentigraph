@@ -1,5 +1,7 @@
 # Sentigraph Local Demo Checklist
 
+Latest Simulation Lab A/B comparison validation: 2026-05-18. Frontend production build passed with `npm run build` from `frontend` in 7.74s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser smoke against local `http://127.0.0.1:8000` and `http://127.0.0.1:5173` confirmed the `Simulation Lab / 舆情预演沙盘` route, single-scenario mode, A/B mode switch, side-by-side comparison panels, comparison summary field chips, delta cards, timeline items, `human_review_required` note, and no forbidden tactics in selectable options. Backend tests and offline benchmarks were not rerun because no backend algorithm or benchmark logic changed.
+
 Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
 
 Latest Simulation Lab frontend QA stabilization validation: 2026-05-18. Frontend production build passed with `npm run build` from `frontend` in 7.90s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser smoke against local `http://127.0.0.1:8000` and `http://127.0.0.1:5173` confirmed the `Simulation Lab / 舆情预演沙盘` route, sidebar navigation, left/center/right/bottom layout, event cards, bubble canvas, aggregate metrics, explanation cards, timeline, `运行模拟`, and `单步推进` flow. Backend tests and offline benchmarks were not rerun because no backend algorithm or benchmark logic changed. No real API, real LLM API, crawler, live public fetch, individual targeting, account-level influenceability scoring, or forbidden manipulation tactic was enabled.
@@ -1227,6 +1229,18 @@ Demo steps:
 9. Confirm event cards show `source_type`, `intervention_type`, `source_credibility`, `emotional_intensity`, `evidence_strength`, and `platform_reach`.
 10. Confirm the explanation panel shows `为什么风险上升`, `为什么风险下降`, `哪些群体受影响最大`, `哪个干预正在生效`, and the deterministic-MVP disclaimer.
 11. Confirm empty/error states are user-facing if the backend is stopped, no scenario is loaded, or the backend rejects an invalid payload.
+
+A/B comparison demo steps:
+
+1. Switch from `单场景模拟` to `A/B 策略对比`.
+2. Select `A 方案` as `no_response` and `B 方案` as an allowed transparent intervention such as `clarification` or `apology`.
+3. Click `运行 A/B 对比`.
+4. Confirm two side-by-side bubble panels appear for `A 方案` and `B 方案`.
+5. Confirm `对比结果` shows aggregate deltas for risk change, negative ratio change, polarization change, trust recovery, and backlash risk.
+6. Confirm the comparison says `human_review_required` / `人工复核建议` and does not auto-apply any strategy.
+7. Click `单步对比` or timeline steps and confirm the A/B timeline updates both sides from the same initial scenario.
+8. For QA, exercise these pairs: `no_response` vs `clarification`, `no_response` vs `apology`, `no_response` vs `third_party_evidence`, and `clarification` vs `misinformation_correction`.
+9. Confirm the comparison summary displays scalar field chips for `better_option`, `risk_delta`, `negative_ratio_delta`, `polarization_delta`, `trust_recovery_delta`, and `ethical_risk_notes` without rendering raw JavaScript objects.
 
 Safety checks:
 

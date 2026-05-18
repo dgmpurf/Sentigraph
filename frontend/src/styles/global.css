@@ -1076,14 +1076,28 @@ body {
 
 .simulation-control-card,
 .simulation-safety-card,
+.simulation-mode-card,
 .simulation-ab-card,
 .simulation-event-panel,
 .simulation-canvas-card,
+.simulation-comparison-summary-card,
 .simulation-side-card,
 .simulation-timeline-card {
   background:
     linear-gradient(180deg, rgba(66, 245, 215, 0.045), transparent 46%),
     rgba(17, 19, 26, 0.88);
+}
+
+.simulation-mode-card {
+  margin-bottom: 16px;
+}
+
+.simulation-mode-toolbar,
+.simulation-comparison-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .simulation-scenario-copy,
@@ -1154,6 +1168,24 @@ body {
     auto,
     auto,
     auto;
+}
+
+.simulation-canvas-compact .ant-card-body {
+  padding: 14px;
+}
+
+.simulation-bubble-canvas-compact {
+  height: 360px;
+}
+
+.simulation-bubble-canvas-compact .simulation-community-region {
+  padding: 7px;
+}
+
+.simulation-bubble-canvas-compact .simulation-community-region .ant-tag {
+  max-width: 96px;
+  white-space: normal;
+  line-height: 1.2;
 }
 
 .simulation-community-region {
@@ -1252,6 +1284,128 @@ body {
   gap: 10px;
 }
 
+.simulation-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.simulation-comparison-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.simulation-comparison-select {
+  min-width: 220px;
+}
+
+.simulation-comparison-metrics,
+.simulation-delta-grid,
+.simulation-comparison-timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.simulation-comparison-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.simulation-comparison-metrics span,
+.simulation-review-note {
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+  color: #c9d4ea;
+}
+
+.simulation-comparison-metrics span {
+  padding: 10px;
+  text-align: center;
+}
+
+.simulation-delta-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.simulation-delta-card {
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.simulation-delta-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #42f5d7;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.simulation-delta-green {
+  border-color: rgba(84, 245, 168, 0.32);
+}
+
+.simulation-delta-red {
+  border-color: rgba(255, 93, 143, 0.36);
+}
+
+.simulation-delta-red strong {
+  color: #ff8aa8;
+}
+
+.simulation-summary-field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.simulation-summary-field {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(66, 245, 215, 0.14);
+  border-radius: 8px;
+  background: rgba(66, 245, 215, 0.05);
+}
+
+.simulation-summary-field-name,
+.simulation-summary-field-value {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.simulation-summary-field-name {
+  color: #42f5d7;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.simulation-summary-field-value {
+  margin-top: 4px;
+  color: #c9d4ea;
+  font-weight: 700;
+}
+
+.simulation-review-note {
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.simulation-ethics-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.simulation-comparison-timeline {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .simulation-metric-tile,
 .simulation-nested-card,
 .simulation-explanation-grid > div,
@@ -1336,6 +1490,17 @@ body {
 
 @media (max-width: 1280px) {
   .forecast-explanation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .simulation-comparison-grid,
+  .simulation-delta-grid,
+  .simulation-summary-field-grid,
+  .simulation-comparison-timeline {
+    grid-template-columns: 1fr;
+  }
+
+  .simulation-comparison-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

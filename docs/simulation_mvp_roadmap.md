@@ -1,6 +1,6 @@
 # Simulation Lab MVP Roadmap
 
-Status: MVP backend scaffold and frontend bubble visualization are implemented. Full A/B comparison, richer animation, V2 dynamics, empirical calibration, and real-data replay remain roadmap items.
+Status: MVP backend scaffold, frontend bubble visualization, and A/B intervention comparison are implemented. Richer animation, V2 dynamics, empirical calibration, and real-data replay remain roadmap items.
 
 The roadmap is staged to keep the first version deterministic, offline, explainable, and hard to misuse.
 
@@ -159,9 +159,9 @@ Pause implementation if:
 
 ## Recommended First Implementation Task
 
-After the backend scaffold and frontend MVP page, the next implementation task should be:
+After the backend scaffold, frontend MVP page, and A/B comparison mode, the next implementation task should be:
 
-Add full A/B strategy comparison for allowed Simulation Lab intervention packages only after preserving the current single-scenario QA baseline.
+Richer animation/replay controls or a safe aggregate assumption editor. Do not move to empirical calibration, real-data replay, or real LLM narrative generation until the deterministic MVP remains stable under benchmarks and manual demo checks.
 
 ## Implementation Checkpoint
 
@@ -172,7 +172,7 @@ As of 2026-05-18, the backend-only deterministic MVP scaffold has been implement
 - Forbidden intervention types are rejected before simulation.
 - The offline benchmark runner includes a `simulation_lab` suite with synthetic scenarios.
 
-The roadmap does not change: richer ABM calibration, V2 dynamics, historical replay, full A/B comparison, and any optional real LLM narrative generation remain future work after QA and safety review.
+The roadmap does not change for advanced work: richer ABM calibration, V2 dynamics, historical replay, and any optional real LLM narrative generation remain future work after QA and safety review.
 
 ## Frontend Visualization Checkpoint
 
@@ -183,14 +183,37 @@ As of 2026-05-18, the frontend Simulation Lab MVP page has been implemented and 
 - The page loads the deterministic demo scenario and ethics policy from existing backend endpoints.
 - The page can run `POST /api/v1/simulation/run` with allowed interventions only.
 - The bubble canvas displays synthetic agents by opinion color, centrality proxy size, attention opacity, and active influence glow.
-- The UI includes event cards, aggregate metrics, explanation cards, timeline steps, and an A/B comparison placeholder.
+- The UI includes event cards, aggregate metrics, explanation cards, timeline steps, and an A/B comparison mode.
 - Forbidden intervention categories are not exposed as usable controls.
 - Browser smoke with local backend/frontend servers confirmed route wiring, run/step controls, bubble rendering, event cards, aggregate metrics, explanation cards, and timeline updates.
 - Frontend production build passed with the existing non-blocking Ant Design/ECharts chunk warning.
 
+## Frontend A/B Comparison Checkpoint
+
+As of 2026-05-18, the Simulation Lab page includes A/B intervention comparison:
+
+- Users can switch between `single scenario` and `A/B strategy comparison` modes.
+- A and B start from the same loaded demo scenario initial state.
+- Each side can select only intervention types allowed by the backend ethics policy.
+- The comparison reuses the existing local `POST /api/v1/simulation/run` endpoint twice instead of adding real APIs, crawlers, or real LLM calls.
+- The frontend computes aggregate deltas for risk proxy, negative ratio, polarization, trust recovery, backlash-risk proxy, and ethical risk notes.
+- The comparison output is explicitly human-review-oriented and does not automatically execute any strategy.
+- Forbidden intervention categories remain absent from selectable controls.
+
+## Frontend A/B Comparison QA Checkpoint
+
+As of 2026-05-18, the A/B comparison UI has been QA-stabilized:
+
+- Local browser smoke validated single-scenario mode and A/B strategy comparison mode.
+- The requested A/B pairs were exercised: `no_response` vs `clarification`, `no_response` vs `apology`, `no_response` vs `third_party_evidence`, and `clarification` vs `misinformation_correction`.
+- The summary shows both user-facing aggregate deltas and scalar field chips for `better_option`, `risk_delta`, `negative_ratio_delta`, `polarization_delta`, `trust_recovery_delta`, and `ethical_risk_notes`.
+- The backend ethics policy still allows only transparent aggregate crisis-response interventions and rejects forbidden interventions.
+- No `/simulation/compare` endpoint was added; the frontend still reuses the safe deterministic simulation run endpoint twice.
+- Backend tests and offline benchmarks were not rerun for this QA pass because no backend simulation algorithm or benchmark code changed.
+
 Remaining frontend roadmap items:
 
-- Full A/B strategy comparison.
+- Richer A/B replay controls and advanced comparison charts.
 - Richer animation and replay controls.
 - Assumption editor for safe aggregate parameters.
 - Historical replay only after validation and data-approval review.

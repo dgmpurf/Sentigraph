@@ -83,7 +83,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - v0.9 notification foundation: alert events can create local in-app notification outbox items; notifications can be marked read and simulate-sent without external delivery.
 - v4.5 deterministic forecasting foundation: Risk Monitor can compute mock/offline risk forecasts from persisted monitoring snapshots and display predicted total risk, real-crisis risk, manipulation risk, and topic-risk movement.
 - LLM Safety / 大模型安全状态 page: displays mock-first provider readiness, real-call disabled status, API key presence booleans only, and metadata-only usage guardrail summaries. It has no real-call toggle, API key input, or `.env` modification path.
-- Simulation Lab / 舆情预演沙盘 page: displays a deterministic, offline, aggregate-level bubble simulation using the existing backend toy simulator, allowed intervention controls, event cards, metrics, explanations, and a step timeline. It does not expose forbidden manipulation options, real API toggles, real LLM toggles, or individual targeting outputs.
+- Simulation Lab / 舆情预演沙盘 page: displays a deterministic, offline, aggregate-level bubble simulation using the existing backend toy simulator, allowed intervention controls, event cards, metrics, explanations, a step timeline, and A/B intervention comparison. It does not expose forbidden manipulation options, real API toggles, real LLM toggles, or individual targeting outputs.
 
 ### Planned Features
 
@@ -96,7 +96,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 
 ### Future Advanced Features
 
-- Ethical Simulation Lab: backend MVP scaffold and frontend bubble visualization are available for deterministic, aggregate scenario rehearsal and transparent crisis-response comparison. It explicitly rejects fake consensus, bot amplification, fake events, covert seeding, deceptive diversion, suppression, and individual-level targeting. Full A/B comparison, richer calibration, and real-data replay remain future work. See `docs/simulation_lab_design.md`.
+- Ethical Simulation Lab: backend MVP scaffold, frontend bubble visualization, and A/B intervention comparison are available for deterministic, aggregate scenario rehearsal and transparent crisis-response comparison. It explicitly rejects fake consensus, bot amplification, fake events, covert seeding, deceptive diversion, suppression, and individual-level targeting. Richer animation, empirical calibration, and real-data replay remain future work. See `docs/simulation_lab_design.md`.
 - Reddit real adapter。
 - 中国平台官方 API 集成。
 - crawler-later 平台的公开页面 parser 和 selector profile。

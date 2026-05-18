@@ -1118,9 +1118,77 @@ Known limitations:
 
 Next recommended task: add a full A/B strategy comparison view for allowed intervention packages, keeping it offline, deterministic, aggregate-level, and ethics-bounded.
 
+## 6.13 Simulation Lab A/B Intervention Comparison
+
+Update date: 2026-05-18.
+
+Status: implemented and frontend-build validated.
+
+What changed:
+
+- Extended `frontend/src/pages/SimulationLab.jsx` with `单场景模拟` and `A/B 策略对比` modes.
+- Added side-by-side `A 方案` and `B 方案` bubble panels using the same loaded demo scenario initial state.
+- Added allowed-intervention selectors for each side; options are still filtered through the backend ethics policy and the hard forbidden-intervention set.
+- Added aggregate comparison summary for risk proxy, negative ratio, polarization, trust recovery, backlash-risk proxy, ethical notes, and `human_review_required` recommendation.
+- Added A/B timeline comparison and final-step aggregate metric badges.
+- Updated Simulation Lab styling and demo documentation.
+
+Safety and scope:
+
+- No backend endpoint or simulation algorithm change was required.
+- The comparison reuses `POST /api/v1/simulation/run` twice and does not run real APIs, real LLM APIs, crawlers, or live public fetch.
+- Forbidden categories such as fake consensus, bot amplification, fake events, deceptive distraction, covert influencer seeding, targeted persuasion, and suppression are not exposed as selectable UI options.
+- Outputs remain aggregate-level and human-review-oriented; no strategy is automatically executed.
+
+Validation:
+
+- Frontend production build passed with `npm run build` from `frontend/` in 7.69s.
+- The existing non-blocking Vite large chunk warning for Ant Design/ECharts remains.
+- Browser smoke with local backend/frontend servers confirmed the Simulation Lab route, A/B mode switch, side-by-side comparison panels, comparison summary, delta cards, timeline items, `human_review_required` note, zero error alerts, and no forbidden tactics in selectable options.
+- Backend tests and offline benchmarks were not rerun because backend simulation logic and benchmark code were not changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+
+Next recommended task: add richer A/B replay controls or a safe aggregate assumption editor.
+
+## 6.14 Simulation Lab A/B Intervention Comparison QA Stabilization
+
+Update date: 2026-05-18.
+
+Status: QA-stabilized.
+
+What passed:
+
+- Local rendered QA confirmed the Simulation Lab route, single-scenario mode, A/B strategy comparison mode, side-by-side A/B bubble panels, aggregate delta cards, comparison field chips, human-review recommendation, and timeline comparison.
+- The same initial demo scenario is reused for A and B through the original loaded scenario before each intervention override.
+- The following A/B pairs were exercised against the local backend: `no_response` vs `clarification`, `no_response` vs `apology`, `no_response` vs `third_party_evidence`, and `clarification` vs `misinformation_correction`.
+- The A/B intervention dropdown exposes only the eight backend-allowed ethical intervention options: `clarification`, `apology`, `compensation`, `faq`, `progress_update`, `third_party_evidence`, `misinformation_correction`, and `no_response`.
+- Forbidden intervention values such as `fake_consensus`, `bot_amplification`, `fake_event`, `deceptive_distraction`, `covert_influencer_seeding`, `targeted_persuasion`, and `suppression` are not selectable UI options.
+- The backend ethics policy still rejects a forbidden intervention payload with HTTP 400.
+
+QA fixes:
+
+- Comparison summary now renders safe scalar field chips for `better_option`, `risk_delta`, `negative_ratio_delta`, `polarization_delta`, `trust_recovery_delta`, and `ethical_risk_notes` instead of relying only on visual delta cards.
+- Empty or missing comparison deltas now render as `-` instead of formatting `null` as `0`.
+- Removed Ant Design `Spin` `tip` usage from the shared app loading wrapper to avoid a noisy development-console warning during rendered QA.
+
+Validation:
+
+- Frontend production build passed with `npm run build` from `frontend/` in 7.66s.
+- The existing non-blocking Vite large chunk warning for Ant Design/ECharts remains.
+- Backend tests were not rerun because no backend code or simulation algorithm changed.
+- Offline benchmarks were not rerun because no backend simulation logic or benchmark logic changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+
+Known limitations:
+
+- A/B comparison currently reuses `POST /api/v1/simulation/run` twice from the frontend; no `/simulation/compare` endpoint has been added.
+- Content visibility backlash modeling remains a future task and is not exposed unless the backend ethics policy explicitly allows it.
+
+Next recommended task: add richer A/B replay controls or a safe aggregate assumption editor.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: add a full A/B strategy comparison view for allowed Simulation Lab intervention packages.
+Recommended next development task: add richer A/B replay controls or a safe aggregate assumption editor.
 
 Suggested scope:
 
