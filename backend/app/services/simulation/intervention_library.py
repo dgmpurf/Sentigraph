@@ -4,6 +4,7 @@ from app.services.simulation.schemas import (
     SimulationEthicsCheckResult,
     SimulationIntervention,
 )
+from app.services.simulation.visibility_model import VISIBILITY_INTERVENTION_TYPES, is_visibility_intervention_type
 
 
 ALLOWED_INTERVENTION_TYPES = (
@@ -15,6 +16,7 @@ ALLOWED_INTERVENTION_TYPES = (
     "third_party_evidence",
     "misinformation_correction",
     "no_response",
+    *VISIBILITY_INTERVENTION_TYPES,
 )
 
 FORBIDDEN_INTERVENTION_TYPES = (
@@ -25,6 +27,11 @@ FORBIDDEN_INTERVENTION_TYPES = (
     "covert_influencer_seeding",
     "targeted_persuasion",
     "suppression",
+    "illegal_suppression",
+    "covert_censorship",
+    "covert_suppression",
+    "targeted_silencing",
+    "platform_governance_evasion",
 )
 
 
@@ -61,6 +68,19 @@ def check_intervention(intervention: SimulationIntervention) -> SimulationEthics
     warnings: list[str] = []
     if intervention.intensity >= 0.95:
         warnings.append("Very high intervention intensity should be reviewed for realism.")
+    if is_visibility_intervention_type(intervention_type):
+        visibility = intervention.visibility_intervention
+        if visibility and visibility.public_explanation_quality < 0.45:
+            warnings.append(
+                "Visibility interventions with weak public explanation quality require human review."
+            )
+        if visibility and visibility.policy_violation_clarity < 0.35:
+            warnings.append(
+                "Policy violation clarity is low; prefer labeling, clarification, or a transparent notice."
+            )
+        warnings.append(
+            "Visibility intervention output is aggregate-level only and does not execute platform actions."
+        )
     return SimulationEthicsCheckResult(
         allowed=True,
         reason="Intervention is allowed for aggregate crisis-response comparison.",

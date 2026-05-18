@@ -10,6 +10,12 @@ SimulationStatus = Literal["completed", "rejected"]
 SimulationTrend = Literal["improving", "worsening", "stable", "unknown"]
 AgentStatus = Literal["active", "fatigued", "inactive"]
 TargetScope = Literal["aggregate", "public", "community"]
+VisibilityRecommendation = Literal[
+    "not_recommended",
+    "conditional_human_review",
+    "allowed_with_transparent_explanation",
+    "prefer_labeling_or_clarification",
+]
 
 
 class SimulationAgent(BaseModel):
@@ -54,6 +60,65 @@ class SimulationMessage(BaseModel):
     platform_reach: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
+class AudienceImpactBreakdown(BaseModel):
+    neutral_audience_impact: float = Field(ge=0.0, le=100.0)
+    opposition_group_impact: float = Field(ge=0.0, le=100.0)
+    neutral_audience_negative_shift: float = Field(ge=0.0, le=1.0)
+    hard_opposition_negative_shift: float = Field(ge=0.0, le=1.0)
+    high_concern: bool = False
+    explanation: str = ""
+
+
+class BacklashModel(BaseModel):
+    perceived_suppression: float = Field(default=0.35, ge=0.0, le=1.0)
+    reactance_amplification: float = Field(default=0.35, ge=0.0, le=1.0)
+    martyr_effect: float = Field(default=0.25, ge=0.0, le=1.0)
+    cross_platform_spillover: float = Field(default=0.25, ge=0.0, le=1.0)
+    neutral_audience_negative_shift: float = Field(default=0.12, ge=0.0, le=1.0)
+    hard_opposition_negative_shift: float = Field(default=0.24, ge=0.0, le=1.0)
+
+
+class VisibilityIntervention(BaseModel):
+    intervention_type: str = "content_removal_with_explanation"
+    target_message_reach: float = Field(default=0.82, ge=0.0, le=1.0)
+    current_visibility: float = Field(default=1.0, ge=0.0, le=1.0)
+    removal_time: float = Field(default=0.35, ge=0.0, le=1.0)
+    residual_copies: float = Field(default=0.18, ge=0.0, le=1.0)
+    screenshot_probability: float = Field(default=0.22, ge=0.0, le=1.0)
+    repost_migration_probability: float = Field(default=0.18, ge=0.0, le=1.0)
+    perceived_suppression: float = Field(default=0.3, ge=0.0, le=1.0)
+    policy_violation_clarity: float = Field(default=0.78, ge=0.0, le=1.0)
+    legitimacy_of_removal: float = Field(default=0.72, ge=0.0, le=1.0)
+    public_explanation_quality: float = Field(default=0.76, ge=0.0, le=1.0)
+    reactance_amplification: float = Field(default=0.32, ge=0.0, le=1.0)
+    martyr_effect: float = Field(default=0.2, ge=0.0, le=1.0)
+    cross_platform_spillover: float = Field(default=0.22, ge=0.0, le=1.0)
+    neutral_audience_negative_shift: float = Field(default=0.1, ge=0.0, le=1.0)
+    hard_opposition_negative_shift: float = Field(default=0.22, ge=0.0, le=1.0)
+    policy_basis: str = "platform_policy"
+    authorization_source: str = "platform_policy"
+    public_explanation_required: bool = True
+
+
+class VisibilityInterventionResult(BaseModel):
+    intervention_type: str
+    exposure_reduction: float = Field(ge=0.0, le=100.0)
+    backlash_cost: float = Field(ge=0.0, le=100.0)
+    trust_loss: float = Field(ge=0.0, le=100.0)
+    spillover_risk: float = Field(ge=0.0, le=100.0)
+    net_risk_change: float = Field(ge=0.0, le=100.0)
+    removal_legitimacy_score: float = Field(ge=0.0, le=100.0)
+    public_explanation_quality_score: float = Field(ge=0.0, le=100.0)
+    neutral_audience_impact: float = Field(ge=0.0, le=100.0)
+    opposition_group_impact: float = Field(ge=0.0, le=100.0)
+    recommendation: VisibilityRecommendation
+    explanation: str
+    audience_impact: AudienceImpactBreakdown
+    human_review_required: bool = True
+    aggregate_level_only: bool = True
+    warnings: list[str] = Field(default_factory=list)
+
+
 class SimulationIntervention(BaseModel):
     intervention_id: str
     intervention_type: str
@@ -70,6 +135,7 @@ class SimulationIntervention(BaseModel):
     responsibility_acknowledgement: float = Field(default=0.4, ge=0.0, le=1.0)
     transparency_level: float = Field(default=0.7, ge=0.0, le=1.0)
     intensity: float = Field(default=0.6, ge=0.0, le=1.0)
+    visibility_intervention: VisibilityIntervention | None = None
 
 
 class SimulationConfig(BaseModel):
@@ -131,6 +197,7 @@ class SimulationStepResult(BaseModel):
     trend_direction: SimulationTrend
     forecast_reason: str
     community_metrics: dict[str, SimulationMetricSummary] = Field(default_factory=dict)
+    visibility_intervention_result: VisibilityInterventionResult | None = None
 
 
 class SimulationRunResult(BaseModel):
@@ -145,6 +212,7 @@ class SimulationRunResult(BaseModel):
     initial_metrics: SimulationMetricSummary
     final_metrics: SimulationMetricSummary
     step_results: list[SimulationStepResult]
+    visibility_intervention_result: VisibilityInterventionResult | None = None
     key_findings: list[str] = Field(default_factory=list)
     recommended_interpretation: str
     safe_mode: dict[str, bool] = Field(

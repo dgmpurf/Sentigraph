@@ -1,6 +1,8 @@
 # Sentigraph Local Demo Checklist
 
-Latest Simulation Lab A/B comparison validation: 2026-05-18. Frontend production build passed with `npm run build` from `frontend` in 7.74s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser smoke against local `http://127.0.0.1:8000` and `http://127.0.0.1:5173` confirmed the `Simulation Lab / 舆情预演沙盘` route, single-scenario mode, A/B mode switch, side-by-side comparison panels, comparison summary field chips, delta cards, timeline items, `human_review_required` note, and no forbidden tactics in selectable options. Backend tests and offline benchmarks were not rerun because no backend algorithm or benchmark logic changed.
+Latest Simulation Lab content visibility intervention QA stabilization: 2026-05-18. Backend tests passed with `python -m pytest` (`488 passed in 4.17s`), offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`483 passed, 0 failed, 0 warnings`; `simulation_lab: 36 cases`), and frontend production build passed with `npm run build` from `frontend` in 7.90s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser smoke against local backend/frontend verified the A/B default `no_response` vs `透明说明后内容移除` flow, the `内容可见性干预` panel labels, human-review copy, no real API/LLM copy, no automatic platform-action execution, and no forbidden tactic values in selectable options. Additional backend coverage now locks down reach sensitivity, reactance sensitivity, score clamping, required aggregate groups, API visibility-result shape, aggregate-only output, and target-list absence.
+
+Latest Simulation Lab content visibility intervention validation: 2026-05-18. Backend tests passed with `python -m pytest` (`482 passed in 4.47s`), offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`483 passed, 0 failed, 0 warnings`), and frontend production build passed with `npm run build` from `frontend` in 7.67s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser smoke against local backend/frontend verified the A/B default `no_response` vs `透明说明后内容移除` flow, the `内容可见性干预` panel labels, and that forbidden tactic values do not appear in selectable options. The Simulation Lab A/B UI now supports safe visibility tradeoff display for `content_removal_with_explanation`, `visibility_reduction`, and `platform_labeling` when exposed by the backend ethics policy; forbidden manipulation and illegal/covert suppression options remain unavailable.
 
 Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
 
@@ -1233,14 +1235,24 @@ Demo steps:
 A/B comparison demo steps:
 
 1. Switch from `单场景模拟` to `A/B 策略对比`.
-2. Select `A 方案` as `no_response` and `B 方案` as an allowed transparent intervention such as `clarification` or `apology`.
+2. Select `A 方案` as `no_response` and `B 方案` as an allowed transparent intervention such as `clarification`, `apology`, or `content_removal_with_explanation` if the backend ethics policy exposes it.
 3. Click `运行 A/B 对比`.
 4. Confirm two side-by-side bubble panels appear for `A 方案` and `B 方案`.
 5. Confirm `对比结果` shows aggregate deltas for risk change, negative ratio change, polarization change, trust recovery, and backlash risk.
 6. Confirm the comparison says `human_review_required` / `人工复核建议` and does not auto-apply any strategy.
 7. Click `单步对比` or timeline steps and confirm the A/B timeline updates both sides from the same initial scenario.
-8. For QA, exercise these pairs: `no_response` vs `clarification`, `no_response` vs `apology`, `no_response` vs `third_party_evidence`, and `clarification` vs `misinformation_correction`.
+8. For QA, exercise these pairs: `no_response` vs `clarification`, `no_response` vs `apology`, `no_response` vs `third_party_evidence`, `clarification` vs `misinformation_correction`, and `no_response` vs `content_removal_with_explanation`.
 9. Confirm the comparison summary displays scalar field chips for `better_option`, `risk_delta`, `negative_ratio_delta`, `polarization_delta`, `trust_recovery_delta`, and `ethical_risk_notes` without rendering raw JavaScript objects.
+
+Content visibility intervention demo steps:
+
+1. In `A/B 策略对比`, select `A 方案` as `no_response`.
+2. Select `B 方案` as `透明说明后内容移除`, `合规可见性降低`, or `平台标注` if available from `GET /api/v1/simulation/ethics-policy`.
+3. Click `运行 A/B 对比`.
+4. Confirm the `内容可见性干预` panel appears.
+5. Confirm the panel displays `直接曝光降低`, `反弹风险`, `信任损失`, `跨平台外溢`, `中立人群影响`, `强反对群体影响`, `净风险变化`, `删除正当性`, `透明说明质量` where available, and `人工复核建议`.
+6. Confirm the safety copy says the module evaluates compliant content-governance risk/reward and does not execute platform actions.
+7. Confirm the UI does not expose illegal/covert suppression, fake consensus, bot amplification, fake events, covert influencer seeding, targeted persuasion, or account-level targeting options.
 
 Safety checks:
 

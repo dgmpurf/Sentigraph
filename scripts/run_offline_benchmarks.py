@@ -51,6 +51,7 @@ from app.services.simulation.errors import SimulationEthicsError  # noqa: E402
 from app.services.simulation.simulation_engine import (  # noqa: E402
     create_brand_crisis_scenario,
     create_default_echo_chamber_scenario,
+    create_high_reach_negative_video_scenario,
     create_misinformation_correction_scenario,
     run_simulation,
 )
@@ -683,6 +684,9 @@ def _run_simulation_lab_benchmark(fixture_root: Path) -> dict[str, Any]:
             "trust_recovery_proxy": result.final_metrics.trust_recovery_proxy,
             "false_belief_proxy": result.final_metrics.false_belief_proxy,
             "risk_proxy": _simulation_risk_proxy(result),
+            "visibility_recommendation": result.visibility_intervention_result.recommendation
+            if result.visibility_intervention_result
+            else None,
             "steps_completed": result.steps_completed,
         }
         recorder.check(
@@ -726,6 +730,33 @@ def _run_simulation_lab_benchmark(fixture_root: Path) -> dict[str, Any]:
                 result.final_metrics.trust_recovery_proxy >= float(expected["min_trust_recovery_proxy"]),
                 "trust recovery proxy meets coarse benchmark expectation",
                 details,
+            )
+        if "min_exposure_reduction" in expected:
+            visibility = result.visibility_intervention_result
+            recorder.check(
+                f"{case_id}:visibility_exposure_reduction",
+                visibility is not None
+                and visibility.exposure_reduction >= float(expected["min_exposure_reduction"]),
+                "visibility action meets coarse exposure-reduction expectation",
+                visibility.model_dump(mode="json") if visibility else details,
+            )
+        if "max_backlash_cost" in expected:
+            visibility = result.visibility_intervention_result
+            recorder.check(
+                f"{case_id}:visibility_backlash_cost",
+                visibility is not None
+                and visibility.backlash_cost <= float(expected["max_backlash_cost"]),
+                "visibility action stays within coarse backlash-cost expectation",
+                visibility.model_dump(mode="json") if visibility else details,
+            )
+        if "expected_visibility_recommendations" in expected:
+            visibility = result.visibility_intervention_result
+            recorder.check(
+                f"{case_id}:visibility_recommendation",
+                visibility is not None
+                and visibility.recommendation in set(expected["expected_visibility_recommendations"]),
+                "visibility recommendation remains safe and human-review oriented",
+                visibility.model_dump(mode="json") if visibility else details,
             )
 
         compare_to = case.get("compare_to")
@@ -777,6 +808,8 @@ def _simulation_scenario_from_case(case: dict[str, Any]):
         return scenario.model_copy(update={"config": scenario.config.model_copy(update={"steps": steps})}, deep=True)
     if scenario_kind == "misinformation_correction":
         return create_misinformation_correction_scenario(intervention_type=intervention_type, steps=steps)
+    if scenario_kind == "high_reach_negative_video":
+        return create_high_reach_negative_video_scenario(intervention_type=intervention_type, steps=steps)
     return create_brand_crisis_scenario(
         intervention_type=intervention_type,
         steps=steps,

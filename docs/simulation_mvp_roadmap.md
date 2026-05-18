@@ -1,6 +1,6 @@
 # Simulation Lab MVP Roadmap
 
-Status: MVP backend scaffold, frontend bubble visualization, and A/B intervention comparison are implemented. Richer animation, V2 dynamics, empirical calibration, and real-data replay remain roadmap items.
+Status: MVP backend scaffold, frontend bubble visualization, A/B intervention comparison, and deterministic content visibility backlash modeling are implemented. Richer animation, V2 dynamics, empirical calibration, and real-data replay remain roadmap items.
 
 The roadmap is staged to keep the first version deterministic, offline, explainable, and hard to misuse.
 
@@ -19,6 +19,7 @@ MVP scope:
 - Attention decay.
 - Transparent intervention packages.
 - Simple lawful content-removal and visibility-intervention scenario comparison.
+- Deterministic visibility backlash model for exposure reduction, trust loss, spillover, neutral-audience impact, and human-review recommendation.
 - Simple 2D bubble visualization.
 
 Suggested MVP work packages:
@@ -159,9 +160,9 @@ Pause implementation if:
 
 ## Recommended First Implementation Task
 
-After the backend scaffold, frontend MVP page, and A/B comparison mode, the next implementation task should be:
+After the backend scaffold, frontend MVP page, A/B comparison mode, and visibility backlash model, the next implementation task should be:
 
-Richer animation/replay controls or a safe aggregate assumption editor. Do not move to empirical calibration, real-data replay, or real LLM narrative generation until the deterministic MVP remains stable under benchmarks and manual demo checks.
+QA-stabilize the visibility tradeoff UI and benchmark results, then add richer animation/replay controls or a safe aggregate assumption editor. Do not move to empirical calibration, real-data replay, or real LLM narrative generation until the deterministic MVP remains stable under benchmarks and manual demo checks.
 
 ## Implementation Checkpoint
 
@@ -210,6 +211,26 @@ As of 2026-05-18, the A/B comparison UI has been QA-stabilized:
 - The backend ethics policy still allows only transparent aggregate crisis-response interventions and rejects forbidden interventions.
 - No `/simulation/compare` endpoint was added; the frontend still reuses the safe deterministic simulation run endpoint twice.
 - Backend tests and offline benchmarks were not rerun for this QA pass because no backend simulation algorithm or benchmark code changed.
+
+## Content Visibility Backlash Model Checkpoint
+
+As of 2026-05-18, Simulation Lab includes deterministic content visibility backlash modeling:
+
+- Backend schemas include `VisibilityIntervention`, `BacklashModel`, `AudienceImpactBreakdown`, and `VisibilityInterventionResult`.
+- Allowed visibility intervention types include `content_removal`, `comment_closure`, `account_restriction`, `visibility_reduction`, `platform_labeling`, `policy_enforcement_notice`, and `content_removal_with_explanation`.
+- The deterministic model estimates exposure reduction, backlash cost, trust loss, spillover risk, net risk change, removal legitimacy, neutral-audience impact, and hard-opposition impact.
+- A high-reach negative video demo scenario is available through the backend scenario builder for benchmark and test use.
+- The frontend A/B comparison page can show a content visibility tradeoff panel for allowed visibility actions such as `content_removal_with_explanation`, `visibility_reduction`, and `platform_labeling`.
+- Outputs remain aggregate-level, human-review-oriented, and non-executing.
+
+## Content Visibility QA Checkpoint
+
+As of 2026-05-18, the content visibility backlash model and A/B tradeoff UI are QA-stabilized:
+
+- Backend tests cover supported visibility type registration, high-reach exposure reduction sensitivity, low-legitimacy backlash and trust-loss increase, transparent-explanation backlash reduction, screenshot-driven spillover increase, reactance-driven hard-opposition impact, neutral-audience high concern, 0-100 score clamping, API visibility-result shape, and aggregate-only output.
+- Offline `simulation_lab` benchmark cases include visibility intervention expectations for exposure reduction, backlash cost, and safe human-review-oriented recommendations.
+- Browser smoke confirmed the `no_response` vs `透明说明后内容移除` A/B flow, the `内容可见性干预` tradeoff panel, and the absence of forbidden manipulation or illegal/covert suppression options from selectable controls.
+- The model remains a scenario-review artifact only. It does not execute platform actions, name accounts, rank individuals, or produce suppression playbooks.
 
 Remaining frontend roadmap items:
 

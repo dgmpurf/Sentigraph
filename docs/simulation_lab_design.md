@@ -206,6 +206,7 @@ Supported moderation and visibility intervention types:
 - `visibility_reduction`: reduced ranking, reach, recommendation, or distribution for policy-violating or low-integrity content.
 - `platform_labeling`: adding context, warning, fact-check, disputed-content, or policy labels.
 - `policy_enforcement_notice`: transparent explanation that a moderation action was taken under a specific policy.
+- `content_removal_with_explanation`: removal paired with a transparent policy explanation, modeled as lower-backlash than unexplained removal when policy clarity is high.
 
 The model should evaluate tradeoffs rather than assume moderation is always beneficial. Key variables:
 
@@ -254,6 +255,8 @@ Forbidden moderation modeling:
 - deceptive attention diversion from the moderated issue
 
 Moderation modeling should help users decide whether a lawful enforcement action needs explanation, whether labeling may be less risky than removal, or whether a removal may reduce exposure while increasing backlash. It must not produce harassment lists, suppression playbooks, or evasion tactics.
+
+Implementation note: the current MVP backend includes a deterministic `VisibilityIntervention` / `VisibilityInterventionResult` scaffold for these aggregate tradeoffs. The model estimates exposure reduction, backlash, trust loss, spillover, neutral-audience impact, hard-opposition impact, and a human-review recommendation. It does not execute moderation actions or produce account-level target lists.
 
 ## Output Metrics
 

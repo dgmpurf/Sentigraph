@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.services.simulation.schemas import SimulationAgent, SimulationIntervention, SimulationMessage
+from app.services.simulation.visibility_model import is_visibility_intervention_type
 
 
 FRAMING_MULTIPLIERS = {
@@ -14,6 +15,13 @@ FRAMING_MULTIPLIERS = {
     "progress": 0.88,
     "third_party_evidence": 1.14,
     "misinformation_correction": 1.18,
+    "visibility_reduction": 0.82,
+    "platform_labeling": 0.92,
+    "policy_enforcement_notice": 0.88,
+    "content_removal": 0.76,
+    "content_removal_with_explanation": 0.9,
+    "comment_closure": 0.72,
+    "account_restriction": 0.74,
     "no_response": 0.0,
 }
 
@@ -48,6 +56,37 @@ def intervention_to_message(intervention: SimulationIntervention, step: int) -> 
         stance_direction = max(stance_direction, 0.42)
         evidence_strength = max(evidence_strength, 0.78)
         framing = "misinformation_correction"
+    elif intervention_type == "content_removal_with_explanation":
+        stance_direction = max(stance_direction, 0.22)
+        source_credibility = max(source_credibility, 0.78)
+        evidence_strength = max(evidence_strength, 0.72)
+        emotional_intensity = min(emotional_intensity, 0.24)
+        framing = "content_removal_with_explanation"
+    elif intervention_type == "content_removal":
+        stance_direction = max(stance_direction, 0.08)
+        emotional_intensity = min(emotional_intensity, 0.18)
+        framing = "content_removal"
+    elif intervention_type == "visibility_reduction":
+        stance_direction = max(stance_direction, 0.1)
+        emotional_intensity = min(emotional_intensity, 0.18)
+        framing = "visibility_reduction"
+    elif intervention_type == "platform_labeling":
+        stance_direction = max(stance_direction, 0.18)
+        evidence_strength = max(evidence_strength, 0.7)
+        framing = "platform_labeling"
+    elif intervention_type == "policy_enforcement_notice":
+        stance_direction = max(stance_direction, 0.2)
+        source_credibility = max(source_credibility, 0.76)
+        evidence_strength = max(evidence_strength, 0.74)
+        framing = "policy_enforcement_notice"
+    elif intervention_type == "comment_closure":
+        stance_direction = max(stance_direction, 0.04)
+        emotional_intensity = min(emotional_intensity, 0.16)
+        framing = "comment_closure"
+    elif intervention_type == "account_restriction":
+        stance_direction = max(stance_direction, 0.06)
+        emotional_intensity = min(emotional_intensity, 0.16)
+        framing = "account_restriction"
     elif intervention_type == "no_response":
         stance_direction = 0.0
         evidence_strength = 0.0
@@ -66,7 +105,7 @@ def intervention_to_message(intervention: SimulationIntervention, step: int) -> 
         framing=framing,
         novelty=max(0.15, 0.85 - step * 0.08) if intervention_type != "no_response" else 0.0,
         repetition=min(1.0, step * 0.08),
-        platform_reach=0.62 * intervention.intensity,
+        platform_reach=(0.46 if is_visibility_intervention_type(intervention_type) else 0.62) * intervention.intensity,
     )
 
 

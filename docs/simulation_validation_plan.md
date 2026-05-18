@@ -169,6 +169,9 @@ Current MVP benchmark coverage is consolidated under the `simulation_lab` offlin
 - apology comparison
 - misinformation-correction comparison
 - forbidden intervention rejection
+- lawful/platform-authorized visibility intervention cases
+- content-removal exposure-reduction expectations
+- visibility backlash-cost and human-review recommendation expectations
 
 The focused backend tests additionally cover:
 
@@ -181,6 +184,15 @@ The focused backend tests additionally cover:
 - attention decay and fatigue bounds
 - aggregate-only run result shape
 - safe API errors for forbidden interventions
+- supported visibility intervention type registration
+- high target reach increasing exposure reduction
+- low legitimacy increasing backlash and trust loss
+- transparent explanations reducing backlash
+- screenshot probability increasing spillover risk
+- reactance amplification increasing hard-opposition impact
+- neutral-audience negative shift receiving higher concern than hard-opposition-only backlash
+- visibility result scores clamped to 0-100
+- visibility API payloads returning aggregate-only, human-review-required results
 
 ## Safety Validation
 

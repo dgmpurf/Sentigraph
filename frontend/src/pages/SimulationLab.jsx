@@ -138,14 +138,40 @@ const BASE_ALLOWED_INTERVENTIONS = [
 
 const OPTIONAL_MODERATION_INTERVENTIONS = [
   {
-    value: 'content_moderation',
-    label: '内容治理变量',
-    message: '对平台授权的合规内容治理动作进行风险权衡模拟。',
+    value: 'content_removal_with_explanation',
+    label: '透明说明后内容移除',
+    message: '模拟平台授权、规则清晰且配套公开说明的内容移除风险收益。',
+    framing: 'content_removal_with_explanation',
+    source_credibility: 0.8,
+    stance_direction: 0.2,
+    emotional_intensity: 0.18,
+    evidence_strength: 0.76,
+    platform_reach: 0.42,
+    intensity: 0.72,
   },
   {
-    value: 'visibility_intervention',
-    label: '可见度治理变量',
-    message: '对平台授权的可见度治理动作进行曝光与反弹权衡模拟。',
+    value: 'visibility_reduction',
+    label: '合规可见性降低',
+    message: '模拟平台授权的可见性降低，并估计曝光降低、反弹和外溢风险。',
+    framing: 'visibility_reduction',
+    source_credibility: 0.74,
+    stance_direction: 0.12,
+    emotional_intensity: 0.16,
+    evidence_strength: 0.66,
+    platform_reach: 0.34,
+    intensity: 0.62,
+  },
+  {
+    value: 'platform_labeling',
+    label: '平台标注',
+    message: '模拟以标注和规则说明替代直接删除的低反弹治理方案。',
+    framing: 'platform_labeling',
+    source_credibility: 0.78,
+    stance_direction: 0.18,
+    emotional_intensity: 0.14,
+    evidence_strength: 0.72,
+    platform_reach: 0.3,
+    intensity: 0.5,
   },
 ]
 
@@ -157,6 +183,17 @@ const FORBIDDEN_INTERVENTIONS = new Set([
   'covert_influencer_seeding',
   'targeted_persuasion',
   'suppression',
+  'illegal_suppression',
+  'covert_censorship',
+  'covert_suppression',
+  'targeted_silencing',
+  'platform_governance_evasion',
+])
+
+const VISIBILITY_INTERVENTIONS = new Set([
+  'content_removal_with_explanation',
+  'visibility_reduction',
+  'platform_labeling',
 ])
 
 const COMMUNITY_REGIONS = {
@@ -338,6 +375,70 @@ function deriveInitialMetrics(agents = []) {
   }
 }
 
+function buildVisibilityIntervention(type) {
+  if (!VISIBILITY_INTERVENTIONS.has(type)) return null
+  const defaults = {
+    content_removal_with_explanation: {
+      target_message_reach: 0.94,
+      current_visibility: 1,
+      removal_time: 0.35,
+      residual_copies: 0.22,
+      screenshot_probability: 0.28,
+      repost_migration_probability: 0.22,
+      perceived_suppression: 0.28,
+      policy_violation_clarity: 0.8,
+      legitimacy_of_removal: 0.78,
+      public_explanation_quality: 0.82,
+      reactance_amplification: 0.32,
+      martyr_effect: 0.2,
+      cross_platform_spillover: 0.26,
+      neutral_audience_negative_shift: 0.1,
+      hard_opposition_negative_shift: 0.24,
+    },
+    visibility_reduction: {
+      target_message_reach: 0.86,
+      current_visibility: 1,
+      removal_time: 0.28,
+      residual_copies: 0.3,
+      screenshot_probability: 0.24,
+      repost_migration_probability: 0.18,
+      perceived_suppression: 0.34,
+      policy_violation_clarity: 0.68,
+      legitimacy_of_removal: 0.64,
+      public_explanation_quality: 0.62,
+      reactance_amplification: 0.36,
+      martyr_effect: 0.24,
+      cross_platform_spillover: 0.24,
+      neutral_audience_negative_shift: 0.13,
+      hard_opposition_negative_shift: 0.27,
+    },
+    platform_labeling: {
+      target_message_reach: 0.76,
+      current_visibility: 1,
+      removal_time: 0.18,
+      residual_copies: 0.48,
+      screenshot_probability: 0.16,
+      repost_migration_probability: 0.12,
+      perceived_suppression: 0.18,
+      policy_violation_clarity: 0.72,
+      legitimacy_of_removal: 0.76,
+      public_explanation_quality: 0.78,
+      reactance_amplification: 0.22,
+      martyr_effect: 0.12,
+      cross_platform_spillover: 0.14,
+      neutral_audience_negative_shift: 0.06,
+      hard_opposition_negative_shift: 0.14,
+    },
+  }
+  return {
+    intervention_type: type,
+    ...(defaults[type] || defaults.content_removal_with_explanation),
+    policy_basis: 'platform_policy',
+    authorization_source: 'platform_policy',
+    public_explanation_required: true,
+  }
+}
+
 function buildIntervention(type, scenario) {
   const definition = getInterventionDefinition(type)
   return {
@@ -356,6 +457,7 @@ function buildIntervention(type, scenario) {
     responsibility_acknowledgement: type === 'apology' ? 0.72 : 0.42,
     transparency_level: type === 'no_response' ? 0 : 0.76,
     intensity: definition.intensity ?? 0.6,
+    visibility_intervention: buildVisibilityIntervention(type),
   }
 }
 
@@ -445,7 +547,7 @@ function computeRiskProxy(metrics) {
 
 function computeBacklashRisk(metrics, interventionType) {
   if (!metrics) return null
-  const isVisibilityAction = ['content_moderation', 'visibility_intervention'].includes(interventionType)
+  const isVisibilityAction = VISIBILITY_INTERVENTIONS.has(interventionType)
   const baseline = isVisibilityAction ? 0.18 : 0.06
   return clamp(
     baseline +
@@ -485,9 +587,17 @@ function buildComparisonSummary(resultA, resultB, interventionA, interventionB) 
   const backlashA = computeBacklashRisk(metricsA, interventionA)
   const backlashB = computeBacklashRisk(metricsB, interventionB)
   const backlashDelta = backlashA === null || backlashB === null ? null : backlashB - backlashA
+  const visibilityA = resultA?.visibility_intervention_result || null
+  const visibilityB = resultB?.visibility_intervention_result || null
+  const visibilityDelta = (field) => {
+    if (!visibilityA && !visibilityB) return null
+    return (visibilityB?.[field] ?? 0) - (visibilityA?.[field] ?? 0)
+  }
   const flags = [
     ...(metricsA?.ethical_risk_flags || []).map((flag) => `A: ${flag}`),
     ...(metricsB?.ethical_risk_flags || []).map((flag) => `B: ${flag}`),
+    ...(visibilityA?.warnings || []).map((warning) => `A visibility: ${warning}`),
+    ...(visibilityB?.warnings || []).map((warning) => `B visibility: ${warning}`),
   ]
 
   let betterOption = 'inconclusive'
@@ -507,6 +617,13 @@ function buildComparisonSummary(resultA, resultB, interventionA, interventionB) 
     backlash_risk_a: backlashA,
     backlash_risk_b: backlashB,
     backlash_risk_delta: backlashDelta,
+    visibility_a: visibilityA,
+    visibility_b: visibilityB,
+    exposure_reduction_delta: visibilityDelta('exposure_reduction'),
+    visibility_backlash_delta: visibilityDelta('backlash_cost'),
+    trust_loss_delta: visibilityDelta('trust_loss'),
+    spillover_risk_delta: visibilityDelta('spillover_risk'),
+    net_risk_change_delta: visibilityDelta('net_risk_change'),
     ethical_risk_notes: flags.length
       ? flags
       : ['No additional ethical risk flags were returned by the deterministic aggregate simulation.'],
@@ -891,6 +1008,99 @@ function ComparisonDeltaCard({ label, value, percent = false, lowerIsBetter = tr
   )
 }
 
+function VisibilityMetric({ label, value, suffix = '/100', tone = 'cyan' }) {
+  return (
+    <div className="simulation-visibility-metric">
+      <Text type="secondary">{label}</Text>
+      <strong>{Number.isFinite(Number(value)) ? Number(value).toFixed(1) : '0.0'}{suffix}</strong>
+      <Tag color={tone}>{label}</Tag>
+    </div>
+  )
+}
+
+function VisibilityResultCard({ label, result }) {
+  if (!result) {
+    return (
+      <div className="simulation-visibility-result-card empty">
+        <Text type="secondary">{label}</Text>
+        <Empty description="该方案未使用内容可见性干预" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="simulation-visibility-result-card">
+      <Space wrap>
+        <Tag color="cyan">{label}</Tag>
+        <Tag color="geekblue">{interventionLabelMap[result.intervention_type] || result.intervention_type}</Tag>
+        <Tag color="orange">{result.recommendation}</Tag>
+      </Space>
+      <div className="simulation-visibility-metric-grid">
+        <VisibilityMetric label="直接曝光降低" value={result.exposure_reduction} tone="green" />
+        <VisibilityMetric label="反弹风险" value={result.backlash_cost} tone="orange" />
+        <VisibilityMetric label="信任损失" value={result.trust_loss} tone="red" />
+        <VisibilityMetric label="跨平台外溢" value={result.spillover_risk} tone="purple" />
+        <VisibilityMetric label="中立人群影响" value={result.neutral_audience_impact} tone="volcano" />
+        <VisibilityMetric label="强反对群体影响" value={result.opposition_group_impact} tone="magenta" />
+        <VisibilityMetric label="净风险变化" value={result.net_risk_change} tone="gold" />
+        <VisibilityMetric label="删除正当性" value={result.removal_legitimacy_score} tone="blue" />
+        <VisibilityMetric label="透明说明质量" value={result.public_explanation_quality_score} tone="cyan" />
+      </div>
+      <Paragraph className="simulation-visibility-explanation">{safeText(result.explanation)}</Paragraph>
+      {result.warnings?.length ? (
+        <Space wrap>
+          {result.warnings.map((warning) => (
+            <Tag color="orange" key={warning}>
+              {warning}
+            </Tag>
+          ))}
+        </Space>
+      ) : null}
+    </div>
+  )
+}
+
+function VisibilityTradeoffPanel({ summary }) {
+  if (!summary?.visibility_a && !summary?.visibility_b) return null
+
+  return (
+    <Card className="panel-card simulation-visibility-card">
+      <div className="panel-heading">
+        <Space>
+          <ShieldCheck size={18} />
+          <Title level={4}>内容可见性干预</Title>
+        </Space>
+        <Tag color="orange">人工复核建议</Tag>
+      </div>
+      <Alert
+        className="simulation-disclaimer-alert"
+        message="本模块用于评估合规内容治理动作的风险收益，不自动执行任何平台操作。"
+        type="info"
+        showIcon
+      />
+      <div className="simulation-visibility-comparison-grid">
+        <VisibilityResultCard label="A 方案" result={summary.visibility_a} />
+        <VisibilityResultCard label="B 方案" result={summary.visibility_b} />
+      </div>
+      <div className="simulation-delta-grid simulation-visibility-delta-grid">
+        <ComparisonDeltaCard label="曝光降低变化" lowerIsBetter={false} value={summary.exposure_reduction_delta} />
+        <ComparisonDeltaCard label="反弹风险变化" value={summary.visibility_backlash_delta} />
+        <ComparisonDeltaCard label="信任损失变化" value={summary.trust_loss_delta} />
+        <ComparisonDeltaCard label="跨平台外溢变化" value={summary.spillover_risk_delta} />
+        <ComparisonDeltaCard label="净风险变化" value={summary.net_risk_change_delta} />
+      </div>
+      <div className="simulation-visibility-guidance">
+        <Paragraph>
+          若中立人群负面迁移明显，应优先考虑标注、澄清或透明说明，而不是直接删除。
+        </Paragraph>
+        <Paragraph>
+          如果反弹主要集中在不可缓解的强反对群体，且内容违规清晰，删除的净风险可能较低。
+        </Paragraph>
+      </div>
+    </Card>
+  )
+}
+
 function ComparisonSummaryPanel({ summary }) {
   if (!summary) {
     return (
@@ -1158,7 +1368,11 @@ export function SimulationLab() {
       setSelectedIntervention(optionValues.includes(firstAllowed) ? firstAllowed : optionValues[0] || 'clarification')
       setInterventionA(optionValues.includes('no_response') ? 'no_response' : optionValues[0] || 'clarification')
       setInterventionB(
-        optionValues.includes('clarification') ? 'clarification' : optionValues[1] || optionValues[0] || 'clarification',
+        optionValues.includes('content_removal_with_explanation')
+          ? 'content_removal_with_explanation'
+          : optionValues.includes('clarification')
+            ? 'clarification'
+            : optionValues[1] || optionValues[0] || 'clarification',
       )
       setSteps(demoScenario.config?.steps || 6)
       setRunResult(null)
@@ -1489,6 +1703,7 @@ export function SimulationLab() {
             <Col span={17}>
               <Space direction="vertical" size={16} className="full-width">
                 <ComparisonSummaryPanel summary={comparisonResult?.comparisonSummary} />
+                <VisibilityTradeoffPanel summary={comparisonResult?.comparisonSummary} />
                 <div className="simulation-comparison-grid">
                   <ComparisonScenarioPanel
                     interventionType={interventionA}

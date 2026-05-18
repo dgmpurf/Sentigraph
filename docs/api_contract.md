@@ -2032,6 +2032,8 @@ Response body: `SimulationRunResult`.
 
 The scenario may include synthetic agents, network edges, messages, and transparent intervention packages. The run result exposes aggregate metrics only.
 
+Visibility and content-governance interventions are modeled only as lawful/platform-authorized, policy-based scenario variables. They are not execution endpoints and do not modify platform content.
+
 Allowed intervention types:
 
 - `clarification`
@@ -2042,6 +2044,13 @@ Allowed intervention types:
 - `third_party_evidence`
 - `misinformation_correction`
 - `no_response`
+- `content_removal`
+- `comment_closure`
+- `account_restriction`
+- `visibility_reduction`
+- `platform_labeling`
+- `policy_enforcement_notice`
+- `content_removal_with_explanation`
 
 Forbidden intervention types are rejected with HTTP `400`:
 
@@ -2052,6 +2061,33 @@ Forbidden intervention types are rejected with HTTP `400`:
 - `covert_influencer_seeding`
 - `targeted_persuasion`
 - `suppression`
+- `illegal_suppression`
+- `covert_censorship`
+- `covert_suppression`
+- `targeted_silencing`
+- `platform_governance_evasion`
+
+When a run uses `content_removal`, `visibility_reduction`, `platform_labeling`, or another allowed visibility intervention, `SimulationRunResult.visibility_intervention_result` may be present:
+
+```json
+{
+  "intervention_type": "content_removal_with_explanation",
+  "exposure_reduction": 68.44,
+  "backlash_cost": 10.57,
+  "trust_loss": 23.52,
+  "spillover_risk": 24.28,
+  "net_risk_change": 11.98,
+  "removal_legitimacy_score": 78.2,
+  "public_explanation_quality_score": 82.0,
+  "neutral_audience_impact": 13.57,
+  "opposition_group_impact": 23.82,
+  "recommendation": "allowed_with_transparent_explanation",
+  "human_review_required": true,
+  "aggregate_level_only": true
+}
+```
+
+`recommendation` is one of `not_recommended`, `conditional_human_review`, `allowed_with_transparent_explanation`, or `prefer_labeling_or_clarification`. It is a review cue only, not an automatic moderation command.
 
 Example safe response shape:
 

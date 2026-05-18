@@ -77,6 +77,7 @@ Allowed moderation simulations:
 - Account restriction modeled only as aggregate policy enforcement, not real account targeting.
 - Visibility reduction or ranking changes modeled as platform governance variables.
 - Platform labeling, fact-check labels, disputed-content labels, and policy-enforcement notices.
+- Content removal with transparent explanation when policy clarity and legitimate authority are explicit.
 - Removal versus labeling versus clarification tradeoff analysis.
 - Backlash, trust-loss, legitimacy, spillover, neutral-audience, and hard-opposition impact estimates.
 
@@ -136,6 +137,7 @@ The system should warn when an intervention:
 - Attempts to divert attention from the core issue.
 - Relies on fabricated or unverifiable sources.
 - Uses content removal without a clear policy basis.
+- Uses content removal without transparent explanation when neutral-audience trust risk is high.
 - Has high perceived-suppression, martyr-effect, or cross-platform-spillover risk.
 
 ## Output Restrictions

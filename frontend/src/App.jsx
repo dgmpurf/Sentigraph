@@ -667,7 +667,15 @@ function App() {
               transition={{ duration: 0.22, ease: 'easeOut' }}
             >
               <ErrorBoundary resetKey={activePage} onReset={() => setActivePage('dashboard')}>
-                <Suspense fallback={<Spin spinning />}>{currentPage}</Suspense>
+                <Suspense
+                  fallback={
+                    <div className="app-suspense-loader">
+                      <Spin />
+                    </div>
+                  }
+                >
+                  {currentPage}
+                </Suspense>
               </ErrorBoundary>
             </motion.div>
           </Spin>

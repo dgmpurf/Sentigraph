@@ -10,7 +10,7 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### Simulation Lab MVP Backend and Frontend Scaffold
 
-Status: backend implemented and QA-stabilized; frontend bubble visualization implemented and QA-stabilized; A/B intervention comparison implemented and QA-stabilized on 2026-05-18.
+Status: backend implemented and QA-stabilized; frontend bubble visualization implemented and QA-stabilized; A/B intervention comparison implemented and QA-stabilized on 2026-05-18. Content visibility intervention backlash modeling is implemented and QA-stabilized on 2026-05-18.
 
 Completed:
 
@@ -22,6 +22,8 @@ Completed:
 - Added backend tests and an offline `simulation_lab` benchmark suite.
 - Added `frontend/src/pages/SimulationLab.jsx` with scenario controls, synthetic bubble visualization, message/intervention event cards, aggregate metrics, explanation cards, and a step timeline.
 - Added frontend A/B comparison mode for two allowed interventions from the same initial scenario, with aggregate deltas and human-review-only recommendation.
+- Added deterministic content visibility backlash modeling for lawful/platform-authorized actions, including exposure reduction, backlash cost, trust loss, spillover risk, removal legitimacy, neutral-audience impact, hard-opposition impact, and human-review recommendations.
+- Added frontend A/B visibility tradeoff panel for `content_removal_with_explanation`, `visibility_reduction`, and `platform_labeling` when exposed by the backend ethics policy.
 - Added Simulation Lab sidebar navigation and frontend API helpers for the existing simulation endpoints.
 
 QA coverage:
@@ -29,14 +31,17 @@ QA coverage:
 - Revalidated route registration, demo scenario, ethics policy, safe rejection errors, deterministic output, bounded opinions, model mechanics, aggregate metrics, and aggregate-only output shape.
 - Revalidated the offline `simulation_lab` benchmark suite.
 - Browser smoke with local backend/frontend servers revalidated the Simulation Lab route, sidebar navigation, API helper flow, left/center/right/bottom layout, event cards, bubble rendering, aggregate metrics, explanation cards, run/step controls, and timeline updates.
-- Browser smoke also revalidated A/B strategy comparison for `no_response` vs `clarification`, `no_response` vs `apology`, `no_response` vs `third_party_evidence`, and `clarification` vs `misinformation_correction`; forbidden intervention values remain absent from selectable controls.
+- Browser smoke also revalidated A/B strategy comparison for `no_response` vs `clarification`, `no_response` vs `apology`, `no_response` vs `third_party_evidence`, `clarification` vs `misinformation_correction`, and `no_response` vs `content_removal_with_explanation`; forbidden intervention values remain absent from selectable controls.
+- Content visibility QA coverage now includes supported visibility type registration, high-reach exposure reduction sensitivity, low-legitimacy backlash/trust-loss increase, transparent-explanation backlash reduction, screenshot-driven spillover, reactance-driven hard-opposition impact, neutral-audience high concern, 0-100 score clamping, required aggregate scenario groups, API visibility-result shape, aggregate-only output, and target-list absence.
+- Latest validation: `python -m pytest` passed (`488 passed in 4.17s`), `python scripts/run_offline_benchmarks.py` passed (`483 passed, 0 failed, 0 warnings`), and `npm run build` passed from `frontend` in 7.90s with the existing non-blocking Ant Design/ECharts vendor chunk warning.
 - Frontend build passed for the Simulation Lab page with the existing non-blocking Ant Design/ECharts chunk warning.
 - QA fixes normalized simulation numeric ranges, made `intervention_type` visible on event cards, strengthened deterministic/aggregate safety copy, made both rising/falling explanation cards visible, made A/B comparison scalar summary fields explicit, and removed noisy shared Ant Design `Spin` `tip` usage.
 
 Future work:
 
 - Add richer A/B replay controls or a safe aggregate assumption editor after A/B comparison remains stable.
-- Keep content visibility backlash modeling, initializing simulation from real monitoring cases, and advanced animation as future work.
+- Keep initializing simulation from real monitoring cases and advanced animation as future work.
+- Keep richer empirical calibration, platform-policy-specific moderation rules, real-data initialization, automatic action execution, and platform enforcement integration as future work.
 - Expand ABM validation with sensitivity, docking, ablation, and richer synthetic benchmarks.
 - Keep empirical calibration, dynamic network rewiring, cross-platform diffusion, and optional real LLM narrative generation as future work behind safeguards.
 - Keep GitHub Actions CI intentionally disabled unless explicitly requested.

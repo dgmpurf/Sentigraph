@@ -10,14 +10,21 @@ from app.services.simulation.errors import SimulationEthicsError
 from app.services.simulation.schemas import (
     SimulationAgent,
     SimulationConfig,
+    SimulationIntervention,
     SimulationMessage,
     SimulationNetworkEdge,
     SimulationScenario,
+    VisibilityIntervention,
+)
+from app.services.simulation.visibility_model import (
+    VISIBILITY_INTERVENTION_TYPES,
+    calculate_visibility_intervention_result,
 )
 from app.services.simulation.opinion_update import update_agents_for_step
 from app.services.simulation.simulation_engine import (
     create_brand_crisis_scenario,
     create_default_echo_chamber_scenario,
+    create_high_reach_negative_video_scenario,
     create_misinformation_correction_scenario,
     run_simulation,
 )
@@ -111,6 +118,13 @@ def test_ethics_policy_lists_allowed_and_forbidden_interventions() -> None:
         "third_party_evidence",
         "misinformation_correction",
         "no_response",
+        "content_removal",
+        "comment_closure",
+        "account_restriction",
+        "visibility_reduction",
+        "platform_labeling",
+        "policy_enforcement_notice",
+        "content_removal_with_explanation",
     }
     assert set(body["forbidden_intervention_types"]) == {
         "fake_consensus",
@@ -120,6 +134,11 @@ def test_ethics_policy_lists_allowed_and_forbidden_interventions() -> None:
         "covert_influencer_seeding",
         "targeted_persuasion",
         "suppression",
+        "illegal_suppression",
+        "covert_censorship",
+        "covert_suppression",
+        "targeted_silencing",
+        "platform_governance_evasion",
     }
     assert body["aggregate_level_only"] is True
 
@@ -256,12 +275,251 @@ def test_simulation_api_rejects_forbidden_intervention() -> None:
     assert "fake_consensus" in body["blocked_categories"]
 
 
+def test_high_reach_negative_video_scenario_builds() -> None:
+    scenario = create_high_reach_negative_video_scenario()
+
+    assert scenario.topic == "high_reach_negative_video"
+    assert scenario.interventions[0].intervention_type == "content_removal_with_explanation"
+    assert scenario.interventions[0].visibility_intervention is not None
+    assert scenario.metadata["human_review_required"] is True
+
+
+def test_high_reach_negative_video_scenario_contains_required_aggregate_groups() -> None:
+    scenario = create_high_reach_negative_video_scenario()
+
+    groups = {agent.community_id for agent in scenario.agents}
+
+    assert {
+        "neutral_audience",
+        "hard_opposition",
+        "authority_trusting",
+        "bridge_nodes",
+    }.issubset(groups)
+
+
+def test_visibility_intervention_types_are_registered() -> None:
+    assert set(VISIBILITY_INTERVENTION_TYPES) == {
+        "content_removal",
+        "comment_closure",
+        "account_restriction",
+        "visibility_reduction",
+        "platform_labeling",
+        "policy_enforcement_notice",
+        "content_removal_with_explanation",
+    }
+
+
+def test_content_removal_reduces_exposure() -> None:
+    result = calculate_visibility_intervention_result(
+        _visibility_intervention("content_removal_with_explanation")
+    )
+
+    assert result is not None
+    assert result.exposure_reduction >= 55
+    assert result.aggregate_level_only is True
+    assert result.human_review_required is True
+
+
+def test_high_target_reach_increases_exposure_reduction() -> None:
+    low_reach = calculate_visibility_intervention_result(
+        _visibility_intervention("content_removal_with_explanation", target_message_reach=0.2)
+    )
+    high_reach = calculate_visibility_intervention_result(
+        _visibility_intervention("content_removal_with_explanation", target_message_reach=0.95)
+    )
+
+    assert low_reach is not None
+    assert high_reach is not None
+    assert high_reach.exposure_reduction > low_reach.exposure_reduction
+
+
+def test_low_legitimacy_increases_backlash() -> None:
+    safer = calculate_visibility_intervention_result(
+        _visibility_intervention("content_removal_with_explanation")
+    )
+    low_legitimacy = calculate_visibility_intervention_result(
+        _visibility_intervention(
+            "content_removal_with_explanation",
+            policy_violation_clarity=0.18,
+            legitimacy_of_removal=0.2,
+            public_explanation_quality=0.18,
+        )
+    )
+
+    assert safer is not None
+    assert low_legitimacy is not None
+    assert low_legitimacy.backlash_cost > safer.backlash_cost
+    assert low_legitimacy.trust_loss > safer.trust_loss
+    assert low_legitimacy.recommendation == "prefer_labeling_or_clarification"
+
+
+def test_transparent_explanation_reduces_backlash() -> None:
+    unexplained = calculate_visibility_intervention_result(_visibility_intervention("content_removal"))
+    explained = calculate_visibility_intervention_result(
+        _visibility_intervention("content_removal_with_explanation")
+    )
+
+    assert unexplained is not None
+    assert explained is not None
+    assert explained.backlash_cost < unexplained.backlash_cost
+    assert explained.trust_loss < unexplained.trust_loss
+
+
+def test_high_screenshot_probability_increases_spillover() -> None:
+    low = calculate_visibility_intervention_result(
+        _visibility_intervention("content_removal_with_explanation", screenshot_probability=0.05)
+    )
+    high = calculate_visibility_intervention_result(
+        _visibility_intervention("content_removal_with_explanation", screenshot_probability=0.92)
+    )
+
+    assert low is not None
+    assert high is not None
+    assert high.spillover_risk > low.spillover_risk
+
+
+def test_high_reactance_amplification_increases_opposition_impact() -> None:
+    low = calculate_visibility_intervention_result(
+        _visibility_intervention("content_removal_with_explanation", reactance_amplification=0.05)
+    )
+    high = calculate_visibility_intervention_result(
+        _visibility_intervention("content_removal_with_explanation", reactance_amplification=0.92)
+    )
+
+    assert low is not None
+    assert high is not None
+    assert high.opposition_group_impact > low.opposition_group_impact
+
+
+def test_neutral_audience_impact_is_high_concern() -> None:
+    result = calculate_visibility_intervention_result(
+        _visibility_intervention(
+            "content_removal_with_explanation",
+            neutral_audience_negative_shift=0.68,
+            hard_opposition_negative_shift=0.05,
+        )
+    )
+
+    assert result is not None
+    assert result.audience_impact.high_concern is True
+    assert result.neutral_audience_impact > result.opposition_group_impact
+
+
+def test_hard_opposition_only_backlash_is_lower_concern() -> None:
+    neutral_shift = calculate_visibility_intervention_result(
+        _visibility_intervention(
+            "content_removal_with_explanation",
+            neutral_audience_negative_shift=0.56,
+            hard_opposition_negative_shift=0.05,
+        )
+    )
+    opposition_shift = calculate_visibility_intervention_result(
+        _visibility_intervention(
+            "content_removal_with_explanation",
+            neutral_audience_negative_shift=0.04,
+            hard_opposition_negative_shift=0.56,
+        )
+    )
+
+    assert neutral_shift is not None
+    assert opposition_shift is not None
+    assert neutral_shift.trust_loss > opposition_shift.trust_loss
+    assert neutral_shift.net_risk_change > opposition_shift.net_risk_change
+
+
+def test_visibility_scores_are_clamped_to_zero_one_hundred() -> None:
+    result = calculate_visibility_intervention_result(
+        _visibility_intervention(
+            "content_removal",
+            target_message_reach=1.0,
+            current_visibility=1.0,
+            removal_time=0.0,
+            residual_copies=0.0,
+            screenshot_probability=1.0,
+            repost_migration_probability=1.0,
+            perceived_suppression=1.0,
+            policy_violation_clarity=0.0,
+            legitimacy_of_removal=0.0,
+            public_explanation_quality=0.0,
+            reactance_amplification=1.0,
+            martyr_effect=1.0,
+            cross_platform_spillover=1.0,
+            neutral_audience_negative_shift=1.0,
+            hard_opposition_negative_shift=1.0,
+        )
+    )
+
+    assert result is not None
+    for field_name in (
+        "exposure_reduction",
+        "backlash_cost",
+        "trust_loss",
+        "spillover_risk",
+        "net_risk_change",
+        "removal_legitimacy_score",
+        "public_explanation_quality_score",
+        "neutral_audience_impact",
+        "opposition_group_impact",
+    ):
+        value = getattr(result, field_name)
+        assert 0 <= value <= 100
+    assert 0 <= result.audience_impact.neutral_audience_impact <= 100
+    assert 0 <= result.audience_impact.opposition_group_impact <= 100
+
+
+def test_forbidden_covert_suppression_rejected() -> None:
+    scenario = create_high_reach_negative_video_scenario(intervention_type="covert_censorship")
+
+    with pytest.raises(SimulationEthicsError) as exc:
+        run_simulation(scenario)
+
+    assert "covert_censorship" in exc.value.blocked_categories
+
+
+def test_visibility_simulation_output_is_deterministic_and_aggregate_only() -> None:
+    scenario = create_high_reach_negative_video_scenario()
+
+    first = run_simulation(scenario).model_dump(mode="json")
+    second = run_simulation(scenario).model_dump(mode="json")
+
+    assert first == second
+    assert first["visibility_intervention_result"]["exposure_reduction"] >= 55
+    assert '"agent_id"' not in run_simulation(scenario).model_dump_json()
+    assert "target_accounts" not in run_simulation(scenario).model_dump_json()
+
+
+def test_ab_style_visibility_comparison_runs_with_two_aggregate_results() -> None:
+    baseline = run_simulation(create_high_reach_negative_video_scenario(intervention_type="no_response"))
+    visibility = run_simulation(create_high_reach_negative_video_scenario())
+
+    assert baseline.visibility_intervention_result is None
+    assert visibility.visibility_intervention_result is not None
+    assert visibility.visibility_intervention_result.exposure_reduction > 0
+    assert visibility.safe_mode["aggregate_level_only"] is True
+
+
+def test_simulation_api_accepts_visibility_intervention_payload() -> None:
+    scenario = create_high_reach_negative_video_scenario().model_dump(mode="json")
+
+    response = client.post("/api/v1/simulation/run", json=scenario)
+
+    assert response.status_code == 200
+    body = response.json()
+    visibility = body["visibility_intervention_result"]
+    assert visibility["intervention_type"] == "content_removal_with_explanation"
+    assert visibility["human_review_required"] is True
+    assert visibility["aggregate_level_only"] is True
+    assert body["safe_mode"]["aggregate_level_only"] is True
+    assert "target_accounts" not in response.text
+    assert "influenceability_score" not in response.text
+
+
 def test_simulation_lab_offline_benchmark_suite_passes() -> None:
     result = _run_simulation_lab_benchmark(Path("benchmarks"))
 
     assert result["suite"] == "simulation_lab"
     assert result["status"] == "pass"
-    assert result["case_count"] >= 5
+    assert result["case_count"] >= 8
 
 
 def _two_agent_confidence_scenario(confidence_radius: float) -> SimulationScenario:
@@ -367,4 +625,15 @@ def _test_agent(agent_id: str, opinion: float, confidence_radius: float) -> Simu
         fatigue=0.0,
         identity_group="synthetic_test",
         status="active",
+    )
+
+
+def _visibility_intervention(intervention_type: str, **overrides: float) -> SimulationIntervention:
+    return SimulationIntervention(
+        intervention_id=f"visibility_{intervention_type}",
+        intervention_type=intervention_type,
+        topic="visibility_test",
+        message="Synthetic visibility intervention for aggregate human-review simulation.",
+        intensity=0.72,
+        visibility_intervention=VisibilityIntervention(intervention_type=intervention_type, **overrides),
     )

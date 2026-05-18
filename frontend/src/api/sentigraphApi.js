@@ -1074,6 +1074,64 @@ function normalizeSimulationIntervention(data) {
     responsibility_acknowledgement: normalizeRatio(data.responsibility_acknowledgement, 0.4),
     transparency_level: normalizeRatio(data.transparency_level, 0.7),
     intensity: normalizeRatio(data.intensity, 0.6),
+    visibility_intervention: normalizeVisibilityIntervention(data.visibility_intervention),
+  }
+}
+
+function normalizeVisibilityIntervention(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    intervention_type: String(data.intervention_type || 'content_removal_with_explanation'),
+    target_message_reach: normalizeRatio(data.target_message_reach, 0.82),
+    current_visibility: normalizeRatio(data.current_visibility, 1),
+    removal_time: normalizeRatio(data.removal_time, 0.35),
+    residual_copies: normalizeRatio(data.residual_copies, 0.18),
+    screenshot_probability: normalizeRatio(data.screenshot_probability, 0.22),
+    repost_migration_probability: normalizeRatio(data.repost_migration_probability, 0.18),
+    perceived_suppression: normalizeRatio(data.perceived_suppression, 0.3),
+    policy_violation_clarity: normalizeRatio(data.policy_violation_clarity, 0.78),
+    legitimacy_of_removal: normalizeRatio(data.legitimacy_of_removal, 0.72),
+    public_explanation_quality: normalizeRatio(data.public_explanation_quality, 0.76),
+    reactance_amplification: normalizeRatio(data.reactance_amplification, 0.32),
+    martyr_effect: normalizeRatio(data.martyr_effect, 0.2),
+    cross_platform_spillover: normalizeRatio(data.cross_platform_spillover, 0.22),
+    neutral_audience_negative_shift: normalizeRatio(data.neutral_audience_negative_shift, 0.1),
+    hard_opposition_negative_shift: normalizeRatio(data.hard_opposition_negative_shift, 0.22),
+    policy_basis: String(data.policy_basis || 'platform_policy'),
+    authorization_source: String(data.authorization_source || 'platform_policy'),
+    public_explanation_required: data.public_explanation_required !== false,
+  }
+}
+
+function normalizeVisibilityInterventionResult(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    intervention_type: String(data.intervention_type || 'content_removal_with_explanation'),
+    exposure_reduction: normalizeBounded(data.exposure_reduction, 0, 100, 0),
+    backlash_cost: normalizeBounded(data.backlash_cost, 0, 100, 0),
+    trust_loss: normalizeBounded(data.trust_loss, 0, 100, 0),
+    spillover_risk: normalizeBounded(data.spillover_risk, 0, 100, 0),
+    net_risk_change: normalizeBounded(data.net_risk_change, 0, 100, 0),
+    removal_legitimacy_score: normalizeBounded(data.removal_legitimacy_score, 0, 100, 0),
+    public_explanation_quality_score: normalizeBounded(data.public_explanation_quality_score, 0, 100, 0),
+    neutral_audience_impact: normalizeBounded(data.neutral_audience_impact, 0, 100, 0),
+    opposition_group_impact: normalizeBounded(data.opposition_group_impact, 0, 100, 0),
+    recommendation: String(data.recommendation || 'conditional_human_review'),
+    explanation: String(data.explanation || ''),
+    audience_impact:
+      data.audience_impact && typeof data.audience_impact === 'object' && !Array.isArray(data.audience_impact)
+        ? {
+            neutral_audience_impact: normalizeBounded(data.audience_impact.neutral_audience_impact, 0, 100, 0),
+            opposition_group_impact: normalizeBounded(data.audience_impact.opposition_group_impact, 0, 100, 0),
+            neutral_audience_negative_shift: normalizeRatio(data.audience_impact.neutral_audience_negative_shift, 0),
+            hard_opposition_negative_shift: normalizeRatio(data.audience_impact.hard_opposition_negative_shift, 0),
+            high_concern: Boolean(data.audience_impact.high_concern),
+            explanation: String(data.audience_impact.explanation || ''),
+          }
+        : null,
+    human_review_required: data.human_review_required !== false,
+    aggregate_level_only: data.aggregate_level_only !== false,
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
   }
 }
 
@@ -1132,6 +1190,7 @@ function normalizeSimulationRunResult(data) {
       initial_metrics: normalizeSimulationMetrics(null),
       final_metrics: normalizeSimulationMetrics(null),
       step_results: [],
+      visibility_intervention_result: null,
       key_findings: [],
       recommended_interpretation: '',
       safe_mode: {},
@@ -1153,6 +1212,7 @@ function normalizeSimulationRunResult(data) {
     step_results: Array.isArray(data.step_results)
       ? data.step_results.map(normalizeSimulationStepResult).filter(Boolean)
       : [],
+    visibility_intervention_result: normalizeVisibilityInterventionResult(data.visibility_intervention_result),
     key_findings: Array.isArray(data.key_findings)
       ? data.key_findings.map((finding) => String(finding))
       : [],
@@ -1197,6 +1257,7 @@ function normalizeSimulationStepResult(data) {
     metrics: normalizeSimulationMetrics(data.metrics),
     trend_direction: String(data.trend_direction || 'unknown'),
     forecast_reason: String(data.forecast_reason || ''),
+    visibility_intervention_result: normalizeVisibilityInterventionResult(data.visibility_intervention_result),
     community_metrics:
       data.community_metrics && typeof data.community_metrics === 'object' && !Array.isArray(data.community_metrics)
         ? Object.fromEntries(

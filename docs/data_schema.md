@@ -1680,8 +1680,58 @@ The schemas are synthetic, deterministic, and aggregate-only. They are not platf
 - `third_party_evidence`
 - `misinformation_correction`
 - `no_response`
+- `content_removal`
+- `comment_closure`
+- `account_restriction`
+- `visibility_reduction`
+- `platform_labeling`
+- `policy_enforcement_notice`
+- `content_removal_with_explanation`
 
-Forbidden intervention strings such as `fake_consensus`, `bot_amplification`, `fake_event`, `deceptive_distraction`, `covert_influencer_seeding`, `targeted_persuasion`, and `suppression` are rejected by the ethics policy.
+Allowed visibility interventions model lawful/platform-authorized content governance as aggregate scenario variables only. They are not execution commands and must not contain account lists, targeting instructions, or platform-governance evasion guidance.
+
+`VisibilityIntervention` includes:
+
+- `intervention_type`
+- `target_message_reach`
+- `current_visibility`
+- `removal_time`
+- `residual_copies`
+- `screenshot_probability`
+- `repost_migration_probability`
+- `perceived_suppression`
+- `policy_violation_clarity`
+- `legitimacy_of_removal`
+- `public_explanation_quality`
+- `reactance_amplification`
+- `martyr_effect`
+- `cross_platform_spillover`
+- `neutral_audience_negative_shift`
+- `hard_opposition_negative_shift`
+- `policy_basis`
+- `authorization_source`
+- `public_explanation_required`
+
+`VisibilityInterventionResult` includes:
+
+- `intervention_type`
+- `exposure_reduction`
+- `backlash_cost`
+- `trust_loss`
+- `spillover_risk`
+- `net_risk_change`
+- `removal_legitimacy_score`
+- `public_explanation_quality_score`
+- `neutral_audience_impact`
+- `opposition_group_impact`
+- `recommendation`
+- `explanation`
+- `audience_impact`
+- `human_review_required`
+- `aggregate_level_only`
+- `warnings`
+
+Forbidden intervention strings such as `fake_consensus`, `bot_amplification`, `fake_event`, `deceptive_distraction`, `covert_influencer_seeding`, `targeted_persuasion`, `suppression`, `illegal_suppression`, `covert_censorship`, `covert_suppression`, `targeted_silencing`, and `platform_governance_evasion` are rejected by the ethics policy.
 
 `SimulationMetricSummary` includes:
 
@@ -1708,6 +1758,7 @@ Forbidden intervention strings such as `fake_consensus`, `bot_amplification`, `f
 - `initial_metrics`
 - `final_metrics`
 - `step_results`
+- `visibility_intervention_result` when a visibility intervention is active
 - `key_findings`
 - `recommended_interpretation`
 - `safe_mode`

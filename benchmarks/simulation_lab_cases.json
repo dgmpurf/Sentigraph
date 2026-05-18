@@ -54,5 +54,45 @@
       "rejected": true,
       "blocked_category": "fake_consensus"
     }
+  },
+  {
+    "case_id": "simulation_visibility_removal_with_explanation",
+    "scenario": "high_reach_negative_video",
+    "intervention_type": "content_removal_with_explanation",
+    "compare_to": "no_response",
+    "steps": 6,
+    "expected": {
+      "min_exposure_reduction": 55,
+      "max_backlash_cost": 45,
+      "expected_visibility_recommendations": [
+        "allowed_with_transparent_explanation",
+        "conditional_human_review"
+      ]
+    }
+  },
+  {
+    "case_id": "simulation_visibility_labeling_safe_tradeoff",
+    "scenario": "high_reach_negative_video",
+    "intervention_type": "platform_labeling",
+    "compare_to": "no_response",
+    "steps": 6,
+    "expected": {
+      "min_exposure_reduction": 12,
+      "max_backlash_cost": 35,
+      "expected_visibility_recommendations": [
+        "conditional_human_review",
+        "prefer_labeling_or_clarification"
+      ]
+    }
+  },
+  {
+    "case_id": "simulation_forbidden_covert_censorship_rejected",
+    "scenario": "high_reach_negative_video",
+    "intervention_type": "covert_censorship",
+    "steps": 6,
+    "expected": {
+      "rejected": true,
+      "blocked_category": "covert_censorship"
+    }
   }
 ]

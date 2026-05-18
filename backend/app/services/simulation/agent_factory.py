@@ -44,6 +44,21 @@ def create_misinformation_agents() -> list[SimulationAgent]:
     ]
 
 
+def create_high_reach_video_agents() -> list[SimulationAgent]:
+    return [
+        _agent("hv01", "hard_opposition", -0.84, -0.78, "hard_opposition", attention=0.94, negativity=1.55, confirmation=0.74),
+        _agent("hv02", "hard_opposition", -0.72, -0.62, "hard_opposition", attention=0.9, negativity=1.48, confirmation=0.68),
+        _agent("hv03", "neutral_audience", -0.22, -0.1, "neutral_observer", attention=0.82, authority=0.58, confirmation=0.34),
+        _agent("hv04", "neutral_audience", -0.08, -0.02, "neutral_observer", attention=0.78, authority=0.64, confirmation=0.28),
+        _agent("hv05", "neutral_audience", 0.02, 0.0, "neutral_observer", attention=0.74, authority=0.68, confirmation=0.24),
+        _agent("hv06", "authority_trusting", 0.14, 0.08, "authority_trusting", attention=0.68, authority=0.82, confirmation=0.18),
+        _agent("hv07", "authority_trusting", 0.24, 0.14, "authority_trusting", attention=0.64, authority=0.86, confirmation=0.16),
+        _agent("hv08", "bridge_nodes", -0.06, -0.02, "bridge_observer", attention=0.82, authority=0.72, confirmation=0.2, confidence=0.68),
+        _agent("hv09", "bridge_nodes", 0.08, 0.04, "bridge_observer", attention=0.78, authority=0.74, confirmation=0.18, confidence=0.72),
+        _agent("hv10", "supporters", 0.32, 0.22, "brand_supporter", attention=0.62, authority=0.72, confirmation=0.24),
+    ]
+
+
 def _agent(
     agent_id: str,
     community_id: str,

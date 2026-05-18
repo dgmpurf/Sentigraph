@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.services.simulation.agent_factory import (
     create_brand_crisis_agents,
     create_echo_chamber_agents,
+    create_high_reach_video_agents,
     create_misinformation_agents,
 )
 from app.services.simulation.errors import SimulationEthicsError
@@ -25,8 +26,13 @@ from app.services.simulation.schemas import (
     SimulationRunResult,
     SimulationScenario,
     SimulationStepResult,
+    VisibilityInterventionResult,
 )
 from app.services.simulation.simulation_metrics import calculate_community_metrics, calculate_metrics
+from app.services.simulation.visibility_model import (
+    calculate_visibility_intervention_result,
+    default_visibility_intervention,
+)
 
 
 def run_simulation(scenario: SimulationScenario, steps: int | None = None) -> SimulationRunResult:
@@ -44,6 +50,7 @@ def run_simulation(scenario: SimulationScenario, steps: int | None = None) -> Si
     initial_metrics = calculate_metrics(agents, ethical_flags=ethics_check.warnings)
     baseline_metrics = initial_metrics
     step_results: list[SimulationStepResult] = []
+    visibility_results: list[VisibilityInterventionResult] = []
 
     for step in range(1, config.steps + 1):
         active_intervention = _active_intervention_for_step(scenario.interventions, step)
@@ -51,6 +58,9 @@ def run_simulation(scenario: SimulationScenario, steps: int | None = None) -> Si
         step_messages.append(intervention_to_message(active_intervention, step))
         agents = update_agents_for_step(agents, edges, step_messages, config)
         metrics = calculate_metrics(agents, baseline=baseline_metrics, ethical_flags=ethics_check.warnings)
+        visibility_result = calculate_visibility_intervention_result(active_intervention)
+        if visibility_result:
+            visibility_results.append(visibility_result)
         step_results.append(
             SimulationStepResult(
                 step=step,
@@ -63,10 +73,18 @@ def run_simulation(scenario: SimulationScenario, steps: int | None = None) -> Si
                     baseline=baseline_metrics,
                     ethical_flags=ethics_check.warnings,
                 ),
+                visibility_intervention_result=visibility_result,
             )
         )
 
     final_metrics = step_results[-1].metrics if step_results else initial_metrics
+    final_visibility_result = visibility_results[-1] if visibility_results else None
+    warnings = [
+        "Simulation Lab MVP uses synthetic agents and deterministic assumptions.",
+        "Do not use outputs for individual-level targeting or covert influence.",
+    ]
+    if final_visibility_result:
+        warnings.extend(final_visibility_result.warnings)
     return SimulationRunResult(
         scenario_id=scenario.scenario_id,
         scenario_name=scenario.name,
@@ -79,15 +97,13 @@ def run_simulation(scenario: SimulationScenario, steps: int | None = None) -> Si
         initial_metrics=initial_metrics,
         final_metrics=final_metrics,
         step_results=step_results,
-        key_findings=_key_findings(initial_metrics, final_metrics),
+        visibility_intervention_result=final_visibility_result,
+        key_findings=_key_findings(initial_metrics, final_metrics, final_visibility_result),
         recommended_interpretation=(
             "This deterministic MVP simulation compares aggregate crisis-response scenarios. "
             "It is a transparent trend rehearsal, not a prediction of real individual behavior."
         ),
-        warnings=[
-            "Simulation Lab MVP uses synthetic agents and deterministic assumptions.",
-            "Do not use outputs for individual-level targeting or covert influence.",
-        ],
+        warnings=warnings,
     )
 
 
@@ -221,6 +237,78 @@ def create_misinformation_correction_scenario(
     )
 
 
+def create_high_reach_negative_video_scenario(
+    *,
+    intervention_type: str = "content_removal_with_explanation",
+    steps: int = 6,
+) -> SimulationScenario:
+    agents = create_high_reach_video_agents()
+    default_visibility = default_visibility_intervention(intervention_type)
+    visibility = default_visibility.model_copy(
+        update={
+            "target_message_reach": 0.94,
+            "current_visibility": 1.0,
+            "residual_copies": 0.22,
+            "screenshot_probability": 0.28,
+            "repost_migration_probability": 0.22,
+            "cross_platform_spillover": 0.26,
+            "policy_basis": "platform_policy_public_harm_rule",
+            "authorization_source": "platform_policy",
+            "public_explanation_required": True,
+        }
+    )
+    return SimulationScenario(
+        scenario_id=f"simulation_high_reach_video_{intervention_type}",
+        name="High-Reach Negative Video Visibility Scenario",
+        description=(
+            "Synthetic aggregate scenario comparing lawful platform-authorized visibility actions, "
+            "transparent explanation, and backlash/spillover tradeoffs."
+        ),
+        topic="high_reach_negative_video",
+        agents=agents,
+        network_edges=build_homophilous_network(agents),
+        messages=[
+            SimulationMessage(
+                message_id="message_high_reach_negative_video",
+                topic="high_reach_negative_video",
+                source_type="public_video",
+                source_credibility=0.54,
+                stance_direction=-0.78,
+                emotional_intensity=0.82,
+                evidence_strength=0.46,
+                framing="safety",
+                novelty=0.88,
+                repetition=0.32,
+                platform_reach=0.94,
+            )
+        ],
+        interventions=[
+            SimulationIntervention(
+                intervention_id=f"intervention_{intervention_type}",
+                intervention_type=intervention_type,
+                topic="high_reach_negative_video",
+                message=_intervention_message(intervention_type),
+                publication_step=1,
+                source_credibility=0.8,
+                stance_direction=0.2,
+                emotional_intensity=0.18,
+                evidence_strength=0.76,
+                framing=intervention_type,
+                transparency_level=0.82 if intervention_type == "content_removal_with_explanation" else 0.38,
+                intensity=0.72 if intervention_type != "no_response" else 0.0,
+                visibility_intervention=visibility if intervention_type != "no_response" else None,
+            )
+        ],
+        config=SimulationConfig(steps=steps),
+        metadata={
+            "scenario_family": "content_visibility_intervention",
+            "aggregate_only": True,
+            "human_review_required": True,
+            "does_not_execute_platform_action": True,
+        },
+    )
+
+
 def _active_intervention_for_step(
     interventions: list[SimulationIntervention],
     step: int,
@@ -265,6 +353,7 @@ def _step_reason(
 def _key_findings(
     initial_metrics: SimulationMetricSummary,
     final_metrics: SimulationMetricSummary,
+    visibility_result: VisibilityInterventionResult | None = None,
 ) -> list[str]:
     findings = [
         f"Average expressed opinion changed from {initial_metrics.average_expressed_opinion:.2f} to {final_metrics.average_expressed_opinion:.2f}.",
@@ -275,6 +364,12 @@ def _key_findings(
         findings.append("The ethical response package shows a positive aggregate intervention effect proxy.")
     else:
         findings.append("The aggregate intervention effect proxy remains limited in this deterministic run.")
+    if visibility_result:
+        findings.append(
+            "Visibility tradeoff model estimates "
+            f"{visibility_result.exposure_reduction:.1f}/100 exposure reduction and "
+            f"{visibility_result.backlash_cost:.1f}/100 backlash cost."
+        )
     return findings
 
 
@@ -291,6 +386,13 @@ def _intervention_message(intervention_type: str) -> str:
         "progress_update": "Share a progress update with investigation status and next milestones.",
         "third_party_evidence": "Share independently verifiable evidence from a credible third party.",
         "misinformation_correction": "Correct unsupported claims with evidence and calm factual language.",
+        "content_removal": "Simulate lawful platform-authorized removal without assuming automatic execution.",
+        "comment_closure": "Simulate platform-authorized comment closure and its aggregate backlash tradeoff.",
+        "account_restriction": "Simulate policy-based account restriction as an aggregate scenario variable.",
+        "visibility_reduction": "Simulate lawful visibility reduction and its exposure/backlash tradeoff.",
+        "platform_labeling": "Simulate a platform label that adds context without removing the content.",
+        "policy_enforcement_notice": "Simulate a transparent policy enforcement notice.",
+        "content_removal_with_explanation": "Simulate policy-based removal paired with a transparent public explanation.",
         "no_response": "No public response is issued.",
     }
     return messages.get(intervention_type, "Unsupported response type.")
@@ -302,8 +404,9 @@ def ethics_policy_dict() -> dict[str, object]:
         "forbidden_intervention_types": list(FORBIDDEN_INTERVENTION_TYPES),
         "policy_summary": (
             "Simulation Lab supports aggregate-level ethical crisis-response comparison only. "
+            "It can model lawful platform-authorized visibility interventions as tradeoffs for human review. "
             "It rejects manipulation, bot amplification, fake events, deceptive diversion, covert seeding, "
-            "targeted persuasion, and suppression tactics."
+            "targeted persuasion, illegal suppression, and covert censorship."
         ),
         "aggregate_level_only": True,
     }

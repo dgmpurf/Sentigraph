@@ -176,33 +176,31 @@ Rules:
 - No field may specify account lists, vulnerable groups, or individual targets.
 - Interventions must be reviewable and truthful.
 
-## RemovalIntervention Schema
+## VisibilityIntervention Schema
 
-Removal and visibility interventions model lawful, platform-authorized, policy-based moderation effects. They are not instructions for illegal suppression or covert censorship.
+Visibility interventions model lawful, platform-authorized, policy-based moderation effects. They are not instructions for illegal suppression or covert censorship.
 
 ```yaml
-RemovalIntervention:
-  intervention_id: string
-  intervention_type: enum       # content_removal, comment_closure, account_restriction, visibility_reduction, platform_labeling, policy_enforcement_notice
+VisibilityIntervention:
+  intervention_type: enum       # content_removal, content_removal_with_explanation, comment_closure, account_restriction, visibility_reduction, platform_labeling, policy_enforcement_notice
   policy_basis: string          # policy or lawful authority; required for removal/restriction scenarios
   authorization_source: enum    # platform_policy, legal_process, content_owner_policy, community_rules, unknown
-  target_scope: enum            # content_class, thread, topic_segment, platform_segment, aggregate
   target_message_reach: number  # 0.0 to 1.0, estimated aggregate reach of moderated content
+  current_visibility: number    # 0.0 to 1.0
+  removal_time: number          # 0.0 to 1.0, earlier action has lower value
   policy_violation_clarity: number # 0.0 to 1.0
   legitimacy_of_removal: number # 0.0 to 1.0
   public_explanation_quality: number # 0.0 to 1.0
   residual_copies: number       # 0.0 to 1.0
   screenshot_probability: number # 0.0 to 1.0
   repost_migration_probability: number # 0.0 to 1.0
-  expected_visibility_reduction: number # 0.0 to 1.0
-  paired_response:
-    clarification: boolean
-    policy_enforcement_notice: boolean
-    appeal_or_review_path: boolean
-  safety_flags:
-    lawful_or_platform_authorized: boolean
-    no_individual_target_list: true
-    no_governance_evasion: true
+  perceived_suppression: number # 0.0 to 1.0
+  reactance_amplification: number # 0.0 to 1.0
+  martyr_effect: number         # 0.0 to 1.0
+  cross_platform_spillover: number # 0.0 to 1.0
+  neutral_audience_negative_shift: number # 0.0 to 1.0
+  hard_opposition_negative_shift: number # 0.0 to 1.0
+  public_explanation_required: boolean
 ```
 
 Allowed values for `intervention_type`:
@@ -213,6 +211,7 @@ Allowed values for `intervention_type`:
 - `visibility_reduction`
 - `platform_labeling`
 - `policy_enforcement_notice`
+- `content_removal_with_explanation`
 
 Rules:
 
@@ -249,6 +248,35 @@ Interpretation:
 - High `policy_violation_clarity`, `legitimacy_of_removal`, and `public_explanation_quality` should reduce perceived suppression in a lawful scenario.
 - High `screenshot_probability` and `repost_migration_probability` should increase spillover risk.
 - Outputs are aggregate tradeoff estimates and must not become target selection, harassment, or evasion guidance.
+
+## VisibilityInterventionResult Schema
+
+```yaml
+VisibilityInterventionResult:
+  intervention_type: string
+  exposure_reduction: number         # 0 to 100
+  backlash_cost: number              # 0 to 100
+  trust_loss: number                 # 0 to 100
+  spillover_risk: number             # 0 to 100
+  net_risk_change: number            # 0 to 100, lower is safer in the MVP scaffold
+  removal_legitimacy_score: number   # 0 to 100
+  public_explanation_quality_score: number # 0 to 100
+  neutral_audience_impact: number    # 0 to 100
+  opposition_group_impact: number    # 0 to 100
+  recommendation: enum              # not_recommended, conditional_human_review, allowed_with_transparent_explanation, prefer_labeling_or_clarification
+  explanation: string
+  audience_impact:
+    neutral_audience_impact: number
+    opposition_group_impact: number
+    high_concern: boolean
+    explanation: string
+  human_review_required: true
+  aggregate_level_only: true
+  warnings:
+    - string
+```
+
+The MVP weights neutral-audience negative shift more heavily than hard-opposition-only backlash because losing previously neutral observers is a stronger legitimacy signal. The result is a scenario-review artifact only and cannot trigger real content actions.
 
 ## FeedPolicy Schema
 
