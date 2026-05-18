@@ -1,6 +1,6 @@
 # Simulation Lab Validation Plan
 
-Status: validation design only. No simulator has been implemented.
+Status: validation design plus MVP backend QA checklist. The deterministic backend scaffold is implemented; frontend visualization, empirical calibration, and historical replay remain future work.
 
 Simulation Lab should not be exposed as a decision aid until validation, uncertainty labels, and abuse-resistance checks are in place.
 
@@ -161,6 +161,26 @@ Each suite should report:
 - safe summary only
 
 Benchmark output must stay summary-only and must not expose raw private content.
+
+Current MVP benchmark coverage is consolidated under the `simulation_lab` offline suite. It covers:
+
+- no-response baseline
+- clarification comparison
+- apology comparison
+- misinformation-correction comparison
+- forbidden intervention rejection
+
+The focused backend tests additionally cover:
+
+- deterministic output with and without an explicit seed
+- Friedkin-Johnsen prior persistence
+- bounded-confidence peer influence
+- source credibility effects
+- framing effects
+- threshold-based expression updates
+- attention decay and fatigue bounds
+- aggregate-only run result shape
+- safe API errors for forbidden interventions
 
 ## Safety Validation
 

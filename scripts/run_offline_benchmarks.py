@@ -47,6 +47,13 @@ from app.services.nlp.sentiment_analyzer import SentimentAnalyzer  # noqa: E402
 from app.services.nlp.topic_clusterer import TopicClusterer  # noqa: E402
 from app.services.recommendation.report_builder import build_public_opinion_report  # noqa: E402
 from app.services.scoring.topic_risk_score import calculate_topic_risk_score  # noqa: E402
+from app.services.simulation.errors import SimulationEthicsError  # noqa: E402
+from app.services.simulation.simulation_engine import (  # noqa: E402
+    create_brand_crisis_scenario,
+    create_default_echo_chamber_scenario,
+    create_misinformation_correction_scenario,
+    run_simulation,
+)
 
 
 BENCHMARK_VERSION = "v4.0_offline_benchmark_v1"
@@ -62,6 +69,7 @@ EXPECTED_FIXTURE_FILES = (
     "parser_fixture_cases.json",
     "adapter_mock_cases.json",
     "forecast_cases.json",
+    "simulation_lab_cases.json",
 )
 SAFE_ENV_DEFAULTS = {
     "LLM_PROVIDER": "mock",
@@ -131,6 +139,7 @@ def run_all_benchmarks(
         _safe_run_suite("report_quality_rubric", lambda: _run_report_quality_rubric_benchmark(fixture_root)),
         _safe_run_suite("markdown_export", lambda: _run_markdown_export_benchmark(fixture_root)),
         _safe_run_suite("forecasting", lambda: _run_forecasting_benchmark(fixture_root)),
+        _safe_run_suite("simulation_lab", lambda: _run_simulation_lab_benchmark(fixture_root)),
         _safe_run_suite("selector_repair", lambda: _run_selector_repair_benchmark(fixture_root)),
         _safe_run_suite("public_parser_fixtures", lambda: _run_public_parser_benchmark(fixture_root)),
         _safe_run_suite("platform_adapter_mocks", lambda: _run_adapter_mock_benchmark(fixture_root)),
@@ -641,6 +650,143 @@ def _run_forecasting_benchmark(fixture_root: Path) -> dict[str, Any]:
                     },
                 )
     return recorder.summary()
+
+
+def _run_simulation_lab_benchmark(fixture_root: Path) -> dict[str, Any]:
+    recorder = SuiteRecorder("simulation_lab")
+    cases = _load_json(fixture_root / "simulation_lab_cases.json")
+    baseline_cache: dict[tuple[str, int], Any] = {}
+    for case in cases:
+        case_id = str(case["case_id"])
+        scenario_kind = str(case.get("scenario") or "brand_crisis")
+        intervention_type = str(case.get("intervention_type") or "clarification")
+        expected = case.get("expected", {})
+        try:
+            scenario = _simulation_scenario_from_case(case)
+            result = run_simulation(scenario)
+        except SimulationEthicsError as exc:
+            recorder.check(
+                f"{case_id}:forbidden_rejected",
+                bool(expected.get("rejected")) and str(expected.get("blocked_category")) in exc.blocked_categories,
+                "forbidden Simulation Lab intervention is rejected by ethics policy",
+                {
+                    "intervention_type": intervention_type,
+                    "blocked_categories": exc.blocked_categories,
+                },
+            )
+            continue
+
+        details = {
+            "scenario": scenario_kind,
+            "intervention_type": intervention_type,
+            "negative_ratio": result.final_metrics.negative_ratio,
+            "trust_recovery_proxy": result.final_metrics.trust_recovery_proxy,
+            "false_belief_proxy": result.final_metrics.false_belief_proxy,
+            "risk_proxy": _simulation_risk_proxy(result),
+            "steps_completed": result.steps_completed,
+        }
+        recorder.check(
+            f"{case_id}:completed",
+            result.simulation_status == "completed"
+            and result.steps_completed == int(case.get("steps", 6))
+            and result.ethics_check.allowed,
+            "simulation completes with an allowed ethical intervention",
+            details,
+        )
+        recorder.check(
+            f"{case_id}:safe_mode",
+            result.safe_mode.get("aggregate_level_only") is True
+            and result.safe_mode.get("real_api_calls") is False
+            and result.safe_mode.get("real_llm_calls") is False
+            and result.safe_mode.get("individual_targeting") is False,
+            "simulation remains offline, aggregate-level, and does not call real APIs or LLMs",
+            result.safe_mode,
+        )
+        recorder.check(
+            f"{case_id}:score_ranges",
+            0 <= result.final_metrics.negative_ratio <= 1
+            and 0 <= result.final_metrics.trust_recovery_proxy <= 1
+            and 0 <= result.final_metrics.false_belief_proxy <= 1
+            and -1 <= result.final_metrics.min_latent_opinion <= 1
+            and -1 <= result.final_metrics.max_latent_opinion <= 1,
+            "simulation metrics stay within bounded deterministic ranges",
+            details,
+        )
+
+        if "max_final_negative_ratio" in expected:
+            recorder.check(
+                f"{case_id}:negative_ratio_threshold",
+                result.final_metrics.negative_ratio <= float(expected["max_final_negative_ratio"]),
+                "final negative ratio stays within coarse benchmark expectation",
+                details,
+            )
+        if "min_trust_recovery_proxy" in expected:
+            recorder.check(
+                f"{case_id}:trust_threshold",
+                result.final_metrics.trust_recovery_proxy >= float(expected["min_trust_recovery_proxy"]),
+                "trust recovery proxy meets coarse benchmark expectation",
+                details,
+            )
+
+        compare_to = case.get("compare_to")
+        if compare_to:
+            baseline_key = (scenario_kind, int(case.get("steps", 6)))
+            baseline = baseline_cache.get(baseline_key)
+            if baseline is None:
+                baseline = run_simulation(
+                    _simulation_scenario_from_case({**case, "intervention_type": compare_to})
+                )
+                baseline_cache[baseline_key] = baseline
+            baseline_details = {
+                **details,
+                "baseline_intervention_type": compare_to,
+                "baseline_risk_proxy": _simulation_risk_proxy(baseline),
+                "baseline_trust_recovery_proxy": baseline.final_metrics.trust_recovery_proxy,
+                "baseline_false_belief_proxy": baseline.final_metrics.false_belief_proxy,
+            }
+            if expected.get("risk_proxy_below_baseline"):
+                recorder.check(
+                    f"{case_id}:risk_proxy_below_baseline",
+                    _simulation_risk_proxy(result) < _simulation_risk_proxy(baseline),
+                    "ethical intervention reduces aggregate risk proxy versus no-response baseline",
+                    baseline_details,
+                )
+            if expected.get("trust_proxy_above_baseline"):
+                recorder.check(
+                    f"{case_id}:trust_proxy_above_baseline",
+                    result.final_metrics.trust_recovery_proxy > baseline.final_metrics.trust_recovery_proxy,
+                    "ethical intervention improves trust proxy versus no-response baseline",
+                    baseline_details,
+                )
+            if expected.get("false_belief_below_baseline"):
+                recorder.check(
+                    f"{case_id}:false_belief_below_baseline",
+                    result.final_metrics.false_belief_proxy < baseline.final_metrics.false_belief_proxy,
+                    "transparent correction reduces false-belief proxy versus no-response baseline",
+                    baseline_details,
+                )
+    return recorder.summary()
+
+
+def _simulation_scenario_from_case(case: dict[str, Any]):
+    scenario_kind = str(case.get("scenario") or "brand_crisis")
+    intervention_type = str(case.get("intervention_type") or "clarification")
+    steps = int(case.get("steps", 6))
+    if scenario_kind == "default_echo_chamber":
+        scenario = create_default_echo_chamber_scenario()
+        return scenario.model_copy(update={"config": scenario.config.model_copy(update={"steps": steps})}, deep=True)
+    if scenario_kind == "misinformation_correction":
+        return create_misinformation_correction_scenario(intervention_type=intervention_type, steps=steps)
+    return create_brand_crisis_scenario(
+        intervention_type=intervention_type,
+        steps=steps,
+        responsibility_level=float(case.get("responsibility_level", 0.72)),
+    )
+
+
+def _simulation_risk_proxy(result: Any) -> float:
+    metrics = result.final_metrics
+    return round(metrics.negative_ratio * 75 + metrics.false_belief_proxy * 20 + metrics.polarization_index * 5, 4)
 
 
 def _run_selector_repair_benchmark(fixture_root: Path) -> dict[str, Any]:

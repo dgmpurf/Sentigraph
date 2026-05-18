@@ -999,9 +999,58 @@ QA stabilization update, 2026-05-18:
 - No product code, dependencies, real APIs, real LLM APIs, real crawlers, live public fetching, or manipulation tactic implementation was introduced.
 - GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
 
+## 6.10 Simulation Lab MVP Backend Scaffold
+
+Update date: 2026-05-18.
+
+Status: implemented, locally validated, and QA-stabilized as a deterministic offline backend scaffold.
+
+What changed:
+
+- Added `backend/app/services/simulation/` with service-local schemas, synthetic agent factories, homophilous network builder, transparent intervention library, message effect model, bounded-confidence/Friedkin-Johnsen-style opinion update, attention decay, aggregate metrics, and simulation engine.
+- Added deterministic scenario builders for default echo-chamber, brand crisis, and misinformation-correction scenarios.
+- Added `POST /api/v1/simulation/run`, `GET /api/v1/simulation/demo-scenario`, and `GET /api/v1/simulation/ethics-policy`.
+- Added ethics validation that accepts only clarification, apology, compensation, FAQ, progress update, third-party evidence, misinformation correction, and no-response interventions.
+- Added hard rejection for fake consensus, bot amplification, fake events, deceptive distraction, covert influencer seeding, targeted persuasion, and suppression.
+- Added backend tests for deterministic output, bounded opinion ranges, ethics rejection, accepted interventions, bounded-confidence behavior, attention decay, safe-mode flags, and API routes.
+- Added `benchmarks/simulation_lab_cases.json` and a `simulation_lab` suite to the offline benchmark runner.
+
+Safety status:
+
+- The simulator is synthetic, deterministic, offline, and aggregate-level.
+- No real APIs, real LLM APIs, crawlers, live public fetch, real notifications, machine-learning dependencies, or individual targeting were introduced.
+- Simulation outputs are scenario rehearsal metrics, not guaranteed predictions or manipulation recommendations.
+
+Known limitations:
+
+- The model is a toy MVP using assumed synthetic parameters.
+- No frontend visualization is implemented yet.
+- No empirical calibration, cross-platform diffusion, dynamic network rewiring, or real-data replay validation is implemented.
+
+Validation:
+
+- Full backend validation passed with `python -m pytest` (`464 passed in 4.18s`).
+- Offline benchmark validation passed with `python scripts/run_offline_benchmarks.py` (`470 passed, 0 failed, 0 warnings`; latest regression status `no_regression`).
+- The new `simulation_lab` benchmark suite passed with `23 cases, 23 passed, 0 failed, 0 warnings`.
+- Frontend build was not run because this task changed backend, benchmarks, and docs only.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+
+QA stabilization update, 2026-05-18:
+
+- Revalidated the simulation service module files, schema classes, route registration, demo scenario, ethics policy, allowed/forbidden intervention lists, and safe HTTP 400 rejection path for forbidden interventions.
+- Added focused tests for same-scenario determinism with and without explicit seed, Friedkin-Johnsen prior persistence, bounded-confidence peer influence, source credibility effects, framing effects, threshold-based public expression, attention decay, fatigue bounds, aggregate metrics, aggregate-only output shape, and API routes.
+- Revalidated the offline `simulation_lab` benchmark suite for no-response baseline, clarification, apology, misinformation correction, and forbidden intervention rejection.
+- Full backend validation passed with `python -m pytest` (`472 passed in 3.88s`).
+- Offline benchmark validation passed with `python scripts/run_offline_benchmarks.py` (`470 passed, 0 failed, 0 warnings`; `simulation_lab: 23 passed`; latest regression status `no_regression`).
+- Frontend build was not run because no frontend files changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- No real APIs, real LLM APIs, crawlers, live public fetch, machine-learning dependencies, individual targeting, account-level influenceability scoring, or manipulation tactic implementation was introduced.
+
+Next recommended task: build a frontend-only aggregate Simulation Lab page with simple bubble visualization, scenario controls limited to allowed intervention types, and no real API/LLM toggles.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: implement a backend-only deterministic Simulation Lab toy service with synthetic fixtures, allowed/forbidden intervention validation, and offline benchmarks.
+Recommended next development task: build a frontend-only aggregate Simulation Lab page with simple bubble visualization.
 
 Suggested scope:
 

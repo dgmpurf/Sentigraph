@@ -2014,6 +2014,99 @@ Rules:
 - Missing or malformed summary/history files return safe `status="missing"` or `status="malformed"` responses with no traceback.
 - Regression detection compares summary metadata only: increased total failures, increased warnings, suite `pass` to `fail`, and decreased total passed count.
 
+## 10.6 Simulation Lab MVP Backend
+
+The Simulation Lab MVP is an offline, deterministic, aggregate-level crisis-response simulation scaffold. It is a toy model for ethical scenario rehearsal, not a manipulation engine and not a guarantee about future public opinion.
+
+It must not call real platform APIs, real LLM APIs, crawlers, live public fetch, notification providers, or external services.
+
+### Run Simulation
+
+```http
+POST /api/v1/simulation/run
+```
+
+Request body: `SimulationScenario`.
+
+Response body: `SimulationRunResult`.
+
+The scenario may include synthetic agents, network edges, messages, and transparent intervention packages. The run result exposes aggregate metrics only.
+
+Allowed intervention types:
+
+- `clarification`
+- `apology`
+- `compensation`
+- `faq`
+- `progress_update`
+- `third_party_evidence`
+- `misinformation_correction`
+- `no_response`
+
+Forbidden intervention types are rejected with HTTP `400`:
+
+- `fake_consensus`
+- `bot_amplification`
+- `fake_event`
+- `deceptive_distraction`
+- `covert_influencer_seeding`
+- `targeted_persuasion`
+- `suppression`
+
+Example safe response shape:
+
+```json
+{
+  "scenario_id": "simulation_brand_crisis_clarification",
+  "scenario_name": "Brand Crisis Response Scenario",
+  "simulation_status": "completed",
+  "model_version": "simulation_lab_mvp_v1",
+  "steps_requested": 6,
+  "steps_completed": 6,
+  "ethics_check": {
+    "allowed": true,
+    "reason": "All interventions passed the Simulation Lab ethics policy.",
+    "blocked_categories": []
+  },
+  "final_metrics": {
+    "average_latent_opinion": -0.3772,
+    "average_expressed_opinion": -0.3323,
+    "negative_ratio": 0.7,
+    "neutral_ratio": 0.2,
+    "positive_ratio": 0.1,
+    "polarization_index": 0.2856,
+    "attention_level": 0.5281,
+    "trust_recovery_proxy": 0.4214,
+    "intervention_effect_score": 0.0,
+    "false_belief_proxy": 0.2956,
+    "ethical_risk_flags": []
+  },
+  "safe_mode": {
+    "aggregate_level_only": true,
+    "real_api_calls": false,
+    "real_llm_calls": false,
+    "live_fetch_enabled": false,
+    "individual_targeting": false
+  }
+}
+```
+
+### Demo Scenario
+
+```http
+GET /api/v1/simulation/demo-scenario
+```
+
+Returns a deterministic synthetic echo-chamber demo scenario. The endpoint does not fetch external data.
+
+### Ethics Policy
+
+```http
+GET /api/v1/simulation/ethics-policy
+```
+
+Returns allowed intervention types, forbidden intervention types, a short policy summary, and `aggregate_level_only=true`. The policy endpoint is safe metadata only and does not expose credentials or environment values.
+
 ## 11. API Rules
 
 1. Every endpoint should return JSON.

@@ -142,6 +142,26 @@ The `forecasting` suite exercises the deterministic MVP forecasting layer withou
 
 The suite checks coarse regression-protection expectations only: status, confidence, direction, score clamping, horizon availability, and topic/real-crisis/manipulation forecast shape. It does not claim predictive accuracy.
 
+## Simulation Lab Suite
+
+The `simulation_lab` suite covers the deterministic Simulation Lab MVP backend scaffold with synthetic scenarios only:
+
+- no-response baseline
+- clarification compared with no-response
+- apology compared with no-response under higher responsibility assumptions
+- misinformation correction compared with no-response
+- forbidden intervention rejection
+
+The suite checks coarse expectations:
+
+- the simulation completes offline for allowed interventions
+- aggregate metrics stay in bounded ranges
+- `safe_mode` confirms no real API calls, no real LLM calls, no live fetch, and no individual targeting
+- transparent interventions improve aggregate trust/risk proxies versus a no-response baseline where expected
+- `fake_consensus` and other forbidden categories are rejected by the ethics policy
+
+The suite does not validate real persuasion effects and must not be used to design covert influence, bot amplification, fake consensus, deceptive diversion, suppression, or individual-level targeting.
+
 ## Parser Regression Corpus
 
 The `public_parser_fixtures` suite now includes a synthetic per-platform parser corpus for:

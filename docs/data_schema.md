@@ -1625,3 +1625,92 @@ Rules:
 - Regression detection records new failures, warning increases, suite `pass` to `fail`, and total-passed decreases.
 - Missing or malformed summary/history files produce safe empty responses rather than uncaught errors.
 - API responses and generated history summaries must not include local file paths, raw prompts, raw user content, API keys, `.env` values, or external request bodies.
+
+## 18. Simulation Lab MVP Schemas
+
+The Simulation Lab backend scaffold uses service-local Pydantic models under:
+
+```text
+backend/app/services/simulation/schemas.py
+```
+
+The schemas are synthetic, deterministic, and aggregate-only. They are not platform API payloads and must not include real personal data, API keys, cookies, tokens, `.env` values, raw prompts, or private content.
+
+`SimulationAgent` includes:
+
+- `agent_id`
+- `community_id`
+- `latent_opinion`
+- `expressed_opinion`
+- `prior_anchor`
+- `stubbornness`
+- `confidence_radius`
+- `action_threshold`
+- `confirmation_bias`
+- `negativity_weight`
+- `reactance`
+- `authority_trust`
+- `conformity`
+- `attention_budget`
+- `fatigue`
+- `identity_group`
+- `status`
+
+`SimulationMessage` includes:
+
+- `message_id`
+- `topic`
+- `source_type`
+- `source_credibility`
+- `stance_direction`
+- `emotional_intensity`
+- `evidence_strength`
+- `framing`
+- `novelty`
+- `repetition`
+- `platform_reach`
+
+`SimulationIntervention` supports only transparent aggregate crisis-response types:
+
+- `clarification`
+- `apology`
+- `compensation`
+- `faq`
+- `progress_update`
+- `third_party_evidence`
+- `misinformation_correction`
+- `no_response`
+
+Forbidden intervention strings such as `fake_consensus`, `bot_amplification`, `fake_event`, `deceptive_distraction`, `covert_influencer_seeding`, `targeted_persuasion`, and `suppression` are rejected by the ethics policy.
+
+`SimulationMetricSummary` includes:
+
+- `average_latent_opinion`
+- `average_expressed_opinion`
+- `negative_ratio`
+- `neutral_ratio`
+- `positive_ratio`
+- `polarization_index`
+- `attention_level`
+- `trust_recovery_proxy`
+- `intervention_effect_score`
+- `false_belief_proxy`
+- `min_latent_opinion`
+- `max_latent_opinion`
+- `min_expressed_opinion`
+- `max_expressed_opinion`
+- `ethical_risk_flags`
+
+`SimulationRunResult` includes:
+
+- `simulation_status`
+- `ethics_check`
+- `initial_metrics`
+- `final_metrics`
+- `step_results`
+- `key_findings`
+- `recommended_interpretation`
+- `safe_mode`
+- `warnings`
+
+Run results intentionally omit individual targeting recommendations. `step_results.community_metrics` may include synthetic community aggregate metrics only.

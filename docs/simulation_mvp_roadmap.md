@@ -1,6 +1,6 @@
 # Simulation Lab MVP Roadmap
 
-Status: roadmap only. No Simulation Lab product code has been implemented.
+Status: MVP backend scaffold implemented and QA stabilization in progress. Frontend visualization, V2 dynamics, empirical calibration, and real-data replay remain roadmap items.
 
 The roadmap is staged to keep the first version deterministic, offline, explainable, and hard to misuse.
 
@@ -140,3 +140,14 @@ Pause implementation if:
 After this design is reviewed, the next implementation task should be:
 
 Build a backend-only deterministic Simulation Lab toy service with synthetic fixtures, allowed/forbidden intervention validation, and offline benchmarks. Do not add frontend visualization until the toy service and guardrails pass.
+
+## Implementation Checkpoint
+
+As of 2026-05-18, the backend-only deterministic MVP scaffold has been implemented:
+
+- `backend/app/services/simulation/` contains the synthetic agent, network, message, intervention, opinion update, attention, metrics, and engine modules.
+- API endpoints are available under `/api/v1/simulation`.
+- Forbidden intervention types are rejected before simulation.
+- The offline benchmark runner includes a `simulation_lab` suite with synthetic scenarios.
+
+The roadmap does not change: frontend visualization, richer ABM calibration, V2 dynamics, historical replay, and any optional real LLM narrative generation remain future work after QA and safety review.

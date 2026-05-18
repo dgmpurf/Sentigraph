@@ -8,6 +8,31 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Simulation Lab MVP Backend Scaffold
+
+Status: implemented and QA-stabilized on 2026-05-18.
+
+Completed:
+
+- Added a deterministic offline Simulation Lab backend scaffold under `backend/app/services/simulation/`.
+- Added synthetic aggregate scenarios for echo-chamber discussion, brand crisis response, and misinformation correction.
+- Added ethics-bounded intervention validation with allowed transparent responses only.
+- Added hard rejection for fake consensus, bot amplification, fake events, deceptive distraction, covert influencer seeding, targeted persuasion, and suppression.
+- Added `POST /api/v1/simulation/run`, `GET /api/v1/simulation/demo-scenario`, and `GET /api/v1/simulation/ethics-policy`.
+- Added backend tests and an offline `simulation_lab` benchmark suite.
+
+QA coverage:
+
+- Revalidated route registration, demo scenario, ethics policy, safe rejection errors, deterministic output, bounded opinions, model mechanics, aggregate metrics, and aggregate-only output shape.
+- Revalidated the offline `simulation_lab` benchmark suite.
+
+Future work:
+
+- Add an aggregate frontend Simulation Lab page and simple bubble visualization after backend QA.
+- Expand ABM validation with sensitivity, docking, ablation, and richer synthetic benchmarks.
+- Keep empirical calibration, dynamic network rewiring, cross-platform diffusion, and optional real LLM narrative generation as future work behind safeguards.
+- Keep GitHub Actions CI intentionally disabled unless explicitly requested.
+
 ### v3.9 LLM Safety QA Stabilization
 
 Status: QA-stabilized on 2026-05-17.

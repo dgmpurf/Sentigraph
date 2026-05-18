@@ -1,0 +1,58 @@
+[
+  {
+    "case_id": "simulation_no_response_baseline",
+    "scenario": "brand_crisis",
+    "intervention_type": "no_response",
+    "steps": 6,
+    "expected": {
+      "max_final_negative_ratio": 1.0,
+      "min_trust_recovery_proxy": 0.35
+    }
+  },
+  {
+    "case_id": "simulation_clarification_reduces_risk_proxy",
+    "scenario": "brand_crisis",
+    "intervention_type": "clarification",
+    "compare_to": "no_response",
+    "steps": 6,
+    "expected": {
+      "risk_proxy_below_baseline": true,
+      "trust_proxy_above_baseline": true,
+      "min_trust_recovery_proxy": 0.4
+    }
+  },
+  {
+    "case_id": "simulation_apology_improves_trust_proxy",
+    "scenario": "brand_crisis",
+    "intervention_type": "apology",
+    "compare_to": "no_response",
+    "responsibility_level": 0.85,
+    "steps": 6,
+    "expected": {
+      "trust_proxy_above_baseline": true,
+      "risk_proxy_below_baseline": true,
+      "min_trust_recovery_proxy": 0.42
+    }
+  },
+  {
+    "case_id": "simulation_misinformation_correction_reduces_false_belief_proxy",
+    "scenario": "misinformation_correction",
+    "intervention_type": "misinformation_correction",
+    "compare_to": "no_response",
+    "steps": 6,
+    "expected": {
+      "false_belief_below_baseline": true,
+      "risk_proxy_below_baseline": true
+    }
+  },
+  {
+    "case_id": "simulation_forbidden_intervention_rejected",
+    "scenario": "brand_crisis",
+    "intervention_type": "fake_consensus",
+    "steps": 6,
+    "expected": {
+      "rejected": true,
+      "blocked_category": "fake_consensus"
+    }
+  }
+]
