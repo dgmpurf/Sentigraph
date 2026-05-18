@@ -3,7 +3,6 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.services.crawling.platform_registry import (
     CRAWLER_LATER,
-    DISABLED_OR_OPTIONAL_FUTURE,
     FUTURE_REAL_ADAPTER_CANDIDATE,
     OFFICIAL_API_PLANNED,
     get_active_mvp_platform_ids,
@@ -23,10 +22,13 @@ MOCK_SELECTABLE_PLATFORM_IDS = [
     "zhihu",
     "douban",
     "toutiao",
+    "youtube",
 ]
 
 
-def test_platform_registry_categories_and_active_mvp() -> None:
+def test_platform_registry_categories_and_active_mvp(monkeypatch) -> None:
+    monkeypatch.setenv("YOUTUBE_API_KEY", "")
+
     platforms = get_platform_registry()
     by_id = {platform.platform_id: platform for platform in platforms}
 
@@ -111,10 +113,16 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["toutiao"].api_pending is True
     assert by_id["toutiao"].real_mode_disabled is True
     assert by_id["toutiao"].selectable_for_real is False
-    assert by_id["youtube"].category == DISABLED_OR_OPTIONAL_FUTURE
-    assert by_id["youtube"].enabled_in_mvp is False
-    assert by_id["youtube"].selectable_for_mock is False
-    assert by_id["youtube"].real_mode_disabled is True
+    assert by_id["youtube"].category == OFFICIAL_API_PLANNED
+    assert by_id["youtube"].source_type == "youtube_data_api_v3"
+    assert by_id["youtube"].status == "real_api_available_when_configured"
+    assert by_id["youtube"].enabled_in_mvp is True
+    assert by_id["youtube"].selectable_for_mock is True
+    assert by_id["youtube"].mock_available is True
+    assert by_id["youtube"].real_mode_available is True
+    assert by_id["youtube"].api_pending is False
+    assert by_id["youtube"].real_mode_disabled is False
+    assert by_id["youtube"].selectable_for_real is False
     assert by_id["hupu"].category == CRAWLER_LATER
     assert by_id["hupu"].source_type == "public_page_parser"
     assert by_id["hupu"].status == "fixture_only"
@@ -154,7 +162,6 @@ def test_platform_registry_categories_and_active_mvp() -> None:
     assert by_id["jiemian"].mock_available is True
     assert by_id["jiemian"].selectable_for_mock is False
     assert by_id["jiemian"].selectable_for_real is False
-    assert all(platform.platform_id != "youtube" for platform in platforms if platform.selectable_for_mock)
 
 
 def test_platform_registry_endpoint_contract() -> None:
@@ -217,6 +224,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     monkeypatch.setenv("TOUTIAO_CLIENT_ID", "toutiao-client-should-not-appear")
     monkeypatch.setenv("TOUTIAO_CLIENT_SECRET", "toutiao-secret-should-not-appear")
     monkeypatch.setenv("TOUTIAO_ACCESS_TOKEN", "toutiao-token-should-not-appear")
+    monkeypatch.setenv("YOUTUBE_API_KEY", "youtube-api-key-should-not-appear")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -232,12 +240,13 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     zhihu = by_id["zhihu"]
     douban = by_id["douban"]
     toutiao = by_id["toutiao"]
+    youtube = by_id["youtube"]
 
     assert body["active_mvp_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
     assert body["mock_selectable_platforms"] == MOCK_SELECTABLE_PLATFORM_IDS
-    assert body["real_selectable_platforms"] == []
+    assert body["real_selectable_platforms"] == ["youtube"]
     assert body["summary"]["mock_selectable_count"] == len(MOCK_SELECTABLE_PLATFORM_IDS)
-    assert body["summary"]["real_selectable_count"] == 0
+    assert body["summary"]["real_selectable_count"] == 1
     assert reddit["status"] == "api_pending"
     assert reddit["mock_available"] is True
     assert reddit["real_mode_available"] is False
@@ -414,6 +423,17 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert toutiao["selectable_for_mock"] is True
     assert toutiao["selectable_for_real"] is False
     assert toutiao["real_mode_disabled"] is True
+    assert youtube["status"] == "real_api_available_when_configured"
+    assert youtube["source_type"] == "youtube_data_api_v3"
+    assert youtube["mock_available"] is True
+    assert youtube["real_mode_available"] is True
+    assert youtube["api_approval_required"] is False
+    assert youtube["api_approval_status"] == "api_key_configurable"
+    assert youtube["credentials_required"] == ["YOUTUBE_API_KEY"]
+    assert youtube["credentials_present"] == {"YOUTUBE_API_KEY": True}
+    assert youtube["selectable_for_mock"] is True
+    assert youtube["selectable_for_real"] is True
+    assert youtube["real_mode_disabled"] is False
     response_text = response.text
     assert "client-value-should-not-appear" not in response_text
     assert "secret-value-should-not-appear" not in response_text
@@ -442,6 +462,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert "toutiao-client-should-not-appear" not in response_text
     assert "toutiao-secret-should-not-appear" not in response_text
     assert "toutiao-token-should-not-appear" not in response_text
+    assert "youtube-api-key-should-not-appear" not in response_text
 
 
 def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch) -> None:
@@ -472,6 +493,7 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     monkeypatch.setenv("TOUTIAO_CLIENT_ID", "")
     monkeypatch.setenv("TOUTIAO_CLIENT_SECRET", "")
     monkeypatch.setenv("TOUTIAO_ACCESS_TOKEN", "")
+    monkeypatch.setenv("YOUTUBE_API_KEY", "")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -486,6 +508,7 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     zhihu = by_id["zhihu"]
     douban = by_id["douban"]
     toutiao = by_id["toutiao"]
+    youtube = by_id["youtube"]
     assert reddit["credentials_present"] == {
         "REDDIT_CLIENT_ID": False,
         "REDDIT_CLIENT_SECRET": False,
@@ -546,6 +569,9 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
         "TOUTIAO_ACCESS_TOKEN": False,
     }
     assert toutiao["real_mode_available"] is False
+    assert youtube["credentials_present"] == {"YOUTUBE_API_KEY": False}
+    assert youtube["real_mode_available"] is True
+    assert youtube["selectable_for_real"] is False
 
 
 def test_platform_status_keeps_crawler_later_not_real_selectable() -> None:

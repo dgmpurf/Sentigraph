@@ -2,9 +2,9 @@
 
 Sentigraph now prioritizes Chinese public opinion platforms for future source integration while keeping Reddit visible in the project as a future real adapter candidate.
 
-The current MVP product flow remains mock-first. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is now marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao now have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. Douyin and Xiaohongshu developer access is recorded as obtained by the user, but their comment/note-comment API permissions are not yet verified. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao requests through the adapter layer and returns normalized mock data with safe status metadata.
+The current MVP product flow remains mock-first by default. No real crawler, login bypass, captcha bypass, anti-bot evasion, paywall bypass, proxy rotation, browser-cookie use, or private data collection is implemented in this phase. Reddit API access is marked `api_pending`: mock mode is available, but real Reddit API mode is disabled until API approval is granted. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have official API adapter scaffolds with mock data only; real API mode remains disabled until credentials, approval, permission scopes, and implementation are added. YouTube is the first real-capable official API adapter: mock mode remains default, and real mode uses the official YouTube Data API v3 only when `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured. Douyin and Xiaohongshu developer access is recorded as obtained by the user, but their comment/note-comment API permissions are not yet verified. `POST /api/v1/crawl/start` routes Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao, and YouTube requests through the adapter layer and returns normalized mock data or credential-gated official YouTube metadata with safe status metadata.
 
-Cross-platform adapter QA is now stabilized with a parametrized local test matrix. The matrix verifies factory registration, mock-only official adapter behavior, safe blocked real-mode metadata, credential redaction, `/crawl/start` metadata, public parser fixture preview, and schema-valid `RawPost` / `RawComment` output without making real platform API calls.
+Cross-platform adapter QA is now stabilized with a parametrized local test matrix. The matrix verifies factory registration, mock-only official adapter behavior, YouTube mock and mocked-real normalization, safe blocked real-mode metadata, credential redaction, `/crawl/start` metadata, public parser fixture preview, and schema-valid `RawPost` / `RawComment` output without making real platform API calls.
 
 ## Data-source readiness layer
 
@@ -27,7 +27,7 @@ Current global status:
 
 - Reddit: `api_pending`; mock mode available; real API mode disabled until Reddit approval is granted.
 - Reddit scraping: not implemented and not used to bypass API approval.
-- Official API planned platforms: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao.
+- Official API planned platforms: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao, YouTube.
 - Weibo: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Bilibili: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Douyin: official API adapter scaffold available in mock mode; developer access obtained; comment permission not verified; real API mode disabled and not called.
@@ -36,8 +36,8 @@ Current global status:
 - Zhihu: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Douban: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Toutiao: official API adapter scaffold available in mock mode; real API mode disabled and not called.
+- YouTube: official Data API v3 adapter available in mock mode by default; real mode available only when configured with a local API key.
 - Crawler-later platforms: Hupu, Baidu Tieba, Tianya, NGA, Maimai, The Paper / Pengpai News, Jiemian News.
-- YouTube: `disabled_or_optional_future`.
 
 ## MVP mock-selectable platforms
 
@@ -54,6 +54,7 @@ MVP selections are limited to platforms that can run with local mock data. Selec
 | `zhihu` | Zhihu | `official_api_planned` | `official_api_adapter_scaffold` | true |
 | `douban` | Douban | `official_api_planned` | `official_api_adapter_scaffold` | true |
 | `toutiao` | Toutiao | `official_api_planned` | `official_api_adapter_scaffold` | true |
+| `youtube` | YouTube | `official_api_planned` | `youtube_data_api_v3` | true |
 
 ## official_api_planned
 
@@ -69,6 +70,7 @@ These platforms should be integrated through official API programs when credenti
 | `zhihu` | Zhihu | https://open.zhihu.com | mock adapter scaffold; real API pending credentials/approval |
 | `douban` | Douban | https://developers.douban.com | mock adapter scaffold; real API pending credentials/approval |
 | `toutiao` | Toutiao | https://open.toutiao.com | mock adapter scaffold; real API pending credentials/approval |
+| `youtube` | YouTube | https://developers.google.com/youtube/v3 | mock by default; real official API mode available when local key is configured |
 
 ## future_real_adapter_candidate
 
@@ -116,7 +118,7 @@ Factory behavior:
 
 - `get_adapter("reddit")` and `get_platform_adapter("reddit")` return the Reddit adapter.
 - Unknown platforms return a safe adapter registration error.
-- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have mock-only official API adapter scaffolds. Douyin and Xiaohongshu now record developer access obtained but keep comment/note-comment permission as unverified. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
+- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have mock-only official API adapter scaffolds. YouTube has a mock-first official Data API v3 adapter with real mode gated by `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY`. Douyin and Xiaohongshu now record developer access obtained but keep comment/note-comment permission as unverified. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
 - Crawler-later platforms remain inactive for real collection.
 
 Safety constraints:
@@ -127,6 +129,52 @@ Safety constraints:
 - Do not store Reddit credentials in the repository.
 - Add fixture-first tests before expanding real-mode behavior.
 - Rate-limit and retry handling should stay conservative and transparent.
+
+### YouTube official API adapter minimal real mode
+
+YouTube is now an official Data API v3 source with mock-first behavior and a credential-gated real mode.
+
+Current behavior:
+
+- Default mode is `mock` through `YOUTUBE_ADAPTER_MODE=mock`.
+- `get_adapter("youtube")` returns the YouTube adapter.
+- `POST /api/v1/crawl/start` uses the adapter when `platforms` contains `youtube`.
+- Mock mode returns deterministic YouTube-style video posts and visible public-comment mock data normalized as `RawPost` and `RawComment`.
+- Real mode is used only when `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` is present in the local process environment or ignored `.env` file.
+- If the key is missing, the adapter safely falls back to mock mode and exposes only `credential_present=false`, `fallback_reason_category=config_error`, and safe mode metadata.
+- Local real-mode smoke has passed with `adapter_mode=real`, `fallback_used=false`, `credential_present=true`, `post_count=3`, `comment_count=3`, and valid normalized post/comment schema metadata. The key value was not printed or returned.
+- Real-mode tests use mocked HTTP/client responses only; the backend test suite does not call the real YouTube API.
+- The key must never be printed, logged, committed, or returned in API responses.
+
+Official API concepts:
+
+- `search.list` for tiny video search batches.
+- `videos.list` for video metadata such as channel/title/published time/statistics when available.
+- `commentThreads.list` for top-level video comments.
+- Replies are optional and limited when included by the API response.
+
+Local configuration:
+
+```text
+YOUTUBE_ADAPTER_MODE=mock
+YOUTUBE_API_KEY=
+```
+
+To test real mode locally after adding the key to an ignored `.env` or local environment:
+
+```cmd
+set YOUTUBE_ADAPTER_MODE=real
+set YOUTUBE_API_KEY=your_youtube_data_api_key
+```
+
+Safety constraints:
+
+- Use only the official YouTube Data API v3.
+- Do not scrape YouTube pages.
+- Do not use cookies, browser profiles, login bypass, captcha bypass, anti-bot evasion, or private data.
+- Keep limits tiny: video search 3-5 items and comments 10-20 items.
+- Treat API quota as a local operator responsibility; automated tests must stay mocked/offline.
+- Keep mock fallback available for tests and demos.
 
 ### Weibo official API adapter scaffold
 
@@ -448,12 +496,6 @@ These platforms are not selectable for real crawling in the MVP. They are visibl
 | `jiemian` | Jiemian News / 界面新闻 | `fixture_only` public-page parser scaffold; `comments_unavailable_without_login_or_dynamic_loading` |
 
 Crawler-later work should be handled in a future phase using public-page parsers and selector profiles. Each parser must normalize public posts/comments into the common Sentigraph schema and must include tests with sanitized fixture HTML.
-
-## disabled_or_optional_future
-
-| platform_id | display_name | status | notes |
-| --- | --- | --- | --- |
-| `youtube` | YouTube | optional future | Removed from active MVP platform choices. Keep only as an optional future source. |
 
 ## Future Crawler Maintenance Note
 

@@ -24,6 +24,7 @@ from app.services.crawling.reddit_adapter import RedditAdapter
 from app.services.crawling.toutiao_adapter import ToutiaoAdapter
 from app.services.crawling.weibo_adapter import WeiboAdapter
 from app.services.crawling.xiaohongshu_adapter import XiaohongshuAdapter
+from app.services.crawling.youtube_adapter import YouTubeAdapter
 from app.services.crawling.zhihu_adapter import ZhihuAdapter
 
 
@@ -126,11 +127,12 @@ REQUIRED_OFFICIAL_CRAWL_METADATA_FIELDS = {
     "raw_post_schema_valid",
     "raw_comment_schema_valid",
     "real_mode_available",
+    "credential_present",
 }
 
 
 def test_adapter_factory_registers_all_active_adapter_groups() -> None:
-    expected_ids = sorted(("reddit", *OFFICIAL_PLATFORM_IDS, *PUBLIC_PARSER_IDS))
+    expected_ids = sorted(("reddit", *OFFICIAL_PLATFORM_IDS, "youtube", *PUBLIC_PARSER_IDS))
 
     assert get_supported_adapter_ids() == expected_ids
 
@@ -144,6 +146,9 @@ def test_adapter_factory_registers_all_active_adapter_groups() -> None:
         adapter = get_adapter(platform_id)
         assert isinstance(adapter, PublicParserPlatformAdapter)
         assert has_platform_adapter(platform_id) is True
+    youtube = get_adapter("youtube")
+    assert isinstance(youtube, YouTubeAdapter)
+    assert has_platform_adapter("youtube") is True
 
     assert has_platform_adapter("unknown_platform") is False
     with pytest.raises(PlatformAdapterError):
@@ -325,6 +330,8 @@ def test_platform_status_is_complete_and_does_not_expose_credentials(
             marker = f"{credential_name.lower()}-secret-marker"
             monkeypatch.setenv(credential_name, marker)
             secret_markers.append(marker)
+    monkeypatch.setenv("YOUTUBE_API_KEY", "youtube-key-secret-marker")
+    secret_markers.append("youtube-key-secret-marker")
 
     response = client.get("/api/v1/platforms/status")
 
@@ -344,6 +351,17 @@ def test_platform_status_is_complete_and_does_not_expose_credentials(
     assert by_id["reddit"]["mock_available"] is True
     assert by_id["reddit"]["real_mode_available"] is False
     assert by_id["reddit"]["selectable_for_real"] is False
+    assert by_id["youtube"]["status"] == "real_api_available_when_configured"
+    assert by_id["youtube"]["source_type"] == "youtube_data_api_v3"
+    assert by_id["youtube"]["mock_available"] is True
+    assert by_id["youtube"]["real_mode_available"] is True
+    assert by_id["youtube"]["api_approval_required"] is False
+    assert by_id["youtube"]["api_pending"] is False
+    assert by_id["youtube"]["real_mode_disabled"] is False
+    assert by_id["youtube"]["credentials_required"] == ["YOUTUBE_API_KEY"]
+    assert by_id["youtube"]["credentials_present"] == {"YOUTUBE_API_KEY": True}
+    assert by_id["youtube"]["selectable_for_mock"] is True
+    assert by_id["youtube"]["selectable_for_real"] is True
     for platform_id in OFFICIAL_PLATFORM_IDS:
         item = by_id[platform_id]
         assert item["category"] == "official_api_planned"

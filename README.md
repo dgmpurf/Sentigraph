@@ -6,6 +6,58 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 
 本项目还不是生产系统。
 
+## v5.6 Demo-Ready Snapshot
+
+Sentigraph v5.6 is packaged as a local, mock/offline demo MVP for showing the complete public-opinion intelligence workflow without real platform access or real LLM calls.
+
+What the demo can show:
+
+- Demo Flow page for a guided end-to-end walkthrough.
+- Deterministic Tesla / Tesla-related demo case preparation.
+- Mock analysis with V1.5 topic-risk scoring, real-crisis risk, manipulation-risk signals, and Chinese report output.
+- Markdown public-opinion report export.
+- Risk Monitor with deterministic MVP forecasting from local snapshots.
+- Simulation Lab with aggregate bubble visualization, case-to-simulation initialization, A/B intervention comparison, lawful content-visibility tradeoff modeling, and Markdown strategy report export.
+- Offline Benchmark Dashboard and LLM Safety status pages.
+- Platform Integration Overview showing mock/scaffold status and future approval requirements.
+
+What remains mock/offline:
+
+- Platform data comes from local mock data, fixtures, and deterministic backend services by default.
+- YouTube is the first real-capable official API adapter, but it remains in mock mode unless `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured.
+- Public parsers use fixture-first parsing and do not enable live public fetching.
+- LLM infrastructure defaults to `MockProvider`; OpenAI, DeepSeek, and Qwen are readiness placeholders only.
+- Simulation Lab is a deterministic aggregate scenario simulator, not a real-world action execution system and not a guaranteed prediction engine.
+
+What requires future approval or explicit local configuration before real integration:
+
+- YouTube Data API key access is available locally; keep the key in `.env` or the local environment only, never in git or logs.
+- Douyin and Xiaohongshu developer access is recorded, but comment/note-comment permissions still need console verification.
+- Reddit API approval remains pending before any real Reddit mode should be enabled.
+- Weibo, Bilibili, Kuaishou, Zhihu, Douban, Toutiao, and other platform integrations remain official-API/planning work.
+- Real LLM usage remains disabled until a provider is selected, guardrails are reviewed, and offline benchmarks are used as regression checks.
+
+Quick local demo commands from the repository root:
+
+```cmd
+python scripts\reset_local_data.py --yes
+python scripts\seed_demo_cases.py --reset-first
+python scripts\run_offline_benchmarks.py
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+npm --prefix frontend run dev
+```
+
+Validation commands:
+
+```cmd
+python -m pytest
+python scripts\run_offline_benchmarks.py
+npm --prefix frontend run build
+python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
+```
+
+GitHub Actions CI is intentionally disabled for this project checkpoint. Do not recreate `.github/workflows/ci.yml` unless explicitly requested; use the local validation commands above.
+
 ## 1. Project Overview
 
 - 产品形态：PC/浏览器端深色科幻风格舆情分析仪表盘。
@@ -120,6 +172,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 - Zhihu
 - Douban
 - Toutiao
+- YouTube
 
 Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real adapter candidate；真实 Reddit API 状态为 `api_pending`，审批通过前不会调用真实 API。
 
@@ -135,10 +188,11 @@ Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real ada
 - Zhihu
 - Douban
 - Toutiao
+- YouTube
 
 这些平台当前只支持 mock workflow，不代表真实集成已经完成。Weibo、Bilibili、Douyin、Kuaishou、Xiaohongshu、Zhihu、Douban、Toutiao 已有 mock-only official API adapter scaffold；即使配置为 real mode，也只会返回安全的 `api_pending` / `config_error` 状态，不会调用真实平台 API。Douyin 和 Xiaohongshu 已记录用户侧 developer access obtained，但评论/笔记评论 API 权限尚未核验，real mode 仍保持关闭。
 
-Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao. Real API modes remain disabled and return safe `api_pending` / `config_error` metadata until approval, credentials, scopes, and implementation are added. Douyin and Xiaohongshu developer access is recorded as obtained, but comment/note-comment permissions are not verified yet.
+Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao. Real API modes remain disabled and return safe `api_pending` / `config_error` metadata until approval, credentials, scopes, and implementation are added. Douyin and Xiaohongshu developer access is recorded as obtained, but comment/note-comment permissions are not verified yet. YouTube is now real-capable through the official YouTube Data API v3, but it defaults to mock mode and only uses real mode when explicitly configured with `YOUTUBE_ADAPTER_MODE=real` plus a local `YOUTUBE_API_KEY`.
 
 ### Future Crawler-later
 
@@ -154,11 +208,31 @@ Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuais
 
 未来 crawler-later 工作必须只处理公开页面，不能绕过登录、验证码、付费墙、反爬系统或访问私有数据。
 
-### Disabled or Optional Future
+### Optional YouTube Adapter Status
 
-- YouTube
+YouTube is mock-selectable by default and is the first real-capable official API adapter. Real mode uses only the official YouTube Data API v3 and never scraping, cookies, login bypass, captcha bypass, or anti-bot evasion.
 
-YouTube 不是当前 MVP active platform，不在当前 roadmap 中优先实现，只作为 optional future source 保留。
+Default mock mode:
+
+```cmd
+set YOUTUBE_ADAPTER_MODE=mock
+```
+
+Local real mode, only after placing the key in `.env` or the local process environment:
+
+```cmd
+set YOUTUBE_ADAPTER_MODE=real
+set YOUTUBE_API_KEY=your_youtube_data_api_key
+```
+
+Real mode is used only when both values are present. If the key is missing, the adapter safely falls back to mock mode and returns `credential_present=false` plus safe fallback metadata. A local real-mode smoke check has passed with tiny limits and key-redacted metadata only. Never print or commit the key.
+
+Official API concepts used by the minimal adapter:
+
+- `search.list` for tiny video search batches.
+- `videos.list` for video metadata when available.
+- `commentThreads.list` for top-level video comments.
+- Replies are optional and limited when included by the API response.
 
 ### Optional Reddit Adapter Status
 

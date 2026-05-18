@@ -240,7 +240,7 @@ def _check_platforms(payload: Any) -> str:
     platforms = _expect_key(payload, "platforms")
     active = _expect_key(payload, "active_mvp_platforms")
     assert "reddit" in active, "reddit should remain mock-selectable"
-    assert "youtube" not in active, "youtube must not be active in MVP"
+    assert "youtube" in active, "youtube should be mock-selectable with real mode gated by credentials"
     return f"{len(platforms)} platforms, {len(active)} active mock platforms"
 
 

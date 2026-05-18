@@ -29,6 +29,7 @@ from app.services.crawling.reddit_adapter import REDDIT_REQUIRED_CREDENTIALS, Re
 from app.services.crawling.toutiao_adapter import ToutiaoAdapter
 from app.services.crawling.weibo_adapter import WeiboAdapter
 from app.services.crawling.xiaohongshu_adapter import XiaohongshuAdapter
+from app.services.crawling.youtube_adapter import YouTubeAdapter
 from app.services.crawling.zhihu_adapter import ZhihuAdapter
 
 
@@ -329,6 +330,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     toutiao_adapter = get_adapter("toutiao")
     weibo_adapter = get_adapter("weibo")
     xiaohongshu_adapter = get_adapter("xiaohongshu")
+    youtube_adapter = get_adapter("youtube")
     zhihu_adapter = get_adapter("zhihu")
     douyin_adapter = get_adapter("douyin")
 
@@ -339,6 +341,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     assert has_platform_adapter("reddit") is True
     assert has_platform_adapter("weibo") is True
     assert has_platform_adapter("xiaohongshu") is True
+    assert has_platform_adapter("youtube") is True
     assert has_platform_adapter("zhihu") is True
     assert has_platform_adapter("the_paper") is True
     assert has_platform_adapter("jiemian") is True
@@ -362,6 +365,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
         "toutiao",
         "weibo",
         "xiaohongshu",
+        "youtube",
         "zhihu",
     ]
     assert isinstance(bilibili_adapter, BilibiliAdapter)
@@ -372,6 +376,7 @@ def test_adapter_factory_registers_reddit_and_public_parser_scaffold(monkeypatch
     assert isinstance(alias_adapter, RedditAdapter)
     assert isinstance(weibo_adapter, WeiboAdapter)
     assert isinstance(xiaohongshu_adapter, XiaohongshuAdapter)
+    assert isinstance(youtube_adapter, YouTubeAdapter)
     assert isinstance(zhihu_adapter, ZhihuAdapter)
     assert isinstance(public_parser_adapter, ThePaperPublicParserAdapter)
     assert isinstance(jiemian_adapter, JiemianPublicParserAdapter)
@@ -397,6 +402,7 @@ def test_adapter_factory_does_not_activate_planned_or_crawler_later_platforms() 
             "reddit",
             "weibo",
             "xiaohongshu",
+            "youtube",
             "zhihu",
             "the_paper",
             "jiemian",

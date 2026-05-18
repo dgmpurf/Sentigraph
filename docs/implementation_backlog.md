@@ -8,6 +8,68 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### YouTube Official API Adapter Minimal Real Mode
+
+Status: implemented and QA-stabilized as the first real-capable official API adapter, mock-first by default.
+
+Completed:
+
+- Added `backend/app/services/crawling/youtube_adapter.py` with deterministic mock mode and optional official YouTube Data API v3 real mode.
+- Added official API concepts for tiny `search.list`, `videos.list`, and `commentThreads.list` usage behind `YOUTUBE_ADAPTER_MODE=real` plus local `YOUTUBE_API_KEY`.
+- Wired `youtube` into `adapter_factory`, `platform_registry`, and `/api/v1/crawl/start`.
+- Added safe crawl metadata including `credential_present` as a boolean only; no key values are returned or logged.
+- Added `.env.example` placeholders for `YOUTUBE_ADAPTER_MODE=mock` and `YOUTUBE_API_KEY=`.
+- Added tests for mock search/comments, normalization, missing-key fallback, mocked real API response normalization, adapter factory registration, `/crawl/start` mock and missing-key metadata behavior, UTF-8/emoji text handling, and top-level/reply comment parent/default URL behavior.
+- Verified a local real-mode smoke check with `adapter_mode=real`, `fallback_used=false`, `credential_present=true`, `post_count=3`, `comment_count=3`, and valid normalized post/comment schema metadata.
+
+Acceptance:
+
+- `python -m pytest` passed with `522 passed in 4.94s`.
+- `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
+- Frontend build was not run because no frontend files changed.
+- Automated tests do not call the real YouTube API; real-mode test coverage uses mocked clients only.
+- No scraping, API-key printing, `.env` modification, real LLM call, login bypass, captcha bypass, anti-bot evasion, or GitHub Actions workflow was introduced.
+
+Future work:
+
+- Keep any future YouTube real-mode validation manual, tiny-limit, quota-aware, and key-redacted.
+- Douyin comment API permission verification remains future work.
+- Xiaohongshu note/comment API permission verification remains future work.
+- Reddit and Bilibili approval/permission work remains future work.
+- Weibo company-age/application requirement remains future work.
+- GitHub Actions CI remains intentionally disabled.
+
+### v5.6 Demo Package and Release Readiness
+
+Status: complete as a documentation/package checkpoint on 2026-05-18.
+
+Completed:
+
+- Updated `README.md` with a top-level v5.6 demo-ready snapshot covering product purpose, demo scope, mock/offline boundaries, future API approvals, local run commands, validation commands, and intentionally disabled GitHub Actions CI.
+- Added `docs/demo_package.md` for the demo story, recommended screenshot sequence, exact Windows run commands, talking points, screen proof notes, known limitations, and safety/ethics boundaries.
+- Added `docs/release_readiness.md` for completed capabilities, demo-ready features, mock/scaffold-only features, real API pending features, real LLM pending features, non-blocking issues, validation expectations, and next-stage options.
+- Updated `docs/progress.md` with the v5.6 packaging status and next recommended task.
+- Rechecked wording so docs do not claim real platform API integration, real LLM integration, active live fetching, guaranteed predictions, or Simulation Lab real-world action execution.
+
+Acceptance:
+
+- `python -m pytest` passed with `511 passed in 5.25s`.
+- `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
+- `npm run build` passed from `frontend/` in 7.93s with the existing non-blocking Ant Design/ECharts large vendor chunk warning.
+- `python scripts/api_smoke_check.py --base-url http://127.0.0.1:8000` passed against the already-running local backend with `38 passed, 0 failed`.
+- `.github/workflows/ci.yml` remains absent; GitHub Actions CI remains intentionally disabled.
+- No real APIs, real LLM APIs, live public fetch, real crawler, authentication, new adapter/parser, or `.env` modification was introduced.
+
+Next options:
+
+- Produce the final screenshot deck or short demo recording from the current demo story.
+- Audit Douyin and Xiaohongshu API permissions in their developer consoles.
+- Implement real Douyin minimal mode only after comment permission and official payload shape are confirmed.
+- Add a policy/legal review checklist for Simulation Lab strategy reports.
+- Keep real LLM integration as later work behind provider gates, guardrails, and offline benchmark regression checks.
+- Keep Simulation Lab empirical calibration as later work after real data governance is settled.
+- Keep GitHub Actions CI intentionally disabled unless explicitly requested.
+
 ### v5.4 Demo Polish and One-Click Demo Flow
 
 Status: implemented and locally validated on 2026-05-18.
@@ -32,7 +94,7 @@ Acceptance:
 Future work:
 
 - Production onboarding remains future work.
-- Browser screenshot capture and a polished demo script remain future work.
+- Final screenshot deck or recording production remains future work; the browser smoke story and local screenshot targets are documented.
 - Real API integrations remain future work and require official permission verification.
 - Real LLM integrations remain future work behind explicit provider gates and guardrails.
 - GitHub Actions CI remains intentionally disabled.

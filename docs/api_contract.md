@@ -271,7 +271,8 @@ GET /api/v1/platforms
     "xiaohongshu",
     "zhihu",
     "douban",
-    "toutiao"
+    "toutiao",
+    "youtube"
   ]
 }
 ```
@@ -280,7 +281,7 @@ Important:
 
 - `selectable_for_mock=true` means the frontend may show the platform in mock-first selectors.
 - `mock_available=true` means the platform has safe local mock data behavior.
-- `real_mode_available=true` means the backend may use a real source path for that platform. In the current MVP this is false for all platforms.
+- `real_mode_available=true` means the backend may use a real source path for that platform when all explicit gates pass. YouTube is real-capable when locally configured; other current platform adapters remain mock-only or approval-gated.
 - `credentials_present` is a safe boolean map only. It must never contain credential values.
 - `developer_access_status`, `comment_api_status`, and `real_mode_blocker` are safe non-secret readiness fields. They describe console/access status only and must not expose credential values.
 - `api_pending=true` means any future real API path is still waiting for approval, credentials, permissions, or compliance review.
@@ -288,8 +289,8 @@ Important:
 - Official API planned platforms may be selectable for mock analysis, but they must not trigger real API calls until credentials, permissions, and compliance checks are available.
 - Reddit is visible and mock-selectable as a future real adapter candidate, but its current real API status is `api_pending`.
 - Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao are mock-selectable through official API adapter scaffolds. Their real API modes are disabled and not called until credentials, approval, permission verification, and implementation are added. Douyin and Xiaohongshu additionally show developer access obtained but comment/note-comment permission not verified.
+- YouTube is mock-selectable and uses `source_type="youtube_data_api_v3"`. It is real-capable only when `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured; `credentials_present` and crawl metadata expose booleans only.
 - Crawler-later platforms are not selectable for real crawling in the MVP.
-- YouTube is `disabled_or_optional_future` and is not an active MVP platform.
 
 ### Platform Readiness Status
 
@@ -327,15 +328,15 @@ Response:
       "notes": "Selectable for offline mock analysis. Reddit API approval is pending, so real API mode is disabled and public-page scraping is not used as a bypass."
     }
   ],
-  "active_mvp_platforms": ["reddit", "weibo", "bilibili", "douyin", "kuaishou", "xiaohongshu", "zhihu", "douban", "toutiao"],
-  "mock_selectable_platforms": ["reddit", "weibo", "bilibili", "douyin", "kuaishou", "xiaohongshu", "zhihu", "douban", "toutiao"],
+  "active_mvp_platforms": ["reddit", "weibo", "bilibili", "douyin", "kuaishou", "xiaohongshu", "zhihu", "douban", "toutiao", "youtube"],
+  "mock_selectable_platforms": ["reddit", "weibo", "bilibili", "douyin", "kuaishou", "xiaohongshu", "zhihu", "douban", "toutiao", "youtube"],
   "real_selectable_platforms": [],
   "summary": {
     "total_platforms": 17,
-    "mock_selectable_count": 9,
+    "mock_selectable_count": 10,
     "real_selectable_count": 0,
     "api_pending_count": 9,
-    "disabled_count": 8,
+    "disabled_count": 7,
     "crawler_later_count": 7
   }
 }
@@ -347,7 +348,7 @@ Important:
 - It returns credential presence as booleans only.
 - Reddit remains `api_pending`; real API mode is disabled until approval is granted.
 - Crawler-later platforms are visible for roadmap planning but never real-selectable in the MVP.
-- YouTube remains disabled or optional future.
+- YouTube appears in mock-selectable platforms. `real_selectable_platforms` includes `youtube` only when a local `YOUTUBE_API_KEY` is configured.
 
 ## 0.2 Public Parser Status and Preview
 
@@ -726,6 +727,7 @@ POST /api/v1/crawl/start
       "fetch_status": null,
       "mock_available": true,
       "real_mode_available": false,
+      "credential_present": false,
       "api_approval_required": true,
       "api_approval_status": "api_pending",
       "api_pending": true,
@@ -814,6 +816,10 @@ Important:
 - When `platforms` contains `toutiao`, the endpoint calls the Toutiao official API adapter scaffold through `adapter_factory.get_adapter("toutiao")`.
 - Toutiao mock mode returns deterministic article/micro-headline-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
 - Toutiao real API mode is disabled. If `TOUTIAO_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Toutiao API call.
+- When `platforms` contains `youtube`, the endpoint calls the YouTube official Data API v3 adapter through `adapter_factory.get_adapter("youtube")`.
+- YouTube mock mode returns deterministic YouTube-style video `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `youtube_data_api_v3`.
+- YouTube real mode is enabled only when `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` is present locally. If the key is missing, the endpoint safely returns mock data plus `credential_present=false` and `fallback_reason_category=config_error`.
+- YouTube crawl metadata includes `credential_present` as a boolean only. It must never include the key value.
 - When `platforms` explicitly contains a registered public-parser scaffold such as `the_paper`, `jiemian`, `hupu`, `maimai`, `tieba`, or `nga`, the endpoint calls the public parser adapter through `adapter_factory.get_adapter(platform_id)`.
 - The Paper, Jiemian, Hupu, Maimai, Tieba, and NGA public parsers currently run in `fixture_only` mode and return safe fixture/mock `RawPost` data by default.
 - The Paper has an optional local live public-page fetch pilot only when `PUBLIC_PARSER_LIVE_FETCH_ENABLED=true`. Jiemian remains fixture-only in this phase.
@@ -830,7 +836,7 @@ Important:
 - `real_mode_reached` indicates whether the adapter reached the real API code path.
 - `dependency_available` indicates whether required adapter dependencies such as PRAW are available.
 - `real_mode_blocked_reason` may be `api_pending`, `disabled`, `mock_only`, `credentials_missing`, `approval_required`, or `null`.
-- Official API planned platforms still use the existing mock behavior. Crawler-later platforms are not activated for real crawling.
+- Official API planned platforms still use mock behavior by default. YouTube is the only current credential-gated real-capable official API adapter. Crawler-later platforms are not activated for real crawling.
 
 Example public-parser fixture metadata:
 

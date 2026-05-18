@@ -24,6 +24,7 @@ class PlatformCrawlMetadata(BaseModel):
     fetch_status: str | None = None
     mock_available: bool = True
     real_mode_available: bool = False
+    credential_present: bool = False
     api_approval_required: bool = False
     api_approval_status: str | None = None
     api_pending: bool = False

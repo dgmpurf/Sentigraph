@@ -17,6 +17,7 @@ from app.services.crawling.reddit_adapter import RedditAdapter
 from app.services.crawling.toutiao_adapter import ToutiaoAdapter
 from app.services.crawling.weibo_adapter import WeiboAdapter
 from app.services.crawling.xiaohongshu_adapter import XiaohongshuAdapter
+from app.services.crawling.youtube_adapter import YouTubeAdapter
 from app.services.crawling.zhihu_adapter import ZhihuAdapter
 
 
@@ -36,6 +37,8 @@ SAFE_WEIBO_POST_LIMIT = 3
 SAFE_WEIBO_COMMENT_LIMIT = 3
 SAFE_XIAOHONGSHU_POST_LIMIT = 3
 SAFE_XIAOHONGSHU_COMMENT_LIMIT = 3
+SAFE_YOUTUBE_POST_LIMIT = 5
+SAFE_YOUTUBE_COMMENT_LIMIT = 10
 SAFE_ZHIHU_POST_LIMIT = 3
 SAFE_ZHIHU_COMMENT_LIMIT = 3
 SAFE_PUBLIC_PARSER_POST_LIMIT = 3
@@ -101,6 +104,12 @@ def start_crawl_with_adapters(payload: CrawlStartRequest) -> CrawlStartResponse:
         raw_posts.extend(weibo_posts)
         raw_comments.extend(weibo_comments)
         metadata.append(weibo_metadata)
+
+    if "youtube" in platforms:
+        youtube_posts, youtube_comments, youtube_metadata = _crawl_youtube(payload)
+        raw_posts.extend(youtube_posts)
+        raw_comments.extend(youtube_comments)
+        metadata.append(youtube_metadata)
 
     for platform_id in get_public_parser_platform_ids():
         if platform_id in platforms:
@@ -827,6 +836,85 @@ def _crawl_reddit(payload: CrawlStartRequest) -> tuple[list[RawPost], list[RawCo
     )
 
 
+def _crawl_youtube(payload: CrawlStartRequest) -> tuple[list[RawPost], list[RawComment], PlatformCrawlMetadata]:
+    post_limit = min(payload.limit, SAFE_YOUTUBE_POST_LIMIT)
+    comment_limit = min(payload.limit, SAFE_YOUTUBE_COMMENT_LIMIT)
+
+    posts: list[RawPost] = []
+    comments: list[RawComment] = []
+    adapter: BasePlatformAdapter | None = None
+    fallback_reason: str | None = None
+    fallback_used = False
+
+    try:
+        adapter = adapter_factory.get_adapter("youtube")
+        posts = adapter.search_posts(
+            keyword=payload.keyword,
+            limit=post_limit,
+            sort="new",
+            date_range=_serialize_date_range(payload),
+        )
+        fallback_reason = getattr(adapter, "fallback_reason", None)
+        fallback_used = bool(fallback_reason)
+        if posts:
+            comments = adapter.fetch_comments(posts[0].post_id, limit=comment_limit)
+            fallback_reason = getattr(adapter, "fallback_reason", None) or fallback_reason
+            fallback_used = bool(fallback_reason)
+    except PlatformAdapterError as exc:
+        fallback_reason = f"adapter_error:{exc.__class__.__name__}"
+        fallback_used = True
+        adapter = None
+        posts, comments = _youtube_mock_fallback(payload)
+    except Exception as exc:  # pragma: no cover - last-resort safety guard
+        fallback_reason = f"adapter_error:{exc.__class__.__name__}"
+        fallback_used = True
+        adapter = None
+        posts, comments = _youtube_mock_fallback(payload)
+
+    post_schema_valid = _validate_items(posts, RawPost)
+    comment_schema_valid = _validate_items(comments, RawComment)
+    adapter_mode = _adapter_mode(adapter, fallback_reason)
+    adapter_status = _adapter_status_metadata(adapter)
+    fallback_category = _fallback_reason_category(fallback_reason) or _safe_str(
+        adapter_status.get("sanitized_error_category")
+    )
+
+    return (
+        posts,
+        comments,
+        PlatformCrawlMetadata(
+            platform="youtube",
+            adapter_mode=adapter_mode,
+            source_type=_safe_str(adapter_status.get("source_type")) or "youtube_data_api_v3",
+            parser_status=_safe_str(adapter_status.get("parser_status")),
+            live_fetch_enabled=bool(adapter_status.get("live_fetch_enabled", False)),
+            live_fetch_attempted=bool(adapter_status.get("live_fetch_attempted", False)),
+            live_fetch_allowed=bool(adapter_status.get("live_fetch_allowed", False)),
+            fallback_used=fallback_used,
+            fallback_reason_category=fallback_category,
+            fetch_status=_safe_str(adapter_status.get("fetch_status")),
+            mock_available=bool(adapter_status.get("mock_available", True)),
+            real_mode_available=bool(adapter_status.get("real_mode_available", False)),
+            credential_present=bool(adapter_status.get("credential_present", False)),
+            api_approval_required=bool(adapter_status.get("api_approval_required", False)),
+            api_approval_status=_safe_str(adapter_status.get("api_approval_status")),
+            api_pending=bool(adapter_status.get("api_pending", False)),
+            real_mode_disabled=bool(adapter_status.get("real_mode_disabled", False)),
+            selectable_for_real=bool(adapter_status.get("selectable_for_real", False)),
+            real_mode_blocked_reason=_real_mode_blocked_reason(fallback_reason, adapter_status, adapter_mode),
+            real_mode_reached=bool(adapter_status.get("real_mode_reached", False)),
+            dependency_available=bool(adapter_status.get("dependency_available", True)),
+            exception_class=_safe_str(adapter_status.get("exception_class")),
+            sanitized_error_category=fallback_category,
+            post_count=len(posts),
+            comment_count=len(comments),
+            schema_valid=post_schema_valid and comment_schema_valid,
+            raw_post_schema_valid=post_schema_valid,
+            raw_comment_schema_valid=comment_schema_valid,
+        ),
+    )
+
+
 def _crawl_public_parser(
     platform_id: str,
     payload: CrawlStartRequest,
@@ -1033,6 +1121,20 @@ def _weibo_mock_fallback(payload: CrawlStartRequest) -> tuple[list[RawPost], lis
     comments: list[RawComment] = []
     if posts:
         comments = mock_adapter.fetch_comments(posts[0].post_id, limit=min(payload.limit, SAFE_WEIBO_COMMENT_LIMIT))
+    return posts, comments
+
+
+def _youtube_mock_fallback(payload: CrawlStartRequest) -> tuple[list[RawPost], list[RawComment]]:
+    mock_adapter = YouTubeAdapter(mode="mock")
+    posts = mock_adapter.search_posts(
+        keyword=payload.keyword,
+        limit=min(payload.limit, SAFE_YOUTUBE_POST_LIMIT),
+        sort="new",
+        date_range=_serialize_date_range(payload),
+    )
+    comments: list[RawComment] = []
+    if posts:
+        comments = mock_adapter.fetch_comments(posts[0].post_id, limit=min(payload.limit, SAFE_YOUTUBE_COMMENT_LIMIT))
     return posts, comments
 
 

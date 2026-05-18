@@ -386,13 +386,13 @@ Check platform groups:
 - Official API planned platforms
 - Future real adapter candidates
 - Crawler-later platforms
-- Disabled or optional future platforms
+- Credential-gated YouTube real-mode status
 
 Expected result:
 
-- Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao are visible as mock-selectable.
+- Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao, and YouTube are visible as mock-selectable.
 - Crawler-later platforms are visible but disabled.
-- YouTube is not active and is marked optional future if shown.
+- YouTube real mode is shown as available only when `YOUTUBE_API_KEY` is present; the key value is never displayed.
 
 ## 4.5 Optional Reddit Mock Adapter Smoke Check
 

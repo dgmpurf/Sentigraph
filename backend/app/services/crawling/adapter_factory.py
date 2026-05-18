@@ -19,6 +19,7 @@ from app.services.crawling.reddit_adapter import RedditAdapter
 from app.services.crawling.toutiao_adapter import ToutiaoAdapter
 from app.services.crawling.weibo_adapter import WeiboAdapter
 from app.services.crawling.xiaohongshu_adapter import XiaohongshuAdapter
+from app.services.crawling.youtube_adapter import YouTubeAdapter
 from app.services.crawling.zhihu_adapter import ZhihuAdapter
 
 
@@ -40,6 +41,7 @@ ADAPTER_REGISTRY: dict[str, AdapterClass] = {
     ToutiaoAdapter.platform_id: ToutiaoAdapter,
     WeiboAdapter.platform_id: WeiboAdapter,
     XiaohongshuAdapter.platform_id: XiaohongshuAdapter,
+    YouTubeAdapter.platform_id: YouTubeAdapter,
     ZhihuAdapter.platform_id: ZhihuAdapter,
 }
 

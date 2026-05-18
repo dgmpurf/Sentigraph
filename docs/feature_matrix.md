@@ -8,7 +8,7 @@ This matrix separates what is already usable in the mock-first MVP from polish w
 | --- | --- | --- | --- |
 | Project skeleton | Completed | FastAPI backend, React + Vite frontend, docs, mock data, tests, and local scripts exist. | Keep structure stable. |
 | Desktop dashboard layout | Completed | Sidebar, top status/header bar, chart cards, and desktop-first page layout exist. | Manual browser QA at 1440px. |
-| Platform registry | Completed | Backend registry exposes Reddit, Chinese official-API-planned platforms, crawler-later platforms, and YouTube as optional future. | Keep registry as the source of truth for platform selection. |
+| Platform registry | Completed | Backend registry exposes Reddit, Chinese official-API-planned platforms, crawler-later platforms, and YouTube as a mock-first, credential-gated official API adapter. | Keep registry as the source of truth for platform selection. |
 | `GET /api/v1/platforms` | Completed | Frontend can fetch platform roadmap and mock-selectable choices. | Add adapter metadata only when real integrations start. |
 | Mock keyword/crawl/analysis pipeline | Completed | Offline deterministic mock flow exists. | Add saved case state before real crawlers. |
 | Sentiment analysis | Completed | Rule-based deterministic mock sentiment. | Improve language-aware phrase lists and tests. |

@@ -37,6 +37,10 @@ from app.services.crawling.xiaohongshu_adapter import (
     XIAOHONGSHU_REAL_MODE_BLOCKER,
     XIAOHONGSHU_REQUIRED_CREDENTIALS,
 )
+from app.services.crawling.youtube_adapter import (
+    YOUTUBE_API_APPROVAL_STATUS,
+    YOUTUBE_REQUIRED_CREDENTIALS,
+)
 from app.services.crawling.zhihu_adapter import ZHIHU_API_APPROVAL_STATUS, ZHIHU_REQUIRED_CREDENTIALS
 
 
@@ -74,6 +78,9 @@ class PlatformRegistryItem:
 
     def to_schema(self) -> PlatformSource:
         credentials_present = _credential_presence(self.credentials_required)
+        selectable_for_real = self.selectable_for_real
+        if self.credentials_required and self.selectable_for_real:
+            selectable_for_real = all(credentials_present.values())
         return PlatformSource(
             platform_id=self.platform_id,
             display_name=self.display_name,
@@ -93,7 +100,7 @@ class PlatformRegistryItem:
             credentials_present=credentials_present,
             api_pending=self.api_pending,
             real_mode_disabled=self.real_mode_disabled,
-            selectable_for_real=self.selectable_for_real,
+            selectable_for_real=selectable_for_real,
             official_platform_url=self.official_platform_url,
             notes=self.notes,
         )
@@ -347,17 +354,26 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
     PlatformRegistryItem(
         platform_id="youtube",
         display_name="YouTube",
-        category=DISABLED_OR_OPTIONAL_FUTURE,
-        source_type="optional_future_api_or_export_source",
-        status="disabled_optional_future",
-        enabled_in_mvp=False,
-        selectable_for_mock=False,
-        mock_available=False,
+        category=OFFICIAL_API_PLANNED,
+        source_type="youtube_data_api_v3",
+        status="real_api_available_when_configured",
+        enabled_in_mvp=True,
+        selectable_for_mock=True,
+        mock_available=True,
         api_pending=False,
-        real_mode_disabled=True,
-        official_platform_url=None,
-        notes="Removed from active MVP platform choices. Keep only as an optional future source.",
-        api_approval_status=API_APPROVAL_NOT_APPLICABLE,
+        real_mode_disabled=False,
+        official_platform_url="https://developers.google.com/youtube/v3",
+        notes=(
+            "Selectable for offline YouTube-style mock analysis. Real mode uses the official "
+            "YouTube Data API v3 only when YOUTUBE_ADAPTER_MODE=real and YOUTUBE_API_KEY is "
+            "present in local environment or .env. The key must stay out of logs and git. "
+            "No scraping, cookies, login bypass, captcha bypass, or anti-bot evasion is implemented."
+        ),
+        real_mode_available=True,
+        api_approval_required=False,
+        api_approval_status=YOUTUBE_API_APPROVAL_STATUS,
+        credentials_required=YOUTUBE_REQUIRED_CREDENTIALS,
+        selectable_for_real=True,
     ),
 )
 
