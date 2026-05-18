@@ -1,6 +1,6 @@
 # Sentigraph Implementation Backlog
 
-Last updated: 2026-05-17
+Last updated: 2026-05-18
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
 
@@ -624,6 +624,49 @@ Future evaluation tasks:
 - Add LLM output evaluation fixtures before any real LLM provider is enabled.
 - Add platform-specific integration benchmarks with mocked clients before any real platform API is enabled.
 - Keep GitHub Actions CI intentionally disabled unless explicitly requested later.
+
+### Simulation Lab Design Foundation
+
+Status: documentation complete and QA-stabilized; implementation not started.
+
+Completed design artifacts:
+
+- `docs/simulation_lab_design.md` defines the ethical aggregate scenario-rehearsal architecture, hybrid agent-based layers, echo chamber model, intervention layer, output metrics, and relationship to monitoring, forecasting, V1.5 risk, and reports.
+- `docs/simulation_research_basis.md` maps the DeepSearch research basis into Sentigraph priorities across DeGroot, Friedkin-Johnsen, Hegselmann-Krause, Deffuant-Weisbuch, Granovetter, Watts, complex contagion, homophily/echo chambers, source credibility, framing, agenda-setting, SCCT, Image Repair, misinformation correction, and ODD validation.
+- `docs/simulation_model_variables.md` defines conceptual Agent, Message, Network, Intervention, FeedPolicy, and SimulationOutput schemas.
+- `docs/simulation_ethics.md` defines allowed and forbidden uses.
+- `docs/simulation_mvp_roadmap.md` stages MVP, V2, and later work.
+- `docs/simulation_validation_plan.md` defines ODD documentation, docking, sensitivity, ablation, assumption logging, uncertainty labels, and benchmark integration.
+
+Simulation Lab MVP implementation tasks:
+
+- Add backend-only deterministic toy simulator service using synthetic fixtures.
+- Add allowed/forbidden intervention validation before any simulation run.
+- Add Friedkin-Johnsen style persistence, bounded-confidence gate, threshold expression, homophilous static network, source credibility/framing, and attention decay.
+- Add aggregate-only output schemas and assumption logs.
+- Add offline benchmark suites for opinion-kernel docking, bounded-confidence fragmentation, threshold expression, attention decay, intervention comparison, and ethics guardrails.
+- Add a no-real-API/no-real-LLM/no-live-fetch safety test for the Simulation Lab path.
+- Add frontend 2D bubble visualization only after backend toy simulator and benchmarks pass.
+
+Forbidden implementation paths:
+
+- Do not implement fake consensus, bot amplification, covert influencer seeding, fake events, deceptive attention diversion, vulnerable-group manipulation, individual-level persuasion targeting, account-level influenceability scoring, suppression, or harassment tactics.
+- Do not use real accounts, real platform APIs, real LLM APIs, live public fetching, browser cookies, proxy rotation, login bypass, captcha bypass, or private data.
+- Do not present simulation output as guaranteed prediction; it must remain assumption-based scenario rehearsal.
+
+Recommended next task:
+
+- Implement a backend-only deterministic Simulation Lab toy service with synthetic fixtures, ethics guardrails, and offline benchmarks. Keep frontend visualization, real-data calibration, and optional LLM narrative generation as future tasks.
+
+QA stabilization result, 2026-05-18:
+
+- Simulation Lab documentation checklist is complete across design, research basis, model variables, ethics, MVP roadmap, and validation plan.
+- Documentation now explicitly preserves the project boundary: aggregate scenario rehearsal only, synthetic/offline MVP first, no product code yet, no real APIs, no real LLM APIs, no live fetching, and no manipulation tactic implementation.
+- Simulation Lab MVP code scaffold remains the next task.
+- Empirical calibration remains future work after synthetic fixtures, benchmark docking, sensitivity analysis, and historical replay planning are stable.
+- Real LLM narrative generation remains future work behind explicit safeguards, provider gates, redaction, usage guardrails, schema validation, and human review.
+- Validation passed with full backend tests (`451 passed in 4.37s`) and offline benchmarks (`447 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
+- GitHub Actions CI remains intentionally disabled unless explicitly requested.
 
 ### V2 Dynamic Risk Readiness
 

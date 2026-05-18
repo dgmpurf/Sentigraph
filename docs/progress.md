@@ -1,6 +1,6 @@
 # Sentigraph Progress
 
-Last updated: 2026-05-17
+Last updated: 2026-05-18
 
 ## 1. Current Project Status
 
@@ -952,17 +952,65 @@ Known limitations:
 - Confidence is capped at `medium` until larger evaluated historical datasets exist.
 - No real platform APIs, real LLM APIs, crawlers, or live public fetching were added.
 
-Next recommended task: run a browser/manual Risk Monitor forecast explanation click-through on seeded local data, then draft Simulation Lab / advanced V2 forecasting requirements without implementing the lab or enabling real APIs.
+Next recommended task: review the Simulation Lab design foundation, then implement only a backend-only deterministic toy simulator with synthetic fixtures, ethics guardrails, and offline benchmarks.
+
+## 6.9 Simulation Lab Research Ingestion and Design Foundation
+
+Update date: 2026-05-18.
+
+Status: design documentation complete; no product code implemented.
+
+What changed:
+
+- Converted the uploaded DeepSearch Simulation Lab research report into formal Sentigraph design documents.
+- Added `docs/simulation_lab_design.md` for the ethical scenario-rehearsal architecture, hybrid agent-based layers, echo chamber model, output metrics, and relationship to monitoring, V1.5 topic risk, forecasting, and reports.
+- Added `docs/simulation_research_basis.md` mapping DeGroot, Friedkin-Johnsen, Hegselmann-Krause, Deffuant-Weisbuch, Granovetter, Watts, complex contagion, homophily/echo chambers, source credibility, framing, agenda-setting, SCCT, Image Repair, misinformation correction, and ODD validation into Sentigraph priorities.
+- Added `docs/simulation_model_variables.md` defining conceptual Agent, Message, Network, Intervention, FeedPolicy, and SimulationOutput schemas for future implementation.
+- Added `docs/simulation_ethics.md` with allowed uses, forbidden uses, output restrictions, LLM rules, and abuse-resistance requirements.
+- Added `docs/simulation_mvp_roadmap.md` staging MVP, V2, and later Simulation Lab work.
+- Added `docs/simulation_validation_plan.md` for ODD documentation, docking, historical replay, sensitivity analysis, ablation tests, assumption logging, uncertainty labels, and benchmark integration.
+
+Safety and scope:
+
+- No product code, dependencies, backend routes, frontend pages, real APIs, real LLM APIs, crawlers, live public fetching, or manipulation tactics were added.
+- The design explicitly forbids fake consensus, bot amplification, covert influencer seeding, fake events, deceptive attention diversion, vulnerable-group manipulation, individual-level persuasion targeting, account-level influenceability scoring, suppression, and harassment tactics.
+- Simulation Lab remains a future aggregate-level scenario-rehearsal module, not a persuasion optimizer or guaranteed prediction system.
+
+Known limitations:
+
+- The design is intentionally not implemented yet.
+- Model parameters remain conceptual until synthetic fixtures, offline benchmarks, and validation rules are created.
+- Real-data calibration and optional LLM narrative generation remain future work behind explicit approval, redaction, guardrails, benchmarks, and human review.
+
+Next recommended task: implement a backend-only deterministic Simulation Lab toy service with synthetic fixtures, allowed/forbidden intervention validation, and offline benchmarks. Do not build frontend visualization or enable real APIs/LLMs until the toy service and guardrails pass.
+
+QA stabilization update, 2026-05-18:
+
+- Revalidated the Simulation Lab design document set against the DeepSearch research report and current Sentigraph roadmap.
+- Confirmed `docs/simulation_lab_design.md` covers purpose, ethical scope, hybrid agent-based architecture, echo chamber/opinion bubble modeling, agent/network/message/attention/intervention layers, output metrics, and links to forecasting, monitoring, V1.5 topic risk, and reports.
+- Confirmed `docs/simulation_research_basis.md` covers DeGroot, Friedkin-Johnsen, Hegselmann-Krause, Deffuant-Weisbuch, Granovetter thresholds, Watts cascades, complex contagion, homophily/echo chambers, source credibility, framing, agenda-setting/issue-attention, SCCT, Image Repair, inoculation/prebunking/correction, and ODD/ODD+D/ABM validation with core idea, variables, Sentigraph mapping, priority, limitations, and ethical constraints.
+- Confirmed `docs/simulation_model_variables.md` includes Agent, Message, Network, FeedPolicy, Intervention, and SimulationOutput conceptual schemas with the required opinion, attention, bias, credibility, framing, affordance, bridge, and cross-cutting exposure variables.
+- Confirmed `docs/simulation_ethics.md` clearly separates allowed transparent crisis-response simulations from forbidden fake consensus, bot amplification, covert seeding, fake events, deceptive diversion, vulnerable-group manipulation, individual targeting, account-level influenceability scoring, suppression, and harassment.
+- Confirmed `docs/simulation_mvp_roadmap.md` stages MVP, V2, and later work with the requested deterministic toy simulator, FJ persistence, bounded-confidence, threshold expression, static homophilous network, source credibility/framing, attention decay, transparent interventions, 2D bubble visualization, Deffuant, Watts, complex contagion, platform affordances, Hawkes bursts, dynamic rewiring, cross-platform diffusion, calibration, replay validation, and guarded optional LLM narrative generation.
+- Confirmed `docs/simulation_validation_plan.md` includes ODD documentation, docking, historical replay, sensitivity analysis, ablation tests, uncertainty labels, assumption logging, estimated-versus-assumed parameter separation, and benchmark integration.
+- Full backend validation passed with `python -m pytest` (`451 passed in 4.37s`).
+- Offline benchmark validation passed with `python scripts/run_offline_benchmarks.py` (`447 passed, 0 failed, 0 warnings`; latest regression status `no_regression`).
+- Frontend build was not run because this QA pass changed documentation only and no frontend files changed.
+- No product code, dependencies, real APIs, real LLM APIs, real crawlers, live public fetching, or manipulation tactic implementation was introduced.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
 
 ## 7. Next Recommended Task
 
-Recommended next development task: run a browser/manual Risk Monitor forecast explanation click-through on seeded local data, then prepare Simulation Lab / advanced V2 forecasting requirements without enabling real LLM calls, real platform calls, live public fetching, or real API integrations.
+Recommended next development task: implement a backend-only deterministic Simulation Lab toy service with synthetic fixtures, allowed/forbidden intervention validation, and offline benchmarks.
 
 Suggested scope:
 
 - Do not enable V2 scoring yet.
 - Do not replace V1/V1.5 with full V2 during the next task.
 - Do not add a frontend control that enables real LLM calls or edits API keys.
+- Do not add Simulation Lab frontend visualization until the backend toy simulator, safety gates, and benchmarks pass.
+- Do not use real accounts, real platform APIs, real LLM APIs, live public fetching, or crawler behavior.
+- Keep the first simulator synthetic, deterministic, aggregate-only, and benchmarked.
 - Keep the current mock pipeline and V1.5 report APIs stable.
 - If alert refinement continues next, keep it manual/mock-only. Notification delivery must remain local simulation only until explicit external-channel configuration and tests are added.
 - If Reddit integration is selected next, keep real API mode disabled until approval is granted and use sanitized fixtures or mocked clients only.

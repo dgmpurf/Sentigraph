@@ -95,6 +95,7 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 
 ### Future Advanced Features
 
+- Ethical Simulation Lab: design-only roadmap for aggregate scenario rehearsal and transparent crisis-response comparison. It explicitly forbids fake consensus, bot amplification, covert seeding, deceptive diversion, vulnerable-group manipulation, and individual-level targeting. See `docs/simulation_lab_design.md`.
 - Reddit real adapter。
 - 中国平台官方 API 集成。
 - crawler-later 平台的公开页面 parser 和 selector profile。
