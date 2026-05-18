@@ -20,6 +20,7 @@ Simulation Lab is not a persuasion optimizer. It must not generate or recommend 
 Allowed scope:
 
 - Aggregate-level comparison of transparent response packages.
+- Aggregate-level comparison of lawful, platform-authorized, policy-based content moderation actions.
 - Synthetic or sanitized scenario rehearsal.
 - Crisis communication planning that is factual, accountable, and reviewable.
 - Model outputs with uncertainty labels and assumption logs.
@@ -31,7 +32,7 @@ Out of scope:
 - Individual persuasion targeting.
 - Microtargeted emotional manipulation.
 - Fake events, fake consensus, fake supporters, or covert influencer seeding.
-- Bot amplification, sockpuppets, astroturfing, suppression, harassment, or deceptive attention diversion.
+- Bot amplification, sockpuppets, astroturfing, illegal suppression, covert censorship, harassment, or deceptive attention diversion.
 
 The ethics rules are expanded in [simulation_ethics.md](simulation_ethics.md).
 
@@ -176,6 +177,7 @@ Allowed intervention types:
 - Third-party evidence.
 - Misinformation correction.
 - Prebunking or inoculation.
+- Lawful/platform-authorized content moderation and visibility interventions when they are based on explicit policy and are reviewed.
 
 Each intervention should carry:
 
@@ -191,6 +193,67 @@ Each intervention should carry:
 - `target_scope`, limited to aggregate audience or topic segment.
 
 The system should compare intervention packages; it should not optimize manipulative tactics.
+
+### Content Moderation and Visibility Intervention Layer
+
+Simulation Lab should also model lawful, platform-authorized, policy-based moderation actions as legitimate scenario variables. These actions are not deceptive manipulation when they are grounded in platform rules, legal process, safety policy, or account/content governance, and when the simulator treats them as auditable interventions with tradeoffs.
+
+Supported moderation and visibility intervention types:
+
+- `content_removal`: removal of a specific policy-violating content item or content class.
+- `comment_closure`: closing or limiting comments on a thread, post, or aggregate scenario surface.
+- `account_restriction`: platform-authorized restriction of accounts that violate policy, modeled only at aggregate cohort level.
+- `visibility_reduction`: reduced ranking, reach, recommendation, or distribution for policy-violating or low-integrity content.
+- `platform_labeling`: adding context, warning, fact-check, disputed-content, or policy labels.
+- `policy_enforcement_notice`: transparent explanation that a moderation action was taken under a specific policy.
+
+The model should evaluate tradeoffs rather than assume moderation is always beneficial. Key variables:
+
+- `target_message_reach`: estimated current reach of the content or message being moderated.
+- `residual_copies`: estimated remaining copies, mirrors, screenshots, or reposts after an action.
+- `screenshot_probability`: chance that users preserve and recirculate the original content.
+- `repost_migration_probability`: chance that discussion migrates to another thread, platform, or community.
+- `perceived_suppression`: aggregate perception that the action is unfair or censorial.
+- `policy_violation_clarity`: how clear and explainable the policy violation is.
+- `legitimacy_of_removal`: aggregate legitimacy score based on policy clarity, evidence, and process.
+- `public_explanation_quality`: quality of the notice or explanation accompanying enforcement.
+- `reactance_amplification`: increase in resistance caused by perceived restriction.
+- `martyr_effect`: risk that the removed/restricted actor or content gains symbolic support.
+- `cross_platform_spillover`: likelihood that attention moves to other platforms or communities.
+- `neutral_audience_negative_shift`: modeled negative shift among neutral observers.
+- `hard_opposition_negative_shift`: modeled negative shift among already opposed groups.
+
+Moderation scenarios should compare actions such as:
+
+- no response
+- clarification only
+- labeling plus clarification
+- removal without explanation
+- removal plus transparent policy explanation
+- comment closure plus progress update
+
+Allowed outputs are aggregate tradeoff metrics:
+
+- `exposure_reduction`
+- `backlash_cost`
+- `trust_loss`
+- `spillover_risk`
+- `net_risk_change`
+- `removal_legitimacy_score`
+- `neutral_audience_impact`
+- `opposition_group_impact`
+
+Forbidden moderation modeling:
+
+- illegal suppression
+- covert censorship
+- targeting named individuals for silencing
+- evading platform governance
+- manufacturing fake consensus after removal
+- using bot amplification to bury criticism
+- deceptive attention diversion from the moderated issue
+
+Moderation modeling should help users decide whether a lawful enforcement action needs explanation, whether labeling may be less risky than removal, or whether a removal may reduce exposure while increasing backlash. It must not produce harassment lists, suppression playbooks, or evasion tactics.
 
 ## Output Metrics
 
@@ -212,6 +275,14 @@ MVP output metrics should be aggregate, explainable, and uncertainty-labeled:
 - Intervention harm warning.
 - Ethical-risk score.
 - Assumption sensitivity.
+- Exposure reduction, when moderation or visibility interventions are simulated.
+- Backlash cost.
+- Trust loss.
+- Spillover risk.
+- Net risk change.
+- Removal legitimacy score.
+- Neutral audience impact.
+- Opposition group impact.
 
 No output should identify individual users, recommend account-level persuasion targets, or rank vulnerable groups by influenceability.
 
@@ -237,6 +308,7 @@ The first implementation should be a deterministic toy simulator:
 - No live public fetching.
 - No persuasion targeting.
 - No manipulation tactics.
+- Content moderation simulations must remain lawful, policy-based, transparent, and aggregate-level.
 - Benchmark-first validation.
 
 Implementation should not begin until the ethics, validation, and benchmark acceptance criteria are reviewed.

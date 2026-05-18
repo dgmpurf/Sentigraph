@@ -1048,6 +1048,28 @@ QA stabilization update, 2026-05-18:
 
 Next recommended task: build a frontend-only aggregate Simulation Lab page with simple bubble visualization, scenario controls limited to allowed intervention types, and no real API/LLM toggles.
 
+## 6.11 Simulation Lab Moderation Design Correction
+
+Update date: 2026-05-18.
+
+Status: documentation-only design correction complete.
+
+What changed:
+
+- Updated `docs/simulation_lab_design.md` with a `Content Moderation and Visibility Intervention Layer`.
+- Added legitimate lawful/platform-authorized intervention types: `content_removal`, `comment_closure`, `account_restriction`, `visibility_reduction`, `platform_labeling`, and `policy_enforcement_notice`.
+- Added moderation tradeoff variables for reach, residual copies, screenshot/repost migration, perceived suppression, policy clarity, legitimacy, explanation quality, reactance, martyr effect, spillover, neutral-audience impact, and hard-opposition impact.
+- Added aggregate output metrics for exposure reduction, backlash cost, trust loss, spillover risk, net risk change, removal legitimacy, neutral audience impact, and opposition group impact.
+- Updated `docs/simulation_ethics.md` to allow lawful/platform-authorized moderation simulation while continuing to forbid illegal suppression, covert censorship, fake consensus, bot amplification, deceptive distraction, individual silencing, and governance evasion.
+- Updated `docs/simulation_model_variables.md` with conceptual `RemovalIntervention` and `BacklashModel` schemas.
+- Updated `docs/simulation_mvp_roadmap.md` so MVP scenario comparisons may include simple policy-based content removal versus no response, clarification, and removal plus transparent explanation.
+
+Safety and scope:
+
+- This was documentation only.
+- No product code, dependencies, real APIs, real LLM APIs, live public fetch, crawlers, or moderation automation were added.
+- The design frames moderation modeling as aggregate tradeoff analysis, not deceptive manipulation or illegal suppression.
+
 ## 7. Next Recommended Task
 
 Recommended next development task: build a frontend-only aggregate Simulation Lab page with simple bubble visualization.

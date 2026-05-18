@@ -176,6 +176,80 @@ Rules:
 - No field may specify account lists, vulnerable groups, or individual targets.
 - Interventions must be reviewable and truthful.
 
+## RemovalIntervention Schema
+
+Removal and visibility interventions model lawful, platform-authorized, policy-based moderation effects. They are not instructions for illegal suppression or covert censorship.
+
+```yaml
+RemovalIntervention:
+  intervention_id: string
+  intervention_type: enum       # content_removal, comment_closure, account_restriction, visibility_reduction, platform_labeling, policy_enforcement_notice
+  policy_basis: string          # policy or lawful authority; required for removal/restriction scenarios
+  authorization_source: enum    # platform_policy, legal_process, content_owner_policy, community_rules, unknown
+  target_scope: enum            # content_class, thread, topic_segment, platform_segment, aggregate
+  target_message_reach: number  # 0.0 to 1.0, estimated aggregate reach of moderated content
+  policy_violation_clarity: number # 0.0 to 1.0
+  legitimacy_of_removal: number # 0.0 to 1.0
+  public_explanation_quality: number # 0.0 to 1.0
+  residual_copies: number       # 0.0 to 1.0
+  screenshot_probability: number # 0.0 to 1.0
+  repost_migration_probability: number # 0.0 to 1.0
+  expected_visibility_reduction: number # 0.0 to 1.0
+  paired_response:
+    clarification: boolean
+    policy_enforcement_notice: boolean
+    appeal_or_review_path: boolean
+  safety_flags:
+    lawful_or_platform_authorized: boolean
+    no_individual_target_list: true
+    no_governance_evasion: true
+```
+
+Allowed values for `intervention_type`:
+
+- `content_removal`
+- `comment_closure`
+- `account_restriction`
+- `visibility_reduction`
+- `platform_labeling`
+- `policy_enforcement_notice`
+
+Rules:
+
+- `policy_basis` and `authorization_source` must be explicit before a removal, restriction, or visibility-reduction scenario is considered legitimate.
+- Account restriction must remain aggregate and policy-based. It must not name or rank individual accounts.
+- The schema must not store URLs to private data, account handles, or target lists.
+- Removal can be compared against labeling, clarification, or no-response baselines, but the output must be a tradeoff estimate, not an instruction to suppress criticism.
+
+## BacklashModel Schema
+
+The backlash model estimates the secondary effects of moderation or visibility interventions.
+
+```yaml
+BacklashModel:
+  perceived_suppression: number          # 0.0 to 1.0
+  reactance_amplification: number        # 0.0 to 1.0
+  martyr_effect: number                  # 0.0 to 1.0
+  cross_platform_spillover: number       # 0.0 to 1.0
+  neutral_audience_negative_shift: number # -1.0 to 1.0
+  hard_opposition_negative_shift: number # -1.0 to 1.0
+  exposure_reduction: number             # 0.0 to 1.0
+  backlash_cost: number                  # 0.0 to 100.0
+  trust_loss: number                     # 0.0 to 100.0
+  spillover_risk: number                 # 0.0 to 100.0
+  net_risk_change: number                # -100.0 to 100.0
+  removal_legitimacy_score: number       # 0.0 to 100.0
+  neutral_audience_impact: number        # -100.0 to 100.0
+  opposition_group_impact: number        # -100.0 to 100.0
+```
+
+Interpretation:
+
+- High `exposure_reduction` can coexist with high `backlash_cost`.
+- High `policy_violation_clarity`, `legitimacy_of_removal`, and `public_explanation_quality` should reduce perceived suppression in a lawful scenario.
+- High `screenshot_probability` and `repost_migration_probability` should increase spillover risk.
+- Outputs are aggregate tradeoff estimates and must not become target selection, harassment, or evasion guidance.
+
 ## FeedPolicy Schema
 
 Feed policies describe aggregate visibility assumptions for a platform-like environment.
@@ -242,6 +316,14 @@ SimulationOutput:
     attention_half_life: number
     cross_cutting_exposure_rate: number
     ethical_risk_score: number
+    exposure_reduction: number
+    backlash_cost: number
+    trust_loss: number
+    spillover_risk: number
+    net_risk_change: number
+    removal_legitimacy_score: number
+    neutral_audience_impact: number
+    opposition_group_impact: number
   topic_metrics:
     - topic_id: string
       topic: string

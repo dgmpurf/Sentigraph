@@ -24,6 +24,9 @@ Simulation Lab may support:
 - Progress update simulation.
 - Third-party evidence simulation.
 - Misinformation correction simulation.
+- Simulating lawful/platform-authorized content moderation effects.
+- Simulating removal vs labeling vs clarification tradeoffs.
+- Estimating backlash, perceived suppression, legitimacy, and spillover risk.
 - Aggregate-level crisis-response comparison.
 
 Examples:
@@ -31,6 +34,8 @@ Examples:
 - Compare whether a factual clarification plus FAQ may reduce confusion faster than a delayed statement.
 - Compare an apology plus compensation package against a progress-update-only package.
 - Test whether third-party verification improves correction uptake in an aggregate scenario.
+- Compare policy labeling, content removal, and removal plus transparent explanation for a policy-violating high-reach post.
+- Estimate whether closing comments may reduce immediate exposure but increase cross-platform spillover or trust loss.
 - Identify whether the current history is too thin and monitoring should continue before making claims.
 
 ## Forbidden Uses
@@ -45,6 +50,10 @@ Simulation Lab must not support:
 - Manipulation of vulnerable groups.
 - Individual-level persuasion targeting.
 - Account-level influenceability scoring.
+- Illegal suppression.
+- Covert censorship.
+- Targeting individuals for silencing.
+- Evading platform governance.
 - Suppression or harassment tactics.
 
 Examples of blocked requests:
@@ -54,7 +63,39 @@ Examples of blocked requests:
 - "Simulate how many bots are needed to drown out criticism."
 - "Identify bridge users for covert seeding."
 - "Distract attention with an unrelated controversy."
+- "Find people to silence so the criticism disappears."
+- "Model how to hide lawful criticism without platform review."
+- "Bypass platform governance to reduce visibility."
 - "Exploit fear, identity threat, or isolation anxiety."
+
+## Content Moderation and Visibility Ethics
+
+Allowed moderation simulations:
+
+- Lawful or platform-authorized content removal based on explicit policy.
+- Comment closure when a platform, owner, or moderator has legitimate authority.
+- Account restriction modeled only as aggregate policy enforcement, not real account targeting.
+- Visibility reduction or ranking changes modeled as platform governance variables.
+- Platform labeling, fact-check labels, disputed-content labels, and policy-enforcement notices.
+- Removal versus labeling versus clarification tradeoff analysis.
+- Backlash, trust-loss, legitimacy, spillover, neutral-audience, and hard-opposition impact estimates.
+
+Required safeguards:
+
+- The scenario must identify the policy basis or lawful authority for the moderation action.
+- The simulator should compare exposure reduction against backlash, trust loss, and spillover risk.
+- Outputs must remain aggregate and must not list real accounts, real posts, or targets.
+- Any policy enforcement notice should be transparent, factual, and reviewable.
+- The model must avoid implying that lawful criticism should be hidden merely because it is inconvenient.
+
+Forbidden moderation uses:
+
+- Illegal suppression or covert censorship.
+- Silencing individuals or communities outside a lawful/platform-authorized process.
+- Evading platform governance, appeals, moderation review, legal requirements, or audit trails.
+- Pairing removal with fake consensus, bot amplification, fabricated support, or deceptive diversion.
+- Harassment, doxxing, intimidation, or retaliation against speakers.
+- Account-level influenceability scoring or target lists for restriction.
 
 ## Ethical Boundary for Bridge Metrics
 
@@ -94,6 +135,8 @@ The system should warn when an intervention:
 - Uses inflammatory or accusatory language.
 - Attempts to divert attention from the core issue.
 - Relies on fabricated or unverifiable sources.
+- Uses content removal without a clear policy basis.
+- Has high perceived-suppression, martyr-effect, or cross-platform-spillover risk.
 
 ## Output Restrictions
 
@@ -106,6 +149,7 @@ Allowed outputs:
 - Intervention package summaries.
 - Ethical-risk warnings.
 - Monitoring recommendations.
+- Lawful moderation tradeoff metrics such as exposure reduction, backlash cost, trust loss, spillover risk, and removal legitimacy.
 
 Forbidden outputs:
 
@@ -116,6 +160,8 @@ Forbidden outputs:
 - Covert seeding plans.
 - Harassment or suppression playbooks.
 - Message variants designed to exploit vulnerabilities.
+- Lists of individuals or accounts to silence.
+- Instructions for evading platform governance.
 
 ## Data Rules
 

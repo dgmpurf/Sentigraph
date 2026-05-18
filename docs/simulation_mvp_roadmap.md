@@ -18,6 +18,7 @@ MVP scope:
 - Source credibility and framing.
 - Attention decay.
 - Transparent intervention packages.
+- Simple lawful content-removal and visibility-intervention scenario comparison.
 - Simple 2D bubble visualization.
 
 Suggested MVP work packages:
@@ -49,6 +50,7 @@ Suggested MVP work packages:
 
 6. Intervention layer
    - Implement transparent intervention packages only.
+   - Include policy-based moderation actions only when lawful or platform-authorized.
    - Add safety warnings for unsupported, vague, or overclaiming interventions.
    - Block forbidden tactic categories.
 
@@ -59,6 +61,11 @@ Suggested MVP work packages:
    - Cross-cutting exposure.
    - Correction uptake.
    - Trust recovery.
+   - Exposure reduction.
+   - Backlash cost.
+   - Trust loss.
+   - Spillover risk.
+   - Removal legitimacy score.
    - Ethical-risk warnings.
 
 8. Frontend visualization
@@ -72,7 +79,16 @@ Suggested MVP work packages:
    - Bounded-confidence fragmentation cases.
    - Threshold expression cases.
    - Intervention package comparison cases.
+   - Content-removal tradeoff cases.
    - Ethics guardrail rejection cases.
+
+MVP moderation scenario comparisons may include:
+
+- remove high-reach negative video
+- no response
+- clarification
+- removal plus transparent policy explanation
+- labeling plus clarification
 
 MVP acceptance:
 
@@ -83,6 +99,7 @@ MVP acceptance:
 - No live public fetch.
 - No individual targeting.
 - No manipulation tactic output.
+- Moderation scenarios must be lawful/platform-authorized, policy-based, transparent, and aggregate-level.
 - Clear uncertainty and assumption labels.
 
 ## V2: Richer Dynamics After MVP Validation
@@ -132,6 +149,8 @@ Pause implementation if:
 - A requested output ranks individual people or accounts.
 - A scenario asks for fake consensus or bot amplification.
 - A scenario asks for covert seeding or deceptive diversion.
+- A scenario asks for illegal suppression, covert censorship, or evading platform governance.
+- A scenario asks for individual accounts to be silenced or ranked for restriction.
 - Model results are presented as certain predictions rather than scenario estimates.
 - Benchmarks become flaky or impossible to explain.
 
