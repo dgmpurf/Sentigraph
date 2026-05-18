@@ -263,7 +263,7 @@ function UsageRecords({ records = [] }) {
       columns={columns}
       dataSource={records}
       pagination={false}
-      rowKey={(record, index) => `${record.provider}-${record.operation}-${record.timestamp}-${index}`}
+      rowKey="record_key"
       scroll={{ x: 1010 }}
     />
   )

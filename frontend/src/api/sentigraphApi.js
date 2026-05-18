@@ -807,16 +807,37 @@ function normalizeLlmUsage(data) {
 
 function normalizeLlmUsageRecord(data) {
   if (!data || typeof data !== 'object') return null
+  const provider = String(data.provider || '')
+  const operation = String(data.operation || '')
+  const timestamp = data.timestamp ? String(data.timestamp) : ''
+  const inputChars = Number(data.input_chars || 0)
+  const outputChars = Number(data.output_chars || 0)
+  const estimatedInputTokens = Number(data.estimated_input_tokens || 0)
+  const estimatedOutputTokens = Number(data.estimated_output_tokens || 0)
+  const success = data.success !== false
+  const failureCategory = data.failure_category ? String(data.failure_category) : null
+
   return {
-    provider: String(data.provider || ''),
-    operation: String(data.operation || ''),
-    input_chars: Number(data.input_chars || 0),
-    output_chars: Number(data.output_chars || 0),
-    estimated_input_tokens: Number(data.estimated_input_tokens || 0),
-    estimated_output_tokens: Number(data.estimated_output_tokens || 0),
-    timestamp: data.timestamp ? String(data.timestamp) : '',
-    success: data.success !== false,
-    failure_category: data.failure_category ? String(data.failure_category) : null,
+    record_key: [
+      provider,
+      operation,
+      timestamp,
+      inputChars,
+      outputChars,
+      estimatedInputTokens,
+      estimatedOutputTokens,
+      success ? 'ok' : 'failed',
+      failureCategory || 'none',
+    ].join('-'),
+    provider,
+    operation,
+    input_chars: inputChars,
+    output_chars: outputChars,
+    estimated_input_tokens: estimatedInputTokens,
+    estimated_output_tokens: estimatedOutputTokens,
+    timestamp,
+    success,
+    failure_category: failureCategory,
   }
 }
 
