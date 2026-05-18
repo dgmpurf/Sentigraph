@@ -13,6 +13,27 @@ Simulation Lab must support ethical public-interest crisis response. It must not
 - Human-reviewed: no automatic public response or operational action should be triggered by a simulation.
 - Offline-first: MVP simulations should use synthetic or sanitized inputs and should not call real platform APIs or real LLM APIs.
 
+## Event Frame and Audience Initialization Ethics
+
+Event Frame and Audience Initialization may convert aggregate public comments, topic risks, monitoring snapshots, and synthetic baselines into an initial Simulation Lab frame. This must remain a cohort-level modeling step, not a profiling system.
+
+Allowed:
+
+- Aggregate event decomposition into public sub-issues such as product quality, response delay, pricing dispute, safety/legal issue, brand trust, suspected manipulation, public figure controversy, and workplace/company issue.
+- Aggregate audience segments such as affected users, core opposition, mild opposition, neutral observers, supporters, authority-trusting users, bridge nodes, and an external public baseline.
+- Synthetic or academic ordinary-public baselines for scenario comparison.
+- Persona clusters based on aggregate public historical behavior and synthetic assumptions.
+- Baseline gap analysis that warns when the observed frame is narrower, more negative, more positive, polarized, manipulation-suspected, or insufficient.
+
+Forbidden:
+
+- Individual persuasion profiles.
+- Account-level influenceability scoring.
+- Lists of bridge accounts, creator targets, or people to silence.
+- Hidden psychographic inference for named people.
+- Covert audience targeting or microtargeted emotional manipulation.
+- Treating a narrow observed community as the whole public without uncertainty and representativeness warnings.
+
 ## Allowed Uses
 
 Simulation Lab may support:
@@ -97,6 +118,32 @@ Forbidden moderation uses:
 - Pairing removal with fake consensus, bot amplification, fabricated support, or deceptive diversion.
 - Harassment, doxxing, intimidation, or retaliation against speakers.
 - Account-level influenceability scoring or target lists for restriction.
+
+## Creator and Expert Communication Ethics
+
+Simulation Lab may model disclosed, truthful, and transparent creator or expert communication only as aggregate scenario comparison.
+
+Allowed:
+
+- Disclosed creator education.
+- Expert explanation.
+- Third-party evidence interpretation.
+- FAQ amplification.
+- Transparent creator collaboration.
+- Real user support-channel explanation.
+- Public correction by accountable parties.
+
+Forbidden:
+
+- Covert paid praise.
+- Fake grassroots.
+- Undisclosed paid defense.
+- False testimonials.
+- Harassment campaigns.
+- Fake consensus.
+- Bot amplification.
+- Covert influencer seeding.
+- Individual-level creator targeting based on hidden influenceability.
 
 ## Ethical Boundary for Bridge Metrics
 

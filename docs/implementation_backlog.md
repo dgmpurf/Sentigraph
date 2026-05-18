@@ -10,7 +10,7 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### Simulation Lab MVP Backend and Frontend Scaffold
 
-Status: backend implemented and QA-stabilized; frontend bubble visualization implemented and QA-stabilized; A/B intervention comparison implemented and QA-stabilized on 2026-05-18. Content visibility intervention backlash modeling is implemented and QA-stabilized on 2026-05-18.
+Status: backend implemented and QA-stabilized; frontend bubble visualization implemented and QA-stabilized; A/B intervention comparison implemented and QA-stabilized on 2026-05-18. Content visibility intervention backlash modeling is implemented and QA-stabilized on 2026-05-18. Event Frame and Audience Initialization design is documentation-complete and QA-stabilized on 2026-05-18.
 
 Completed:
 
@@ -25,6 +25,8 @@ Completed:
 - Added deterministic content visibility backlash modeling for lawful/platform-authorized actions, including exposure reduction, backlash cost, trust loss, spillover risk, removal legitimacy, neutral-audience impact, hard-opposition impact, and human-review recommendations.
 - Added frontend A/B visibility tradeoff panel for `content_removal_with_explanation`, `visibility_reduction`, and `platform_labeling` when exposed by the backend ethics policy.
 - Added Simulation Lab sidebar navigation and frontend API helpers for the existing simulation endpoints.
+- Added Event Frame and Audience Initialization design docs for event decomposition, aggregate audience segments, observed frame initialization, baseline gap analysis, strategy policy, visibility tradeoffs, and disclosed creator/expert communication modeling.
+- QA-stabilized Event Frame and Audience Initialization terminology, schema coverage, V1.5/monitoring/forecasting relationships, attention/action-threshold mapping, creator/expert communication boundaries, and aggregate-only safety wording.
 
 QA coverage:
 
@@ -34,13 +36,17 @@ QA coverage:
 - Browser smoke also revalidated A/B strategy comparison for `no_response` vs `clarification`, `no_response` vs `apology`, `no_response` vs `third_party_evidence`, `clarification` vs `misinformation_correction`, and `no_response` vs `content_removal_with_explanation`; forbidden intervention values remain absent from selectable controls.
 - Content visibility QA coverage now includes supported visibility type registration, high-reach exposure reduction sensitivity, low-legitimacy backlash/trust-loss increase, transparent-explanation backlash reduction, screenshot-driven spillover, reactance-driven hard-opposition impact, neutral-audience high concern, 0-100 score clamping, required aggregate scenario groups, API visibility-result shape, aggregate-only output, and target-list absence.
 - Latest validation: `python -m pytest` passed (`488 passed in 4.17s`), `python scripts/run_offline_benchmarks.py` passed (`483 passed, 0 failed, 0 warnings`), and `npm run build` passed from `frontend` in 7.90s with the existing non-blocking Ant Design/ECharts vendor chunk warning.
+- Event Frame design QA validation: `python -m pytest` passed (`488 passed in 4.03s`) and `python scripts/run_offline_benchmarks.py` passed (`483 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
 - Frontend build passed for the Simulation Lab page with the existing non-blocking Ant Design/ECharts chunk warning.
 - QA fixes normalized simulation numeric ranges, made `intervention_type` visible on event cards, strengthened deterministic/aggregate safety copy, made both rising/falling explanation cards visible, made A/B comparison scalar summary fields explicit, and removed noisy shared Ant Design `Spin` `tip` usage.
 
 Future work:
 
 - Add richer A/B replay controls or a safe aggregate assumption editor after A/B comparison remains stable.
+- Implement the case-to-simulation EventFrame and AudienceInitialization initializer from synthetic fixtures and existing aggregate case outputs.
+- Add offline benchmark cases for aligned, more-negative, more-positive, polarized, manipulation-suspected, and insufficient-data frames.
 - Keep initializing simulation from real monitoring cases and advanced animation as future work.
+- Keep real-data event-frame initialization, empirical calibration, creator communication execution, and platform action execution as future/manual-review-only work.
 - Keep richer empirical calibration, platform-policy-specific moderation rules, real-data initialization, automatic action execution, and platform enforcement integration as future work.
 - Expand ABM validation with sensitivity, docking, ablation, and richer synthetic benchmarks.
 - Keep empirical calibration, dynamic network rewiring, cross-platform diffusion, and optional real LLM narrative generation as future work behind safeguards.
@@ -675,6 +681,10 @@ Completed design artifacts:
 - `docs/simulation_ethics.md` defines allowed and forbidden uses.
 - `docs/simulation_mvp_roadmap.md` stages MVP, V2, and later work.
 - `docs/simulation_validation_plan.md` defines ODD documentation, docking, sensitivity, ablation, assumption logging, uncertainty labels, and benchmark integration.
+- `docs/simulation_event_frame_design.md` defines the Event Frame layer that decomposes observed events into simulation-ready aggregate sub-issues.
+- `docs/simulation_audience_initialization.md` defines aggregate audience segments, observed community initialization, persona clusters, and synthetic ordinary-public baselines.
+- `docs/simulation_baseline_gap_analysis.md` defines comparison between an observed frame and an external public baseline.
+- `docs/simulation_strategy_policy.md` defines ethical strategy implications, content visibility tradeoffs, and disclosed creator/expert communication modeling.
 
 Simulation Lab MVP implementation tasks:
 
@@ -696,11 +706,13 @@ Forbidden implementation paths:
 
 Recommended next task:
 
-- Add richer A/B replay controls or a safe aggregate assumption editor while keeping the simulator offline, deterministic, aggregate-only, and ethics-bounded.
+- Implement the case-to-simulation EventFrame and AudienceInitialization initializer while keeping the simulator offline, deterministic, aggregate-only, and ethics-bounded.
 
 QA stabilization result, 2026-05-18:
 
 - Simulation Lab documentation checklist is complete across design, research basis, model variables, ethics, MVP roadmap, and validation plan.
+- Event Frame and Audience Initialization documentation is complete across event decomposition, aggregate audience setup, baseline gap analysis, and safe strategy policy.
+- Event Frame design QA is complete; real empirical calibration remains future work and GitHub Actions CI remains intentionally disabled.
 - Documentation now explicitly preserves the project boundary: aggregate scenario rehearsal only, synthetic/offline MVP first, no real APIs, no real LLM APIs, no live fetching, and no manipulation tactic implementation.
 - Simulation Lab MVP backend and frontend scaffolds are implemented; frontend QA stabilization is complete.
 - Empirical calibration remains future work after synthetic fixtures, benchmark docking, sensitivity analysis, and historical replay planning are stable.
