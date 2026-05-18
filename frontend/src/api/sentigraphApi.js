@@ -77,6 +77,21 @@ export async function getBenchmarkRegression() {
   return normalizeBenchmarkRegression(data)
 }
 
+export async function getSimulationDemoScenario() {
+  const { data } = await apiClient.get(`${API_PREFIX}/simulation/demo-scenario`)
+  return normalizeSimulationScenario(data)
+}
+
+export async function getSimulationEthicsPolicy() {
+  const { data } = await apiClient.get(`${API_PREFIX}/simulation/ethics-policy`)
+  return normalizeSimulationEthicsPolicy(data)
+}
+
+export async function runSimulation(scenario) {
+  const { data } = await apiClient.post(`${API_PREFIX}/simulation/run`, scenario)
+  return normalizeSimulationRunResult(data)
+}
+
 export async function listAnalysisCases() {
   const { data } = await apiClient.get(`${API_PREFIX}/cases`)
   return Array.isArray(data) ? data : []
@@ -952,6 +967,289 @@ function normalizeBenchmarkSuiteChange(data) {
   }
 }
 
+function normalizeSimulationScenario(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      scenario_id: '',
+      name: '',
+      description: '',
+      topic: 'brand_crisis',
+      agents: [],
+      network_edges: [],
+      messages: [],
+      interventions: [],
+      config: { steps: 6, seed: null, model_version: 'simulation_lab_mvp_v1' },
+      responsibility_level: 0.5,
+      metadata: {},
+    }
+  }
+  return {
+    ...data,
+    scenario_id: String(data.scenario_id || ''),
+    name: String(data.name || ''),
+    description: String(data.description || ''),
+    topic: String(data.topic || 'brand_crisis'),
+    agents: Array.isArray(data.agents) ? data.agents.map(normalizeSimulationAgent).filter(Boolean) : [],
+    network_edges: Array.isArray(data.network_edges)
+      ? data.network_edges.map(normalizeSimulationEdge).filter(Boolean)
+      : [],
+    messages: Array.isArray(data.messages)
+      ? data.messages.map(normalizeSimulationMessage).filter(Boolean)
+      : [],
+    interventions: Array.isArray(data.interventions)
+      ? data.interventions.map(normalizeSimulationIntervention).filter(Boolean)
+      : [],
+    config: normalizeSimulationConfig(data.config),
+    responsibility_level: normalizeRatio(data.responsibility_level, 0.5),
+    metadata: data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata) ? data.metadata : {},
+  }
+}
+
+function normalizeSimulationAgent(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    agent_id: String(data.agent_id || ''),
+    community_id: String(data.community_id || 'neutral'),
+    latent_opinion: normalizeSignedScore(data.latent_opinion),
+    expressed_opinion: normalizeSignedScore(data.expressed_opinion),
+    prior_anchor: normalizeSignedScore(data.prior_anchor),
+    stubbornness: normalizeRatio(data.stubbornness, 0.5),
+    confidence_radius: normalizeBounded(data.confidence_radius, 0, 2, 0.5),
+    action_threshold: normalizeRatio(data.action_threshold, 0.5),
+    confirmation_bias: normalizeRatio(data.confirmation_bias, 0.5),
+    negativity_weight: normalizeBounded(data.negativity_weight, 0, 3, 1),
+    reactance: normalizeRatio(data.reactance, 0.3),
+    authority_trust: normalizeRatio(data.authority_trust, 0.5),
+    conformity: normalizeRatio(data.conformity, 0.4),
+    attention_budget: normalizeRatio(data.attention_budget, 0.5),
+    fatigue: normalizeRatio(data.fatigue, 0),
+    identity_group: String(data.identity_group || 'general_public'),
+    status: String(data.status || 'active'),
+  }
+}
+
+function normalizeSimulationEdge(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    source_agent_id: String(data.source_agent_id || ''),
+    target_agent_id: String(data.target_agent_id || ''),
+    weight: normalizeRatio(data.weight, 1),
+    bridge_score: normalizeRatio(data.bridge_score, 0),
+    relationship_type: String(data.relationship_type || 'peer'),
+  }
+}
+
+function normalizeSimulationMessage(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    message_id: String(data.message_id || ''),
+    topic: String(data.topic || ''),
+    source_type: String(data.source_type || 'public_posts'),
+    source_credibility: normalizeRatio(data.source_credibility, 0.5),
+    stance_direction: normalizeSignedScore(data.stance_direction),
+    emotional_intensity: normalizeRatio(data.emotional_intensity, 0),
+    evidence_strength: normalizeRatio(data.evidence_strength, 0),
+    framing: String(data.framing || 'neutral'),
+    novelty: normalizeRatio(data.novelty, 0.5),
+    repetition: normalizeRatio(data.repetition, 0),
+    platform_reach: normalizeRatio(data.platform_reach, 0.5),
+  }
+}
+
+function normalizeSimulationIntervention(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    intervention_id: String(data.intervention_id || ''),
+    intervention_type: String(data.intervention_type || 'no_response'),
+    topic: String(data.topic || 'brand_crisis'),
+    source_type: String(data.source_type || 'official'),
+    message: String(data.message || ''),
+    target_scope: String(data.target_scope || 'aggregate'),
+    publication_step: Number(data.publication_step || 1),
+    source_credibility: normalizeRatio(data.source_credibility, 0.75),
+    stance_direction: normalizeSignedScore(data.stance_direction),
+    emotional_intensity: normalizeRatio(data.emotional_intensity, 0.25),
+    evidence_strength: normalizeRatio(data.evidence_strength, 0.65),
+    framing: String(data.framing || 'clarifying'),
+    responsibility_acknowledgement: normalizeRatio(data.responsibility_acknowledgement, 0.4),
+    transparency_level: normalizeRatio(data.transparency_level, 0.7),
+    intensity: normalizeRatio(data.intensity, 0.6),
+  }
+}
+
+function normalizeSimulationConfig(data) {
+  if (!data || typeof data !== 'object') {
+    return { steps: 6, seed: null, model_version: 'simulation_lab_mvp_v1' }
+  }
+  return {
+    ...data,
+    steps: Math.min(50, Math.max(1, Number.isFinite(Number(data.steps)) ? Number(data.steps) : 6)),
+    seed:
+      data.seed === null || data.seed === undefined || !Number.isFinite(Number(data.seed))
+        ? null
+        : Number(data.seed),
+    peer_influence_weight: normalizeRatio(data.peer_influence_weight, 0.28),
+    message_influence_weight: normalizeRatio(data.message_influence_weight, 0.32),
+    prior_persistence_weight: normalizeRatio(data.prior_persistence_weight, 0.35),
+    attention_decay: normalizeRatio(data.attention_decay, 0.08),
+    fatigue_increase: normalizeRatio(data.fatigue_increase, 0.035),
+    model_version: String(data.model_version || 'simulation_lab_mvp_v1'),
+  }
+}
+
+function normalizeSimulationEthicsPolicy(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      allowed_intervention_types: [],
+      forbidden_intervention_types: [],
+      policy_summary: '',
+      aggregate_level_only: true,
+    }
+  }
+  return {
+    allowed_intervention_types: Array.isArray(data.allowed_intervention_types)
+      ? data.allowed_intervention_types.map((item) => String(item))
+      : [],
+    forbidden_intervention_types: Array.isArray(data.forbidden_intervention_types)
+      ? data.forbidden_intervention_types.map((item) => String(item))
+      : [],
+    policy_summary: String(data.policy_summary || ''),
+    aggregate_level_only: data.aggregate_level_only !== false,
+  }
+}
+
+function normalizeSimulationRunResult(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      scenario_id: '',
+      scenario_name: '',
+      simulation_status: 'rejected',
+      generated_at: null,
+      model_version: 'simulation_lab_mvp_v1',
+      steps_requested: 0,
+      steps_completed: 0,
+      ethics_check: normalizeSimulationEthicsCheck(null),
+      initial_metrics: normalizeSimulationMetrics(null),
+      final_metrics: normalizeSimulationMetrics(null),
+      step_results: [],
+      key_findings: [],
+      recommended_interpretation: '',
+      safe_mode: {},
+      warnings: [],
+    }
+  }
+  return {
+    ...data,
+    scenario_id: String(data.scenario_id || ''),
+    scenario_name: String(data.scenario_name || ''),
+    simulation_status: String(data.simulation_status || 'completed'),
+    generated_at: data.generated_at ? String(data.generated_at) : null,
+    model_version: String(data.model_version || 'simulation_lab_mvp_v1'),
+    steps_requested: Number(data.steps_requested || 0),
+    steps_completed: Number(data.steps_completed || 0),
+    ethics_check: normalizeSimulationEthicsCheck(data.ethics_check),
+    initial_metrics: normalizeSimulationMetrics(data.initial_metrics),
+    final_metrics: normalizeSimulationMetrics(data.final_metrics),
+    step_results: Array.isArray(data.step_results)
+      ? data.step_results.map(normalizeSimulationStepResult).filter(Boolean)
+      : [],
+    key_findings: Array.isArray(data.key_findings)
+      ? data.key_findings.map((finding) => String(finding))
+      : [],
+    recommended_interpretation: String(data.recommended_interpretation || ''),
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
+  }
+}
+
+function normalizeSimulationEthicsCheck(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      allowed: false,
+      reason: '',
+      blocked_categories: [],
+      allowed_intervention_types: [],
+      forbidden_intervention_types: [],
+      warnings: [],
+    }
+  }
+  return {
+    allowed: Boolean(data.allowed),
+    reason: String(data.reason || ''),
+    blocked_categories: Array.isArray(data.blocked_categories)
+      ? data.blocked_categories.map((item) => String(item))
+      : [],
+    allowed_intervention_types: Array.isArray(data.allowed_intervention_types)
+      ? data.allowed_intervention_types.map((item) => String(item))
+      : [],
+    forbidden_intervention_types: Array.isArray(data.forbidden_intervention_types)
+      ? data.forbidden_intervention_types.map((item) => String(item))
+      : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
+  }
+}
+
+function normalizeSimulationStepResult(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    step: Number(data.step || 0),
+    active_intervention_type: String(data.active_intervention_type || 'no_response'),
+    metrics: normalizeSimulationMetrics(data.metrics),
+    trend_direction: String(data.trend_direction || 'unknown'),
+    forecast_reason: String(data.forecast_reason || ''),
+    community_metrics:
+      data.community_metrics && typeof data.community_metrics === 'object' && !Array.isArray(data.community_metrics)
+        ? Object.fromEntries(
+            Object.entries(data.community_metrics).map(([key, value]) => [
+              String(key),
+              normalizeSimulationMetrics(value),
+            ]),
+          )
+        : {},
+  }
+}
+
+function normalizeSimulationMetrics(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      average_latent_opinion: 0,
+      average_expressed_opinion: 0,
+      negative_ratio: 0,
+      neutral_ratio: 1,
+      positive_ratio: 0,
+      polarization_index: 0,
+      attention_level: 0,
+      trust_recovery_proxy: 0,
+      intervention_effect_score: 0,
+      false_belief_proxy: 0,
+      min_latent_opinion: 0,
+      max_latent_opinion: 0,
+      min_expressed_opinion: 0,
+      max_expressed_opinion: 0,
+      ethical_risk_flags: [],
+    }
+  }
+  return {
+    average_latent_opinion: normalizeSignedScore(data.average_latent_opinion),
+    average_expressed_opinion: normalizeSignedScore(data.average_expressed_opinion),
+    negative_ratio: normalizeRatio(data.negative_ratio, 0),
+    neutral_ratio: normalizeRatio(data.neutral_ratio, 0),
+    positive_ratio: normalizeRatio(data.positive_ratio, 0),
+    polarization_index: normalizeRatio(data.polarization_index, 0),
+    attention_level: normalizeRatio(data.attention_level, 0),
+    trust_recovery_proxy: normalizeRatio(data.trust_recovery_proxy, 0),
+    intervention_effect_score: normalizeOptionalScore(data.intervention_effect_score) ?? 0,
+    false_belief_proxy: normalizeRatio(data.false_belief_proxy, 0),
+    min_latent_opinion: normalizeSignedScore(data.min_latent_opinion),
+    max_latent_opinion: normalizeSignedScore(data.max_latent_opinion),
+    min_expressed_opinion: normalizeSignedScore(data.min_expressed_opinion),
+    max_expressed_opinion: normalizeSignedScore(data.max_expressed_opinion),
+    ethical_risk_flags: Array.isArray(data.ethical_risk_flags)
+      ? data.ethical_risk_flags.map((flag) => String(flag))
+      : [],
+  }
+}
+
 function normalizeBooleanMap(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return Object.fromEntries(
@@ -969,4 +1267,22 @@ function normalizeStringMap(value) {
 function normalizeOptionalScore(value) {
   const numericValue = Number(value)
   return Number.isFinite(numericValue) ? numericValue : null
+}
+
+function normalizeSignedScore(value) {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return 0
+  return Math.min(1, Math.max(-1, numericValue))
+}
+
+function normalizeRatio(value, fallback = 0) {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return fallback
+  return Math.min(1, Math.max(0, numericValue))
+}
+
+function normalizeBounded(value, min, max, fallback = min) {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return fallback
+  return Math.min(max, Math.max(min, numericValue))
 }

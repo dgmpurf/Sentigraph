@@ -1070,18 +1070,66 @@ Safety and scope:
 - No product code, dependencies, real APIs, real LLM APIs, live public fetch, crawlers, or moderation automation were added.
 - The design frames moderation modeling as aggregate tradeoff analysis, not deceptive manipulation or illegal suppression.
 
+## 6.12 Simulation Lab Frontend Bubble Visualization MVP
+
+Update date: 2026-05-18.
+
+Status: implemented, frontend-build validated, and QA-stabilized.
+
+What changed:
+
+- Added the frontend `Simulation Lab / 舆情预演沙盘` page for deterministic aggregate scenario rehearsal.
+- Added safe frontend API helpers for `GET /api/v1/simulation/demo-scenario`, `GET /api/v1/simulation/ethics-policy`, and `POST /api/v1/simulation/run`.
+- Added a sidebar entry for the Simulation Lab page.
+- Added a desktop-first layout with scenario controls, a central bubble canvas, event/intervention cards, aggregate metrics, explanation cards, and a step timeline.
+- Bubble visualization encodes synthetic agent expressed opinion by color, network centrality proxy by size, attention by opacity, and active influence with glow/pulse effects.
+- The UI filters intervention options through the backend ethics policy and does not expose forbidden intervention types.
+- Added an A/B strategy comparison placeholder for a future version.
+
+Safety and scope:
+
+- No backend simulation algorithm changes were made.
+- The page uses only existing local backend simulation endpoints.
+- No real APIs, real LLM APIs, crawlers, live public fetching, or manipulation tactics were added.
+- The UI keeps outputs aggregate-level and explicitly states that the simulation is deterministic scenario rehearsal, not a guaranteed prediction.
+- Forbidden tactics such as fake consensus, bot amplification, fake events, deceptive distraction, covert influencer seeding, targeted persuasion, and suppression are not exposed as usable UI options.
+
+Validation:
+
+- Frontend build passed with `npm run build` in `frontend/`.
+- The existing non-blocking Vite large chunk warning for Ant Design/ECharts remains.
+- Backend tests and offline benchmarks were not rerun because no backend algorithm or benchmark code changed.
+- GitHub Actions CI remains intentionally disabled and `.github/workflows/ci.yml` was not recreated.
+- QA stabilization pass verified route/sidebar wiring, simulation API helper wiring, backend endpoint availability, left/center/right/bottom page layout, event cards, bubble rendering, aggregate metrics, explanation cards, timeline updates, empty states, and safety labels.
+- Browser smoke at `http://127.0.0.1:5173` with local backend `http://127.0.0.1:8000` clicked `Simulation Lab / 舆情预演沙盘`, ran the simulation, advanced one step, and confirmed the timeline and bubble canvas updated.
+- The only browser console warning observed was the existing shared Ant Design `Spin` tip warning.
+
+QA fixes:
+
+- Event cards now explicitly show `intervention_type` along with source type, credibility, emotional intensity, evidence strength, and platform reach.
+- The explanation panel now displays both `为什么风险上升` and `为什么风险下降`, plus drivers, affected groups, and active intervention explanation.
+- Frontend normalization now preserves backend simulation ranges such as `confidence_radius` up to 2 and `negativity_weight` up to 3.
+- Safety notice now explicitly labels deterministic MVP behavior, aggregate-only output, no real API/LLM calls, no individual targeting, no disabled intervention exposure, and no guaranteed future prediction.
+
+Known limitations:
+
+- Bubble positions are deterministic visual projections from synthetic agents and aggregate step metrics, not a calibrated social graph.
+- Full A/B strategy comparison, richer animation, content-moderation scenario execution, empirical calibration, and historical replay remain future work.
+
+Next recommended task: add a full A/B strategy comparison view for allowed intervention packages, keeping it offline, deterministic, aggregate-level, and ethics-bounded.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: build a frontend-only aggregate Simulation Lab page with simple bubble visualization.
+Recommended next development task: add a full A/B strategy comparison view for allowed Simulation Lab intervention packages.
 
 Suggested scope:
 
 - Do not enable V2 scoring yet.
 - Do not replace V1/V1.5 with full V2 during the next task.
 - Do not add a frontend control that enables real LLM calls or edits API keys.
-- Do not add Simulation Lab frontend visualization until the backend toy simulator, safety gates, and benchmarks pass.
+- Keep the new Simulation Lab frontend visualization limited to existing backend toy simulator endpoints.
 - Do not use real accounts, real platform APIs, real LLM APIs, live public fetching, or crawler behavior.
-- Keep the first simulator synthetic, deterministic, aggregate-only, and benchmarked.
+- Keep the simulator synthetic, deterministic, aggregate-only, and benchmarked.
 - Keep the current mock pipeline and V1.5 report APIs stable.
 - If alert refinement continues next, keep it manual/mock-only. Notification delivery must remain local simulation only until explicit external-channel configuration and tests are added.
 - If Reddit integration is selected next, keep real API mode disabled until approval is granted and use sanitized fixtures or mocked clients only.

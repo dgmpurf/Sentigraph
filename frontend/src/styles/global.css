@@ -1070,6 +1070,270 @@ body {
   background: rgba(66, 245, 215, 0.04);
 }
 
+.simulation-lab-page .panel-card {
+  border-color: rgba(66, 245, 215, 0.2);
+}
+
+.simulation-control-card,
+.simulation-safety-card,
+.simulation-ab-card,
+.simulation-event-panel,
+.simulation-canvas-card,
+.simulation-side-card,
+.simulation-timeline-card {
+  background:
+    linear-gradient(180deg, rgba(66, 245, 215, 0.045), transparent 46%),
+    rgba(17, 19, 26, 0.88);
+}
+
+.simulation-scenario-copy,
+.simulation-policy-copy {
+  margin: 8px 0 0 !important;
+  color: #9aa6bf;
+  line-height: 1.64;
+}
+
+.simulation-event-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.simulation-event-card {
+  min-height: 108px;
+  padding: 12px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.38);
+}
+
+.simulation-event-card.active {
+  border-color: rgba(66, 245, 215, 0.52);
+  box-shadow: 0 0 24px rgba(66, 245, 215, 0.12);
+}
+
+.simulation-event-metrics,
+.simulation-timeline-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  color: #9aa6bf;
+  font-size: 12px;
+}
+
+.simulation-canvas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.simulation-canvas-header h4 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.simulation-bubble-canvas {
+  position: relative;
+  height: 560px;
+  overflow: hidden;
+  border: 1px solid rgba(66, 245, 215, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(66, 245, 215, 0.045) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(66, 245, 215, 0.045) 1px, transparent 1px),
+    radial-gradient(circle at 52% 18%, rgba(66, 245, 215, 0.12), transparent 28%),
+    radial-gradient(circle at 22% 58%, rgba(255, 93, 143, 0.12), transparent 30%),
+    radial-gradient(circle at 78% 58%, rgba(84, 245, 168, 0.12), transparent 28%),
+    rgba(8, 9, 13, 0.6);
+  background-size:
+    28px 28px,
+    28px 28px,
+    auto,
+    auto,
+    auto,
+    auto;
+}
+
+.simulation-community-region {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10px;
+  border: 1px dashed rgba(154, 166, 191, 0.2);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.18);
+  pointer-events: none;
+}
+
+.simulation-community-opposition {
+  border-color: rgba(255, 93, 143, 0.26);
+}
+
+.simulation-community-support {
+  border-color: rgba(84, 245, 168, 0.26);
+}
+
+.simulation-community-authority {
+  border-color: rgba(66, 245, 215, 0.28);
+}
+
+.simulation-community-bridge {
+  border-color: rgba(112, 146, 255, 0.3);
+}
+
+.simulation-bubble {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border: 2px solid;
+  border-radius: 999px;
+  color: #f4f7fb;
+  font-size: 11px;
+  font-weight: 800;
+  transition:
+    left 260ms ease,
+    top 260ms ease,
+    width 260ms ease,
+    height 260ms ease,
+    background 260ms ease,
+    opacity 260ms ease;
+}
+
+.simulation-bubble span {
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.48);
+}
+
+.simulation-bubble-active {
+  animation: simulation-bubble-pulse 1.4s ease-in-out infinite;
+}
+
+.simulation-shockwave {
+  position: absolute;
+  z-index: 1;
+  top: 18%;
+  left: 52%;
+  width: 72px;
+  height: 72px;
+  border: 1px solid rgba(66, 245, 215, 0.56);
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  animation: simulation-shockwave 1.25s ease-out;
+}
+
+@keyframes simulation-bubble-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes simulation-shockwave {
+  from {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(7.5);
+  }
+}
+
+.simulation-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.simulation-metric-tile,
+.simulation-nested-card,
+.simulation-explanation-grid > div,
+.simulation-timeline-item {
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.simulation-metric-tile {
+  min-height: 108px;
+  padding: 12px;
+}
+
+.simulation-metric-tile .ant-statistic-content {
+  color: #42f5d7;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.simulation-nested-card {
+  margin-top: 12px;
+}
+
+.simulation-inline-alert,
+.simulation-disclaimer-alert {
+  margin-top: 12px;
+  border-color: rgba(66, 245, 215, 0.24);
+  background: rgba(66, 245, 215, 0.06);
+}
+
+.simulation-explanation-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.simulation-explanation-grid > div {
+  min-height: 116px;
+  padding: 12px;
+}
+
+.simulation-explanation-grid h5 {
+  margin: 0 0 8px;
+  letter-spacing: 0;
+}
+
+.simulation-explanation-grid .ant-typography {
+  margin-bottom: 0;
+  line-height: 1.62;
+}
+
+.simulation-finding-list .ant-list-item {
+  padding: 8px 0;
+  color: #c9d4ea;
+}
+
+.simulation-timeline-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.simulation-timeline-item {
+  min-height: 136px;
+  padding: 12px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.simulation-timeline-item.active {
+  border-color: rgba(66, 245, 215, 0.54);
+  box-shadow: 0 0 26px rgba(66, 245, 215, 0.1);
+}
+
+.simulation-timeline-reason {
+  min-height: 38px;
+  color: #c9d4ea;
+}
+
 @media (max-width: 1280px) {
   .forecast-explanation-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

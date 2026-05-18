@@ -8,9 +8,9 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
-### Simulation Lab MVP Backend Scaffold
+### Simulation Lab MVP Backend and Frontend Scaffold
 
-Status: implemented and QA-stabilized on 2026-05-18.
+Status: backend implemented and QA-stabilized; frontend bubble visualization implemented and QA-stabilized on 2026-05-18.
 
 Completed:
 
@@ -20,15 +20,21 @@ Completed:
 - Added hard rejection for fake consensus, bot amplification, fake events, deceptive distraction, covert influencer seeding, targeted persuasion, and suppression.
 - Added `POST /api/v1/simulation/run`, `GET /api/v1/simulation/demo-scenario`, and `GET /api/v1/simulation/ethics-policy`.
 - Added backend tests and an offline `simulation_lab` benchmark suite.
+- Added `frontend/src/pages/SimulationLab.jsx` with scenario controls, synthetic bubble visualization, message/intervention event cards, aggregate metrics, explanation cards, and a step timeline.
+- Added Simulation Lab sidebar navigation and frontend API helpers for the existing simulation endpoints.
 
 QA coverage:
 
 - Revalidated route registration, demo scenario, ethics policy, safe rejection errors, deterministic output, bounded opinions, model mechanics, aggregate metrics, and aggregate-only output shape.
 - Revalidated the offline `simulation_lab` benchmark suite.
+- Browser smoke with local backend/frontend servers revalidated the Simulation Lab route, sidebar navigation, API helper flow, left/center/right/bottom layout, event cards, bubble rendering, aggregate metrics, explanation cards, run/step controls, and timeline updates.
+- Frontend build passed for the Simulation Lab page with the existing non-blocking Ant Design/ECharts chunk warning.
+- QA fixes normalized simulation numeric ranges, made `intervention_type` visible on event cards, strengthened deterministic/aggregate safety copy, and made both rising/falling explanation cards visible.
 
 Future work:
 
-- Add an aggregate frontend Simulation Lab page and simple bubble visualization after backend QA.
+- Add full A/B strategy comparison after preserving the current single-scenario QA baseline.
+- Add richer animation and replay controls after A/B comparison remains stable.
 - Expand ABM validation with sensitivity, docking, ablation, and richer synthetic benchmarks.
 - Keep empirical calibration, dynamic network rewiring, cross-platform diffusion, and optional real LLM narrative generation as future work behind safeguards.
 - Keep GitHub Actions CI intentionally disabled unless explicitly requested.
@@ -652,7 +658,7 @@ Future evaluation tasks:
 
 ### Simulation Lab Design Foundation
 
-Status: documentation complete and QA-stabilized; implementation not started.
+Status: documentation complete and QA-stabilized; MVP backend scaffold and frontend bubble visualization are now implemented.
 
 Completed design artifacts:
 
@@ -665,13 +671,14 @@ Completed design artifacts:
 
 Simulation Lab MVP implementation tasks:
 
-- Add backend-only deterministic toy simulator service using synthetic fixtures.
-- Add allowed/forbidden intervention validation before any simulation run.
-- Add Friedkin-Johnsen style persistence, bounded-confidence gate, threshold expression, homophilous static network, source credibility/framing, and attention decay.
-- Add aggregate-only output schemas and assumption logs.
-- Add offline benchmark suites for opinion-kernel docking, bounded-confidence fragmentation, threshold expression, attention decay, intervention comparison, and ethics guardrails.
-- Add a no-real-API/no-real-LLM/no-live-fetch safety test for the Simulation Lab path.
-- Add frontend 2D bubble visualization only after backend toy simulator and benchmarks pass.
+- Backend deterministic toy simulator service using synthetic fixtures: complete.
+- Allowed/forbidden intervention validation before simulation run: complete.
+- Friedkin-Johnsen style persistence, bounded-confidence gate, threshold expression, homophilous static network, source credibility/framing, and attention decay: complete for MVP.
+- Aggregate-only output schemas and safe-mode flags: complete for MVP.
+- Offline `simulation_lab` benchmark suite: complete for MVP.
+- Frontend 2D bubble visualization: complete for MVP.
+- Frontend QA stabilization: complete for MVP.
+- Full A/B comparison, richer animation, and empirical calibration remain future work.
 
 Forbidden implementation paths:
 
@@ -681,13 +688,13 @@ Forbidden implementation paths:
 
 Recommended next task:
 
-- Implement a backend-only deterministic Simulation Lab toy service with synthetic fixtures, ethics guardrails, and offline benchmarks. Keep frontend visualization, real-data calibration, and optional LLM narrative generation as future tasks.
+- Add full A/B strategy comparison for allowed Simulation Lab intervention packages while keeping the simulator offline, deterministic, aggregate-only, and ethics-bounded.
 
 QA stabilization result, 2026-05-18:
 
 - Simulation Lab documentation checklist is complete across design, research basis, model variables, ethics, MVP roadmap, and validation plan.
-- Documentation now explicitly preserves the project boundary: aggregate scenario rehearsal only, synthetic/offline MVP first, no product code yet, no real APIs, no real LLM APIs, no live fetching, and no manipulation tactic implementation.
-- Simulation Lab MVP code scaffold remains the next task.
+- Documentation now explicitly preserves the project boundary: aggregate scenario rehearsal only, synthetic/offline MVP first, no real APIs, no real LLM APIs, no live fetching, and no manipulation tactic implementation.
+- Simulation Lab MVP backend and frontend scaffolds are implemented; frontend QA stabilization is complete.
 - Empirical calibration remains future work after synthetic fixtures, benchmark docking, sensitivity analysis, and historical replay planning are stable.
 - Real LLM narrative generation remains future work behind explicit safeguards, provider gates, redaction, usage guardrails, schema validation, and human review.
 - Validation passed with full backend tests (`451 passed in 4.37s`) and offline benchmarks (`447 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.

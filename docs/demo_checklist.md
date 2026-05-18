@@ -2,6 +2,8 @@
 
 Use this checklist for the current v0.9 case-based, mock-first desktop web MVP demo.
 
+Latest Simulation Lab frontend QA stabilization validation: 2026-05-18. Frontend production build passed with `npm run build` from `frontend` in 7.90s with the existing non-blocking Ant Design/ECharts vendor chunk warning. Browser smoke against local `http://127.0.0.1:8000` and `http://127.0.0.1:5173` confirmed the `Simulation Lab / 舆情预演沙盘` route, sidebar navigation, left/center/right/bottom layout, event cards, bubble canvas, aggregate metrics, explanation cards, timeline, `运行模拟`, and `单步推进` flow. Backend tests and offline benchmarks were not rerun because no backend algorithm or benchmark logic changed. No real API, real LLM API, crawler, live public fetch, individual targeting, account-level influenceability scoring, or forbidden manipulation tactic was enabled.
+
 Latest v4.2 benchmark history QA stabilization validation: 2026-05-17. Focused benchmark route/runner tests passed with `14 passed in 0.77s`; full backend tests passed with `423 passed in 3.40s`; offline benchmarks passed with `78 passed, 0 failed, 0 warnings`; frontend production build passed in 7.43s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The `Benchmarks / 离线评测` page now displays latest results, history rows, and regression status with clean Chinese labels. No real LLM API, real platform API, crawler, live public fetch, real notification, API key printing, `.env` value printing, raw prompt logging, or raw user-content logging was introduced.
 
 Latest v3.9 QA stabilization validation: 2026-05-17. Backend tests passed with `409 passed in 3.73s`. Frontend production build passed in 7.84s with the existing non-blocking Ant Design/ECharts vendor chunk warning. The `LLM Safety` / `大模型安全状态` page is read-only and displays MockProvider/default status, disabled real-call status, API key presence booleans only, guardrail limits, and metadata-only usage summaries. Local smoke tooling includes LLM status/usage and public parser preview checks, and demo seeding creates a Hupu fixture-parser demo case. No real LLM API, real platform API, real crawler, live public fetch, real notification, authentication, `.env` modification, API key printing, raw prompt logging, or raw user-content logging is introduced.
@@ -1197,3 +1199,39 @@ powershell -Command "Invoke-RestMethod http://127.0.0.1:8000/api/v1/benchmarks/r
 ```
 
 Expected result: the history/regression APIs read only project-local `.benchmarks/` summary files, never run benchmarks automatically, never expose local file paths or case payloads, and never expose raw prompts, raw user content, API keys, `.env` values, or external request bodies.
+
+## 13. Simulation Lab / 舆情预演沙盘
+
+Start the backend and frontend:
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph"
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+```cmd
+cd /d "G:\AICODING\Sentigraph 舆情图谱系统\Sentigraph\frontend"
+npm run dev
+```
+
+Demo steps:
+
+1. Open `http://127.0.0.1:5173`.
+2. Click `Simulation Lab / 舆情预演沙盘` in the sidebar.
+3. Confirm the page loads a deterministic demo scenario from `GET /api/v1/simulation/demo-scenario`.
+4. Confirm the page shows scenario controls, event/intervention cards, the bubble canvas, aggregate metrics, explanation cards, and a step timeline.
+5. Select an allowed intervention such as `事实澄清`, `公开致歉`, `补偿方案`, `FAQ 问答`, `进展更新`, `第三方证据`, `误信息纠正`, or `不回应基线`.
+6. Click `运行模拟`, then click `单步推进`.
+7. Confirm bubbles change color/opacity/glow, aggregate metrics update, and the timeline highlights the selected step.
+8. Confirm the page states that the simulation is deterministic scenario rehearsal and not a guaranteed future prediction.
+9. Confirm event cards show `source_type`, `intervention_type`, `source_credibility`, `emotional_intensity`, `evidence_strength`, and `platform_reach`.
+10. Confirm the explanation panel shows `为什么风险上升`, `为什么风险下降`, `哪些群体受影响最大`, `哪个干预正在生效`, and the deterministic-MVP disclaimer.
+11. Confirm empty/error states are user-facing if the backend is stopped, no scenario is loaded, or the backend rejects an invalid payload.
+
+Safety checks:
+
+- Forbidden options must not appear: `fake_consensus`, `bot_amplification`, `fake_event`, `deceptive_distraction`, `covert_influencer_seeding`, `targeted_persuasion`, or `suppression`.
+- The page must not include real API toggles, real LLM toggles, API key inputs, live fetch controls, or profile-modification controls.
+- The page must not output individual targeting recommendations or account-level influenceability scores.
+- The page should use only `GET /api/v1/simulation/ethics-policy`, `GET /api/v1/simulation/demo-scenario`, and `POST /api/v1/simulation/run`.
+- The ethics-policy text may mention forbidden categories as policy language; those categories must not appear as selectable intervention options.

@@ -34,6 +34,7 @@ const navItems = [
   { key: 'selectorRepair', label: 'Selector 修复工具', icon: <Wrench size={17} /> },
   { key: 'llmSafety', label: '大模型安全状态', icon: <ShieldCheck size={17} /> },
   { key: 'benchmarks', label: 'Benchmarks / 离线评测', icon: <ClipboardCheck size={17} /> },
+  { key: 'simulationLab', label: 'Simulation Lab / 舆情预演沙盘', icon: <Activity size={17} /> },
 ]
 
 const riskLevelLabels = {

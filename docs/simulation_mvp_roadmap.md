@@ -1,6 +1,6 @@
 # Simulation Lab MVP Roadmap
 
-Status: MVP backend scaffold implemented and QA stabilization in progress. Frontend visualization, V2 dynamics, empirical calibration, and real-data replay remain roadmap items.
+Status: MVP backend scaffold and frontend bubble visualization are implemented. Full A/B comparison, richer animation, V2 dynamics, empirical calibration, and real-data replay remain roadmap items.
 
 The roadmap is staged to keep the first version deterministic, offline, explainable, and hard to misuse.
 
@@ -70,6 +70,9 @@ Suggested MVP work packages:
 
 8. Frontend visualization
    - Simple 2D bubble visualization.
+   - Scenario controls limited to backend-approved ethical intervention types.
+   - Event/intervention cards and deterministic step timeline.
+   - Aggregate metrics and explanation cards.
    - Scenario comparison cards.
    - Assumption and uncertainty panel.
    - No controls for real APIs, real LLMs, or covert tactics.
@@ -156,9 +159,9 @@ Pause implementation if:
 
 ## Recommended First Implementation Task
 
-After this design is reviewed, the next implementation task should be:
+After the backend scaffold and frontend MVP page, the next implementation task should be:
 
-Build a backend-only deterministic Simulation Lab toy service with synthetic fixtures, allowed/forbidden intervention validation, and offline benchmarks. Do not add frontend visualization until the toy service and guardrails pass.
+Add full A/B strategy comparison for allowed Simulation Lab intervention packages only after preserving the current single-scenario QA baseline.
 
 ## Implementation Checkpoint
 
@@ -169,4 +172,25 @@ As of 2026-05-18, the backend-only deterministic MVP scaffold has been implement
 - Forbidden intervention types are rejected before simulation.
 - The offline benchmark runner includes a `simulation_lab` suite with synthetic scenarios.
 
-The roadmap does not change: frontend visualization, richer ABM calibration, V2 dynamics, historical replay, and any optional real LLM narrative generation remain future work after QA and safety review.
+The roadmap does not change: richer ABM calibration, V2 dynamics, historical replay, full A/B comparison, and any optional real LLM narrative generation remain future work after QA and safety review.
+
+## Frontend Visualization Checkpoint
+
+As of 2026-05-18, the frontend Simulation Lab MVP page has been implemented and QA-stabilized:
+
+- `frontend/src/pages/SimulationLab.jsx` renders a desktop-first bubble simulation page.
+- The sidebar exposes `Simulation Lab / 舆情预演沙盘`.
+- The page loads the deterministic demo scenario and ethics policy from existing backend endpoints.
+- The page can run `POST /api/v1/simulation/run` with allowed interventions only.
+- The bubble canvas displays synthetic agents by opinion color, centrality proxy size, attention opacity, and active influence glow.
+- The UI includes event cards, aggregate metrics, explanation cards, timeline steps, and an A/B comparison placeholder.
+- Forbidden intervention categories are not exposed as usable controls.
+- Browser smoke with local backend/frontend servers confirmed route wiring, run/step controls, bubble rendering, event cards, aggregate metrics, explanation cards, and timeline updates.
+- Frontend production build passed with the existing non-blocking Ant Design/ECharts chunk warning.
+
+Remaining frontend roadmap items:
+
+- Full A/B strategy comparison.
+- Richer animation and replay controls.
+- Assumption editor for safe aggregate parameters.
+- Historical replay only after validation and data-approval review.
