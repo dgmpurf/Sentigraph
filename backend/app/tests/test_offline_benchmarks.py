@@ -33,6 +33,7 @@ def test_offline_benchmark_runner_passes_without_server_or_external_calls() -> N
         "markdown_export",
         "forecasting",
         "simulation_lab",
+        "simulation_strategy_report",
         "case_to_simulation_initializer",
         "selector_repair",
         "public_parser_fixtures",

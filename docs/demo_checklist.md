@@ -1254,6 +1254,19 @@ Content visibility intervention demo steps:
 6. Confirm the safety copy says the module evaluates compliant content-governance risk/reward and does not execute platform actions.
 7. Confirm the UI does not expose illegal/covert suppression, fake consensus, bot amplification, fake events, covert influencer seeding, targeted persuasion, or account-level targeting options.
 
+Strategy report export demo steps:
+
+1. In single-scenario mode, run an allowed intervention such as `clarification`.
+2. Click `导出策略预演报告`.
+3. Confirm the `策略预演报告` card shows a Markdown preview with `# Simulation Lab Strategy Report`, `Scenario Overview`, `Intervention Comparison`, `Key Metrics`, `Audience Impact`, `Ethical Risk Review`, `Recommended Human Review Questions`, and `Limitations`.
+4. Click `复制 Markdown` and confirm the copy success state appears.
+5. Click `下载 .md` and confirm a local Markdown file is prepared by the browser.
+6. Switch to `A/B 策略对比`, run `no_response` vs `content_removal_with_explanation`, and export again.
+7. Confirm the report includes `Visibility Intervention Tradeoff` when visibility metrics are available.
+8. Confirm A/B reports include risk, negative ratio, polarization, trust recovery, attention level, and backlash-risk comparison fields when available.
+9. Confirm the report says real-world actions require human review and policy/legal review.
+10. Confirm the report does not show raw JSON, API keys, `.env` values, raw prompts, raw user content, named-user target lists, account-level influenceability scores, or automatic action-execution instructions.
+
 Safety checks:
 
 - Forbidden options must not appear: `fake_consensus`, `bot_amplification`, `fake_event`, `deceptive_distraction`, `covert_influencer_seeding`, `targeted_persuasion`, or `suppression`.

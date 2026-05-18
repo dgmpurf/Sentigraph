@@ -54,12 +54,16 @@ from app.services.simulation.case_initializer import (  # noqa: E402
     CaseAnalysisRequiredError,
     build_case_simulation_initialization,
 )
+from app.services.simulation.schemas import SimulationStrategyReportRequest  # noqa: E402
 from app.services.simulation.simulation_engine import (  # noqa: E402
     create_brand_crisis_scenario,
     create_default_echo_chamber_scenario,
     create_high_reach_negative_video_scenario,
     create_misinformation_correction_scenario,
     run_simulation,
+)
+from app.services.simulation.simulation_report_builder import (  # noqa: E402
+    build_simulation_strategy_report,
 )
 
 
@@ -148,6 +152,7 @@ def run_all_benchmarks(
         _safe_run_suite("markdown_export", lambda: _run_markdown_export_benchmark(fixture_root)),
         _safe_run_suite("forecasting", lambda: _run_forecasting_benchmark(fixture_root)),
         _safe_run_suite("simulation_lab", lambda: _run_simulation_lab_benchmark(fixture_root)),
+        _safe_run_suite("simulation_strategy_report", lambda: _run_simulation_strategy_report_benchmark()),
         _safe_run_suite(
             "case_to_simulation_initializer",
             lambda: _run_case_to_simulation_initializer_benchmark(fixture_root),
@@ -831,6 +836,132 @@ def _simulation_scenario_from_case(case: dict[str, Any]):
 def _simulation_risk_proxy(result: Any) -> float:
     metrics = result.final_metrics
     return round(metrics.negative_ratio * 75 + metrics.false_belief_proxy * 20 + metrics.polarization_index * 5, 4)
+
+
+def _run_simulation_strategy_report_benchmark() -> dict[str, Any]:
+    recorder = SuiteRecorder("simulation_strategy_report")
+    cases = [
+        {
+            "case_id": "no_response_vs_clarification",
+            "scenario": "brand_crisis",
+            "intervention_a": "no_response",
+            "intervention_b": "clarification",
+            "requires_visibility": False,
+        },
+        {
+            "case_id": "no_response_vs_content_removal_with_explanation",
+            "scenario": "high_reach_negative_video",
+            "intervention_a": "no_response",
+            "intervention_b": "content_removal_with_explanation",
+            "requires_visibility": True,
+        },
+        {
+            "case_id": "apology_vs_third_party_evidence",
+            "scenario": "brand_crisis",
+            "intervention_a": "apology",
+            "intervention_b": "third_party_evidence",
+            "requires_visibility": False,
+        },
+        {
+            "case_id": "single_strategy_report",
+            "scenario": "brand_crisis",
+            "intervention_a": "clarification",
+            "intervention_b": None,
+            "requires_visibility": False,
+            "single": True,
+        },
+    ]
+    required_sections = [
+        "# Simulation Lab Strategy Report",
+        "## Scenario Overview",
+        "## Intervention Comparison",
+        "## Key Metrics",
+        "## Audience Impact",
+        "## Ethical Risk Review",
+        "## Recommended Human Review Questions",
+        "## Limitations",
+    ]
+    forbidden_terms = [
+        "{",
+        "}",
+        "target_accounts",
+        "author_id",
+        "author_name",
+        "influenceability_score",
+        "fake_consensus",
+        "bot_amplification",
+        "targeted_persuasion",
+    ]
+    for case in cases:
+        case_id = str(case["case_id"])
+        scenario_a = _simulation_scenario_from_case(
+            {"scenario": case["scenario"], "intervention_type": case["intervention_a"], "steps": 6}
+        )
+        result_a = run_simulation(scenario_a)
+        if case.get("single"):
+            response = build_simulation_strategy_report(
+                SimulationStrategyReportRequest(
+                    simulation_mode="single",
+                    scenario_name=result_a.scenario_name,
+                    intervention_a=str(case["intervention_a"]),
+                    run_result=result_a,
+                )
+            )
+        else:
+            scenario_b = _simulation_scenario_from_case(
+                {"scenario": case["scenario"], "intervention_type": case["intervention_b"], "steps": 6}
+            )
+            result_b = run_simulation(scenario_b)
+            response = build_simulation_strategy_report(
+                SimulationStrategyReportRequest(
+                    simulation_mode="comparison",
+                    scenario_name=result_a.scenario_name,
+                    intervention_a=str(case["intervention_a"]),
+                    intervention_b=str(case["intervention_b"]),
+                    result_a=result_a,
+                    result_b=result_b,
+                )
+            )
+        markdown = response.markdown
+        markdown_lower = markdown.lower()
+        recorder.check(
+            f"{case_id}:sections",
+            all(section in markdown for section in required_sections),
+            "strategy report includes required Markdown sections",
+            {"section_count": len(required_sections)},
+        )
+        recorder.check(
+            f"{case_id}:human_review",
+            "Is the intervention lawful/platform-authorized?" in markdown
+            and "Real-world actions require human review and policy/legal review." in markdown,
+            "strategy report includes human review questions and safety limitations",
+            {"mode": response.report.simulation_mode},
+        )
+        recorder.check(
+            f"{case_id}:safe_content",
+            all(term not in markdown_lower for term in forbidden_terms),
+            "strategy report does not include raw JSON, unsafe targeting fields, or forbidden tactic names",
+            {"markdown_length": len(markdown)},
+        )
+        recorder.check(
+            f"{case_id}:safe_mode",
+            response.safe_mode.get("aggregate_level_only") is True
+            and response.safe_mode.get("real_api_calls") is False
+            and response.safe_mode.get("real_llm_calls") is False
+            and response.safe_mode.get("automatic_action_execution") is False,
+            "strategy report response remains offline, aggregate-level, and human-review oriented",
+            response.safe_mode,
+        )
+        if case.get("requires_visibility"):
+            recorder.check(
+                f"{case_id}:visibility_section",
+                "## Visibility Intervention Tradeoff" in markdown
+                and "Exposure reduction" in markdown
+                and "Cross-platform spillover risk" in markdown,
+                "visibility intervention reports include tradeoff section when data exists",
+                {"requires_visibility": True},
+            )
+    return recorder.summary()
 
 
 def _run_case_to_simulation_initializer_benchmark(fixture_root: Path) -> dict[str, Any]:

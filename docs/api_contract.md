@@ -2175,6 +2175,41 @@ The generated `simulation_scenario.agents` are synthetic aggregate audience bubb
 
 The `event_frame.sub_issues` records expose both `topic_risk_score` and `risk_score` for compatibility with benchmark/UI consumers. `observed_frame_profile` exposes only aggregate real-crisis mappings such as `harm_salience`, `loss_sensitivity`, `moral_outrage_sensitivity`, and `crisis_legitimacy_pressure`; these are not individual profiles.
 
+### Simulation Strategy Report Export
+
+```http
+POST /api/v1/simulation/report/markdown
+```
+
+Builds a safe Markdown strategy rehearsal report from an already-computed `SimulationRunResult` or A/B comparison result. The endpoint does not run a simulation, call real APIs, call real LLMs, enable live fetching, or execute any real-world action.
+
+Request body: `SimulationStrategyReportRequest`.
+
+Supported modes:
+
+- `single`: requires `run_result` and `intervention_a`.
+- `comparison`: requires `result_a`, `result_b`, `intervention_a`, and `intervention_b`; may include `comparison_summary`.
+
+Response body: `SimulationStrategyReportResponse`:
+
+- `report`: normalized report metadata.
+- `markdown`: safe Markdown text.
+- `safe_mode`: `aggregate_level_only=true`, `real_api_calls=false`, `real_llm_calls=false`, `live_fetch_enabled=false`, `individual_targeting=false`, `automatic_action_execution=false`.
+
+The Markdown report includes:
+
+- `# Simulation Lab Strategy Report`
+- `## Scenario Overview`
+- `## Intervention Comparison`
+- `## Key Metrics`
+- `## Audience Impact`
+- `## Visibility Intervention Tradeoff` when visibility-intervention data is present
+- `## Ethical Risk Review`
+- `## Recommended Human Review Questions`
+- `## Limitations`
+
+The report must remain aggregate-level and human-review-oriented. It must not expose raw JSON dumps, raw prompts, raw user content, API keys, `.env` values, account-level influenceability scores, named-user target lists, or recommendations to automatically execute a real-world strategy.
+
 ## 11. API Rules
 
 1. Every endpoint should return JSON.

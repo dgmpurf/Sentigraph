@@ -252,3 +252,35 @@ As of 2026-05-18, Simulation Lab can initialize a synthetic scenario from comple
 Next Simulation Lab task:
 
 - QA-stabilize case initialization in the browser, then add a safe aggregate assumption editor or richer replay controls.
+
+## Strategy Report Export Checkpoint
+
+As of 2026-05-18, Simulation Lab includes a human-review-only Markdown strategy report export:
+
+- The backend provides `POST /api/v1/simulation/report/markdown`.
+- The report builder accepts either a single aggregate `SimulationRunResult` or an A/B comparison payload.
+- The Markdown includes scenario overview, intervention comparison, key metrics, audience impact, optional visibility-intervention tradeoff, ethical risk review, recommended human review questions, and limitations.
+- The frontend Simulation Lab page can export, copy, and download the Markdown report after a single run or A/B comparison.
+- The report is deterministic and does not call real APIs, real LLM APIs, crawlers, live public fetch, or platform action APIs.
+- The report does not output named-user targeting, account-level influenceability scoring, raw JSON dumps, or automatic real-world execution instructions.
+
+Remaining Simulation Lab roadmap items:
+
+- PDF export remains future work.
+- A policy/legal review workflow remains future work.
+- Richer replay controls and empirical calibration remain future work.
+
+## Strategy Report Export QA Checkpoint
+
+As of 2026-05-18, the Strategy Report Export flow has been QA-stabilized:
+
+- Backend tests cover single-scenario Markdown export, A/B Markdown export, visibility-tradeoff section rendering, required sections, human review questions, forbidden-intervention rejection, endpoint behavior, and legacy Simulation Lab endpoints.
+- A/B reports render supplied aggregate backlash-risk and attention-level comparison fields.
+- Frontend controls expose export, copy, and `.md` download states without any automatic real-world execution path.
+- Reports remain aggregate-only, deterministic, and human-review-oriented.
+
+Future work:
+
+- PDF export remains future work.
+- A policy/legal review workflow remains future work.
+- Richer replay controls and empirical calibration remain future work.

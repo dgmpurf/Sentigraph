@@ -18,6 +18,9 @@ import {
 } from 'antd'
 import {
   Activity,
+  Copy,
+  Download,
+  FileText,
   Gauge,
   GitBranch,
   PlayCircle,
@@ -31,6 +34,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
+  exportSimulationStrategyMarkdownReport,
   getSimulationDemoScenario,
   getSimulationEthicsPolicy,
   initializeCaseSimulation,
@@ -587,6 +591,7 @@ function buildComparisonSummary(resultA, resultB, interventionA, interventionB) 
   const negativeRatioDelta = (metricsB?.negative_ratio ?? 0) - (metricsA?.negative_ratio ?? 0)
   const polarizationDelta = (metricsB?.polarization_index ?? 0) - (metricsA?.polarization_index ?? 0)
   const trustRecoveryDelta = (metricsB?.trust_recovery_proxy ?? 0) - (metricsA?.trust_recovery_proxy ?? 0)
+  const attentionLevelDelta = (metricsB?.attention_level ?? 0) - (metricsA?.attention_level ?? 0)
   const backlashA = computeBacklashRisk(metricsA, interventionA)
   const backlashB = computeBacklashRisk(metricsB, interventionB)
   const backlashDelta = backlashA === null || backlashB === null ? null : backlashB - backlashA
@@ -617,6 +622,7 @@ function buildComparisonSummary(resultA, resultB, interventionA, interventionB) 
     negative_ratio_delta: negativeRatioDelta,
     polarization_delta: polarizationDelta,
     trust_recovery_delta: trustRecoveryDelta,
+    attention_level_delta: attentionLevelDelta,
     backlash_risk_a: backlashA,
     backlash_risk_b: backlashB,
     backlash_risk_delta: backlashDelta,
@@ -1466,6 +1472,98 @@ function InitializationSummaryCard({ result }) {
   )
 }
 
+function buildStrategyReportPayload({
+  comparisonResult,
+  interventionA,
+  interventionB,
+  runResult,
+  scenario,
+  selectedIntervention,
+  viewMode,
+}) {
+  if (viewMode === 'comparison') {
+    if (!comparisonResult?.resultA || !comparisonResult?.resultB) return null
+    return {
+      simulation_mode: 'comparison',
+      scenario_name: scenario?.name || comparisonResult.resultA.scenario_name || 'Simulation scenario',
+      intervention_a: interventionA,
+      intervention_b: interventionB,
+      result_a: comparisonResult.resultA,
+      result_b: comparisonResult.resultB,
+      comparison_summary: comparisonResult.comparisonSummary || null,
+      generated_from: 'simulation_lab_ui',
+    }
+  }
+  if (!runResult) return null
+  return {
+    simulation_mode: 'single',
+    scenario_name: scenario?.name || runResult.scenario_name || 'Simulation scenario',
+    intervention_a: selectedIntervention,
+    run_result: runResult,
+    generated_from: 'simulation_lab_ui',
+  }
+}
+
+function StrategyReportExportCard({
+  canExport,
+  loading,
+  mode,
+  onCopy,
+  onDownload,
+  onExport,
+  report,
+  status,
+}) {
+  const markdown = report?.markdown || ''
+  return (
+    <Card className="panel-card simulation-report-card">
+      <div className="panel-heading">
+        <Space>
+          <FileText size={18} />
+          <Title level={4}>策略预演报告</Title>
+        </Space>
+        <Tag color="cyan">Markdown</Tag>
+      </div>
+      <Alert
+        className="simulation-disclaimer-alert"
+        message="当前结果不代表真实未来必然发生；报告仅用于聚合级方案复核，不会自动执行任何现实处置。"
+        type="info"
+        showIcon
+      />
+      <Space direction="vertical" size={12} className="full-width">
+        <Space wrap>
+          <Button disabled={!canExport} icon={<FileText size={16} />} loading={loading} onClick={onExport} type="primary">
+            导出策略预演报告
+          </Button>
+          <Button disabled={!markdown} icon={<Copy size={16} />} onClick={onCopy}>
+            复制 Markdown
+          </Button>
+          <Button disabled={!markdown} icon={<Download size={16} />} onClick={onDownload}>
+            下载 .md
+          </Button>
+        </Space>
+        <Space wrap>
+          <Tag color={mode === 'comparison' ? 'geekblue' : 'green'}>
+            {mode === 'comparison' ? 'A/B 策略对比' : '单场景模拟'}
+          </Tag>
+          <Tag color="orange">人工复核问题</Tag>
+          <Tag color="volcano">伦理风险提示</Tag>
+          <Tag>模拟限制说明</Tag>
+        </Space>
+        {status ? <Text type="secondary">{status}</Text> : null}
+        {markdown ? (
+          <div className="simulation-report-preview-shell">
+            <Text strong>Markdown preview</Text>
+            <pre className="simulation-report-preview">{markdown.slice(0, 900)}</pre>
+          </div>
+        ) : (
+          <Text type="secondary">运行模拟或 A/B 对比后，可导出安全 Markdown 报告。</Text>
+        )}
+      </Space>
+    </Card>
+  )
+}
+
 export function SimulationLab({ cases = [], currentCase = null } = {}) {
   const [scenario, setScenario] = useState(null)
   const [originalScenario, setOriginalScenario] = useState(null)
@@ -1485,6 +1583,9 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
   const [running, setRunning] = useState(false)
   const [comparisonRunning, setComparisonRunning] = useState(false)
   const [initializationLoading, setInitializationLoading] = useState(false)
+  const [strategyReport, setStrategyReport] = useState(null)
+  const [strategyReportLoading, setStrategyReportLoading] = useState(false)
+  const [strategyReportStatus, setStrategyReportStatus] = useState('')
   const [error, setError] = useState('')
 
   const caseOptions = useMemo(
@@ -1522,6 +1623,7 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
     comparisonStepB?.metrics ||
     getFinalMetrics(comparisonResult?.resultB) ||
     deriveInitialMetrics(comparisonBaseScenario?.agents || [])
+  const canExportStrategyReport = viewMode === 'comparison' ? Boolean(comparisonResult) : Boolean(runResult)
 
   const loadDemoScenario = useCallback(async () => {
     setLoading(true)
@@ -1550,6 +1652,8 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
       setSteps(demoScenario.config?.steps || 6)
       setRunResult(null)
       setComparisonResult(null)
+      setStrategyReport(null)
+      setStrategyReportStatus('')
       setCurrentStepIndex(-1)
       setComparisonStepIndex(-1)
     } catch (requestError) {
@@ -1589,6 +1693,8 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
         setSteps(initializedScenario.config?.steps || 6)
         setRunResult(null)
         setComparisonResult(null)
+        setStrategyReport(null)
+        setStrategyReportStatus('')
         setCurrentStepIndex(-1)
         setComparisonStepIndex(-1)
       }
@@ -1646,6 +1752,8 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
       const response = await runSimulation(nextScenario)
       setScenario(nextScenario)
       setRunResult(response)
+      setStrategyReport(null)
+      setStrategyReportStatus('')
       setCurrentStepIndex(response.step_results.length ? 0 : -1)
     } catch (requestError) {
       setError(getErrorMessage(requestError, '无法运行确定性沙盘模拟。'))
@@ -1676,6 +1784,8 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
         resultB,
         comparisonSummary: buildComparisonSummary(resultA, resultB, interventionA, interventionB),
       })
+      setStrategyReport(null)
+      setStrategyReportStatus('')
       setComparisonStepIndex(resultA.step_results.length || resultB.step_results.length ? 0 : -1)
     } catch (requestError) {
       setError(getErrorMessage(requestError, '无法运行 A/B 策略对比。'))
@@ -1710,6 +1820,8 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
     setInitializationResult(null)
     setRunResult(null)
     setComparisonResult(null)
+    setStrategyReport(null)
+    setStrategyReportStatus('')
     setCurrentStepIndex(-1)
     setComparisonStepIndex(-1)
     setError('')
@@ -1717,6 +1829,59 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
       setSteps(originalScenario.config.steps)
     }
   }, [originalScenario])
+
+  const handleExportStrategyReport = useCallback(async () => {
+    const payload = buildStrategyReportPayload({
+      comparisonResult,
+      interventionA,
+      interventionB,
+      runResult,
+      scenario,
+      selectedIntervention,
+      viewMode,
+    })
+    if (!payload) {
+      setStrategyReportStatus('请先运行模拟或 A/B 对比，再导出策略预演报告。')
+      return
+    }
+    setStrategyReportLoading(true)
+    setStrategyReportStatus('')
+    setError('')
+    try {
+      const response = await exportSimulationStrategyMarkdownReport(payload)
+      setStrategyReport(response)
+      setStrategyReportStatus('策略预演报告已生成，可复制 Markdown 或下载 .md。')
+    } catch (requestError) {
+      setStrategyReport(null)
+      setStrategyReportStatus(getErrorMessage(requestError, '无法导出策略预演报告。'))
+    } finally {
+      setStrategyReportLoading(false)
+    }
+  }, [comparisonResult, interventionA, interventionB, runResult, scenario, selectedIntervention, viewMode])
+
+  const handleCopyStrategyReport = useCallback(async () => {
+    if (!strategyReport?.markdown) return
+    if (!navigator.clipboard?.writeText) {
+      setStrategyReportStatus('当前浏览器不支持直接复制，请使用下载 .md。')
+      return
+    }
+    await navigator.clipboard.writeText(strategyReport.markdown)
+    setStrategyReportStatus('Markdown 已复制。')
+  }, [strategyReport])
+
+  const handleDownloadStrategyReport = useCallback(() => {
+    if (!strategyReport?.markdown) return
+    const blob = new Blob([strategyReport.markdown], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'simulation-strategy-report.md'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    setStrategyReportStatus('Markdown 文件已准备下载。')
+  }, [strategyReport])
 
   return (
     <div className="page-stack simulation-lab-page">
@@ -1748,7 +1913,11 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
               <Text type="secondary">单场景解释或 A/B 策略对比都基于同一份离线合成场景。</Text>
             </Space>
             <Segmented
-              onChange={setViewMode}
+              onChange={(value) => {
+                setViewMode(value)
+                setStrategyReport(null)
+                setStrategyReportStatus('')
+              }}
               options={[
                 { label: '单场景模拟', value: 'single' },
                 { label: 'A/B 策略对比', value: 'comparison' },
@@ -1791,7 +1960,13 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
                         <Text type="secondary">干预类型</Text>
                         <Select
                           className="full-width"
-                          onChange={setSelectedIntervention}
+                          onChange={(value) => {
+                            setSelectedIntervention(value)
+                            setRunResult(null)
+                            setCurrentStepIndex(-1)
+                            setStrategyReport(null)
+                            setStrategyReportStatus('')
+                          }}
                           options={allowedOptions}
                           value={selectedIntervention}
                         />
@@ -1806,6 +1981,8 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
                               setInterventionA(value)
                               setComparisonResult(null)
                               setComparisonStepIndex(-1)
+                              setStrategyReport(null)
+                              setStrategyReportStatus('')
                             }}
                             options={allowedOptions}
                             value={interventionA}
@@ -1819,6 +1996,8 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
                               setInterventionB(value)
                               setComparisonResult(null)
                               setComparisonStepIndex(-1)
+                              setStrategyReport(null)
+                              setStrategyReportStatus('')
                             }}
                             options={allowedOptions}
                             value={interventionB}
@@ -1835,8 +2014,12 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
                         max={24}
                         onChange={(value) => {
                           setSteps(Number(value || 1))
+                          setRunResult(null)
                           setComparisonResult(null)
+                          setCurrentStepIndex(-1)
                           setComparisonStepIndex(-1)
+                          setStrategyReport(null)
+                          setStrategyReportStatus('')
                         }}
                         value={steps}
                       />
@@ -1902,6 +2085,17 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
 
               <SafetyNotice policy={ethicsPolicy} />
 
+              <StrategyReportExportCard
+                canExport={canExportStrategyReport}
+                loading={strategyReportLoading}
+                mode={viewMode}
+                onCopy={handleCopyStrategyReport}
+                onDownload={handleDownloadStrategyReport}
+                onExport={handleExportStrategyReport}
+                report={strategyReport}
+                status={strategyReportStatus}
+              />
+
               {viewMode === 'comparison' ? (
                 <Card className="panel-card simulation-ab-card">
                   <Title level={4}>人工复核建议</Title>
@@ -1963,6 +2157,8 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
                       setInterventionA(value)
                       setComparisonResult(null)
                       setComparisonStepIndex(-1)
+                      setStrategyReport(null)
+                      setStrategyReportStatus('')
                     }}
                     options={allowedOptions}
                     result={comparisonResult?.resultA}
@@ -1978,6 +2174,8 @@ export function SimulationLab({ cases = [], currentCase = null } = {}) {
                       setInterventionB(value)
                       setComparisonResult(null)
                       setComparisonStepIndex(-1)
+                      setStrategyReport(null)
+                      setStrategyReportStatus('')
                     }}
                     options={allowedOptions}
                     result={comparisonResult?.resultB}

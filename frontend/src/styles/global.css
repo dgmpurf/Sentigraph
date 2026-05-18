@@ -1083,6 +1083,7 @@ body {
 .simulation-control-card,
 .simulation-initializer-card,
 .simulation-safety-card,
+.simulation-report-card,
 .simulation-mode-card,
 .simulation-ab-card,
 .simulation-event-panel,
@@ -1112,6 +1113,27 @@ body {
   margin: 8px 0 0 !important;
   color: #9aa6bf;
   line-height: 1.64;
+}
+
+.simulation-report-preview-shell {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(66, 245, 215, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.36);
+}
+
+.simulation-report-preview {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #d6deef;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .simulation-initializer-card .ant-card-body {

@@ -696,6 +696,7 @@ Simulation Lab MVP implementation tasks:
 - Frontend 2D bubble visualization: complete for MVP.
 - Frontend QA stabilization: complete for MVP.
 - Frontend A/B comparison: complete for MVP using the existing safe simulation run endpoint twice from the same initial scenario.
+- Strategy report export: complete for MVP with Markdown output from existing aggregate single-scenario or A/B results.
 - Richer animation, richer replay controls, and empirical calibration remain future work.
 
 Forbidden implementation paths:
@@ -706,7 +707,7 @@ Forbidden implementation paths:
 
 Recommended next task:
 
-- Implement a human-review-only Simulation Lab strategy report export for case-initialized and A/B comparison scenarios.
+- Add optional PDF export or a policy/legal review checklist workflow for human-reviewed Simulation Lab strategy reports.
 
 Implemented in current checkpoint:
 
@@ -730,8 +731,19 @@ Future work:
 - Empirically calibrate ordinary-public baselines from lawful, representative public datasets.
 - Expand case-to-simulation benchmarks for positive-skewed, polarized, and insufficient-history monitoring cases.
 - Add a human-reviewed simulation assumption editor.
-- Add Simulation Lab strategy report export for aggregate A/B comparison and case-initialization summaries.
+- Add PDF export for Simulation Lab strategy reports.
+- Add a legal/policy review workflow for real-world action approval.
 - Keep individual persuasion profiles, account-level influenceability scoring, covert influence, and automatic action execution out of scope.
+
+Strategy report export implemented:
+
+- `POST /api/v1/simulation/report/markdown` returns a safe Markdown strategy report.
+- Frontend Simulation Lab supports `策略预演报告`, `导出策略预演报告`, `复制 Markdown`, and `.md` download.
+- Offline benchmark suite `simulation_strategy_report` covers single report export, A/B comparison export, visibility-tradeoff section presence, human-review questions, and safe-content checks.
+- Strategy report export QA is complete; tests cover supplied A/B backlash-risk and attention-level fields plus expanded unsafe-content checks.
+- PDF export remains future work.
+- Legal/policy review workflow remains future work.
+- GitHub Actions CI remains intentionally disabled.
 
 QA stabilization result, 2026-05-18:
 
@@ -740,10 +752,10 @@ QA stabilization result, 2026-05-18:
 - Event Frame design QA is complete; real empirical calibration remains future work and GitHub Actions CI remains intentionally disabled.
 - Documentation now explicitly preserves the project boundary: aggregate scenario rehearsal only, synthetic/offline MVP first, no real APIs, no real LLM APIs, no live fetching, and no manipulation tactic implementation.
 - Simulation Lab MVP backend and frontend scaffolds are implemented; frontend QA stabilization is complete.
-- Case-to-Simulation Initializer QA is complete; real empirical calibration remains future work, user-level targeting remains forbidden, and Simulation Lab strategy report export remains the next product-polish task.
+- Case-to-Simulation Initializer QA is complete; Strategy Report Export QA is complete; real empirical calibration remains future work, user-level targeting remains forbidden, and PDF export or a legal/policy review workflow remains the next product-polish task.
 - Empirical calibration remains future work after synthetic fixtures, benchmark docking, sensitivity analysis, and historical replay planning are stable.
 - Real LLM narrative generation remains future work behind explicit safeguards, provider gates, redaction, usage guardrails, schema validation, and human review.
-- Validation passed with full backend tests (`451 passed in 4.37s`) and offline benchmarks (`447 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed.
+- Latest validation passed with full backend tests (`511 passed in 4.72s`), offline benchmarks (`522 passed, 0 failed, 0 warnings`, `no_regression`), and frontend build (`built in 8.02s`; existing non-blocking Ant Design/ECharts large vendor chunk warning remains).
 - GitHub Actions CI remains intentionally disabled unless explicitly requested.
 
 ### V2 Dynamic Risk Readiness

@@ -18,6 +18,8 @@ Real crawlers, real OpenAI/LLM calls, production database hardening, and complex
 
 Latest roadmap freeze / consolidation update: created `docs/current_project_status.md`, `docs/next_stage_roadmap.md`, `docs/api_application_plan.md`, and `docs/demo_readiness_checklist.md` to freeze the current v4.x state and stop default scaffold expansion. The current phase is now roadmap freeze / consolidation: Sentigraph can demo a full offline mock MVP with cases, V1.5 topic risk, Chinese reports, Markdown export, monitoring snapshots, alerts, local notifications, platform readiness pages, LLM safety diagnostics, selector repair mock tooling, and offline benchmark reporting. The recommended immediate next task is Track A: prepare a stable demo build by running reset/seed/smoke, backend tests, offline benchmarks, frontend build, UI label polish, and screenshot/demo-story preparation. Tasks to stop doing for now: adding more official API scaffolds, adding more public parser platforms, adding more LLM provider abstractions, expanding benchmarks without a direct demo or real-data decision need, and writing real-mode code before console permissions plus approved official payload fixtures are confirmed. Track B remains real data access, starting with Douyin/Xiaohongshu API permission audits. Track C remains intelligence-layer work, but real LLM calls should wait until a real data path is stable and benchmarks can evaluate the change.
 
+Latest Simulation Lab strategy report export QA update: stabilized the human-review-only Markdown export path for single-scenario and A/B aggregate simulation results. The backend report builder now renders supplied A/B backlash-risk fields, frontend A/B export payloads include attention-level deltas, and regression coverage checks required sections, human-review questions, visibility-tradeoff rendering, supplied backlash/attention comparison fields, endpoint behavior, and unsafe-content exclusion. Backend validation passed with `python -m pytest` (`511 passed in 4.72s`); offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`); frontend validation passed with `npm run build` from `frontend/` (`built in 8.02s`, existing non-blocking Ant Design/ECharts large vendor chunk warning remains). GitHub Actions CI remains intentionally disabled, `.github/workflows/ci.yml` was not recreated, no real APIs or real LLM APIs were called, no live public fetching was enabled, no manipulation tactics were implemented, and reports remain aggregate-level and human-review-oriented. Next recommended task: add optional PDF export or a policy/legal review checklist workflow.
+
 Latest Simulation Lab Event Frame and Audience Initialization design update: created `docs/simulation_event_frame_design.md`, `docs/simulation_audience_initialization.md`, `docs/simulation_baseline_gap_analysis.md`, and `docs/simulation_strategy_policy.md` to define how Sentigraph should convert an observed event and aggregate community data into a safe initial Simulation Lab echo-chamber frame. The design covers event decomposition, audience segments, observed community initialization, aggregate persona-cluster weights, synthetic ordinary-public baselines, frame-gap classifications, ethical strategy implications, lawful content visibility tradeoffs, and disclosed creator/expert communication modeling. Updated `docs/simulation_ethics.md` to clarify that Event Frame and Audience Initialization must remain aggregate-level and must not create individual persuasion profiles, bridge-account target lists, covert creator seeding, or account-level influenceability scores. This was documentation only: no product code, dependencies, real APIs, real LLM APIs, live fetching, crawlers, or manipulation tactics were implemented. Next recommended task: implement a schema-only backend EventFrame/AudienceInitialization scaffold using synthetic fixtures and existing aggregate case outputs, with tests and offline benchmark cases.
 
 Latest Event Frame / Audience Initialization design QA update: revalidated the four Event Frame design documents against Simulation Lab ethics, model variables, current V1.5 topic-risk scoring, monitoring/forecasting context, and existing simulation services. Stabilized wording to make the Event Frame relationship to V1.5 topic risk, monitoring, forecasting, and Simulation Lab explicit; clarified how observed attention and action-threshold signals map into synthetic audience initialization; and added `transparent_creator_collaboration` plus `bot_amplification` to the creator/expert communication ethics boundary. Backend validation passed with `python -m pytest` (`488 passed in 4.03s`); offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`483 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed. No product code, schemas, frontend files, real APIs, real LLM APIs, live public fetching, or manipulation tactics were added. Outputs remain aggregate-level and human-review-oriented. Next recommended implementation task: build the case-to-simulation EventFrame/AudienceInitialization initializer as a schema-first, fixture-first backend scaffold.
@@ -1301,9 +1303,70 @@ Safety and scope:
 
 Next recommended task: implement a human-review-only Simulation Lab strategy report export that summarizes aggregate case initialization, A/B comparison deltas, assumptions, warnings, and ethics boundaries.
 
+## 6.18 Simulation Lab Strategy Report Export
+
+Update date: 2026-05-18.
+
+Status: implemented.
+
+What changed:
+
+- Added a deterministic backend Markdown report builder for Simulation Lab strategy rehearsal results.
+- Added `POST /api/v1/simulation/report/markdown` for single-scenario and A/B comparison report export.
+- Added frontend controls in the Simulation Lab page for `策略预演报告`, `导出策略预演报告`, `复制 Markdown`, and optional `.md` download.
+- Added offline benchmark coverage for `simulation_strategy_report`.
+
+Safety boundaries:
+
+- The report is generated only from already-computed aggregate `SimulationRunResult` or A/B comparison payloads.
+- The endpoint does not run benchmarks, simulations, real APIs, real LLM APIs, crawlers, live public fetch, platform actions, or notifications.
+- The Markdown report includes human-review questions, ethical risk review, limitations, and an explicit non-guarantee disclaimer.
+- It does not output raw JSON dumps, named-user target lists, account-level influenceability scores, automatic real-world execution instructions, API keys, `.env` values, raw prompts, or raw user content.
+
+Validation:
+
+- Focused backend report/export tests passed with `python -m pytest backend/app/tests/test_simulation_strategy_report.py backend/app/tests/test_offline_benchmarks.py -q` (`14 passed`).
+- Backend tests passed with `python -m pytest` (`510 passed in 5.22s`).
+- Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`; regression status `no_regression`).
+- Frontend build passed with `npm run build` from `frontend/` (`built in 8.67s`); the existing non-blocking Ant Design/ECharts large chunk warning remains.
+
+Next recommended task: QA-stabilize Simulation Lab Strategy Report Export, then consider PDF export or a policy/legal review checklist workflow.
+
+## 6.19 Simulation Lab Strategy Report Export QA Stabilization
+
+Update date: 2026-05-18.
+
+Status: QA complete.
+
+What passed:
+
+- Verified `simulation_report_builder.py`, strategy report schemas, and `POST /api/v1/simulation/report/markdown` are present.
+- Verified report export supports single-scenario and A/B comparison payloads.
+- Verified Markdown includes scenario overview, intervention comparison, key metrics, audience impact, optional visibility tradeoff, ethical risk review, human review questions, and limitations.
+- Verified frontend Simulation Lab exposes `策略预演报告`, `导出策略预演报告`, `复制 Markdown`, `.md` download, success/error states, and a non-guarantee safety notice.
+
+QA fix:
+
+- Added explicit A/B backlash-risk rendering when the frontend supplies aggregate comparison-summary fields.
+- Added regression assertions for supplied backlash-risk and attention-level deltas.
+
+Safety result:
+
+- The endpoint reads only provided aggregate simulation results and does not run external services.
+- Reports remain human-review-only and avoid raw JSON, API keys, `.env` values, individual targeting language, account-level influenceability scores, forbidden tactic recommendations, and automatic real-world execution instructions.
+
+Validation:
+
+- Focused report-export tests passed with `python -m pytest backend/app/tests/test_simulation_strategy_report.py -q` (`9 passed`).
+- Full backend tests passed with `python -m pytest` (`511 passed in 4.72s`).
+- Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`).
+- Frontend build passed with `npm run build` from `frontend/` (`built in 8.02s`); the existing non-blocking Ant Design/ECharts large vendor chunk warning remains.
+
+Next recommended task: consider PDF export or a policy/legal review checklist workflow for Simulation Lab strategy reports.
+
 ## 7. Next Recommended Task
 
-Recommended next development task: implement a human-review-only Simulation Lab strategy report export for case-initialized and A/B comparison scenarios.
+Recommended next development task: add optional PDF export or a policy/legal review checklist workflow for Simulation Lab strategy reports.
 
 Suggested scope:
 

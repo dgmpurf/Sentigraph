@@ -37,6 +37,7 @@ VisibilityRecommendation = Literal[
     "allowed_with_transparent_explanation",
     "prefer_labeling_or_clarification",
 ]
+SimulationReportMode = Literal["single", "comparison"]
 
 
 class SubIssue(BaseModel):
@@ -434,6 +435,68 @@ class SimulationRunResult(BaseModel):
         }
     )
     warnings: list[str] = Field(default_factory=list)
+
+
+class SimulationStrategyComparisonSummary(BaseModel):
+    better_option: Literal["A", "B", "tie", "inconclusive"] = "inconclusive"
+    risk_a: float | None = None
+    risk_b: float | None = None
+    risk_delta: float | None = None
+    negative_ratio_delta: float | None = None
+    polarization_delta: float | None = None
+    trust_recovery_delta: float | None = None
+    attention_level_delta: float | None = None
+    backlash_risk_a: float | None = None
+    backlash_risk_b: float | None = None
+    backlash_risk_delta: float | None = None
+    exposure_reduction_delta: float | None = None
+    visibility_backlash_delta: float | None = None
+    trust_loss_delta: float | None = None
+    spillover_risk_delta: float | None = None
+    net_risk_change_delta: float | None = None
+    ethical_risk_notes: list[str] = Field(default_factory=list)
+    recommendation: str = "human_review_required"
+    human_review_required: bool = True
+
+
+class SimulationStrategyReportRequest(BaseModel):
+    simulation_mode: SimulationReportMode = "single"
+    scenario_name: str | None = None
+    run_result: SimulationRunResult | None = None
+    result_a: SimulationRunResult | None = None
+    result_b: SimulationRunResult | None = None
+    intervention_a: str | None = None
+    intervention_b: str | None = None
+    comparison_summary: SimulationStrategyComparisonSummary | None = None
+    generated_from: str = "simulation_lab_ui"
+
+
+class SimulationStrategyReport(BaseModel):
+    title: str = "Simulation Lab Strategy Report"
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    scenario_name: str
+    simulation_mode: SimulationReportMode
+    intervention_a: str
+    intervention_b: str | None = None
+    summary: str
+    ethical_risk_flags: list[str] = Field(default_factory=list)
+    human_review_required: bool = True
+    limitations: list[str] = Field(default_factory=list)
+
+
+class SimulationStrategyReportResponse(BaseModel):
+    report: SimulationStrategyReport
+    markdown: str
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "aggregate_level_only": True,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "live_fetch_enabled": False,
+            "individual_targeting": False,
+            "automatic_action_execution": False,
+        }
+    )
 
 
 class SimulationEthicsPolicyResponse(BaseModel):

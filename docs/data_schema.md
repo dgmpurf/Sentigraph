@@ -1871,3 +1871,48 @@ The case-to-simulation initializer converts completed Sentigraph case outputs in
 - `safe_mode`
 
 `safe_mode` must keep `real_api_calls=false`, `real_llm_calls=false`, `live_fetch_enabled=false`, `individual_targeting=false`, and `automatic_action_execution=false`.
+
+## 20. Simulation Strategy Report Export Schemas
+
+The Simulation Lab strategy report export uses service-local Pydantic models under `backend/app/services/simulation/schemas.py` and a deterministic builder under `backend/app/services/simulation/simulation_report_builder.py`.
+
+`SimulationStrategyReportRequest` includes:
+
+- `simulation_mode`: `single` or `comparison`.
+- `scenario_name`.
+- `run_result` for single-scenario export.
+- `result_a` and `result_b` for A/B comparison export.
+- `intervention_a`.
+- `intervention_b` when comparison mode is used.
+- `comparison_summary` when the frontend has already computed A/B deltas.
+- `generated_from`.
+
+`SimulationStrategyComparisonSummary` includes aggregate comparison fields only:
+
+- `better_option`
+- `risk_a`
+- `risk_b`
+- `risk_delta`
+- `negative_ratio_delta`
+- `polarization_delta`
+- `trust_recovery_delta`
+- `attention_level_delta`
+- `backlash_risk_a`
+- `backlash_risk_b`
+- `backlash_risk_delta`
+- `exposure_reduction_delta`
+- `visibility_backlash_delta`
+- `trust_loss_delta`
+- `spillover_risk_delta`
+- `net_risk_change_delta`
+- `ethical_risk_notes`
+- `recommendation`
+- `human_review_required`
+
+`SimulationStrategyReportResponse` includes:
+
+- `report`: report metadata such as title, generated time, scenario name, simulation mode, interventions, summary, ethical risk flags, human review requirement, and limitations.
+- `markdown`: the generated Markdown strategy report.
+- `safe_mode`: aggregate-only safety metadata.
+
+The Markdown export must not include raw JSON dumps, raw prompts, raw user content, API key values, `.env` values, named user targets, account-level influenceability scoring, or automatic action-execution instructions.

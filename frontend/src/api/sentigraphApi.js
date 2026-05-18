@@ -92,6 +92,11 @@ export async function runSimulation(scenario) {
   return normalizeSimulationRunResult(data)
 }
 
+export async function exportSimulationStrategyMarkdownReport(payload) {
+  const { data } = await apiClient.post(`${API_PREFIX}/simulation/report/markdown`, payload)
+  return normalizeSimulationStrategyReportResponse(data)
+}
+
 export async function initializeCaseSimulation(caseId) {
   const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/simulation/initialize`)
   return normalizeCaseSimulationInitialization(data)
@@ -1229,6 +1234,28 @@ function normalizeSimulationRunResult(data) {
     recommended_interpretation: String(data.recommended_interpretation || ''),
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
     warnings: Array.isArray(data.warnings) ? data.warnings.map((warning) => String(warning)) : [],
+  }
+}
+
+function normalizeSimulationStrategyReportResponse(data) {
+  const report = data?.report && typeof data.report === 'object' ? data.report : {}
+  return {
+    markdown: typeof data?.markdown === 'string' ? data.markdown : '',
+    report: {
+      title: String(report.title || 'Simulation Lab Strategy Report'),
+      generated_at: report.generated_at ? String(report.generated_at) : null,
+      scenario_name: String(report.scenario_name || ''),
+      simulation_mode: String(report.simulation_mode || 'single'),
+      intervention_a: String(report.intervention_a || ''),
+      intervention_b: report.intervention_b ? String(report.intervention_b) : '',
+      summary: String(report.summary || ''),
+      ethical_risk_flags: Array.isArray(report.ethical_risk_flags)
+        ? report.ethical_risk_flags.map((flag) => String(flag))
+        : [],
+      human_review_required: Boolean(report.human_review_required ?? true),
+      limitations: Array.isArray(report.limitations) ? report.limitations.map((item) => String(item)) : [],
+    },
+    safe_mode: data?.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }
 
