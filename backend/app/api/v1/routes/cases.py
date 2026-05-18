@@ -5,6 +5,7 @@ from app.schemas.case import (
     AnalysisCaseCreateRequest,
     AnalysisCaseDetail,
     AnalysisCaseListItem,
+    CaseCrawlStartRequest,
     MarkdownExportResponse,
 )
 from app.schemas.forecast import ForecastResult
@@ -23,6 +24,7 @@ from app.services.case_store import (
     list_case_snapshots,
     list_cases,
     run_case,
+    run_case_crawl,
     run_monitoring_check,
 )
 from app.services.monitoring.scheduler_service import (
@@ -58,6 +60,14 @@ def get_analysis_case(case_id: str) -> AnalysisCaseDetail:
 @router.post("/{case_id}/run", response_model=AnalysisCaseDetail)
 def run_analysis_case(case_id: str) -> AnalysisCaseDetail:
     case = run_case(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return case
+
+
+@router.post("/{case_id}/crawl/start", response_model=AnalysisCaseDetail)
+def start_case_crawl(case_id: str, payload: CaseCrawlStartRequest | None = None) -> AnalysisCaseDetail:
+    case = run_case_crawl(case_id, payload)
     if not case:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return case

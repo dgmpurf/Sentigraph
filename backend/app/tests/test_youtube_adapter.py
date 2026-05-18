@@ -156,14 +156,17 @@ def test_youtube_utf8_text_round_trips_through_normalization(monkeypatch) -> Non
     monkeypatch.setenv("YOUTUBE_API_KEY", "")
 
     adapter = YouTubeAdapter()
+    title = "\u7279\u65af\u62c9\u5b89\u5168\u8bf4\u660e \u26a1"
+    description = "\u4e2d\u6587\u8bf4\u660e\u548c emoji \U0001f60a should remain intact."
+    comment_text = "\u652f\u6301\u900f\u660e\u8bf4\u660e \u26a1 and calm updates."
     post = adapter.normalize_post(
         {
             "id": {"videoId": "yt_utf8_video"},
             "snippet": {
                 "channelId": "yt_utf8_channel",
                 "channelTitle": "UTF-8 Fixture Channel",
-                "title": "特斯拉安全说明 ⚡",
-                "description": "中文说明和 emoji 😊 should remain intact.",
+                "title": title,
+                "description": description,
                 "publishedAt": "2026-05-17T10:00:00Z",
             },
             "statistics": {"likeCount": "11", "commentCount": "3", "viewCount": "100"},
@@ -176,16 +179,16 @@ def test_youtube_utf8_text_round_trips_through_normalization(monkeypatch) -> Non
                 "videoId": "yt_utf8_video",
                 "authorChannelId": {"value": "yt_utf8_commenter"},
                 "authorDisplayName": "UTF-8 Fixture Commenter",
-                "textOriginal": "支持透明说明 ⚡ and calm updates.",
+                "textOriginal": comment_text,
                 "likeCount": "4",
                 "publishedAt": "2026-05-17T10:10:00Z",
             },
         }
     )
 
-    assert post.title == "特斯拉安全说明 ⚡"
-    assert post.content == "中文说明和 emoji 😊 should remain intact."
-    assert comment.content == "支持透明说明 ⚡ and calm updates."
+    assert post.title == title
+    assert post.content == description
+    assert comment.content == comment_text
     RawPost.model_validate(post.model_dump(mode="json"))
     RawComment.model_validate(comment.model_dump(mode="json"))
 
@@ -286,6 +289,82 @@ def test_youtube_mocked_real_api_response_normalizes_without_network(monkeypatch
     assert "youtube-test-marker-should-not-appear" not in str(comments[0].raw_data)
     RawPost.model_validate(posts[0].model_dump(mode="json"))
     RawComment.model_validate(comments[0].model_dump(mode="json"))
+
+
+def test_crawl_start_youtube_mocked_real_output_is_downstream_compatible(monkeypatch) -> None:
+    fake_key_marker = "youtube-test-marker-should-not-appear"
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("YOUTUBE_API_KEY", fake_key_marker)
+
+    def fake_get_adapter(platform_id: str) -> YouTubeAdapter:
+        assert platform_id == "youtube"
+        return YouTubeAdapter(
+            mode="real",
+            credentials=YouTubeCredentials(api_key=fake_key_marker),
+            http_client=FakeYouTubeClient(),
+        )
+
+    monkeypatch.setattr("app.services.crawling.crawl_service.adapter_factory.get_adapter", fake_get_adapter)
+
+    response = client.post(
+        "/api/v1/crawl/start",
+        json={"keyword": "Tesla", "platforms": ["youtube"], "limit": 3},
+    )
+
+    assert response.status_code == 200
+    assert fake_key_marker not in response.text
+    body = response.json()
+    metadata = body["platform_metadata"][0]
+    post = body["raw_posts"][0]
+    comment = body["raw_comments"][0]
+
+    assert metadata["platform"] == "youtube"
+    assert metadata["adapter_mode"] == "real"
+    assert metadata["source_type"] == "youtube_data_api_v3"
+    assert metadata["fallback_used"] is False
+    assert metadata["credential_present"] is True
+    assert metadata["real_mode_reached"] is True
+    assert metadata["raw_post_schema_valid"] is True
+    assert metadata["raw_comment_schema_valid"] is True
+
+    assert set(post) >= {
+        "platform",
+        "post_id",
+        "author_id",
+        "author_name",
+        "title",
+        "content",
+        "like_count",
+        "reply_count",
+        "share_count",
+        "created_at",
+        "url",
+        "raw_data",
+    }
+    assert set(comment) >= {
+        "platform",
+        "post_id",
+        "comment_id",
+        "parent_id",
+        "author_id",
+        "author_name",
+        "content",
+        "like_count",
+        "reply_count",
+        "created_at",
+        "url",
+        "raw_data",
+    }
+    assert post["platform"] == "youtube"
+    assert comment["platform"] == "youtube"
+    assert comment["post_id"] == post["post_id"]
+    assert post["share_count"] == 0
+    assert isinstance(post["like_count"], int)
+    assert isinstance(comment["like_count"], int)
+    assert "api_key" not in str(post["raw_data"]).lower()
+    assert "api_key" not in str(comment["raw_data"]).lower()
+    RawPost.model_validate(post)
+    RawComment.model_validate(comment)
 
 
 def test_adapter_factory_returns_youtube_adapter(monkeypatch) -> None:

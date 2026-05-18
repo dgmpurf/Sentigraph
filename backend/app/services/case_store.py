@@ -8,9 +8,12 @@ from app.schemas.case import (
     AnalysisCaseCreateRequest,
     AnalysisCaseDetail,
     AnalysisCaseListItem,
+    CaseCrawlStartRequest,
     MarkdownExportResponse,
 )
-from app.services.mock_pipeline import build_mock_pipeline
+from app.schemas.crawl import CrawlStartRequest
+from app.services.crawling.crawl_service import start_crawl_with_adapters
+from app.services.mock_pipeline import build_mock_pipeline, build_pipeline_from_raw_data
 from app.services.mock_service import _pipeline_representative_comments
 from app.services.monitoring.alert_evaluator import evaluate_alerts
 from app.services.monitoring.snapshot_builder import build_analysis_snapshot
@@ -69,7 +72,15 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
     running_case = case.model_copy(update={"status": "running", "updated_at": repository.next_timestamp()})
     repository.update_case(running_case)
 
-    pipeline = build_mock_pipeline(running_case.project_id, platforms=running_case.platforms)
+    if running_case.raw_comments:
+        pipeline = build_pipeline_from_raw_data(
+            running_case.project_id,
+            raw_posts=running_case.raw_posts,
+            raw_comments=running_case.raw_comments,
+            platforms=running_case.platforms,
+        )
+    else:
+        pipeline = build_mock_pipeline(running_case.project_id, platforms=running_case.platforms)
     visualization = build_visualization_response(
         running_case.project_id,
         pipeline.analysis,
@@ -88,6 +99,7 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
         representative_comments=_pipeline_representative_comments(pipeline),
         include_representative_comments=True,
         report_language=running_case.report_language,
+        generated_from_mock_pipeline=pipeline.analysis_input_source != "case_raw_data",
     )
 
     completed_case = running_case.model_copy(
@@ -101,6 +113,9 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
             "risk_score": _report_score(report),
             "risk_level": report.risk_level,
             "risk_model_version": report.risk_model_version,
+            "analysis_input_source": pipeline.analysis_input_source,
+            "raw_post_count": len(running_case.raw_posts),
+            "raw_comment_count": len(running_case.raw_comments),
         },
         deep=True,
     )
@@ -117,6 +132,35 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
     )
     _save_case_snapshot(repository, completed_case, apply_mock_shift=False)
     return completed_case.model_copy(deep=True)
+
+
+def run_case_crawl(case_id: str, payload: CaseCrawlStartRequest | None = None) -> AnalysisCaseDetail | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+
+    payload = payload or CaseCrawlStartRequest()
+    platforms = payload.platforms if payload.platforms is not None else case.platforms
+    keyword = (payload.keyword or case.keyword).strip()
+    crawl_request = CrawlStartRequest(
+        keyword=keyword,
+        platforms=platforms,
+        limit=payload.limit,
+        date_range=payload.date_range,
+    )
+    crawl_result = start_crawl_with_adapters(crawl_request)
+    attached_at = repository.next_timestamp()
+    raw_data_status = "attached" if crawl_result.raw_posts or crawl_result.raw_comments else "empty"
+    return repository.save_case_raw_data(
+        case.case_id,
+        raw_posts=crawl_result.raw_posts,
+        raw_comments=crawl_result.raw_comments,
+        crawl_metadata=crawl_result.platform_metadata,
+        crawl_source_mode="case_crawl_start",
+        raw_data_status=raw_data_status,
+        attached_at=attached_at,
+    )
 
 
 def list_case_snapshots(case_id: str) -> list[AnalysisSnapshot] | None:

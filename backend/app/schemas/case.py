@@ -4,13 +4,16 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.schemas.analysis import AnalysisResultResponse
-from app.schemas.common import RiskLevel
+from app.schemas.comment import RawComment, RawPost
+from app.schemas.common import DateRange, RiskLevel
+from app.schemas.crawl import PlatformCrawlMetadata
 from app.schemas.report import PublicOpinionReport, ReportLanguage
 from app.schemas.scheduler import MonitoringScheduleConfig
 from app.schemas.visualization import VisualizationResponse
 
 
 AnalysisCaseStatus = Literal["draft", "running", "completed", "failed"]
+RawDataStatus = Literal["missing", "attached", "empty"]
 
 
 class AnalysisCaseCreateRequest(BaseModel):
@@ -18,6 +21,13 @@ class AnalysisCaseCreateRequest(BaseModel):
     platforms: list[str] = Field(default_factory=list)
     title: str | None = None
     report_language: ReportLanguage = "zh-CN"
+
+
+class CaseCrawlStartRequest(BaseModel):
+    keyword: str | None = Field(default=None, min_length=1)
+    platforms: list[str] | None = None
+    limit: int = Field(default=100, ge=1, le=1000)
+    date_range: DateRange | None = None
 
 
 class AnalysisCase(BaseModel):
@@ -45,6 +55,15 @@ class AnalysisCaseDetail(AnalysisCase):
     visualization_data: VisualizationResponse | None = None
     report: PublicOpinionReport | None = None
     markdown_available: bool = False
+    raw_posts: list[RawPost] = Field(default_factory=list)
+    raw_comments: list[RawComment] = Field(default_factory=list)
+    crawl_metadata: list[PlatformCrawlMetadata] = Field(default_factory=list)
+    crawl_source_mode: str | None = None
+    crawl_attached_at: datetime | None = None
+    raw_data_status: RawDataStatus = "missing"
+    analysis_input_source: Literal["case_raw_data", "mock_data_fallback"] | None = None
+    raw_post_count: int = 0
+    raw_comment_count: int = 0
 
 
 class MarkdownExportResponse(BaseModel):

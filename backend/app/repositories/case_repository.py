@@ -11,7 +11,9 @@ from app.schemas.case import (
     AnalysisCaseListItem,
     MarkdownExportResponse,
 )
+from app.schemas.comment import RawComment, RawPost
 from app.schemas.common import RiskLevel
+from app.schemas.crawl import PlatformCrawlMetadata
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.report import PublicOpinionReport
 from app.schemas.scheduler import MonitoringScheduleConfig
@@ -58,6 +60,37 @@ class CaseRepository:
 
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
         return self.store.update_case(case)
+
+    def save_case_raw_data(
+        self,
+        case_id: str,
+        *,
+        raw_posts: list[RawPost],
+        raw_comments: list[RawComment],
+        crawl_metadata: list[PlatformCrawlMetadata],
+        crawl_source_mode: str,
+        raw_data_status: str,
+        attached_at: datetime | None = None,
+    ) -> AnalysisCaseDetail | None:
+        case = self.get_case(case_id)
+        if not case:
+            return None
+        timestamp = attached_at or self.next_timestamp()
+        updated_case = case.model_copy(
+            update={
+                "raw_posts": raw_posts,
+                "raw_comments": raw_comments,
+                "crawl_metadata": crawl_metadata,
+                "crawl_source_mode": crawl_source_mode,
+                "crawl_attached_at": timestamp,
+                "raw_data_status": raw_data_status,
+                "raw_post_count": len(raw_posts),
+                "raw_comment_count": len(raw_comments),
+                "updated_at": timestamp,
+            },
+            deep=True,
+        )
+        return self.update_case(updated_case)
 
     def get_monitoring_config(self, case_id: str) -> MonitoringScheduleConfig | None:
         case = self.get_case(case_id)

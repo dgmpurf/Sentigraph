@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 
 from app.repositories.case_repository import CaseRepository
 from app.schemas.case import AnalysisCaseCreateRequest, MarkdownExportResponse
+from app.schemas.comment import RawComment, RawPost
+from app.schemas.crawl import PlatformCrawlMetadata
 from app.services.mock_pipeline import build_mock_pipeline
 from app.services.mock_service import _pipeline_representative_comments
 from app.services.recommendation.report_builder import build_public_opinion_report
@@ -105,3 +107,83 @@ def test_local_json_store_saves_analysis_result_report_and_markdown(tmp_path) ->
     assert markdown is not None
     assert markdown.filename == "tesla_demo.md"
     assert "Mock Markdown report." in markdown.markdown
+
+
+def test_local_json_store_persists_attached_raw_crawl_data_after_reload(tmp_path) -> None:
+    store_path = tmp_path / "cases.json"
+    repository = CaseRepository(LocalJsonCaseStore(store_path))
+    case = repository.create_case(
+        AnalysisCaseCreateRequest(keyword="Tesla", platforms=["youtube"], title="Tesla YouTube Demo")
+    )
+
+    attached = repository.save_case_raw_data(
+        case.case_id,
+        raw_posts=[_raw_post()],
+        raw_comments=[_raw_comment()],
+        crawl_metadata=[
+            PlatformCrawlMetadata(
+                platform="youtube",
+                adapter_mode="real",
+                source_type="youtube_data_api_v3",
+                fetch_status="real",
+                credential_present=True,
+                post_count=1,
+                comment_count=1,
+                raw_post_schema_valid=True,
+                raw_comment_schema_valid=True,
+            )
+        ],
+        crawl_source_mode="case_crawl_start",
+        raw_data_status="attached",
+        attached_at=datetime(2026, 5, 14, 10, 30, tzinfo=timezone.utc),
+    )
+
+    reloaded_repository = CaseRepository(LocalJsonCaseStore(store_path))
+    detail = reloaded_repository.get_case(case.case_id)
+
+    assert attached is not None
+    assert detail is not None
+    assert detail.raw_data_status == "attached"
+    assert detail.crawl_source_mode == "case_crawl_start"
+    assert detail.crawl_attached_at == datetime(2026, 5, 14, 10, 30, tzinfo=timezone.utc)
+    assert detail.raw_post_count == 1
+    assert detail.raw_comment_count == 1
+    assert detail.raw_posts[0].platform == "youtube"
+    assert detail.raw_comments[0].content == "YouTube fixture QA comment survives local JSON reload."
+    assert detail.crawl_metadata[0].credential_present is True
+    assert "YOUTUBE_API_KEY" not in detail.model_dump_json()
+
+
+def _raw_post() -> RawPost:
+    return RawPost(
+        platform="youtube",
+        post_id="yt_reload_video_001",
+        author_id="yt_reload_channel",
+        author_name="Fixture Channel",
+        title="Reload-safe YouTube fixture",
+        content="Safe public fixture description.",
+        like_count=12,
+        reply_count=1,
+        share_count=0,
+        created_at="2026-05-17T12:00:00Z",
+        url="https://www.youtube.com/watch?v=yt_reload_video_001",
+        raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+    )
+
+
+def _raw_comment() -> RawComment:
+    return RawComment(
+        platform="youtube",
+        post_id="yt_reload_video_001",
+        comment_id="yt_reload_comment_001",
+        parent_id=None,
+        author_id="yt_reload_commenter",
+        author_name="Fixture Viewer",
+        content="YouTube fixture QA comment survives local JSON reload.",
+        like_count=3,
+        reply_count=0,
+        share_count=0,
+        created_at="2026-05-17T12:05:00Z",
+        url="https://www.youtube.com/watch?v=yt_reload_video_001&lc=yt_reload_comment_001",
+        raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+    )

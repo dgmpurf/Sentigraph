@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from app.schemas.analysis import AnalysisResultResponse, ConflictResult, SentimentResult
-from app.schemas.comment import CleanComment, RawComment
+from app.schemas.comment import CleanComment, RawComment, RawPost
 from app.schemas.propagation import PropagationEdge, PropagationMetrics, PropagationNode, PropagationResponse
 from app.schemas.risk import TopicRiskScoreResult
 from app.schemas.visualization import VisualizationResponse
@@ -35,6 +35,8 @@ class MockPipelineResult:
     propagation: PropagationResponse
     risk_result: RiskScoreResult
     topic_risk_result: TopicRiskScoreResult
+    raw_posts: list[RawPost] = field(default_factory=list)
+    analysis_input_source: str = "mock_data_fallback"
 
 
 def build_mock_pipeline(
@@ -43,6 +45,48 @@ def build_mock_pipeline(
     platforms: list[str] | None = None,
 ) -> MockPipelineResult:
     raw_comments = _load_raw_comments(platforms)
+    return _build_pipeline(
+        project_id,
+        raw_comments=raw_comments,
+        raw_posts=[],
+        analysis_input_source="mock_data_fallback",
+    )
+
+
+def build_pipeline_from_raw_data(
+    project_id: str,
+    *,
+    raw_posts: list[RawPost] | None = None,
+    raw_comments: list[RawComment],
+    platforms: list[str] | None = None,
+) -> MockPipelineResult:
+    selected_platforms = {platform.lower() for platform in platforms or []}
+    normalized_comments = [RawComment.model_validate(comment) for comment in raw_comments]
+    normalized_posts = [RawPost.model_validate(post) for post in raw_posts or []]
+    if selected_platforms:
+        filtered_comments = [
+            comment for comment in normalized_comments if comment.platform.lower() in selected_platforms
+        ]
+        filtered_posts = [
+            post for post in normalized_posts if post.platform.lower() in selected_platforms
+        ]
+        normalized_comments = filtered_comments or normalized_comments
+        normalized_posts = filtered_posts or normalized_posts
+    return _build_pipeline(
+        project_id,
+        raw_comments=normalized_comments,
+        raw_posts=normalized_posts,
+        analysis_input_source="case_raw_data",
+    )
+
+
+def _build_pipeline(
+    project_id: str,
+    *,
+    raw_comments: list[RawComment],
+    raw_posts: list[RawPost],
+    analysis_input_source: str,
+) -> MockPipelineResult:
     clean_comments = detect_duplicate_groups(raw_comments)
 
     sentiment_analyzer = SentimentAnalyzer()
@@ -53,7 +97,13 @@ def build_mock_pipeline(
     bot_accounts, bot_impact = calculate_bot_scores(user_aggregates, clean_comments, sentiment_results)
     topics = TopicClusterer().cluster(clean_comments, sentiment_results)
     conflicts = _build_mock_conflicts(topics, clean_comments)
-    propagation = build_mock_propagation(project_id, raw_comments, clean_comments, sentiment_results)
+    propagation = build_mock_propagation(
+        project_id,
+        raw_comments,
+        clean_comments,
+        sentiment_results,
+        raw_posts=raw_posts,
+    )
     trend_shift = _calculate_trend_shift(clean_comments, sentiment_results)
     risk_result = calculate_risk_score(
         sentiment_summary,
@@ -97,10 +147,14 @@ def build_mock_pipeline(
         real_crisis_risk=topic_risk_result.real_crisis_risk,
         manipulation_risk=topic_risk_result.manipulation_risk,
         risk_explanation=topic_risk_result.risk_explanation,
+        analysis_input_source=analysis_input_source,
+        raw_post_count=len(raw_posts),
+        raw_comment_count=len(raw_comments),
     )
 
     return MockPipelineResult(
         project_id=project_id,
+        raw_posts=raw_posts,
         raw_comments=raw_comments,
         clean_comments=clean_comments,
         sentiment_results=sentiment_results,
@@ -108,6 +162,7 @@ def build_mock_pipeline(
         propagation=propagation,
         risk_result=risk_result,
         topic_risk_result=topic_risk_result,
+        analysis_input_source=analysis_input_source,
     )
 
 
@@ -149,17 +204,21 @@ def build_mock_propagation(
     raw_comments: list[RawComment],
     clean_comments: list[CleanComment],
     sentiment_results: list[SentimentResult],
+    *,
+    raw_posts: list[RawPost] | None = None,
 ) -> PropagationResponse:
     sentiment_by_raw_comment = _sentiment_by_raw_comment(clean_comments, sentiment_results)
     comments_by_post: dict[str, list[RawComment]] = defaultdict(list)
     for comment in raw_comments:
         comments_by_post[str(comment.post_id)].append(comment)
+    posts_by_id = {str(post.post_id): post for post in raw_posts or []}
 
     nodes: list[PropagationNode] = []
     edges: list[PropagationEdge] = []
 
     for post_id, comments in sorted(comments_by_post.items()):
         first_comment = min(comments, key=lambda comment: comment.created_at)
+        source_post = posts_by_id.get(str(post_id))
         post_sentiment = _average(
             sentiment_by_raw_comment.get(comment.comment_id, 0.0) for comment in comments
         )
@@ -168,10 +227,10 @@ def build_mock_propagation(
             PropagationNode(
                 node_id=post_id,
                 type="post",
-                platform=first_comment.platform,
-                content=f"Mock source discussion for {post_id}",
-                author_id=f"source_{post_id}",
-                created_at=first_comment.created_at,
+                platform=source_post.platform if source_post else first_comment.platform,
+                content=_post_node_content(source_post, post_id),
+                author_id=source_post.author_id if source_post else f"source_{post_id}",
+                created_at=source_post.created_at if source_post else first_comment.created_at,
                 sentiment_score=round(post_sentiment, 4),
                 influence_score=round(post_influence, 4),
             )
@@ -221,6 +280,13 @@ def _load_raw_comments(platforms: list[str] | None = None) -> list[RawComment]:
         return comments
     filtered = [comment for comment in comments if comment.platform.lower() in selected_platforms]
     return filtered or comments
+
+
+def _post_node_content(post: RawPost | None, post_id: str) -> str:
+    if not post:
+        return f"Mock source discussion for {post_id}"
+    content = post.title or post.content or f"Source discussion for {post_id}"
+    return content[:120]
 
 
 def _sentiment_by_raw_comment(

@@ -21,6 +21,8 @@ Completed:
 - Added `.env.example` placeholders for `YOUTUBE_ADAPTER_MODE=mock` and `YOUTUBE_API_KEY=`.
 - Added tests for mock search/comments, normalization, missing-key fallback, mocked real API response normalization, adapter factory registration, `/crawl/start` mock and missing-key metadata behavior, UTF-8/emoji text handling, and top-level/reply comment parent/default URL behavior.
 - Verified a local real-mode smoke check with `adapter_mode=real`, `fallback_used=false`, `credential_present=true`, `post_count=3`, `comment_count=3`, and valid normalized post/comment schema metadata.
+- Verified the mocked-real `/crawl/start` output shape remains downstream-compatible with `RawPost` / `RawComment` consumers, with credential values redacted from response text and `raw_data`.
+- Added explicit case raw-data ingestion so normalized YouTube/future crawl output can be attached to a case and used by the next case analysis run.
 
 Acceptance:
 
@@ -33,10 +35,40 @@ Acceptance:
 Future work:
 
 - Keep any future YouTube real-mode validation manual, tiny-limit, quota-aware, and key-redacted.
+- Add a small guarded frontend affordance or demo-flow card for `POST /api/v1/cases/{case_id}/crawl/start` if real-data demos become frequent.
 - Douyin comment API permission verification remains future work.
 - Xiaohongshu note/comment API permission verification remains future work.
 - Reddit and Bilibili approval/permission work remains future work.
 - Weibo company-age/application requirement remains future work.
+- GitHub Actions CI remains intentionally disabled.
+
+### Case Raw Data Ingestion for Real Crawl Outputs
+
+Status: implemented and QA-stabilized for YouTube and future normalized `RawPost` / `RawComment` adapter outputs.
+
+Completed:
+
+- Extended case detail/storage schemas with `raw_posts`, `raw_comments`, `crawl_metadata`, `crawl_source_mode`, `crawl_attached_at`, `raw_data_status`, raw counts, and `analysis_input_source`.
+- Added `POST /api/v1/cases/{case_id}/crawl/start` to explicitly crawl with the case keyword/platforms or safe overrides, attach normalized output to the case, and return safe counts/metadata.
+- Refactored case analysis so attached raw comments use the deterministic local analysis pipeline; missing raw comments still fall back to the existing mock dataset.
+- Representative report comments can now come from attached YouTube public comments.
+- Simulation Lab case initialization can consume the resulting YouTube-based analysis through existing aggregate case outputs.
+- Added regression coverage for old-case compatibility, raw-data persistence, case-specific crawl attachment, raw-data analysis source metadata, report representative comments, fallback behavior, and Simulation Lab initialization.
+- QA stabilization added local JSON reload coverage, MongoDB-shaped persistence coverage through the fake store, Markdown provenance checks that keep YouTube-derived comments and exclude old mock comments when raw case comments exist, and a guard against raw-data JSON dumps in user-facing Markdown.
+
+Acceptance:
+
+- `python -m pytest` passed with `531 passed in 5.22s`.
+- `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
+- Frontend build was not run because no frontend files changed.
+- Automated tests use mocked crawl output only and do not call the real YouTube API.
+- No scraping, API-key printing, `.env` modification, real LLM call, login bypass, captcha bypass, anti-bot evasion, or GitHub Actions workflow was introduced.
+
+Future work:
+
+- YouTube full real-data demo is the next recommended task and should remain manual, tiny-limit, key-redacted, and quota-aware.
+- Add an optional frontend button for case-specific crawl attachment.
+- Keep other platform real-mode ingestion behind official permissions, mocked regression tests, and key-redacted metadata.
 - GitHub Actions CI remains intentionally disabled.
 
 ### v5.6 Demo Package and Release Readiness

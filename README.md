@@ -24,14 +24,14 @@ What the demo can show:
 What remains mock/offline:
 
 - Platform data comes from local mock data, fixtures, and deterministic backend services by default.
-- YouTube is the first real-capable official API adapter, but it remains in mock mode unless `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured.
+- YouTube is the first real-capable official API adapter, but it remains in mock mode unless `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured. Real YouTube crawl output can now be explicitly attached to a case through `POST /api/v1/cases/{case_id}/crawl/start` before running analysis; case analysis still falls back to mock data when no case raw data is attached.
 - Public parsers use fixture-first parsing and do not enable live public fetching.
 - LLM infrastructure defaults to `MockProvider`; OpenAI, DeepSeek, and Qwen are readiness placeholders only.
 - Simulation Lab is a deterministic aggregate scenario simulator, not a real-world action execution system and not a guaranteed prediction engine.
 
 What requires future approval or explicit local configuration before real integration:
 
-- YouTube Data API key access is available locally; keep the key in `.env` or the local environment only, never in git or logs.
+- YouTube Data API key access is available locally; keep the key in ignored `.env` only, never in git, terminal output, or logs.
 - Douyin and Xiaohongshu developer access is recorded, but comment/note-comment permissions still need console verification.
 - Reddit API approval remains pending before any real Reddit mode should be enabled.
 - Weibo, Bilibili, Kuaishou, Zhihu, Douban, Toutiao, and other platform integrations remain official-API/planning work.
@@ -218,14 +218,16 @@ Default mock mode:
 set YOUTUBE_ADAPTER_MODE=mock
 ```
 
-Local real mode, only after placing the key in `.env` or the local process environment:
+Local real mode, only after placing the key in an ignored `.env` file that you do not print:
 
-```cmd
-set YOUTUBE_ADAPTER_MODE=real
-set YOUTUBE_API_KEY=your_youtube_data_api_key
+```text
+YOUTUBE_ADAPTER_MODE=real
+YOUTUBE_API_KEY=
 ```
 
 Real mode is used only when both values are present. If the key is missing, the adapter safely falls back to mock mode and returns `credential_present=false` plus safe fallback metadata. A local real-mode smoke check has passed with tiny limits and key-redacted metadata only. Never print or commit the key.
+
+Case ingestion boundary: `/api/v1/crawl/start` can return normalized public YouTube `RawPost` / `RawComment` data for diagnostics, and `POST /api/v1/cases/{case_id}/crawl/start` can explicitly attach normalized crawl output to a selected case. `POST /api/v1/cases/{case_id}/run` uses attached case raw comments when present and otherwise falls back to the deterministic mock dataset. Real YouTube crawling is never triggered automatically by case creation or case run.
 
 Official API concepts used by the minimal adapter:
 

@@ -100,3 +100,6 @@ class AnalysisResultResponse(BaseModel):
     real_crisis_risk: float | None = None
     manipulation_risk: float | None = None
     risk_explanation: str | None = None
+    analysis_input_source: Literal["case_raw_data", "mock_data_fallback"] = "mock_data_fallback"
+    raw_post_count: int = 0
+    raw_comment_count: int = 0

@@ -1,5 +1,7 @@
 # Sentigraph Local Demo Checklist
 
+Latest Case Raw Data Ingestion QA validation: 2026-05-18. `POST /api/v1/cases/{case_id}/crawl/start` can explicitly attach normalized YouTube/future adapter `RawPost` / `RawComment` output to a case. The next `POST /api/v1/cases/{case_id}/run` uses attached raw comments with `analysis_input_source=case_raw_data`; without attached raw comments it falls back to the deterministic mock dataset. QA coverage verifies local JSON reload persistence, MongoDB-shaped persistence through the fake store, YouTube-derived representative comments in Markdown, old mock comments not appearing when raw case comments exist, and no raw-data JSON dump in the user-facing Markdown report. Backend tests passed with `python -m pytest` (`531 passed in 5.22s`) and offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`). Frontend build was not run because no frontend files changed. Automated tests use mocked crawl output only and do not call the real YouTube API.
+
 Latest browser smoke and demo story validation: 2026-05-18. Local validation passed with `npm run build` from `frontend` (`built in 8.17s`, existing non-blocking Ant Design/ECharts large vendor chunk warning remains), `python -m pytest` (`511 passed in 5.19s`), and `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`). `python scripts/api_smoke_check.py --base-url http://127.0.0.1:8000` passed against the local backend (`38 passed, 0 failed`). Browser smoke used an already-running backend on `127.0.0.1:8000` and a clean Vite dev server on an alternate local port because `5173` was occupied by a stale local process. Smoked pages: Demo Flow, Dashboard, Cases, Analysis Result, Summary Report, Risk Monitor, Simulation Lab, Benchmarks, LLM Safety, Platform Integration Overview, Public Parser Status, and Selector Repair Tool. Simulation Lab case initialization, single-scenario run, A/B comparison, content visibility tradeoff panel, strategy report export, and allowed-intervention dropdown were verified. No raw `[object Object]` rendering was observed. Forbidden Simulation Lab tactics were not selectable. A small Ant Design `rowKey` warning on the LLM Safety usage table was fixed. Screenshot/demo story documentation now lives in `docs/demo_story.md`; local smoke screenshots were captured under `.benchmarks/demo_smoke_screenshots/`.
 
 Latest v5.4 demo polish validation: 2026-05-18. Added the `Demo Flow / 演示流程` page for one-page local walkthroughs, extended deterministic demo seeding with forecast and case-to-simulation readiness fields, and extended the local API smoke script to cover forecast plus Simulation Lab demo/run/report export. Backend tests passed with `python -m pytest` (`511 passed in 4.88s`), offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`; `no_regression`), frontend production build passed with `npm run build` from `frontend` in 8.06s with the existing non-blocking Ant Design/ECharts vendor chunk warning, and local API smoke passed against a temporary backend on port 8010 (`38 passed, 0 failed`). No real APIs, real LLM APIs, live public fetching, real crawlers, real notifications, or manipulation tactics were enabled.
@@ -393,6 +395,95 @@ Expected result:
 - Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao, and YouTube are visible as mock-selectable.
 - Crawler-later platforms are visible but disabled.
 - YouTube real mode is shown as available only when `YOUTUBE_API_KEY` is present; the key value is never displayed.
+
+## 4.4.1 Optional YouTube Real-Data Manual Smoke Check
+
+This check is manual only. It may call the official YouTube Data API v3, so keep it tiny, quota-aware, and key-redacted. Automated tests must continue to use mocked YouTube clients only.
+
+Prerequisites:
+
+- The backend is running locally.
+- An ignored local `.env` contains `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY`.
+- Do not print `.env` values and do not echo the API key in the terminal.
+
+PowerShell request:
+
+```powershell
+$body = @{
+  keyword = "Tesla"
+  platforms = @("youtube")
+  limit = 3
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/crawl/start" `
+  -ContentType "application/json" `
+  -Body $body | ConvertTo-Json -Depth 8
+```
+
+Expected result:
+
+- `platform_metadata[0].platform` is `youtube`.
+- `platform_metadata[0].adapter_mode` is `real` when local configuration is valid.
+- `platform_metadata[0].source_type` is `youtube_data_api_v3`.
+- `platform_metadata[0].fallback_used=false`.
+- `platform_metadata[0].credential_present=true`, with no key value returned.
+- `post_count` and `comment_count` are tiny and schema-valid.
+- `raw_posts` contain normalized public YouTube video metadata.
+- `raw_comments` contain normalized public comment metadata.
+- No scraping, cookies, login bypass, captcha bypass, browser profile, private data access, or LLM call occurs.
+
+Current real-data pipeline status:
+
+- YouTube real crawl output is normalized and returned from `/api/v1/crawl/start`.
+- YouTube crawl output can be explicitly attached to a case with `POST /api/v1/cases/{case_id}/crawl/start`.
+- `POST /api/v1/cases/{case_id}/run` uses attached case raw comments when available and falls back to mock data when no raw comments are attached.
+- Case creation and case run do not automatically call YouTube.
+
+Optional case-ingestion demo path:
+
+```powershell
+$caseBody = @{
+  keyword = "Tesla"
+  platforms = @("youtube")
+  title = "YouTube Real Data Case"
+} | ConvertTo-Json
+
+$case = Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/cases" `
+  -ContentType "application/json" `
+  -Body $caseBody
+
+$crawlBody = @{
+  limit = 3
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/crawl/start" `
+  -ContentType "application/json" `
+  -Body $crawlBody | ConvertTo-Json -Depth 8
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/run" | ConvertTo-Json -Depth 8
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/report/markdown" | ConvertTo-Json -Depth 8
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/cases/$($case.case_id)/simulation/initialization-preview" | ConvertTo-Json -Depth 8
+```
+
+Expected result:
+
+- The case detail shows `raw_data_status=attached`, `crawl_source_mode=case_crawl_start`, and nonzero `raw_comment_count` if YouTube returned comments.
+- The case run shows `analysis_result.analysis_input_source=case_raw_data`.
+- Representative comments in the Chinese report can come from attached YouTube comments.
+- The same completed case can be used by Simulation Lab case initialization; the preview returns only aggregate event-frame, audience, and scenario data.
+- API key values are never returned; only boolean credential metadata is shown.
 
 ## 4.5 Optional Reddit Mock Adapter Smoke Check
 
@@ -1183,7 +1274,7 @@ Validated with a 1440x960 desktop browser viewport through Chrome headless CDP f
 - Dashboard renders V1.5 risk model, top-risk topics, real crisis risk, and manipulation risk.
 - Keyword Search shows Reddit, Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao as mock-selectable choices.
 - Crawler-later platforms are visible as future integration targets.
-- YouTube remains disabled/optional future and is not active in the MVP selector.
+- YouTube is mock-selectable and optionally real-capable through the official Data API v3 when configured locally.
 - Running a mock analysis returns to Dashboard with refreshed V1.5 mock data.
 - Cases page shows the completed case with title, keyword, selected platforms, risk score, risk level, updated time, and status.
 - Summary Report can copy the suggested public response, copy the completed case as Markdown, and download a `.md` file.

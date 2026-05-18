@@ -255,7 +255,16 @@ failed
   "analysis_result": {},
   "visualization_data": {},
   "report": {},
-  "markdown_available": true
+  "markdown_available": true,
+  "raw_posts": [],
+  "raw_comments": [],
+  "crawl_metadata": [],
+  "crawl_source_mode": null,
+  "crawl_attached_at": null,
+  "raw_data_status": "missing",
+  "analysis_input_source": "mock_data_fallback",
+  "raw_post_count": 0,
+  "raw_comment_count": 0
 }
 ```
 
@@ -264,10 +273,70 @@ Rules:
 - `analysis_result` uses the existing `AnalysisResultResponse` schema.
 - `visualization_data` uses the existing `VisualizationResponse` schema.
 - `report` uses the normalized `PublicOpinionReport` schema.
+- `raw_posts` and `raw_comments` use the shared `RawPost` / `RawComment` schemas returned by platform adapters and public-parser fixtures.
+- `crawl_metadata` uses `PlatformCrawlMetadata` and may include safe booleans such as `credential_present`; it must never include credential values.
+- `raw_data_status` is `missing`, `attached`, or `empty`.
+- `analysis_input_source` is `case_raw_data` when attached case raw comments are used for the run and `mock_data_fallback` otherwise.
 - The MVP case store is deterministic and does not require a database.
 - Case data survives backend restart when using the default local JSON store.
 - Tests must use temporary case-store paths instead of `backend/data/cases.json`.
-- Case creation and case run must remain mock-first and must not call real platform APIs or crawlers.
+- Case creation and case run must not call real platform APIs or crawlers automatically. Case-specific raw-data ingestion is explicit through `POST /api/v1/cases/{case_id}/crawl/start`.
+
+### Case Raw Data Ingestion
+
+`POST /api/v1/cases/{case_id}/crawl/start` stores adapter output on a case:
+
+```json
+{
+  "raw_posts": [
+    {
+      "platform": "youtube",
+      "post_id": "yt_video_id",
+      "author_id": "channel_id",
+      "author_name": "Channel title",
+      "title": "Public video title",
+      "content": "Public video description",
+      "like_count": 42,
+      "reply_count": 7,
+      "share_count": 0,
+      "created_at": "2026-05-17T12:00:00Z",
+      "url": "https://www.youtube.com/watch?v=yt_video_id",
+      "raw_data": {
+        "source_type": "youtube_data_api_v3"
+      }
+    }
+  ],
+  "raw_comments": [
+    {
+      "platform": "youtube",
+      "post_id": "yt_video_id",
+      "comment_id": "yt_comment_id",
+      "parent_id": null,
+      "author_id": "channel_or_commenter_id",
+      "author_name": "Public commenter name",
+      "content": "Public comment text.",
+      "like_count": 5,
+      "reply_count": 1,
+      "share_count": 0,
+      "created_at": "2026-05-17T12:05:00Z",
+      "url": "https://www.youtube.com/watch?v=yt_video_id&lc=yt_comment_id",
+      "raw_data": {
+        "source_type": "youtube_data_api_v3"
+      }
+    }
+  ],
+  "crawl_metadata": [],
+  "crawl_source_mode": "case_crawl_start",
+  "crawl_attached_at": "2026-05-18T10:00:00Z",
+  "raw_data_status": "attached"
+}
+```
+
+Rules:
+
+- Do not store API keys, `.env` values, cookies, OAuth-only private fields, or platform credentials.
+- `case_raw_data` analysis is still deterministic and uses existing local analysis services; it does not call real LLM APIs.
+- If no attached raw comments exist, case analysis falls back to existing mock data.
 
 ### MarkdownExportResponse
 

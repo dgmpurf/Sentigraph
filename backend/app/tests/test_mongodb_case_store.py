@@ -9,6 +9,8 @@ import pytest
 from app.repositories.case_repository import CaseRepository
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseCreateRequest, MarkdownExportResponse
+from app.schemas.comment import RawComment, RawPost
+from app.schemas.crawl import PlatformCrawlMetadata
 from app.schemas.notification import NotificationOutboxItem
 from app.services.mock_pipeline import build_mock_pipeline
 from app.services.mock_service import _pipeline_representative_comments
@@ -205,6 +207,48 @@ def test_mongodb_store_case_report_markdown_snapshot_alert_and_notification() ->
     assert notifications == [notification]
 
 
+def test_mongodb_store_persists_attached_raw_crawl_data() -> None:
+    fake_database = FakeMongoDatabase()
+    repository = CaseRepository(MongoDbCaseStore(database=fake_database))
+    case = repository.create_case(
+        AnalysisCaseCreateRequest(keyword="Tesla", platforms=["youtube"], title="Tesla Mongo Raw Demo")
+    )
+
+    attached = repository.save_case_raw_data(
+        case.case_id,
+        raw_posts=[_raw_post()],
+        raw_comments=[_raw_comment()],
+        crawl_metadata=[
+            PlatformCrawlMetadata(
+                platform="youtube",
+                adapter_mode="real",
+                source_type="youtube_data_api_v3",
+                fetch_status="real",
+                credential_present=True,
+                post_count=1,
+                comment_count=1,
+                raw_post_schema_valid=True,
+                raw_comment_schema_valid=True,
+            )
+        ],
+        crawl_source_mode="case_crawl_start",
+        raw_data_status="attached",
+        attached_at=datetime(2026, 5, 14, 10, 30, tzinfo=timezone.utc),
+    )
+    reloaded_repository = CaseRepository(MongoDbCaseStore(database=fake_database))
+    detail = reloaded_repository.get_case(case.case_id)
+
+    assert attached is not None
+    assert detail is not None
+    assert detail.raw_data_status == "attached"
+    assert detail.raw_post_count == 1
+    assert detail.raw_comment_count == 1
+    assert detail.raw_posts[0].post_id == "yt_mongo_video_001"
+    assert detail.raw_comments[0].content == "YouTube fixture QA comment survives MongoDB reload."
+    assert detail.crawl_metadata[0].credential_present is True
+    assert "YOUTUBE_API_KEY" not in detail.model_dump_json()
+
+
 def test_mongodb_store_reset_clears_all_collections() -> None:
     fake_database = FakeMongoDatabase()
     store = MongoDbCaseStore(database=fake_database)
@@ -306,3 +350,38 @@ def _matches(document: dict[str, Any], filter_query: dict[str, Any]) -> bool:
 
 def _index_args(collection: FakeMongoCollection) -> set[tuple[Any, ...]]:
     return {args for args, _kwargs in collection.indexes}
+
+
+def _raw_post() -> RawPost:
+    return RawPost(
+        platform="youtube",
+        post_id="yt_mongo_video_001",
+        author_id="yt_mongo_channel",
+        author_name="Fixture Channel",
+        title="Mongo-safe YouTube fixture",
+        content="Safe public fixture description.",
+        like_count=12,
+        reply_count=1,
+        share_count=0,
+        created_at="2026-05-17T12:00:00Z",
+        url="https://www.youtube.com/watch?v=yt_mongo_video_001",
+        raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+    )
+
+
+def _raw_comment() -> RawComment:
+    return RawComment(
+        platform="youtube",
+        post_id="yt_mongo_video_001",
+        comment_id="yt_mongo_comment_001",
+        parent_id=None,
+        author_id="yt_mongo_commenter",
+        author_name="Fixture Viewer",
+        content="YouTube fixture QA comment survives MongoDB reload.",
+        like_count=3,
+        reply_count=0,
+        share_count=0,
+        created_at="2026-05-17T12:05:00Z",
+        url="https://www.youtube.com/watch?v=yt_mongo_video_001&lc=yt_mongo_comment_001",
+        raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+    )

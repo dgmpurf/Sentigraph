@@ -1405,7 +1405,16 @@ Response:
   "analysis_result": null,
   "visualization_data": null,
   "report": null,
-  "markdown_available": false
+  "markdown_available": false,
+  "raw_posts": [],
+  "raw_comments": [],
+  "crawl_metadata": [],
+  "crawl_source_mode": null,
+  "crawl_attached_at": null,
+  "raw_data_status": "missing",
+  "analysis_input_source": null,
+  "raw_post_count": 0,
+  "raw_comment_count": 0
 }
 ```
 
@@ -1416,6 +1425,60 @@ GET /api/v1/cases/{case_id}
 ```
 
 Response contains the same metadata as Create Case. After a run, `analysis_result`, `visualization_data`, `report`, and `markdown_available` are populated.
+
+### Start Case Crawl and Attach Raw Data
+
+```http
+POST /api/v1/cases/{case_id}/crawl/start
+```
+
+This endpoint explicitly attaches normalized crawl output to one case. It uses the case keyword and selected platforms by default, or safe request overrides when provided. It calls the same adapter layer as `POST /api/v1/crawl/start`, stores `raw_posts`, `raw_comments`, and safe `crawl_metadata` on the case, and returns the updated case detail.
+
+Request:
+
+```json
+{
+  "keyword": "Tesla",
+  "platforms": ["youtube"],
+  "limit": 3,
+  "date_range": null
+}
+```
+
+All fields are optional. If omitted, `keyword` and `platforms` come from the case.
+
+Response additions on `AnalysisCaseDetail`:
+
+```json
+{
+  "raw_posts": [],
+  "raw_comments": [],
+  "crawl_metadata": [
+    {
+      "platform": "youtube",
+      "adapter_mode": "real",
+      "source_type": "youtube_data_api_v3",
+      "credential_present": true,
+      "post_count": 3,
+      "comment_count": 3,
+      "raw_post_schema_valid": true,
+      "raw_comment_schema_valid": true
+    }
+  ],
+  "crawl_source_mode": "case_crawl_start",
+  "crawl_attached_at": "2026-05-18T10:00:00Z",
+  "raw_data_status": "attached",
+  "raw_post_count": 3,
+  "raw_comment_count": 3
+}
+```
+
+Rules:
+
+- The endpoint must not expose credential values; `credential_present` is a boolean only.
+- Real YouTube calls can occur only during manual local smoke when `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` are configured in ignored local environment files.
+- Automated tests must mock adapter/client output and must not call the real YouTube API.
+- Case creation and case run do not automatically crawl.
 
 ### Run Case
 
@@ -1436,7 +1499,10 @@ Response:
   "analysis_result": {
     "project_id": "project_001",
     "risk_model_version": "v1_5_topic_risk_mvp",
-    "topic_risks": []
+    "topic_risks": [],
+    "analysis_input_source": "case_raw_data",
+    "raw_post_count": 3,
+    "raw_comment_count": 3
   },
   "visualization_data": {
     "project_id": "project_001",
@@ -1455,8 +1521,10 @@ Response:
 
 Important:
 
-- `POST /api/v1/cases/{case_id}/run` uses the same deterministic offline mock pipeline as the existing analysis, visualization, summary, and recommendation APIs.
+- `POST /api/v1/cases/{case_id}/run` uses attached case `raw_comments` when present; otherwise it uses the same deterministic offline mock pipeline as the existing analysis, visualization, summary, and recommendation APIs.
+- `analysis_result.analysis_input_source` is `case_raw_data` when stored raw comments are used and `mock_data_fallback` when the run falls back to local mock data.
 - Running a case must not trigger real crawlers or real platform APIs.
+- Representative comments preserve original attached public comment text when `case_raw_data` is used.
 - The response keeps V1.5 topic-risk fields inside `analysis_result`, `visualization_data`, and `report` where available.
 - A case run also saves a local monitoring snapshot for the completed mock analysis.
 
