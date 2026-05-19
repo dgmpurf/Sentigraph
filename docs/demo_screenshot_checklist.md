@@ -1,6 +1,6 @@
 # Sentigraph v6.3 Demo Screenshot Checklist
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 Use this checklist when capturing the v6.3 YouTube real-data demo. Recommended storage for local captures is `.benchmarks/demo_smoke_screenshots/` or another ignored folder outside source control.
 
@@ -10,6 +10,7 @@ Safety reminder: do not capture `.env`, API keys, browser cookies, terminal hist
 - Offline deterministic: analysis, V1.5 risk, reports, monitoring, forecasting, and Simulation Lab.
 - Mock: LLM provider.
 - Scaffold/mock: other platform APIs unless future permissioned integrations are added.
+- Pending: Douyin Web App OAuth and `item.comment` verification; no real Douyin API call is part of this demo.
 
 ## Required Screenshot Sequence
 
@@ -28,6 +29,7 @@ Safety reminder: do not capture `.env`, API keys, browser cookies, terminal hist
 | 11 | Benchmark Dashboard | Benchmarks page | Offline regression checks are available and passing. | Latest summary shows no failures or clearly documented status. |
 | 12 | LLM Safety | LLM Safety page | The demo uses a mock LLM provider and real LLM calls are disabled. | Provider/status fields do not expose secrets. |
 | 13 | Platform Integration Overview | Platform overview table/cards | YouTube is real-capable when configured; other platforms remain mock/scaffold. | The page does not imply all platforms are real. |
+| 14 | Douyin readiness / platform status | Platform Integration Overview Douyin card or OAuth Pending section | Douyin Web App research/readiness is visible, but OAuth, `item.comment`, redirect URI, whitelist/test account, token flow, and lawful item-id source are still pending. | No UI implies Douyin real API calls are already integrated or enabled. |
 
 ## Optional Supporting Screenshots
 
@@ -53,6 +55,7 @@ Safety reminder: do not capture `.env`, API keys, browser cookies, terminal hist
 11_benchmark_dashboard.png
 12_llm_safety_mock_provider.png
 13_platform_integration_overview.png
+14_douyin_readiness_platform_status.png
 ```
 
 ## QA Before Capture

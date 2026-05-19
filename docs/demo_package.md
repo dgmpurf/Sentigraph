@@ -1,10 +1,10 @@
 # Sentigraph v6.3 Demo Package
 
-Status: screenshot/recording-ready local demo package.
+Status: final screenshot/recording-ready local demo package.
 
 This package explains how to present Sentigraph to collaborators, reviewers, or future users using the already working local demo path. The key framing is:
 
-> Real: YouTube public video/comment data. Offline deterministic: analysis, V1.5 risk model, forecast, reports, and Simulation Lab. Mock: LLM provider. Scaffold/mock: other platform APIs.
+> Real: YouTube public video/comment data. Offline deterministic: analysis, V1.5 risk model, forecast, reports, and Simulation Lab. Mock: LLM provider. Scaffold/mock/pending: other platform APIs. Pending: Douyin Web App OAuth and `item.comment` verification.
 
 The default demo can still run fully mock/offline. The optional YouTube real-data demo requires a local ignored `.env` key and must remain manual/local only.
 
@@ -51,6 +51,7 @@ Required sequence:
 11. Benchmark Dashboard.
 12. LLM Safety.
 13. Platform Integration Overview.
+14. Douyin readiness / platform status if visible.
 
 Store local screenshots in an ignored folder such as `.benchmarks/demo_smoke_screenshots/`. Do not capture `.env`, API keys, private data, browser cookies, or raw credential settings.
 
@@ -131,6 +132,7 @@ See `docs/youtube_real_data_demo.md` for the exact manual PowerShell path.
 | Simulation Lab | Offline deterministic aggregate scenario rehearsal; no real-world action execution. |
 | LLM provider | Mock. No real LLM calls. |
 | Other platform APIs | Mock/scaffold unless future official permissioned integrations are implemented. |
+| Douyin | Web App research/readiness scaffold only. OAuth, `item.comment`, redirect URI, whitelist/test account, token flow, and lawful item-id source remain pending. No real Douyin API call is integrated. |
 
 ## What Each Screen Proves
 
@@ -148,12 +150,14 @@ See `docs/youtube_real_data_demo.md` for the exact manual PowerShell path.
 | Benchmarks | Local regression checks run without credentials or external services. |
 | LLM Safety | Real LLM calls are disabled and provider status is mock. |
 | Platform Integration Overview | YouTube is the only current real-capable official adapter; other platforms remain mock/scaffold. |
+| Douyin readiness / platform status | Douyin is visible as Web App readiness work, but real mode remains disabled until console verification and future implementation. |
 
 ## Current Limitations
 
 - This is not a production release.
 - Real YouTube mode requires local configuration and is manual-only.
 - Other platform APIs are not real integrations yet.
+- Douyin real API integration is not complete; Web App OAuth and `item.comment` verification remain future work.
 - Real LLM calls are not integrated.
 - Live public fetching and real crawlers remain disabled.
 - Forecasts are deterministic review signals, not guaranteed predictions.

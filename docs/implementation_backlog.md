@@ -83,14 +83,15 @@ Next options:
 
 ### v6.3 Screenshot / Recording Demo Package
 
-Status: complete as a documentation/package checkpoint on 2026-05-19.
+Status: final documentation/package checkpoint refreshed on 2026-05-20.
 
 Completed:
 
 - Added `docs/demo_recording_script.md` with a 3-minute short demo script, an 8-minute full demo script, exact page order, page-by-page talking points, what each screen proves, and presenter guardrails.
-- Added `docs/demo_screenshot_checklist.md` with the canonical 13-screen capture sequence: Dashboard, Keyword Search, Cases, Analysis Result, Summary Report, Propagation Graph, Risk Monitor / Forecast, Simulation Lab initialized from case, Simulation Lab A/B comparison, strategy report export, Benchmark Dashboard, LLM Safety, and Platform Integration Overview.
+- Added `docs/demo_screenshot_checklist.md` with the canonical 14-screen capture sequence: Dashboard, Keyword Search, Cases, Analysis Result, Summary Report, Propagation Graph, Risk Monitor / Forecast, Simulation Lab initialized from case, Simulation Lab A/B comparison, strategy report export, Benchmark Dashboard, LLM Safety, Platform Integration Overview, and Douyin readiness / platform status if visible.
 - Updated `docs/demo_package.md` from the older mock/offline package into the v6.3 YouTube real-data screenshot/recording package, including local commands, YouTube caveats, current limitations, and real-vs-mock boundaries.
 - Updated `README.md`, `docs/demo_story.md`, `docs/demo_checklist.md`, and `docs/progress.md` to point to the package docs and preserve the core demo framing.
+- Refreshed the package to explicitly distinguish real YouTube public data, offline deterministic analysis, mock LLM behavior, mock/scaffold/pending status for other platform APIs, and Douyin Web App OAuth / `item.comment` pending status.
 
 Acceptance:
 
@@ -99,12 +100,13 @@ Acceptance:
 - `npm --prefix frontend run build` passed in 8.05s with the existing non-blocking large vendor chunk warning.
 - Documentation distinguishes real YouTube public video/comment data, offline deterministic analysis/risk/report/forecast/Simulation Lab, mock LLM provider, and mock/scaffold status for other platforms.
 - Documentation does not claim all platforms are real, does not claim real LLM integration, does not imply guaranteed predictions, does not imply Simulation Lab or content moderation executes real-world actions, and does not imply individual targeting.
+- Documentation does not imply Douyin real API integration is complete.
 - Automated validation did not call the real YouTube API, print API keys, modify `.env`, scrape, call real LLM APIs, or recreate GitHub Actions CI.
 
 Next options:
 
 - Produce the actual screenshot set and short recording from the v6.3 package.
-- Run a Douyin Web App permission audit.
+- Complete Douyin Web App permission verification in the Douyin console.
 - Improve YouTube comment quality/filter heuristics if recording review finds low-signal examples.
 - Keep real LLM integration as later work behind explicit provider gates, guardrails, and offline benchmark regression checks.
 - Add additional real platform APIs only after official permission and mocked regression coverage.

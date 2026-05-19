@@ -1,6 +1,6 @@
 # Sentigraph v6.3 Demo Recording Script
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 Use this script for external screenshots or screen recording. The core framing should be repeated at the start and near the end:
 
@@ -23,6 +23,7 @@ Do not show `.env`, API keys, terminal history containing secrets, or raw creden
 11. Benchmark Dashboard
 12. LLM Safety
 13. Platform Integration Overview
+14. Douyin readiness / platform status if visible
 
 ## 3-Minute Short Demo
 
@@ -64,7 +65,7 @@ Proves: Case-to-simulation initialization, bubble visualization, and A/B strateg
 
 ### 2:40-3:00 Strategy Report, Benchmarks, LLM Safety, Platform Overview
 
-Say: "The strategy report exports a Markdown rehearsal summary with human review questions. Benchmarks show local regression checks, LLM Safety shows mock provider status, and Platform Overview shows YouTube as the only real-capable configured path while other platforms remain mock or scaffold."
+Say: "The strategy report exports a Markdown rehearsal summary with human review questions. Benchmarks show local regression checks, LLM Safety shows mock provider status, and Platform Overview shows YouTube as the real-data demo path while Douyin remains Web App OAuth and item.comment pending."
 
 Proves: The package is ready for review without overclaiming real integrations.
 
@@ -223,15 +224,17 @@ Proves:
 
 ### 7:45-8:00 Platform Integration Overview
 
-Say: "YouTube is the first real-capable official API path when locally configured. Other platforms remain mock or scaffold until their permissions and official integrations are approved."
+Say: "YouTube is the first real-capable official API path when locally configured. Other platforms remain mock or scaffold until permissions and official integrations are approved. Douyin is visible as Web App research/readiness work, but OAuth, item.comment, redirect URI, whitelist/test account, and item id source still need console verification."
 
 Point out:
 - YouTube status.
+- Douyin readiness / OAuth pending status.
 - Other platform scaffold/mock statuses.
 - No scraping note.
 
 Proves:
 - The product roadmap is honest about what is real today.
+- Douyin is not presented as a live real-data integration.
 
 ## Presenter Guardrails
 
@@ -239,6 +242,7 @@ Proves:
 - Say "offline deterministic analysis" for analysis, reports, risk scoring, monitoring, forecasting, and Simulation Lab.
 - Say "mock LLM" unless real LLM integration is explicitly implemented in a future task.
 - Do not claim all platforms are real.
+- Do not claim Douyin real API integration is complete; it is Web App readiness work pending console verification.
 - Do not claim forecasts or Simulation Lab outputs are guaranteed.
 - Do not imply Simulation Lab executes real-world actions or content moderation.
 - Do not imply individual targeting, account-level influenceability scoring, or automatic persuasion is supported.

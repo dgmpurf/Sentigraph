@@ -14,7 +14,7 @@ Demo package docs:
 
 - `docs/demo_package.md` - product summary, local run commands, real-vs-mock boundaries, limitations, and safety notes.
 - `docs/demo_recording_script.md` - 3-minute and 8-minute recording scripts with page order and talking points.
-- `docs/demo_screenshot_checklist.md` - canonical 13-screen screenshot checklist.
+- `docs/demo_screenshot_checklist.md` - canonical 14-screen screenshot checklist.
 - `docs/youtube_real_data_demo.md` - manual YouTube real-data walkthrough and PowerShell commands.
 
 What v6.3 demonstrates:
@@ -23,6 +23,7 @@ What v6.3 demonstrates:
 - Offline deterministic: analysis, V1.5 topic risk, Chinese reports, monitoring, forecasting, and Simulation Lab.
 - Mock: LLM provider; no real OpenAI, DeepSeek, Qwen, or other external LLM call is made.
 - Scaffold/mock: all other platform APIs unless future official permissions and implementations are added.
+- Pending: Douyin Web App OAuth and `item.comment` verification; no real Douyin API call is part of v6.3.
 
 Quick validation and demo commands:
 
