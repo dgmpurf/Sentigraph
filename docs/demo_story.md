@@ -47,15 +47,16 @@ The full command story is in `docs/youtube_real_data_demo.md`.
 1. Start backend and frontend.
 2. Verify YouTube platform status shows safe boolean credential metadata only.
 3. Run a tiny YouTube real crawl for keyword `Tesla`.
-4. Create a YouTube case and attach crawl output with `POST /api/v1/cases/{case_id}/crawl/start`.
-5. Run the case and verify `analysis_input_source=case_raw_data`.
-6. Confirm representative comments can come from public YouTube comments.
-7. View V1.5 topic risk and the Chinese Summary Report.
-8. Export the case Markdown report.
-9. Open Risk Monitor and run deterministic forecast if desired.
-10. Initialize Simulation Lab from the YouTube-based case.
-11. Run A/B strategy comparison and export the Simulation Lab strategy report.
-12. Open Benchmarks and LLM Safety to show offline quality checks and real-LLM disabled status.
+4. Repeat the same tiny crawl inside the cache TTL and confirm safe cache metadata, especially `cache_hit=true` when the cache is warm.
+5. Create a YouTube case and attach crawl output with `POST /api/v1/cases/{case_id}/crawl/start`.
+6. Run the case and verify `analysis_input_source=case_raw_data`.
+7. Confirm representative comments can come from public YouTube comments.
+8. View V1.5 topic risk and the Chinese Summary Report.
+9. Export the case Markdown report.
+10. Open Risk Monitor and run deterministic forecast if desired.
+11. Initialize Simulation Lab from the YouTube-based case.
+12. Run A/B strategy comparison and export the Simulation Lab strategy report.
+13. Open Benchmarks and LLM Safety to show offline quality checks and real-LLM disabled status.
 
 Expected signs of success:
 
