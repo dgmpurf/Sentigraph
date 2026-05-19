@@ -194,6 +194,16 @@ def _crawl_douyin(payload: CrawlStartRequest) -> tuple[list[RawPost], list[RawCo
             real_mode_available=bool(adapter_status.get("real_mode_available", False)),
             api_approval_required=bool(adapter_status.get("api_approval_required", True)),
             api_approval_status=_safe_str(adapter_status.get("api_approval_status")),
+            developer_access_status=_safe_str(adapter_status.get("developer_access_status")),
+            app_type=_safe_str(adapter_status.get("app_type")),
+            comment_api_status=_safe_str(adapter_status.get("comment_api_status")),
+            recommended_comment_scope=_safe_str(adapter_status.get("recommended_comment_scope")),
+            video_comment_scope_status=_safe_str(adapter_status.get("video_comment_scope_status")),
+            real_mode_blocker=_safe_str(adapter_status.get("real_mode_blocker")),
+            permission_status=_safe_str(adapter_status.get("permission_status")),
+            oauth_status=_safe_str(adapter_status.get("oauth_status")),
+            token_exchange_status=_safe_str(adapter_status.get("token_exchange_status")),
+            item_id_source_status=_safe_str(adapter_status.get("item_id_source_status")),
             api_pending=bool(adapter_status.get("api_pending", True)),
             real_mode_disabled=bool(adapter_status.get("real_mode_disabled", True)),
             selectable_for_real=bool(adapter_status.get("selectable_for_real", False)),
@@ -1270,6 +1280,10 @@ def _real_mode_blocked_reason(
     reason = (fallback_reason or "").lower()
     if "missing" in reason:
         return "credentials_missing"
+    if "permission_not_verified" in reason and adapter_status.get("app_type") == "web_app":
+        return "permission_not_verified"
+    if "oauth_and_scope_not_verified" in reason:
+        return "oauth_and_scope_not_verified"
     if "approval_pending" in reason or adapter_status.get("api_pending") is True:
         if reason:
             return "api_pending"

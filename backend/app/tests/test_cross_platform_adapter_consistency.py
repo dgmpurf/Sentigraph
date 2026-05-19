@@ -56,12 +56,18 @@ OFFICIAL_PLATFORM_CONFIG: dict[str, dict[str, Any]] = {
         "credentials": (
             "DOUYIN_CLIENT_KEY",
             "DOUYIN_CLIENT_SECRET",
+            "DOUYIN_REDIRECT_URI",
             "DOUYIN_ACCESS_TOKEN",
+            "DOUYIN_REFRESH_TOKEN",
         ),
         "api_approval_status": "developer_access_obtained_permission_unverified",
         "developer_access_status": "obtained",
-        "comment_api_status": "unknown_or_permission_required",
-        "real_mode_blocker": "permission_not_verified",
+        "app_type": "web_app",
+        "comment_api_status": "item_comment_scope_not_verified",
+        "recommended_comment_scope": "item.comment",
+        "video_comment_scope_status": "not_recommended_for_mvp",
+        "real_mode_blocker": "oauth_and_scope_not_verified",
+        "real_mode_blocked_reason_when_credentials": "permission_not_verified",
     },
     "kuaishou": {
         "class": KuaishouAdapter,
@@ -230,6 +236,12 @@ def test_official_api_real_mode_is_blocked_without_network(
     posts = adapter.search_posts("Tesla", limit=1)
     comments = adapter.fetch_comments(posts[0].post_id, limit=1)
     metadata = adapter.get_status_metadata()
+    expected_blocked_reason_for_platform = OFFICIAL_PLATFORM_CONFIG[platform_id].get(
+        "real_mode_blocked_reason_when_credentials",
+        expected_blocked_reason,
+    )
+    if not credentials_present:
+        expected_blocked_reason_for_platform = expected_blocked_reason
 
     assert adapter.get_mode() == "mock"
     assert adapter.supports_real_mode() is False
@@ -239,7 +251,7 @@ def test_official_api_real_mode_is_blocked_without_network(
     assert metadata["real_mode_reached"] is False
     assert metadata["real_mode_available"] is False
     assert metadata["sanitized_error_category"] == expected_category
-    assert metadata["real_mode_blocked_reason"] == expected_blocked_reason
+    assert metadata["real_mode_blocked_reason"] == expected_blocked_reason_for_platform
     assert posts[0].raw_data["mode"] == "mock"
     assert comments[0].raw_data["mode"] == "mock"
 
@@ -310,7 +322,11 @@ def test_crawl_start_official_real_mode_stays_mock_api_pending(
     assert metadata["fetch_status"] == "api_pending"
     assert metadata["real_mode_available"] is False
     assert metadata["real_mode_reached"] is False
-    assert metadata["real_mode_blocked_reason"] == "api_pending"
+    expected_blocked_reason = OFFICIAL_PLATFORM_CONFIG[platform_id].get(
+        "real_mode_blocked_reason_when_credentials",
+        "api_pending",
+    )
+    assert metadata["real_mode_blocked_reason"] == expected_blocked_reason
     assert metadata["sanitized_error_category"] == "api_pending"
     assert body["raw_posts"][0]["raw_data"]["mode"] == "mock"
 
@@ -374,8 +390,14 @@ def test_platform_status_is_complete_and_does_not_expose_credentials(
             assert item["api_approval_status"] == expected_status
         if expected_developer_status := OFFICIAL_PLATFORM_CONFIG[platform_id].get("developer_access_status"):
             assert item["developer_access_status"] == expected_developer_status
+        if expected_app_type := OFFICIAL_PLATFORM_CONFIG[platform_id].get("app_type"):
+            assert item["app_type"] == expected_app_type
         if expected_comment_status := OFFICIAL_PLATFORM_CONFIG[platform_id].get("comment_api_status"):
             assert item["comment_api_status"] == expected_comment_status
+        if expected_scope := OFFICIAL_PLATFORM_CONFIG[platform_id].get("recommended_comment_scope"):
+            assert item["recommended_comment_scope"] == expected_scope
+        if expected_video_scope := OFFICIAL_PLATFORM_CONFIG[platform_id].get("video_comment_scope_status"):
+            assert item["video_comment_scope_status"] == expected_video_scope
         if expected_blocker := OFFICIAL_PLATFORM_CONFIG[platform_id].get("real_mode_blocker"):
             assert item["real_mode_blocker"] == expected_blocker
         assert item["credentials_required"] == list(OFFICIAL_PLATFORM_CONFIG[platform_id]["credentials"])

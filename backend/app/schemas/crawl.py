@@ -27,6 +27,16 @@ class PlatformCrawlMetadata(BaseModel):
     credential_present: bool = False
     api_approval_required: bool = False
     api_approval_status: str | None = None
+    developer_access_status: str | None = None
+    app_type: str | None = None
+    comment_api_status: str | None = None
+    recommended_comment_scope: str | None = None
+    video_comment_scope_status: str | None = None
+    real_mode_blocker: str | None = None
+    permission_status: str | None = None
+    oauth_status: str | None = None
+    token_exchange_status: str | None = None
+    item_id_source_status: str | None = None
     api_pending: bool = False
     real_mode_disabled: bool = False
     selectable_for_real: bool = False

@@ -135,7 +135,7 @@ Recommended timing:
 
 1. Prepare a stable demo build.
 2. Audit Douyin and Xiaohongshu API permissions in their developer consoles.
-3. Implement real Douyin mode only after comment permission is confirmed.
+3. Implement real Douyin mode only after Web App OAuth, `item.comment` permission, token flow, and lawful `item_id` source are confirmed.
 
 ## Stop Doing For Now
 

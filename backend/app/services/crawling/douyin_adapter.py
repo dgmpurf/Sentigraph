@@ -14,12 +14,25 @@ load_project_env()
 DOUYIN_REQUIRED_CREDENTIALS = (
     "DOUYIN_CLIENT_KEY",
     "DOUYIN_CLIENT_SECRET",
+    "DOUYIN_REDIRECT_URI",
     "DOUYIN_ACCESS_TOKEN",
+    "DOUYIN_REFRESH_TOKEN",
 )
 DOUYIN_API_APPROVAL_STATUS = "developer_access_obtained_permission_unverified"
 DOUYIN_DEVELOPER_ACCESS_STATUS = "obtained"
-DOUYIN_COMMENT_API_STATUS = "unknown_or_permission_required"
-DOUYIN_REAL_MODE_BLOCKER = "permission_not_verified"
+DOUYIN_APP_TYPE = "web_app"
+DOUYIN_COMMENT_API_STATUS = "item_comment_scope_not_verified"
+DOUYIN_RECOMMENDED_COMMENT_SCOPE = "item.comment"
+DOUYIN_VIDEO_COMMENT_SCOPE_STATUS = "not_recommended_for_mvp"
+DOUYIN_REAL_MODE_BLOCKER = "oauth_and_scope_not_verified"
+DOUYIN_PERMISSION_STATUS = "permission_not_verified"
+DOUYIN_OAUTH_STATUS = "scaffold_documented_not_implemented"
+DOUYIN_TOKEN_EXCHANGE_STATUS = "placeholder_not_implemented"
+DOUYIN_ITEM_ID_SOURCE_STATUS = "not_confirmed"
+DOUYIN_OPTIONAL_TOKEN_FIELDS = ("DOUYIN_CLIENT_TOKEN", "DOUYIN_STABLE_CLIENT_TOKEN")
+DOUYIN_ENABLE_REAL_CALLS_ENV = "DOUYIN_ENABLE_REAL_CALLS"
+DOUYIN_SCOPE_STATUS_ENV = "DOUYIN_SCOPE_STATUS"
+DOUYIN_DEFAULT_SCOPE_STATUS = "unverified"
 DOUYIN_MOCK_POST_LIMIT = 100
 DOUYIN_MOCK_COMMENT_LIMIT = 500
 
@@ -28,16 +41,26 @@ DOUYIN_MOCK_COMMENT_LIMIT = 500
 class DouyinCredentials:
     client_key: str
     client_secret: str
+    redirect_uri: str
     access_token: str
+    refresh_token: str
 
     @classmethod
     def from_env(cls) -> "DouyinCredentials | None":
         client_key = os.getenv("DOUYIN_CLIENT_KEY", "").strip()
         client_secret = os.getenv("DOUYIN_CLIENT_SECRET", "").strip()
+        redirect_uri = os.getenv("DOUYIN_REDIRECT_URI", "").strip()
         access_token = os.getenv("DOUYIN_ACCESS_TOKEN", "").strip()
-        if not client_key or not client_secret or not access_token:
+        refresh_token = os.getenv("DOUYIN_REFRESH_TOKEN", "").strip()
+        if not client_key or not client_secret or not redirect_uri or not access_token or not refresh_token:
             return None
-        return cls(client_key=client_key, client_secret=client_secret, access_token=access_token)
+        return cls(
+            client_key=client_key,
+            client_secret=client_secret,
+            redirect_uri=redirect_uri,
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
 
 
 class DouyinAdapter(BasePlatformAdapter):
@@ -62,9 +85,13 @@ class DouyinAdapter(BasePlatformAdapter):
         self.selectable_for_real = False
 
         if self.requested_mode == "real" and not self.credentials:
-            self.fallback_reason = "config_error:missing_douyin_credentials"
-        elif self.requested_mode == "real":
+            self.fallback_reason = "config_error:missing_douyin_oauth_configuration"
+        elif self.requested_mode == "real" and (
+            not _real_calls_enabled() or _scope_status() != "verified"
+        ):
             self.fallback_reason = "api_pending:permission_not_verified"
+        elif self.requested_mode == "real":
+            self.fallback_reason = "api_pending:implementation_not_enabled"
 
         super().__init__(mode="mock")
 
@@ -88,11 +115,12 @@ class DouyinAdapter(BasePlatformAdapter):
         if self.requested_mode == "real":
             if self.has_required_credentials():
                 message = (
-                    "Douyin official API mode is planned but disabled until comment API "
-                    "permission is verified and implementation is added."
+                    "Douyin Web App real mode is scaffolded but disabled until OAuth callback, "
+                    "token exchange, item.comment scope, authorized test account, and item_id "
+                    "source are verified."
                 )
             else:
-                message = "Douyin official API mode was requested, but credentials are missing; using mock data."
+                message = "Douyin Web App real mode was requested, but OAuth configuration is incomplete; using mock data."
         else:
             message = "Douyin adapter mock mode is active."
 
@@ -122,8 +150,17 @@ class DouyinAdapter(BasePlatformAdapter):
             "api_approval_required": self.api_approval_required,
             "api_approval_status": self.api_approval_status,
             "developer_access_status": DOUYIN_DEVELOPER_ACCESS_STATUS,
+            "app_type": DOUYIN_APP_TYPE,
             "comment_api_status": DOUYIN_COMMENT_API_STATUS,
+            "recommended_comment_scope": DOUYIN_RECOMMENDED_COMMENT_SCOPE,
+            "video_comment_scope_status": DOUYIN_VIDEO_COMMENT_SCOPE_STATUS,
             "real_mode_blocker": DOUYIN_REAL_MODE_BLOCKER,
+            "permission_status": DOUYIN_PERMISSION_STATUS,
+            "oauth_status": DOUYIN_OAUTH_STATUS,
+            "token_exchange_status": DOUYIN_TOKEN_EXCHANGE_STATUS,
+            "item_id_source_status": DOUYIN_ITEM_ID_SOURCE_STATUS,
+            "scope_status": _scope_status(),
+            "real_calls_enabled": _real_calls_enabled(),
             "api_pending": self.api_pending,
             "real_mode_disabled": self.real_mode_disabled,
             "selectable_for_real": self.selectable_for_real,
@@ -134,6 +171,7 @@ class DouyinAdapter(BasePlatformAdapter):
             "fetch_status": fallback_category if fallback_category else "mock",
             "real_mode_blocked_reason": _real_mode_blocked_reason(fallback_category),
             "credentials_present": _credential_presence(),
+            "optional_credentials_present": _optional_token_presence(),
         }
 
     def search_posts(
@@ -358,7 +396,7 @@ def _real_mode_blocked_reason(fallback_category: str | None) -> str:
     if fallback_category == "config_error":
         return "credentials_missing"
     if fallback_category == "api_pending":
-        return "api_pending"
+        return DOUYIN_PERMISSION_STATUS
     return "mock_only"
 
 
@@ -368,3 +406,22 @@ def _credential_presence() -> dict[str, bool]:
         credential_name: bool(os.getenv(credential_name, "").strip())
         for credential_name in DOUYIN_REQUIRED_CREDENTIALS
     }
+
+
+def _optional_token_presence() -> dict[str, bool]:
+    load_project_env()
+    return {
+        credential_name: bool(os.getenv(credential_name, "").strip())
+        for credential_name in DOUYIN_OPTIONAL_TOKEN_FIELDS
+    }
+
+
+def _scope_status() -> str:
+    load_project_env()
+    status = os.getenv(DOUYIN_SCOPE_STATUS_ENV, DOUYIN_DEFAULT_SCOPE_STATUS).strip().lower()
+    return status or DOUYIN_DEFAULT_SCOPE_STATUS
+
+
+def _real_calls_enabled() -> bool:
+    load_project_env()
+    return os.getenv(DOUYIN_ENABLE_REAL_CALLS_ENV, "false").strip().lower() == "true"

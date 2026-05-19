@@ -27,6 +27,8 @@ MongoDB document keys must always be strings.
   "api_approval_status": "api_pending",
   "developer_access_status": null,
   "comment_api_status": null,
+  "recommended_comment_scope": null,
+  "video_comment_scope_status": null,
   "real_mode_blocker": null,
   "credentials_required": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
   "credentials_present": {
@@ -51,7 +53,7 @@ crawler_later
 disabled_or_optional_future
 ```
 
-Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-first and must not trigger real crawlers. `mock_available`, `real_mode_available`, `api_approval_required`, `api_approval_status`, `developer_access_status`, `comment_api_status`, `real_mode_blocker`, `credentials_required`, `credentials_present`, `api_pending`, `real_mode_disabled`, and `selectable_for_real` are safe status fields for frontend/backend diagnostics. `credentials_present` must contain only booleans and must never expose credential values. Reddit currently has `mock_available=true`, `api_approval_status="api_pending"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Weibo, Bilibili, Kuaishou, Zhihu, Douban, and Toutiao currently have `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `api_approval_status="planned"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Douyin and Xiaohongshu additionally record `developer_access_status="obtained"` and `real_mode_blocker="permission_not_verified"`; Douyin uses `comment_api_status="unknown_or_permission_required"` and Xiaohongshu uses `comment_api_status="unknown_or_not_confirmed"` until console permissions are verified. YouTube uses `source_type="youtube_data_api_v3"`, remains mock by default, and becomes `selectable_for_real=true` only when `YOUTUBE_API_KEY` is present locally.
+Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-first and must not trigger real crawlers. `mock_available`, `real_mode_available`, `api_approval_required`, `api_approval_status`, `developer_access_status`, `app_type`, `comment_api_status`, `recommended_comment_scope`, `video_comment_scope_status`, `real_mode_blocker`, `credentials_required`, `credentials_present`, `api_pending`, `real_mode_disabled`, and `selectable_for_real` are safe status fields for frontend/backend diagnostics. `credentials_present` must contain only booleans and must never expose credential values. Reddit currently has `mock_available=true`, `api_approval_status="api_pending"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Weibo, Bilibili, Kuaishou, Zhihu, Douban, and Toutiao currently have `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `api_approval_status="planned"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Douyin records `developer_access_status="obtained"`, `app_type="web_app"`, `comment_api_status="item_comment_scope_not_verified"`, `recommended_comment_scope="item.comment"`, `video_comment_scope_status="not_recommended_for_mvp"`, and `real_mode_blocker="oauth_and_scope_not_verified"` until Web App OAuth, `item.comment`, and item-id source are verified. Xiaohongshu records `developer_access_status="obtained"`, `comment_api_status="unknown_or_not_confirmed"`, and `real_mode_blocker="permission_not_verified"` until console permissions are verified. YouTube uses `source_type="youtube_data_api_v3"`, remains mock by default, and becomes `selectable_for_real=true` only when `YOUTUBE_API_KEY` is present locally.
 
 ### PlatformStatusResponse
 
@@ -72,7 +74,88 @@ Only `selectable_for_mock=true` platforms should appear in active MVP frontend s
 }
 ```
 
-## 0.1 Public Parser Status and Preview
+## 0.1 Planned Douyin Web App OAuth Schemas
+
+These schemas are design placeholders for a future official Douyin Web App integration. They are not implemented as live token storage and must not trigger real Douyin API calls in the current MVP. The recommended MVP route is `item.comment`; `video.comment` remains `not_recommended_for_mvp` unless Douyin console verification proves otherwise.
+
+### DouyinAccount
+
+```json
+{
+  "open_id": "string",
+  "nickname": "string",
+  "avatar_url": "string|null",
+  "authorized_scopes": ["item.comment"],
+  "authorized_at": "datetime",
+  "token_status": "missing|valid|expired|refresh_required",
+  "safe_metadata_only": true
+}
+```
+
+### DouyinVideo
+
+```json
+{
+  "item_id": "string",
+  "title": "string",
+  "description": "string",
+  "author_open_id": "string|null",
+  "like_count": 0,
+  "comment_count": 0,
+  "share_count": 0,
+  "published_at": "datetime|null",
+  "url": "string|null",
+  "raw_data": {"safe_metadata_only": true}
+}
+```
+
+### DouyinComment
+
+```json
+{
+  "comment_id": "string",
+  "item_id": "string",
+  "parent_id": "string|null",
+  "author_open_id": "string|null",
+  "author_name": "string|null",
+  "content": "string",
+  "like_count": 0,
+  "reply_count": 0,
+  "created_at": "datetime|null",
+  "raw_data": {"safe_metadata_only": true}
+}
+```
+
+### DouyinFetchJob
+
+```json
+{
+  "job_id": "string",
+  "case_id": "string|null",
+  "item_ids": ["string"],
+  "requested_limit": 20,
+  "effective_limit": 20,
+  "status": "planned|blocked|running|completed|failed",
+  "blocked_reason": "oauth_and_scope_not_verified",
+  "safe_counts": {"video_count": 0, "comment_count": 0}
+}
+```
+
+### DouyinOAuthState
+
+```json
+{
+  "state_id": "string",
+  "state_hash": "string",
+  "redirect_uri": "string",
+  "requested_scopes": ["item.comment"],
+  "created_at": "datetime",
+  "expires_at": "datetime",
+  "consumed_at": "datetime|null"
+}
+```
+
+## 0.2 Public Parser Status and Preview
 
 Public parser status and preview schemas are used for safe developer diagnostics around fixture-only public-page parser scaffolds. They are not production crawlers and must remain mock/fixture-first unless a separate live-fetch pilot is explicitly enabled.
 
@@ -809,15 +892,15 @@ Rules:
 - `exception_class` is a safe exception class name only and must not include exception messages, request payloads, tokens, or credentials.
 - `real_mode_reached` indicates whether the real adapter path was reached.
 - `dependency_available` indicates whether required real-mode dependencies such as PRAW are importable.
-- `mock_available`, `api_pending`, `real_mode_disabled`, and `credential_present` communicate safe adapter/source status without exposing credentials. Reddit real API mode stays disabled while approval is pending. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao real official API modes stay disabled while credentials, approval, permission scopes, and implementation are pending. YouTube real mode is available only when `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` is present locally.
+- `mock_available`, `api_pending`, `real_mode_disabled`, and `credential_present` communicate safe adapter/source status without exposing credentials. Reddit real API mode stays disabled while approval is pending. Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao real official API modes stay disabled while credentials, approval, permission scopes, and implementation are pending. Douyin may additionally report `developer_access_status`, `app_type`, `comment_api_status`, `real_mode_blocker`, `permission_status`, `oauth_status`, `token_exchange_status`, and `item_id_source_status`. YouTube real mode is available only when `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` is present locally.
 - YouTube-specific crawl metadata may include safe quota/cache fields: `estimated_quota_units`, `search_call_count`, `videos_call_count`, `comment_threads_call_count`, `comments_call_count`, `cache_hit`, `cache_age_seconds`, and `quota_guardrail_status`. These fields are operational counters only and must not include API keys, `.env` values, request headers, or raw official API error bodies.
-- `real_mode_available`, `api_approval_required`, `api_approval_status`, `selectable_for_real`, and `real_mode_blocked_reason` describe why a real source path is or is not usable. Current valid blocked reasons include `api_pending`, `disabled`, `mock_only`, `credentials_missing`, and `approval_required`.
+- `real_mode_available`, `api_approval_required`, `api_approval_status`, `selectable_for_real`, and `real_mode_blocked_reason` describe why a real source path is or is not usable. Current valid blocked reasons include `api_pending`, `permission_not_verified`, `oauth_and_scope_not_verified`, `disabled`, `mock_only`, `credentials_missing`, and `approval_required`.
 - `raw_posts` uses the `RawPost` schema.
 - `raw_comments` uses the `RawComment` schema.
 - Official API planned platforms remain mock-only by default. YouTube is the only current credential-gated real-capable official API adapter. Crawler-later platforms remain disabled for real crawling.
 - Weibo uses `source_type="official_api_adapter_scaffold"` and may return Weibo-style mock microblog/comment `RawPost` and `RawComment` items when selected in `/crawl/start`.
 - Bilibili uses `source_type="official_api_adapter_scaffold"` and may return Bilibili-style mock video/comment `RawPost` and `RawComment` items when selected in `/crawl/start`.
-- Douyin uses `source_type="official_api_adapter_scaffold"` and may return Douyin-style mock short-video/comment `RawPost` and `RawComment` items when selected in `/crawl/start`.
+- Douyin uses `source_type="official_api_adapter_scaffold"` and may return Douyin-style mock short-video/comment `RawPost` and `RawComment` items when selected in `/crawl/start`; Web App OAuth, `item.comment`, token exchange, and item-id source remain scaffolded but unverified, so no real Douyin call is made.
 - Kuaishou uses `source_type="official_api_adapter_scaffold"` and may return Kuaishou-style mock short-video/livestream comment `RawPost` and `RawComment` items when selected in `/crawl/start`.
 - Xiaohongshu uses `source_type="official_api_adapter_scaffold"` and may return Xiaohongshu-style mock lifestyle/community note `RawPost` and visible-comment `RawComment` items when selected in `/crawl/start`.
 - Zhihu uses `source_type="official_api_adapter_scaffold"` and may return Zhihu-style mock Q&A/article `RawPost` and visible-comment `RawComment` items when selected in `/crawl/start`.

@@ -68,6 +68,12 @@ def test_platform_registry_categories_and_active_mvp(monkeypatch) -> None:
     assert by_id["douyin"].api_pending is True
     assert by_id["douyin"].real_mode_disabled is True
     assert by_id["douyin"].selectable_for_real is False
+    assert by_id["douyin"].developer_access_status == "obtained"
+    assert by_id["douyin"].app_type == "web_app"
+    assert by_id["douyin"].comment_api_status == "item_comment_scope_not_verified"
+    assert by_id["douyin"].recommended_comment_scope == "item.comment"
+    assert by_id["douyin"].video_comment_scope_status == "not_recommended_for_mvp"
+    assert by_id["douyin"].real_mode_blocker == "oauth_and_scope_not_verified"
     assert by_id["kuaishou"].category == OFFICIAL_API_PLANNED
     assert by_id["kuaishou"].source_type == "official_api_adapter_scaffold"
     assert by_id["kuaishou"].status == "official_api_planned"
@@ -208,7 +214,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     monkeypatch.setenv("WEIBO_ACCESS_TOKEN", "weibo-token-should-not-appear")
     monkeypatch.setenv("DOUYIN_CLIENT_KEY", "douyin-client-key-should-not-appear")
     monkeypatch.setenv("DOUYIN_CLIENT_SECRET", "douyin-secret-should-not-appear")
+    monkeypatch.setenv("DOUYIN_REDIRECT_URI", "douyin-redirect-uri-should-not-appear")
     monkeypatch.setenv("DOUYIN_ACCESS_TOKEN", "douyin-token-should-not-appear")
+    monkeypatch.setenv("DOUYIN_REFRESH_TOKEN", "douyin-refresh-token-should-not-appear")
     monkeypatch.setenv("KUAISHOU_CLIENT_ID", "kuaishou-client-should-not-appear")
     monkeypatch.setenv("KUAISHOU_CLIENT_SECRET", "kuaishou-secret-should-not-appear")
     monkeypatch.setenv("KUAISHOU_ACCESS_TOKEN", "kuaishou-token-should-not-appear")
@@ -310,17 +318,24 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert douyin["api_approval_required"] is True
     assert douyin["api_approval_status"] == "developer_access_obtained_permission_unverified"
     assert douyin["developer_access_status"] == "obtained"
-    assert douyin["comment_api_status"] == "unknown_or_permission_required"
-    assert douyin["real_mode_blocker"] == "permission_not_verified"
+    assert douyin["app_type"] == "web_app"
+    assert douyin["comment_api_status"] == "item_comment_scope_not_verified"
+    assert douyin["recommended_comment_scope"] == "item.comment"
+    assert douyin["video_comment_scope_status"] == "not_recommended_for_mvp"
+    assert douyin["real_mode_blocker"] == "oauth_and_scope_not_verified"
     assert douyin["credentials_required"] == [
         "DOUYIN_CLIENT_KEY",
         "DOUYIN_CLIENT_SECRET",
+        "DOUYIN_REDIRECT_URI",
         "DOUYIN_ACCESS_TOKEN",
+        "DOUYIN_REFRESH_TOKEN",
     ]
     assert douyin["credentials_present"] == {
         "DOUYIN_CLIENT_KEY": True,
         "DOUYIN_CLIENT_SECRET": True,
+        "DOUYIN_REDIRECT_URI": True,
         "DOUYIN_ACCESS_TOKEN": True,
+        "DOUYIN_REFRESH_TOKEN": True,
     }
     assert douyin["selectable_for_mock"] is True
     assert douyin["selectable_for_real"] is False
@@ -446,7 +461,9 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert "weibo-token-should-not-appear" not in response_text
     assert "douyin-client-key-should-not-appear" not in response_text
     assert "douyin-secret-should-not-appear" not in response_text
+    assert "douyin-redirect-uri-should-not-appear" not in response_text
     assert "douyin-token-should-not-appear" not in response_text
+    assert "douyin-refresh-token-should-not-appear" not in response_text
     assert "kuaishou-client-should-not-appear" not in response_text
     assert "kuaishou-secret-should-not-appear" not in response_text
     assert "kuaishou-token-should-not-appear" not in response_text
@@ -477,7 +494,9 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     monkeypatch.setenv("WEIBO_ACCESS_TOKEN", "")
     monkeypatch.setenv("DOUYIN_CLIENT_KEY", "")
     monkeypatch.setenv("DOUYIN_CLIENT_SECRET", "")
+    monkeypatch.setenv("DOUYIN_REDIRECT_URI", "")
     monkeypatch.setenv("DOUYIN_ACCESS_TOKEN", "")
+    monkeypatch.setenv("DOUYIN_REFRESH_TOKEN", "")
     monkeypatch.setenv("KUAISHOU_CLIENT_ID", "")
     monkeypatch.setenv("KUAISHOU_CLIENT_SECRET", "")
     monkeypatch.setenv("KUAISHOU_ACCESS_TOKEN", "")
@@ -530,12 +549,17 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     assert douyin["credentials_present"] == {
         "DOUYIN_CLIENT_KEY": False,
         "DOUYIN_CLIENT_SECRET": False,
+        "DOUYIN_REDIRECT_URI": False,
         "DOUYIN_ACCESS_TOKEN": False,
+        "DOUYIN_REFRESH_TOKEN": False,
     }
     assert douyin["real_mode_available"] is False
     assert douyin["developer_access_status"] == "obtained"
-    assert douyin["comment_api_status"] == "unknown_or_permission_required"
-    assert douyin["real_mode_blocker"] == "permission_not_verified"
+    assert douyin["app_type"] == "web_app"
+    assert douyin["comment_api_status"] == "item_comment_scope_not_verified"
+    assert douyin["recommended_comment_scope"] == "item.comment"
+    assert douyin["video_comment_scope_status"] == "not_recommended_for_mvp"
+    assert douyin["real_mode_blocker"] == "oauth_and_scope_not_verified"
     assert kuaishou["credentials_present"] == {
         "KUAISHOU_CLIENT_ID": False,
         "KUAISHOU_CLIENT_SECRET": False,

@@ -6,6 +6,8 @@ Last updated: 2026-05-19
 
 Sentigraph is a mock-first, desktop public-opinion intelligence dashboard that turns a keyword-driven case into deterministic offline analysis, V1.5 topic risk scoring, Chinese reports, monitoring/forecasting, ethical Simulation Lab rehearsal, benchmark status, and LLM/platform safety diagnostics. The default demo uses local mock/offline data only and does not call real platform APIs, real crawlers, live public pages, or real LLM APIs. An optional manual YouTube real-data demo is available when a local ignored `.env` contains `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY=<local key>`.
 
+For the v6.3 screenshot/recording package, use `docs/demo_package.md` as the package overview, `docs/demo_recording_script.md` as the voiceover/page-order script, and `docs/demo_screenshot_checklist.md` as the canonical capture list. The recurring narration should stay simple: YouTube data is real when locally configured, analysis is offline deterministic, and the LLM provider is mock.
+
 ## Demo Script
 
 1. Reset and seed deterministic local data:

@@ -1,6 +1,6 @@
 # Sentigraph API Application Plan
 
-Last updated: 2026-05-17
+Last updated: 2026-05-19
 
 ## Purpose
 
@@ -10,7 +10,7 @@ This plan lists the external platform application state and the exact informatio
 
 | Platform | Current Status | Real Mode Decision |
 | --- | --- | --- |
-| Douyin | Developer access obtained; comment permission unknown | Blocked until comment scope and payloads are verified |
+| Douyin | Developer access obtained; Web App OAuth and `item.comment` scope not verified | Blocked until OAuth, comment scope, item-id source, and payloads are verified |
 | Xiaohongshu | Developer access obtained; note/comment API availability unknown | Blocked until official note/comment capability is verified |
 | Reddit | API approval pending | Blocked until approval is granted |
 | Weibo | Company-age requirement blocks current application | Blocked until application eligibility is resolved |
@@ -43,13 +43,15 @@ For every platform, collect these before implementation:
 Current status:
 
 - Developer access obtained by user.
-- Comment API permission is unknown.
+- Web App OAuth, redirect URI, test-account authorization, token exchange, `item.comment` scope, and lawful `item_id` source are not verified.
 - Local adapter remains mock-only.
 
 Console checks needed:
 
 - Is interaction/comment management enabled for the app?
 - Is `item.comment` or a current equivalent comment-list permission available and approved?
+- Is the app type confirmed as Web App and is the redirect URI configured?
+- Does the OAuth callback return the expected `code`, `state`, and granted scopes?
 - Is keyword video comment management available and applicable?
 - Are comment replies available through an official API?
 - Does access require user authorization?
@@ -63,17 +65,20 @@ Screenshots/records needed:
 - Any `item.comment` or equivalent scope approval state.
 - Product page for keyword video comment management if available.
 - OAuth/token flow page if user authorization is required.
+- Redirect URI configuration page.
 - Rate-limit/quota page.
 
 Credentials needed later:
 
 - `DOUYIN_CLIENT_KEY`
 - `DOUYIN_CLIENT_SECRET`
+- `DOUYIN_REDIRECT_URI`
 - `DOUYIN_ACCESS_TOKEN`
+- `DOUYIN_REFRESH_TOKEN`
 
 Implementation gate:
 
-- Do not implement real Douyin mode until comment permission and official payload shapes are confirmed.
+- Do not implement real Douyin mode until Web App OAuth, `item.comment` permission, lawful `item_id` source, and official payload shapes are confirmed.
 
 ## Xiaohongshu
 

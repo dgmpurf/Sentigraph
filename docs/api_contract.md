@@ -124,19 +124,24 @@ GET /api/v1/platforms
       "api_approval_required": true,
       "api_approval_status": "developer_access_obtained_permission_unverified",
       "developer_access_status": "obtained",
-      "comment_api_status": "unknown_or_permission_required",
-      "real_mode_blocker": "permission_not_verified",
-      "credentials_required": ["DOUYIN_CLIENT_KEY", "DOUYIN_CLIENT_SECRET", "DOUYIN_ACCESS_TOKEN"],
+      "app_type": "web_app",
+      "comment_api_status": "item_comment_scope_not_verified",
+      "recommended_comment_scope": "item.comment",
+      "video_comment_scope_status": "not_recommended_for_mvp",
+      "real_mode_blocker": "oauth_and_scope_not_verified",
+      "credentials_required": ["DOUYIN_CLIENT_KEY", "DOUYIN_CLIENT_SECRET", "DOUYIN_REDIRECT_URI", "DOUYIN_ACCESS_TOKEN", "DOUYIN_REFRESH_TOKEN"],
       "credentials_present": {
         "DOUYIN_CLIENT_KEY": false,
         "DOUYIN_CLIENT_SECRET": false,
-        "DOUYIN_ACCESS_TOKEN": false
+        "DOUYIN_REDIRECT_URI": false,
+        "DOUYIN_ACCESS_TOKEN": false,
+        "DOUYIN_REFRESH_TOKEN": false
       },
       "api_pending": true,
       "real_mode_disabled": true,
       "selectable_for_real": false,
       "official_platform_url": "https://developer.open-douyin.com",
-      "notes": "Selectable for offline Douyin-style mock short-video/comment analysis. Real official API mode is disabled until credentials, approval, and the compliant API implementation are added. No page scraping is implemented."
+      "notes": "Selectable for offline Douyin-style mock short-video/comment analysis. Developer access is obtained, but Web App OAuth, item.comment scope, test-account authorization, token exchange, and item_id source are not verified. Real mode remains disabled. No page scraping is implemented."
     },
     {
       "platform_id": "kuaishou",
@@ -283,12 +288,12 @@ Important:
 - `mock_available=true` means the platform has safe local mock data behavior.
 - `real_mode_available=true` means the backend may use a real source path for that platform when all explicit gates pass. YouTube is real-capable when locally configured; other current platform adapters remain mock-only or approval-gated.
 - `credentials_present` is a safe boolean map only. It must never contain credential values.
-- `developer_access_status`, `comment_api_status`, and `real_mode_blocker` are safe non-secret readiness fields. They describe console/access status only and must not expose credential values.
+- `developer_access_status`, `comment_api_status`, `recommended_comment_scope`, `video_comment_scope_status`, and `real_mode_blocker` are safe non-secret readiness fields. They describe console/access status only and must not expose credential values.
 - `api_pending=true` means any future real API path is still waiting for approval, credentials, permissions, or compliance review.
 - `real_mode_disabled=true` means the backend must not call the real platform API for that source.
 - Official API planned platforms may be selectable for mock analysis, but they must not trigger real API calls until credentials, permissions, and compliance checks are available.
 - Reddit is visible and mock-selectable as a future real adapter candidate, but its current real API status is `api_pending`.
-- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao are mock-selectable through official API adapter scaffolds. Their real API modes are disabled and not called until credentials, approval, permission verification, and implementation are added. Douyin and Xiaohongshu additionally show developer access obtained but comment/note-comment permission not verified.
+- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao are mock-selectable through official API adapter scaffolds. Their real API modes are disabled and not called until credentials, approval, permission verification, and implementation are added. Douyin additionally shows `developer_access_status="obtained"`, `app_type="web_app"`, `comment_api_status="item_comment_scope_not_verified"`, `recommended_comment_scope="item.comment"`, `video_comment_scope_status="not_recommended_for_mvp"`, and `real_mode_blocker="oauth_and_scope_not_verified"`. Xiaohongshu shows developer access obtained but note/comment permission not verified.
 - YouTube is mock-selectable and uses `source_type="youtube_data_api_v3"`. It is real-capable only when `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured; `credentials_present` and crawl metadata expose booleans only.
 - Crawler-later platforms are not selectable for real crawling in the MVP.
 
@@ -808,7 +813,7 @@ Important:
 - Bilibili real API mode is disabled. If `BILIBILI_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Bilibili API call.
 - When `platforms` contains `douyin`, the endpoint calls the Douyin official API adapter scaffold through `adapter_factory.get_adapter("douyin")`.
 - Douyin mock mode returns deterministic short-video-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
-- Douyin real API mode is disabled. Developer access is recorded as obtained by the user, but comment permission is not verified. If `DOUYIN_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending:permission_not_verified` when credentials are present or `config_error` metadata when credentials are missing, and makes no real Douyin API call.
+- Douyin real API mode is disabled. Developer access is recorded as obtained by the user, but Web App OAuth, redirect URI, authorized test account, token exchange, `item.comment` scope, and lawful `item_id` source are not verified. If `DOUYIN_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending:permission_not_verified` when complete placeholder OAuth configuration is present or `config_error` metadata when configuration is incomplete, and makes no real Douyin API call.
 - When `platforms` contains `kuaishou`, the endpoint calls the Kuaishou official API adapter scaffold through `adapter_factory.get_adapter("kuaishou")`.
 - Kuaishou mock mode returns deterministic short-video/livestream-style `RawPost` data and visible public-comment-style `RawComment` data. `source_type` is `official_api_adapter_scaffold`.
 - Kuaishou real API mode is disabled. If `KUAISHOU_ADAPTER_MODE=real`, the endpoint still returns mock data plus safe `api_pending` or `config_error` metadata and makes no real Kuaishou API call.
@@ -830,6 +835,17 @@ Important:
 - YouTube real mode uses tiny quota-guarded `search.list`, `videos.list`, and `commentThreads.list` requests. `search.list` is treated as expensive, so real-mode calls check the project-local cache before calling the official API.
 - YouTube cache and guardrail configuration is controlled by `YOUTUBE_CACHE_ENABLED`, `YOUTUBE_CACHE_TTL_SECONDS`, `YOUTUBE_MAX_SEARCH_RESULTS`, `YOUTUBE_MAX_COMMENTS_PER_VIDEO`, `YOUTUBE_MAX_REPLIES_PER_COMMENT`, `YOUTUBE_MAX_TOTAL_COMMENTS`, and `YOUTUBE_ENABLE_DEEP_REPLIES`. The defaults are cache enabled for 3600 seconds, at most 5 search results, 20 comments per video, 5 replies per top-level comment, 50 total comments, and deep replies disabled.
 - YouTube cache entries are stored under the ignored runtime path `backend/data/youtube_cache.json`; cache keys include only safe query fields such as keyword, video id, limit, order, and date range. API keys are never stored.
+
+### Planned Douyin Web App OAuth API Design
+
+These endpoints are design-only placeholders and are not implemented in the current backend:
+
+- `GET /api/v1/douyin/oauth/authorize-url`: planned helper to generate an authorization URL with `client_key`, configured HTTPS `redirect_uri`, requested scopes such as `user_info,item.comment` plus `trial.whitelist` only when required in test mode, and a one-time `state`. The future Douyin-side authorization concept is `/platform/oauth/connect/`.
+- `GET /api/v1/douyin/oauth/callback`: planned callback to receive `code`, `state`, and granted scopes, validate state, and record safe OAuth metadata.
+- `POST /api/v1/douyin/oauth/token/exchange`: planned token-exchange placeholder for the official `/oauth/access_token/` concept; disabled until token storage and scope verification are reviewed.
+- `POST /api/v1/douyin/oauth/token/refresh`: planned refresh placeholder for the official `/oauth/refresh_token/` concept; disabled until protected token storage is designed.
+
+No current endpoint exchanges tokens, refreshes tokens, calls `item.comment`, or calls any real Douyin API.
 - YouTube crawl metadata may include safe quota/cache fields: `estimated_quota_units`, `search_call_count`, `videos_call_count`, `comment_threads_call_count`, `comments_call_count`, `cache_hit`, `cache_age_seconds`, and `quota_guardrail_status`.
 - `quota_guardrail_status` may be `mock_mode`, `real_mode_blocked`, `real_mode_ready`, `cache_hit`, `partial_cache_hit`, `cache_miss_real_call`, `quota_error_fallback`, or `comments_unavailable_partial`.
 - If YouTube comments are disabled or unavailable, the adapter returns a safe partial result rather than crashing. If quota/auth/network/parsing errors happen in real mode, the adapter falls back safely with coarse error metadata.

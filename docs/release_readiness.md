@@ -44,7 +44,7 @@ This document describes what can be shown today, what remains mock or scaffold-o
 
 ## Real API Pending Features
 
-- Douyin: developer access is recorded, but comment API permission and scopes such as `item.comment` or equivalent must be verified in the console before implementation.
+- Douyin: developer access is recorded and the planned app type is Web App, but redirect URI, test-account authorization, OAuth/token flow, `item.comment` permission, and lawful `item_id` source must be verified in the console before implementation.
 - Xiaohongshu: developer access is recorded, but note/comment/interaction data API availability and access limits must be verified.
 - Reddit: API approval remains pending before real mode should be enabled.
 - Weibo: current application path is blocked by company-age requirement.
@@ -90,4 +90,3 @@ GitHub Actions CI is intentionally disabled. Do not recreate `.github/workflows/
 5. Add optional PDF export for reports.
 6. Plan real LLM integration later, behind provider gates and benchmark regression checks.
 7. Calibrate Simulation Lab with historical replay data only after real data governance is settled.
-

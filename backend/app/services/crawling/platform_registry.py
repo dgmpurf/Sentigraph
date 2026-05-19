@@ -15,10 +15,13 @@ from app.services.crawling.douban_adapter import (
 )
 from app.services.crawling.douyin_adapter import (
     DOUYIN_API_APPROVAL_STATUS,
+    DOUYIN_APP_TYPE,
     DOUYIN_COMMENT_API_STATUS,
     DOUYIN_DEVELOPER_ACCESS_STATUS,
+    DOUYIN_RECOMMENDED_COMMENT_SCOPE,
     DOUYIN_REAL_MODE_BLOCKER,
     DOUYIN_REQUIRED_CREDENTIALS,
+    DOUYIN_VIDEO_COMMENT_SCOPE_STATUS,
 )
 from app.services.crawling.kuaishou_adapter import (
     KUAISHOU_API_APPROVAL_STATUS,
@@ -71,7 +74,10 @@ class PlatformRegistryItem:
     api_approval_required: bool = False
     api_approval_status: str = API_APPROVAL_NOT_REQUIRED
     developer_access_status: str | None = None
+    app_type: str | None = None
     comment_api_status: str | None = None
+    recommended_comment_scope: str | None = None
+    video_comment_scope_status: str | None = None
     real_mode_blocker: str | None = None
     credentials_required: tuple[str, ...] = ()
     selectable_for_real: bool = False
@@ -94,7 +100,10 @@ class PlatformRegistryItem:
             api_approval_required=self.api_approval_required,
             api_approval_status=self.api_approval_status,
             developer_access_status=self.developer_access_status,
+            app_type=self.app_type,
             comment_api_status=self.comment_api_status,
+            recommended_comment_scope=self.recommended_comment_scope,
+            video_comment_scope_status=self.video_comment_scope_status,
             real_mode_blocker=self.real_mode_blocker,
             credentials_required=list(self.credentials_required),
             credentials_present=credentials_present,
@@ -223,14 +232,19 @@ PLATFORM_REGISTRY: tuple[PlatformRegistryItem, ...] = (
         official_platform_url="https://developer.open-douyin.com",
         notes=(
             "Selectable for offline Douyin-style mock short-video/comment analysis. "
-            "Developer access is reported as obtained, but official comment permission is "
-            "not yet verified. Real official API mode is disabled until the comment scope "
-            "and compliant API implementation are confirmed. No page scraping is implemented."
+            "Developer access is reported as obtained for a Web App, but OAuth callback, "
+            "redirect URI, token exchange, item.comment scope, authorized test account, and "
+            "lawful item_id source are not yet verified. Real official API mode is disabled "
+            "until these gates and a compliant API implementation are confirmed. No page "
+            "scraping is implemented."
         ),
         api_approval_required=True,
         api_approval_status=DOUYIN_API_APPROVAL_STATUS,
         developer_access_status=DOUYIN_DEVELOPER_ACCESS_STATUS,
+        app_type=DOUYIN_APP_TYPE,
         comment_api_status=DOUYIN_COMMENT_API_STATUS,
+        recommended_comment_scope=DOUYIN_RECOMMENDED_COMMENT_SCOPE,
+        video_comment_scope_status=DOUYIN_VIDEO_COMMENT_SCOPE_STATUS,
         real_mode_blocker=DOUYIN_REAL_MODE_BLOCKER,
         credentials_required=DOUYIN_REQUIRED_CREDENTIALS,
     ),

@@ -8,6 +8,70 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Douyin Web App OAuth and item.comment Readiness Scaffold
+
+Status: QA complete as a readiness/documentation scaffold on 2026-05-19.
+
+Completed:
+
+- Added `docs/douyin_web_app_integration_plan.md` with future Douyin Web App OAuth design, callback/token placeholder flow, `item.comment` readiness gates, planned schemas, and no-real-call safety requirements.
+- Updated `.env.example` with `DOUYIN_REDIRECT_URI`, `DOUYIN_REFRESH_TOKEN`, `DOUYIN_CLIENT_TOKEN`, `DOUYIN_STABLE_CLIENT_TOKEN`, `DOUYIN_ENABLE_REAL_CALLS=false`, and `DOUYIN_SCOPE_STATUS=unverified` placeholders. Real values must stay in ignored local `.env` files or a future secret store.
+- Added `docs/douyin_console_checklist.md` for Web App type, Client Key/Secret, HTTPS full-path redirect URI, preview whitelist/test account, `user_info`, `item.comment`, `video.list.bind`, `video.data.bind`, keyword-comment availability, authorized-account limits, app status, and daily quota checks.
+- Added a non-network OAuth helper scaffold for authorization URL construction, redirect URI validation, callback parsing, and placeholder token exchange/refresh functions that raise no-network placeholder errors.
+- Updated the Douyin adapter and platform registry to report safe readiness metadata: `developer_access_status="obtained"`, `app_type="web_app"`, `comment_api_status="item_comment_scope_not_verified"`, `recommended_comment_scope="item.comment"`, `video_comment_scope_status="not_recommended_for_mvp"`, `real_mode_blocker="oauth_and_scope_not_verified"`, `permission_status="permission_not_verified"`, `oauth_status="scaffold_documented_not_implemented"`, `token_exchange_status="placeholder_not_implemented"`, `item_id_source_status="not_confirmed"`, `scope_status="unverified"`, and `real_calls_enabled=false`.
+- Kept Douyin real mode disabled. `DOUYIN_ADAPTER_MODE=real` still returns normalized mock data with safe `api_pending:permission_not_verified` when complete placeholder OAuth config is present or `config_error` when OAuth config is incomplete.
+- Updated README, platform source docs, API contract, data schema, API application plan, real API capability audit, current status, and release-readiness notes for the new Douyin Web App gates.
+- Added/updated tests for mock mode, missing OAuth config fallback, verified-scope blocker metadata, OAuth authorization URL safety, HTTPS redirect validation, token placeholder no-network behavior, no real network calls, registry metadata, `/crawl/start` metadata, `.env.example` placeholders, and credential redaction.
+
+Acceptance:
+
+- Focused Douyin OAuth/adapter/registry/crawl validation passed with `69 passed in 0.97s`.
+- Full backend validation passed with `python -m pytest` (`556 passed in 5.13s`).
+- Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`).
+- Frontend build was not run because no frontend files changed.
+- No real Douyin API call, scraping, browser-cookie use, login/captcha/anti-bot bypass, credential printing, `.env` modification, real LLM call, or GitHub Actions workflow was introduced.
+
+Next options:
+
+- Verify in the Douyin developer console that the app is a Web App and the redirect URI is configured.
+- Verify `item.comment` or the current official equivalent scope approval.
+- Keep `video.comment` out of the MVP path unless the console proves it is the correct Web App route.
+- Verify `video.list.bind` and `video.data.bind` availability or pending status for lawful item-id discovery.
+- Confirm preview whitelist / test account setup, app status, and current daily testing quota.
+- Complete test-account OAuth authorization and confirm token exchange/refresh behavior.
+- Confirm the lawful source of `item_id` values before any item-comment request.
+- Keep Douyin token storage, quota/rate-limit guardrails, and item.comment minimal real mode as future tasks after console verification.
+- Capture sanitized official payload fixtures before implementing real-mode code.
+
+### v6.3 Screenshot / Recording Demo Package
+
+Status: complete as a documentation/package checkpoint on 2026-05-19.
+
+Completed:
+
+- Added `docs/demo_recording_script.md` with a 3-minute short demo script, an 8-minute full demo script, exact page order, page-by-page talking points, what each screen proves, and presenter guardrails.
+- Added `docs/demo_screenshot_checklist.md` with the canonical 13-screen capture sequence: Dashboard, Keyword Search, Cases, Analysis Result, Summary Report, Propagation Graph, Risk Monitor / Forecast, Simulation Lab initialized from case, Simulation Lab A/B comparison, strategy report export, Benchmark Dashboard, LLM Safety, and Platform Integration Overview.
+- Updated `docs/demo_package.md` from the older mock/offline package into the v6.3 YouTube real-data screenshot/recording package, including local commands, YouTube caveats, current limitations, and real-vs-mock boundaries.
+- Updated `README.md`, `docs/demo_story.md`, `docs/demo_checklist.md`, and `docs/progress.md` to point to the package docs and preserve the core demo framing.
+
+Acceptance:
+
+- `python -m pytest` passed with `544 passed in 6.00s`.
+- `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
+- `npm --prefix frontend run build` passed in 8.05s with the existing non-blocking large vendor chunk warning.
+- Documentation distinguishes real YouTube public video/comment data, offline deterministic analysis/risk/report/forecast/Simulation Lab, mock LLM provider, and mock/scaffold status for other platforms.
+- Documentation does not claim all platforms are real, does not claim real LLM integration, does not imply guaranteed predictions, does not imply Simulation Lab or content moderation executes real-world actions, and does not imply individual targeting.
+- Automated validation did not call the real YouTube API, print API keys, modify `.env`, scrape, call real LLM APIs, or recreate GitHub Actions CI.
+
+Next options:
+
+- Produce the actual screenshot set and short recording from the v6.3 package.
+- Run a Douyin Web App permission audit.
+- Improve YouTube comment quality/filter heuristics if recording review finds low-signal examples.
+- Keep real LLM integration as later work behind explicit provider gates, guardrails, and offline benchmark regression checks.
+- Add additional real platform APIs only after official permission and mocked regression coverage.
+- Keep GitHub Actions CI intentionally disabled.
+
 ### YouTube Real Data Demo Story
 
 Status: documented and locally validated as a manual demo path.
@@ -158,7 +222,7 @@ Next options:
 
 - Produce the final screenshot deck or short demo recording from the current demo story.
 - Audit Douyin and Xiaohongshu API permissions in their developer consoles.
-- Implement real Douyin minimal mode only after comment permission and official payload shape are confirmed.
+- Implement real Douyin minimal mode only after Web App OAuth, `item.comment`, token flow, lawful `item_id` source, and official payload shape are confirmed.
 - Add a policy/legal review checklist for Simulation Lab strategy reports.
 - Keep real LLM integration as later work behind provider gates, guardrails, and offline benchmark regression checks.
 - Keep Simulation Lab empirical calibration as later work after real data governance is settled.
@@ -651,7 +715,7 @@ Completed:
 - `adapter_factory.get_adapter("douyin")` returns the Douyin adapter.
 - `/api/v1/crawl/start` can return Douyin-style normalized mock short-video `RawPost` and visible-comment `RawComment` data with safe adapter metadata.
 - `DOUYIN_ADAPTER_MODE=real` is safely blocked as `api_pending:permission_not_verified` when credentials are present or `config_error` when credentials are missing; no real Douyin API calls are made.
-- Douyin developer access is recorded as obtained by the user, but comment permission is not yet verified.
+- Douyin developer access is recorded as obtained by the user, but Web App OAuth, `item.comment`, token flow, and lawful `item_id` source are not yet verified.
 - Douyin scaffold coverage includes mock search/comments, normalization, missing credentials, real-mode blocked behavior, crawl metadata, platform registry status, and adapter factory registration.
 - Douyin scaffold QA is stabilized: the explicit adapter interface, default mock behavior, mock `RawPost` / `RawComment` schema fields, real-mode blocked behavior, crawl metadata, platform registry status, existing platform regressions, and old case/monitoring/scheduler/notification/public-parser regressions are covered by local tests.
 - Latest local/Codex validation passed with focused Douyin/adapter/crawl/registry checks (`20 passed in 0.67s`) and full `python -m pytest` (`213 passed in 3.10s`). Frontend build was not run for this adapter scaffold because no frontend files changed.
@@ -703,7 +767,7 @@ Near-term candidates:
 - Weibo official API application and approved implementation, only after permission scopes and compliance review are complete
 - Bilibili real API application and approved implementation
 - Douyin comment API permission verification in the Douyin developer console, including interaction/comment management, `item.comment` or equivalent scope, keyword video comment management if applicable, and user authorization limits
-- Douyin real-mode minimal integration only after comment permission and official payload shapes are confirmed
+- Douyin real-mode minimal integration only after Web App OAuth, `item.comment`, token flow, lawful `item_id` source, and official payload shapes are confirmed
 - Kuaishou real API application and approved implementation, only after permission scopes and compliance review are complete
 - Xiaohongshu note/comment API permission verification in the Xiaohongshu developer console, including whether comments are available through an official API and whether access is limited to own account, merchant, Ark, ad, or approved creator content
 - Xiaohongshu real-mode minimal integration only after note/comment API availability, scope, and official payload shapes are confirmed

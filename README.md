@@ -6,6 +6,36 @@ Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring syst
 
 本项目还不是生产系统。
 
+## v6.3 Demo Package
+
+Sentigraph v6.3 is packaged for screenshot and recording production around the optional YouTube real-data end-to-end demo.
+
+Demo package docs:
+
+- `docs/demo_package.md` - product summary, local run commands, real-vs-mock boundaries, limitations, and safety notes.
+- `docs/demo_recording_script.md` - 3-minute and 8-minute recording scripts with page order and talking points.
+- `docs/demo_screenshot_checklist.md` - canonical 13-screen screenshot checklist.
+- `docs/youtube_real_data_demo.md` - manual YouTube real-data walkthrough and PowerShell commands.
+
+What v6.3 demonstrates:
+
+- Real: YouTube public video/comment data, only when a local ignored `.env` is configured and the manual YouTube flow is run.
+- Offline deterministic: analysis, V1.5 topic risk, Chinese reports, monitoring, forecasting, and Simulation Lab.
+- Mock: LLM provider; no real OpenAI, DeepSeek, Qwen, or other external LLM call is made.
+- Scaffold/mock: all other platform APIs unless future official permissions and implementations are added.
+
+Quick validation and demo commands:
+
+```cmd
+python -m pytest
+python scripts\run_offline_benchmarks.py
+npm --prefix frontend run build
+python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+npm --prefix frontend run dev
+```
+
+GitHub Actions CI remains intentionally disabled. Do not recreate `.github/workflows/ci.yml` unless explicitly requested.
+
 ## v5.6 Demo-Ready Snapshot
 
 Sentigraph v5.6 is packaged as a local, mock/offline demo MVP for showing the complete public-opinion intelligence workflow without real platform access or real LLM calls.
@@ -32,7 +62,7 @@ What remains mock/offline:
 What requires future approval or explicit local configuration before real integration:
 
 - YouTube Data API key access is available locally; keep the key in ignored `.env` only, never in git, terminal output, or logs.
-- Douyin and Xiaohongshu developer access is recorded, but comment/note-comment permissions still need console verification.
+- Douyin developer access is recorded, but Web App OAuth, redirect URI, authorized test account, token exchange, `item.comment` scope, and item-id source still need console verification. Xiaohongshu developer access is recorded, but note/comment permissions still need console verification.
 - Reddit API approval remains pending before any real Reddit mode should be enabled.
 - Weibo, Bilibili, Kuaishou, Zhihu, Douban, Toutiao, and other platform integrations remain official-API/planning work.
 - Real LLM usage remains disabled until a provider is selected, guardrails are reviewed, and offline benchmarks are used as regression checks.
@@ -190,9 +220,9 @@ Reddit 保留在项目中，当前可 mock-selectable，未来可作为 real ada
 - Toutiao
 - YouTube
 
-这些平台当前只支持 mock workflow，不代表真实集成已经完成。Weibo、Bilibili、Douyin、Kuaishou、Xiaohongshu、Zhihu、Douban、Toutiao 已有 mock-only official API adapter scaffold；即使配置为 real mode，也只会返回安全的 `api_pending` / `config_error` 状态，不会调用真实平台 API。Douyin 和 Xiaohongshu 已记录用户侧 developer access obtained，但评论/笔记评论 API 权限尚未核验，real mode 仍保持关闭。
+这些平台当前只支持 mock workflow，不代表真实集成已经完成。Weibo、Bilibili、Douyin、Kuaishou、Xiaohongshu、Zhihu、Douban、Toutiao 已有 mock-only official API adapter scaffold；即使配置为 real mode，也只会返回安全的 `api_pending` / `config_error` 状态，不会调用真实平台 API。Douyin 已记录用户侧 developer access obtained，但 Web App OAuth、`item.comment` scope、redirect URI、测试账号授权、token exchange 和 item_id 来源尚未核验，real mode 仍保持关闭；Xiaohongshu 评论/笔记评论 API 权限尚未核验，real mode 也保持关闭。
 
-Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao. Real API modes remain disabled and return safe `api_pending` / `config_error` metadata until approval, credentials, scopes, and implementation are added. Douyin and Xiaohongshu developer access is recorded as obtained, but comment/note-comment permissions are not verified yet. YouTube is now real-capable through the official YouTube Data API v3, but it defaults to mock mode and only uses real mode when explicitly configured with `YOUTUBE_ADAPTER_MODE=real` plus a local `YOUTUBE_API_KEY`.
+Current mock-only official API adapter scaffolds: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao. Real API modes remain disabled and return safe `api_pending` / `config_error` metadata until approval, credentials, scopes, and implementation are added. Douyin developer access is recorded as obtained, but Web App OAuth and `item.comment` readiness are not verified yet; see `docs/douyin_web_app_integration_plan.md`. Xiaohongshu developer access is recorded as obtained, but note/comment permissions are not verified yet. YouTube is now real-capable through the official YouTube Data API v3, but it defaults to mock mode and only uses real mode when explicitly configured with `YOUTUBE_ADAPTER_MODE=real` plus a local `YOUTUBE_API_KEY`.
 
 ### Future Crawler-later
 

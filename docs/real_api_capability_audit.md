@@ -1,6 +1,6 @@
 # Real API Capability Audit: Douyin and Xiaohongshu
 
-Date: 2026-05-17
+Date: 2026-05-19
 
 This audit records what Sentigraph must verify before enabling real official API mode for Douyin or Xiaohongshu public-comment ingestion. It is a planning and capability-mapping document only. No real platform APIs were called, no credentials were required, no cookies were used, and no scraping path is proposed.
 
@@ -15,7 +15,7 @@ Official documentation references reviewed:
 
 | Platform | Developer Access | Comment API Status | Current Sentigraph Mode | Real Mode Blocker |
 | --- | --- | --- | --- | --- |
-| Douyin | obtained by user | `unknown_or_permission_required` | mock adapter only | `permission_not_verified` |
+| Douyin | obtained by user | `item_comment_scope_not_verified` | mock adapter only | `oauth_and_scope_not_verified` |
 | Xiaohongshu | obtained by user | `unknown_or_not_confirmed` | mock adapter only | `permission_not_verified` |
 
 Both adapters remain `official_api_adapter_scaffold` implementations. Mock mode stays available. Real mode is disabled until official permission, scope, payload shape, rate limits, and compliance requirements are verified.
@@ -25,7 +25,7 @@ Both adapters remain `official_api_adapter_scaffold` implementations. Mock mode 
 Current status:
 
 - Developer access has been obtained by the user.
-- Exact app permissions and approved scopes are not yet known to Sentigraph.
+- App type is tracked as Web App, but redirect URI, OAuth callback/token exchange, approved scopes, and lawful `item_id` source are not yet verified in Sentigraph.
 - The local Douyin adapter remains mock-only.
 - `DOUYIN_ADAPTER_MODE=real` does not call a real API. With credentials present, it reports `api_pending:permission_not_verified`; without credentials, it reports a safe missing-credential configuration state.
 
@@ -33,6 +33,8 @@ Known required areas to check in the Douyin developer console:
 
 - Whether interaction or comment management permissions are available for the app.
 - Whether the app has `item.comment` or the current official equivalent comment permission.
+- Whether the Web App redirect URI is configured and a test account can authorize the app.
+- Whether OAuth callback and token exchange return the expected safe metadata and granted scopes.
 - Whether any keyword video comment management capability is available and what its approval process requires.
 - Whether user authorization is required and whether access is limited to authorized users' own videos/items.
 - Whether comment reply lists are available through an official endpoint.
@@ -42,7 +44,9 @@ Required future credentials:
 
 - `DOUYIN_CLIENT_KEY`
 - `DOUYIN_CLIENT_SECRET`
+- `DOUYIN_REDIRECT_URI`
 - `DOUYIN_ACCESS_TOKEN`
+- `DOUYIN_REFRESH_TOKEN`
 
 Required future scopes:
 
@@ -58,10 +62,12 @@ Future data target:
 Minimum integration gate before code can make real calls:
 
 1. Confirm the exact official endpoint names, scopes, and payloads in the Douyin console.
-2. Confirm that the app is approved for comment access on the intended content class.
-3. Add response fixtures based on approved official payloads.
-4. Implement a reviewed API client behind explicit config gates.
-5. Keep tests proving missing credentials, disabled real calls, and network-blocked paths stay safe.
+2. Confirm that the Web App redirect URI, test-account authorization, OAuth callback, and token exchange are configured.
+3. Confirm that the app is approved for comment access on the intended content class.
+4. Confirm the lawful source of `item_id` values.
+5. Add response fixtures based on approved official payloads.
+6. Implement a reviewed API client behind explicit config gates.
+7. Keep tests proving missing credentials, disabled real calls, and network-blocked paths stay safe.
 
 ## Xiaohongshu
 

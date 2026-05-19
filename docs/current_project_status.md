@@ -122,11 +122,11 @@ All official API scaffolds normalize mock posts/comments into shared `RawPost` a
 
 No platform is ready for production real-data ingestion today.
 
-The repository is ready for controlled local demos and for the next external API application/permission verification phase. Douyin and Xiaohongshu now have developer access recorded, but comment/note-comment permission remains unverified. Reddit API approval is pending. Other official APIs remain unapproved or unapplied.
+The repository is ready for controlled local demos and for the next external API application/permission verification phase. Douyin developer access is recorded and the planned app type is Web App, but OAuth, `item.comment`, and lawful `item_id` readiness remain unverified. Xiaohongshu developer access is recorded, but note-comment permission remains unverified. Reddit API approval is pending. Other official APIs remain unapproved or unapplied.
 
 ## Requires External API Approval or Console Verification
 
-- Douyin: comment/interaction permission and `item.comment` or equivalent scope.
+- Douyin: Web App redirect URI, test-account OAuth authorization, token flow, `item.comment` or equivalent scope, and lawful `item_id` source.
 - Xiaohongshu: note/content/comment API availability and access limits.
 - Reddit: API approval.
 - Weibo: application blocked by company-age requirement.
@@ -139,4 +139,4 @@ Freeze scaffold expansion. The next stage should be:
 
 1. Prepare a stable local demo build.
 2. Audit Douyin and Xiaohongshu API permissions in their developer consoles.
-3. Implement real Douyin mode only after comment permission, payloads, limits, and compliance constraints are confirmed.
+3. Implement real Douyin mode only after Web App OAuth, `item.comment`, lawful `item_id` source, payloads, limits, and compliance constraints are confirmed.

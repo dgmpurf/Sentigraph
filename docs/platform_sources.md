@@ -16,6 +16,8 @@ Sentigraph exposes platform readiness through `GET /api/v1/platforms/status`. Th
 - `api_approval_status`
 - `developer_access_status`
 - `comment_api_status`
+- `recommended_comment_scope`
+- `video_comment_scope_status`
 - `real_mode_blocker`
 - `credentials_required`
 - `credentials_present` as present/missing booleans only
@@ -30,7 +32,7 @@ Current global status:
 - Official API planned platforms: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao, YouTube.
 - Weibo: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Bilibili: official API adapter scaffold available in mock mode; real API mode disabled and not called.
-- Douyin: official API adapter scaffold available in mock mode; developer access obtained; comment permission not verified; real API mode disabled and not called.
+- Douyin: official API adapter scaffold available in mock mode; developer access obtained; Web App OAuth and `item.comment` scope are not verified; `item.comment` is the recommended MVP comment scope; `video.comment` is not recommended for MVP; real API mode disabled and not called.
 - Kuaishou: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Xiaohongshu: official API adapter scaffold available in mock mode; developer access obtained; note/comment API availability not verified; real API mode disabled and not called.
 - Zhihu: official API adapter scaffold available in mock mode; real API mode disabled and not called.
@@ -64,7 +66,7 @@ These platforms should be integrated through official API programs when credenti
 | --- | --- | --- | --- |
 | `weibo` | Weibo | https://open.weibo.com | mock adapter scaffold; real API pending credentials/approval |
 | `bilibili` | Bilibili | https://openhome.bilibili.com | mock adapter scaffold; real API pending credentials/approval |
-| `douyin` | Douyin | https://developer.open-douyin.com | mock adapter scaffold; developer access obtained; comment permission not verified |
+| `douyin` | Douyin | https://developer.open-douyin.com | mock adapter scaffold; developer access obtained; Web App OAuth and `item.comment` scope not verified; `video.comment` not recommended for MVP |
 | `kuaishou` | Kuaishou | https://open.kuaishou.com | mock adapter scaffold; real API pending credentials/approval |
 | `xiaohongshu` | Xiaohongshu | https://open.xiaohongshu.com | mock adapter scaffold; developer access obtained; note/comment API not verified |
 | `zhihu` | Zhihu | https://open.zhihu.com | mock adapter scaffold; real API pending credentials/approval |
@@ -118,7 +120,7 @@ Factory behavior:
 
 - `get_adapter("reddit")` and `get_platform_adapter("reddit")` return the Reddit adapter.
 - Unknown platforms return a safe adapter registration error.
-- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have mock-only official API adapter scaffolds. YouTube has a mock-first official Data API v3 adapter with real mode gated by `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY`. Douyin and Xiaohongshu now record developer access obtained but keep comment/note-comment permission as unverified. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
+- Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao have mock-only official API adapter scaffolds. YouTube has a mock-first official Data API v3 adapter with real mode gated by `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY`. Douyin now records developer access obtained and `app_type="web_app"` but keeps Web App OAuth and `item.comment` scope unverified; Xiaohongshu records developer access obtained but keeps note/comment permission unverified. Other official API planned platforms remain registry entries only until credentials, permissions, and product behavior are reviewed.
 - Crawler-later platforms remain inactive for real collection.
 
 Safety constraints:
@@ -263,7 +265,7 @@ Remaining before real Bilibili integration:
 
 ### Douyin official API adapter scaffold
 
-Douyin is now an official-API-planned Chinese short-video platform with a concrete adapter scaffold. It is intentionally mock-first and does not call the real Douyin API.
+Douyin is now an official-API-planned Chinese short-video platform with a concrete Web App readiness scaffold. It is intentionally mock-first and does not call the real Douyin API.
 
 Current behavior:
 
@@ -271,11 +273,12 @@ Current behavior:
 - `get_adapter("douyin")` returns the Douyin adapter.
 - `POST /api/v1/crawl/start` uses the adapter when `platforms` contains `douyin`.
 - Mock mode returns deterministic Douyin-style short-video posts and visible public-comment mock data normalized as `RawPost` and `RawComment`.
-- Developer access has been obtained by the user, but exact comment permissions are unknown.
-- If `DOUYIN_ADAPTER_MODE=real`, the adapter stays in mock mode and reports safe `api_pending:permission_not_verified` when credentials are present or safe `config_error` metadata when credentials are missing. No network call is made.
-- Safe status metadata includes `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, `real_mode_disabled=true`, `developer_access_status="obtained"`, `comment_api_status="unknown_or_permission_required"`, and `real_mode_blocker="permission_not_verified"`.
+- Developer access has been obtained by the user, but Web App OAuth, redirect URI, authorized test account, token exchange, `item.comment` scope, and lawful `item_id` source are not verified.
+- If `DOUYIN_ADAPTER_MODE=real`, the adapter stays in mock mode and reports safe `api_pending:permission_not_verified` when complete placeholder OAuth configuration is present or safe `config_error` metadata when OAuth configuration is incomplete. No network call is made.
+- Safe status metadata includes `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `real_mode_available=false`, `api_pending=true`, `real_mode_disabled=true`, `developer_access_status="obtained"`, `app_type="web_app"`, `comment_api_status="item_comment_scope_not_verified"`, `recommended_comment_scope="item.comment"`, `video_comment_scope_status="not_recommended_for_mvp"`, `real_mode_blocker="oauth_and_scope_not_verified"`, `permission_status="permission_not_verified"`, `oauth_status="scaffold_documented_not_implemented"`, `token_exchange_status="placeholder_not_implemented"`, and `item_id_source_status="not_confirmed"`.
 - No Douyin page scraping, login, captcha handling, cookies, proxy rotation, private data access, or external LLM call is implemented.
-- Latest QA status: focused Douyin/adapter/crawl/registry validation passed with `20 passed in 0.67s`; full local backend validation passed with `213 passed in 3.10s`. The pass confirmed the adapter interface, mock output schema fields, platform registry status, `/crawl/start` metadata, and safe real-mode blocking.
+- See `docs/douyin_web_app_integration_plan.md` for the OAuth design, item-comment readiness gates, planned schemas, and future test plan.
+- Latest QA status: focused Douyin OAuth/adapter/crawl/registry validation passed with `69 passed in 0.97s`; full local backend validation passed with `556 passed in 5.13s`; offline benchmarks passed with `522 passed, 0 failed, 0 warnings`. The pass confirmed mock fallback, blocked real mode, non-network OAuth helper behavior, Web App readiness metadata, `/crawl/start` metadata, platform registry status, and credential redaction.
 
 Future Douyin credentials after approval:
 
@@ -283,15 +286,24 @@ Future Douyin credentials after approval:
 DOUYIN_ADAPTER_MODE=real
 DOUYIN_CLIENT_KEY
 DOUYIN_CLIENT_SECRET
+DOUYIN_REDIRECT_URI
 DOUYIN_ACCESS_TOKEN
+DOUYIN_REFRESH_TOKEN
+DOUYIN_CLIENT_TOKEN
+DOUYIN_STABLE_CLIENT_TOKEN
+DOUYIN_ENABLE_REAL_CALLS=false
+DOUYIN_SCOPE_STATUS=unverified
 ```
 
 Remaining before real Douyin integration:
 
-- verify in the Douyin developer console that interaction/comment management or the current equivalent product is enabled
+- verify in the Douyin developer console that the Sentigraph app type is Web App and the redirect URI is configured
 - verify `item.comment` or the current official equivalent comment scope
+- keep `video.comment` out of the MVP path unless the console proves it is the correct Web App route
+- verify test-account authorization and official OAuth callback/token exchange behavior
 - verify whether keyword video comment management is available and applicable
 - verify user authorization requirements and whether access is limited to authorized or owned items
+- verify the lawful source of `item_id` values before any item-comment request
 - official application/approval and permission-scope review
 - rate-limit and usage policy documentation
 - a reviewed official API client implementation

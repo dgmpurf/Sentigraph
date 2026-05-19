@@ -999,7 +999,9 @@ def test_crawl_start_douyin_mock_mode_returns_normalized_mock_data(monkeypatch) 
     monkeypatch.setenv("DOUYIN_ADAPTER_MODE", "mock")
     monkeypatch.delenv("DOUYIN_CLIENT_KEY", raising=False)
     monkeypatch.delenv("DOUYIN_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("DOUYIN_REDIRECT_URI", raising=False)
     monkeypatch.delenv("DOUYIN_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("DOUYIN_REFRESH_TOKEN", raising=False)
 
     response = client.post(
         "/api/v1/crawl/start",
@@ -1031,7 +1033,9 @@ def test_crawl_start_douyin_real_mode_stays_api_pending_without_network(monkeypa
     monkeypatch.setenv("DOUYIN_ADAPTER_MODE", "real")
     monkeypatch.setenv("DOUYIN_CLIENT_KEY", "client")
     monkeypatch.setenv("DOUYIN_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("DOUYIN_REDIRECT_URI", "https://sentigraph.local/oauth/douyin/callback")
     monkeypatch.setenv("DOUYIN_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("DOUYIN_REFRESH_TOKEN", "refresh-token")
 
     response = client.post(
         "/api/v1/crawl/start",
@@ -1050,7 +1054,17 @@ def test_crawl_start_douyin_real_mode_stays_api_pending_without_network(monkeypa
     assert metadata["api_pending"] is True
     assert metadata["real_mode_disabled"] is True
     assert metadata["real_mode_available"] is False
-    assert metadata["real_mode_blocked_reason"] == "api_pending"
+    assert metadata["real_mode_blocked_reason"] == "permission_not_verified"
+    assert metadata["developer_access_status"] == "obtained"
+    assert metadata["app_type"] == "web_app"
+    assert metadata["comment_api_status"] == "item_comment_scope_not_verified"
+    assert metadata["recommended_comment_scope"] == "item.comment"
+    assert metadata["video_comment_scope_status"] == "not_recommended_for_mvp"
+    assert metadata["real_mode_blocker"] == "oauth_and_scope_not_verified"
+    assert metadata["permission_status"] == "permission_not_verified"
+    assert metadata["oauth_status"] == "scaffold_documented_not_implemented"
+    assert metadata["token_exchange_status"] == "placeholder_not_implemented"
+    assert metadata["item_id_source_status"] == "not_confirmed"
     assert metadata["real_mode_reached"] is False
     assert metadata["sanitized_error_category"] == "api_pending"
     assert body["raw_posts"]
@@ -1061,7 +1075,9 @@ def test_crawl_start_douyin_real_without_credentials_falls_back_to_mock(monkeypa
     monkeypatch.setenv("DOUYIN_ADAPTER_MODE", "real")
     monkeypatch.delenv("DOUYIN_CLIENT_KEY", raising=False)
     monkeypatch.delenv("DOUYIN_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("DOUYIN_REDIRECT_URI", raising=False)
     monkeypatch.delenv("DOUYIN_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("DOUYIN_REFRESH_TOKEN", raising=False)
 
     response = client.post(
         "/api/v1/crawl/start",
