@@ -120,7 +120,9 @@ export function PublicOpinionReport({ report }) {
           <Space wrap className="report-source-strip">
             <Tag color={report.hasSummaryData ? 'cyan' : 'default'}>summary/generate</Tag>
             <Tag color={report.hasRecommendationData ? 'green' : 'default'}>recommendation/generate</Tag>
-            <Tag color={report.generatedFromMockPipeline ? 'purple' : 'default'}>离线模板生成</Tag>
+            <Tag color={report.generatedFromMockPipeline ? 'purple' : 'cyan'}>
+              {report.generatedFromMockPipeline ? 'Mock fallback report' : 'Attached raw-data report'}
+            </Tag>
             <Tag color="geekblue">{report.reportLanguage}</Tag>
             {report.riskModelVersion ? <Tag color="blue">{report.riskModelVersion}</Tag> : null}
           </Space>

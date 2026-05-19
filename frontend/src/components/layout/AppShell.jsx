@@ -40,7 +40,7 @@ const navItems = [
     key: 'simulationLab',
     label: (
       <Tooltip title="Simulation Lab / 舆情预演沙盘" placement="right">
-        <span>Simulation Lab</span>
+        <span>Simulation / 沙盘</span>
       </Tooltip>
     ),
     icon: <Activity size={17} />,
@@ -97,7 +97,11 @@ export function AppShell({
                 <Tag color="purple">{sourceStatus.llmLabel}</Tag>
               </>
             ) : (
-              <Tag color="cyan">Mock Mode</Tag>
+              <>
+                <Tag color="default">Data: Mock</Tag>
+                <Tag color="green">Analysis: Offline</Tag>
+                <Tag color="purple">LLM: Mock</Tag>
+              </>
             )}
             {caseTitle ? <Tag color="geekblue">{caseTitle}</Tag> : null}
             <Text className="project-label">{projectId}</Text>

@@ -432,7 +432,7 @@ export function KeywordSearch({
           </div>
           <Space size={[8, 8]} wrap>
             <Tag color="red">Data: YouTube Real</Tag>
-            <Tag color="cyan">Analysis: Offline deterministic</Tag>
+            <Tag color="green">Analysis: Offline</Tag>
             <Tag color="purple">LLM: Mock</Tag>
             <Tag color="default">API key values are never displayed</Tag>
           </Space>
