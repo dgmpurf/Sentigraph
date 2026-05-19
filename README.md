@@ -243,6 +243,8 @@ The cache is stored at `backend/data/youtube_cache.json`, which is ignored by gi
 
 Case ingestion boundary: `/api/v1/crawl/start` can return normalized public YouTube `RawPost` / `RawComment` data for diagnostics, and `POST /api/v1/cases/{case_id}/crawl/start` can explicitly attach normalized crawl output to a selected case. `POST /api/v1/cases/{case_id}/run` uses attached case raw comments when present and otherwise falls back to the deterministic mock dataset. Real YouTube crawling is never triggered automatically by case creation or case run.
 
+Full manual walkthrough: `docs/youtube_real_data_demo.md` documents the local YouTube real-data demo path from tiny crawl through case analysis, report export, Simulation Lab initialization, A/B strategy comparison, and strategy report export. It requires a local ignored `.env` key and is not part of automated tests.
+
 Official API concepts used by the minimal adapter:
 
 - `search.list` for tiny video search batches.

@@ -1,10 +1,10 @@
 # Sentigraph Demo Story
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 ## Product Summary
 
-Sentigraph is a mock-first, desktop public-opinion intelligence dashboard that turns a keyword-driven case into deterministic offline analysis, V1.5 topic risk scoring, Chinese reports, monitoring/forecasting, ethical Simulation Lab rehearsal, benchmark status, and LLM/platform safety diagnostics. The current demo uses local mock/offline data only and does not call real platform APIs, real crawlers, live public pages, or real LLM APIs.
+Sentigraph is a mock-first, desktop public-opinion intelligence dashboard that turns a keyword-driven case into deterministic offline analysis, V1.5 topic risk scoring, Chinese reports, monitoring/forecasting, ethical Simulation Lab rehearsal, benchmark status, and LLM/platform safety diagnostics. The default demo uses local mock/offline data only and does not call real platform APIs, real crawlers, live public pages, or real LLM APIs. An optional manual YouTube real-data demo is available when a local ignored `.env` contains `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY=<local key>`.
 
 ## Demo Script
 
@@ -38,6 +38,33 @@ npm run dev
 6. Walk the cards in order: create/load case, run mock analysis, inspect V1.5 risk, open the Chinese report, export Markdown, initialize Simulation Lab, run A/B comparison, export the Simulation Lab strategy report, then open Benchmarks and LLM Safety.
 7. Finish by opening `平台接入总览`, `公开页面解析`, and `Selector 修复工具` to show real integrations remain disabled or fixture/mock-only.
 
+## Optional YouTube Real-Data Demo
+
+Use this path only for a local manual demonstration after configuring the ignored `.env` file. Do not print the API key and do not run this path inside automated tests.
+
+The full command story is in `docs/youtube_real_data_demo.md`.
+
+1. Start backend and frontend.
+2. Verify YouTube platform status shows safe boolean credential metadata only.
+3. Run a tiny YouTube real crawl for keyword `Tesla`.
+4. Create a YouTube case and attach crawl output with `POST /api/v1/cases/{case_id}/crawl/start`.
+5. Run the case and verify `analysis_input_source=case_raw_data`.
+6. Confirm representative comments can come from public YouTube comments.
+7. View V1.5 topic risk and the Chinese Summary Report.
+8. Export the case Markdown report.
+9. Open Risk Monitor and run deterministic forecast if desired.
+10. Initialize Simulation Lab from the YouTube-based case.
+11. Run A/B strategy comparison and export the Simulation Lab strategy report.
+12. Open Benchmarks and LLM Safety to show offline quality checks and real-LLM disabled status.
+
+Expected signs of success:
+
+- `/crawl/start` metadata shows `adapter_mode=real`, `fallback_used=false`, `credential_present=true`, schema-valid tiny counts, and safe quota/cache metadata.
+- Case detail shows `raw_data_status=attached`.
+- Case analysis shows `analysis_input_source=case_raw_data`.
+- Reports and Simulation Lab remain deterministic, aggregate-level, and human-review-oriented.
+- Other platforms remain mock/scaffold-only unless explicitly configured in a future task.
+
 ## Screenshot Checklist
 
 During the 2026-05-18 browser smoke, screenshots were captured under `.benchmarks/demo_smoke_screenshots/` for local review. Recommended demo screenshots:
@@ -67,11 +94,13 @@ During the 2026-05-18 browser smoke, screenshots were captured under `.benchmark
 
 ## Current Limitations
 
-- The demo remains mock/offline and deterministic; it is not a production monitoring system.
-- Real platform APIs, real public crawling, real LLM calls, authentication, production persistence, and external notifications remain disabled or future work.
+- The default demo remains mock/offline and deterministic; it is not a production monitoring system.
+- The optional YouTube path is the only current credential-gated official API demo and requires a local key in ignored `.env`.
+- Real public crawling, real LLM calls, authentication, production persistence, and external notifications remain disabled or future work.
+- Other platforms remain mock/scaffold-only unless future official permissions and implementations are added.
 - Simulation Lab outputs are aggregate scenario-rehearsal signals only. They are not guarantees of real-world outcomes and must not be treated as automatic strategy execution.
 - PDF export, richer Simulation Lab animation, empirical calibration, and policy/legal review workflow are future tasks.
 
 ## Safety Note
 
-The demo does not call real APIs or real LLM APIs, does not enable live public fetching, does not implement crawlers, and does not expose fake consensus, bot amplification, fake events, covert seeding, deceptive distraction, individual-level persuasion targeting, account-level influenceability scoring, harassment, or suppression tactics. Simulation Lab output is aggregate-level and human-review-oriented.
+The default demo does not call real APIs or real LLM APIs, does not enable live public fetching, does not implement crawlers, and does not expose fake consensus, bot amplification, fake events, covert seeding, deceptive distraction, individual-level persuasion targeting, account-level influenceability scoring, harassment, or suppression tactics. The optional YouTube real-data demo uses only the official YouTube Data API v3 with a local ignored key, tiny limits, and safe metadata. Simulation Lab output is aggregate-level and human-review-oriented.

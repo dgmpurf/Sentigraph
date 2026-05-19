@@ -1,6 +1,6 @@
 # Sentigraph Implementation Backlog
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
 
@@ -8,9 +8,36 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### YouTube Real Data Demo Story
+
+Status: documented and locally validated as a manual demo path.
+
+Completed:
+
+- Added `docs/youtube_real_data_demo.md` with prerequisites, `.env` requirements, key-redaction warnings, backend/frontend startup commands, tiny YouTube crawl command, case-specific raw-data attachment command, case run command, Markdown export command, Risk Monitor/Forecast steps, Simulation Lab initialization steps, A/B strategy comparison steps, strategy report export steps, cache notes, screenshot checklist, and troubleshooting.
+- Updated `docs/demo_story.md` to separate the default mock/offline demo from the optional YouTube real-data demo.
+- Updated `docs/demo_checklist.md` with the current expected signs of success: `adapter_mode=real`, `fallback_used=false`, `credential_present=true`, schema-valid tiny counts, `raw_data_status=attached`, `analysis_input_source=case_raw_data`, YouTube-derived representative comments, and working strategy report export.
+- Linked the manual walkthrough from `README.md`.
+
+Acceptance:
+
+- `python -m pytest` passed with `542 passed in 6.32s`.
+- `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
+- `npm --prefix frontend run build` passed in 8.26s with the existing non-blocking large vendor chunk warning.
+- Automated validation did not call the real YouTube API and did not require API credentials.
+- No API key values or `.env` values were printed, committed, or documented.
+- No scraping, browser-cookie use, login bypass, captcha bypass, anti-bot evasion, real LLM call, `.env` modification, new product feature, or GitHub Actions workflow was introduced.
+
+Future work:
+
+- Run the manual YouTube real-data demo with the locally configured key and capture screenshots/recording.
+- Add a small guarded frontend affordance for case-specific crawl attachment only if repeated real-data demos need it.
+- Keep other real-platform demos behind official permissions, mocked regression tests, and key-redacted metadata.
+- Keep GitHub Actions CI intentionally disabled.
+
 ### YouTube Quota-Safe Cache and Real-Data Guardrails
 
-Status: implemented and QA-stabilized for the credential-gated YouTube official API adapter.
+Status: implemented and QA-stabilized for the credential-gated YouTube official API adapter; revalidated on 2026-05-19.
 
 Completed:
 
@@ -24,12 +51,13 @@ Completed:
 
 Acceptance:
 
-- `python -m pytest` passed with `542 passed in 5.14s`.
+- `python -m pytest` passed with `542 passed in 5.42s`.
 - `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
 - Frontend build was not run because no frontend files changed.
+- `backend/data/youtube_cache.json` was absent after automated validation; `backend/data/.gitkeep` remains preserved.
 - Automated tests use mocked YouTube clients only and do not call the real YouTube API.
 - No API key values are printed, returned, or stored in cache payloads.
-- `backend/data/youtube_cache.json` is ignored runtime data and was absent after automated validation; `backend/data/.gitkeep` remains preserved.
+- `backend/data/youtube_cache.json` is ignored runtime data.
 - No scraping, browser-cookie use, login bypass, captcha bypass, anti-bot evasion, real LLM call, `.env` modification, or GitHub Actions workflow was introduced.
 
 Future work:
