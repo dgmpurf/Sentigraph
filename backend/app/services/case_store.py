@@ -301,6 +301,11 @@ def _build_markdown(case: AnalysisCaseDetail) -> str:
 
     risk_score = _report_score(report)
     platforms = ", ".join(case.platforms) if case.platforms else "mock default platforms"
+    generation_label = (
+        "离线 mock 管线"
+        if report.generated_from_mock_pipeline
+        else "attached case raw data offline deterministic analysis"
+    )
     lines = [
         f"# {case.title}",
         "",
@@ -312,7 +317,8 @@ def _build_markdown(case: AnalysisCaseDetail) -> str:
         f"- 风险分数: {risk_score:.1f}/100",
         f"- 风险等级: {report.risk_level_label or report.risk_level} ({report.risk_level})",
         f"- 风险模型版本: {report.risk_model_version}",
-        f"- 生成方式: {'离线 mock 管线' if report.generated_from_mock_pipeline else '外部生成'}",
+        f"- 生成方式: {generation_label}",
+        "- LLM: Mock / no real LLM call",
         "",
         "## 舆情总览",
         "",

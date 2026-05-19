@@ -161,6 +161,7 @@ def test_report_builder_downranks_promotional_representative_comments() -> None:
         risk=RiskBrief(risk_score=72, risk_level="high"),
     )
     promotional = "Subscribe to my channel and join my Patreon for a promo code."
+    merch_promotional = "Use my discount code for merch and subscribe for more updates."
     substantive_comments = [
         "Tesla quality issue looks serious because the official response timeline is still unclear.",
         "The safety concern needs evidence and a clearer product support path.",
@@ -171,11 +172,14 @@ def test_report_builder_downranks_promotional_representative_comments() -> None:
 
     report = build_public_opinion_report(
         analysis,
-        representative_comments=[promotional, *substantive_comments],
+        representative_comments=[promotional, merch_promotional, *substantive_comments],
         report_language="en-US",
     )
 
     assert promotional not in report.representative_comments
+    assert merch_promotional not in report.representative_comments
+    assert all("discount code" not in comment.lower() for comment in report.representative_comments)
+    assert all("merch" not in comment.lower() for comment in report.representative_comments)
     assert report.representative_comments[0] == substantive_comments[0]
     assert len(report.representative_comments) == 5
 

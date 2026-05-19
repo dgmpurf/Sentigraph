@@ -190,6 +190,7 @@ def test_youtube_raw_data_report_downranks_promotional_comments(monkeypatch) -> 
     assert attach_response.status_code == 200
     attached = attach_response.json()
     assert any("patreon" in comment["content"].lower() for comment in attached["raw_comments"])
+    assert any("discount code" in comment["content"].lower() for comment in attached["raw_comments"])
 
     run_response = client.post(f"/api/v1/cases/{case_id}/run")
 
@@ -200,6 +201,8 @@ def test_youtube_raw_data_report_downranks_promotional_comments(monkeypatch) -> 
     assert any("official response timeline" in comment for comment in representative_comments)
     assert all("patreon" not in comment.lower() for comment in representative_comments)
     assert all("promo code" not in comment.lower() for comment in representative_comments)
+    assert all("discount code" not in comment.lower() for comment in representative_comments)
+    assert all("merch" not in comment.lower() for comment in representative_comments)
 
 
 def test_case_specific_crawl_start_missing_case_returns_404(monkeypatch) -> None:
@@ -415,6 +418,21 @@ def _youtube_crawl_response_with_promotional_comment() -> CrawlStartResponse:
             share_count=0,
             created_at="2026-05-17T12:04:00Z",
             url="https://www.youtube.com/watch?v=yt_fixture_video_001&lc=yt_fixture_comment_promo",
+            raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+        ),
+        RawComment(
+            platform="youtube",
+            post_id="yt_fixture_video_001",
+            comment_id="yt_fixture_comment_merch_promo",
+            parent_id=None,
+            author_id="yt_fixture_commenter_merch_promo",
+            author_name="Fixture Merch Promo Viewer",
+            content="Get merch and a discount code from my channel member page.",
+            like_count=42,
+            reply_count=0,
+            share_count=0,
+            created_at="2026-05-17T12:04:30Z",
+            url="https://www.youtube.com/watch?v=yt_fixture_video_001&lc=yt_fixture_comment_merch_promo",
             raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
         ),
         RawComment(

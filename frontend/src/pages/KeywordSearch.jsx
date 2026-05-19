@@ -415,7 +415,7 @@ export function KeywordSearch({
         <Alert
           showIcon
           type="warning"
-          message="For the real YouTube demo, select YouTube only."
+          message="For YouTube real-data demo, select YouTube only."
           description="Multi-platform selections remain available for the offline mock flow. The real-data case flow is intentionally explicit so crawl, attach, and analysis steps are visible."
         />
       ) : null}

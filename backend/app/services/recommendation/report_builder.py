@@ -19,6 +19,8 @@ PROMOTIONAL_COMMENT_TERMS = (
     "promo code",
     "affiliate",
     "join",
+    "merch",
+    "discount code",
 )
 
 COMMENT_RELEVANCE_TERMS = (

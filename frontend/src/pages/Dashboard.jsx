@@ -9,6 +9,7 @@ import { SentimentTrendChart } from '../components/charts/SentimentTrendChart.js
 import { TopicClusterChart } from '../components/charts/TopicClusterChart.jsx'
 import { formatPercent, riskTone } from '../utils/formatters.js'
 import { buildPublicOpinionReportModel } from '../utils/reportModel.js'
+import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -59,16 +60,19 @@ function buildPlatformDistribution(heatmap = [], graph) {
     .sort((left, right) => right.value - left.value)
 }
 
-function getLatestSummary(summary, analysis) {
+function getLatestSummary(summary, analysis, sourceStatus) {
   return (
     summary?.overall_summary ||
     summary?.summary ||
     analysis?.summary ||
-    'Mock pipeline has not returned a public opinion summary yet.'
+    (sourceStatus?.isCaseRawData
+      ? 'Offline deterministic analysis from attached case raw data has not returned a public opinion summary yet.'
+      : 'Mock pipeline has not returned a public opinion summary yet.')
   )
 }
 
-export function Dashboard({ alerts = [], analysis, error, keyword, loading, recommendation, summary, visualization }) {
+export function Dashboard({ alerts = [], analysis, currentCase, error, keyword, loading, recommendation, summary, visualization }) {
+  const sourceStatus = getAnalysisSourceStatus({ analysis, currentCase })
   const sentiment = analysis?.sentiment
   const report = buildPublicOpinionReportModel({ analysis, recommendation, summary, visualization })
   const riskScore = Number(report.overallRisk ?? report.riskScore ?? visualization?.risk_score ?? 0)
@@ -82,7 +86,13 @@ export function Dashboard({ alerts = [], analysis, error, keyword, loading, reco
   const topics = visualization?.topic_clusters || []
   const riskRadar = visualization?.risk_radar
   const platformDistribution = buildPlatformDistribution(heatmap, graph)
-  const summaryText = getLatestSummary(summary, analysis)
+  const summaryText = getLatestSummary(summary, analysis, sourceStatus)
+  const headingSourceLabel = sourceStatus.isCaseRawData
+    ? 'offline deterministic analysis from attached case raw data'
+    : 'mock pipeline visualization'
+  const botSignalCopy = sourceStatus.isCaseRawData
+    ? 'Repeated-script impact from attached public comment signals.'
+    : 'Repeated-script impact from mock behavior signals.'
 
   if (!visualization) {
     return (
@@ -102,7 +112,7 @@ export function Dashboard({ alerts = [], analysis, error, keyword, loading, reco
       <div className="page-heading">
         <div>
           <Title level={2}>Sentigraph Command Center</Title>
-          <Text>Monitoring keyword: {keyword} · mock pipeline visualization</Text>
+          <Text>Monitoring keyword: {keyword} · {headingSourceLabel}</Text>
         </div>
         <Space>
           <Tag color="geekblue" className="large-tag">
@@ -150,7 +160,7 @@ export function Dashboard({ alerts = [], analysis, error, keyword, loading, reco
               value={formatPercent(visualization?.bot_impact?.suspected_bot_comment_ratio)}
               valueStyle={{ color: '#42f5d7' }}
             />
-            <Text>Repeated-script impact from mock behavior signals.</Text>
+            <Text>{botSignalCopy}</Text>
           </Card>
         </Col>
         <Col span={6}>

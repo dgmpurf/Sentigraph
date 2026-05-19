@@ -67,8 +67,6 @@ export function AppShell({
   riskScore,
   sourceStatus,
 }) {
-  const showSourceBadges = Boolean(sourceStatus?.isCaseRawData)
-
   return (
     <Layout className="app-shell">
       <Sider width={256} className="app-sider">
@@ -92,7 +90,7 @@ export function AppShell({
       <Layout>
         <Header className="app-header">
           <Space size={14} wrap>
-            {showSourceBadges ? (
+            {sourceStatus ? (
               <>
                 <Tag color={sourceStatus.dataTagColor}>{sourceStatus.dataLabel}</Tag>
                 <Tag color="green">{sourceStatus.analysisLabel}</Tag>
@@ -108,7 +106,7 @@ export function AppShell({
             </Tag>
             <Tag color="volcano">{alertsCount} Alerts</Tag>
           </Space>
-          <Tooltip title="Refresh mock analysis">
+          <Tooltip title="Refresh analysis">
             <Button
               icon={<RefreshCw size={16} />}
               loading={loading}

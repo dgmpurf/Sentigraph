@@ -2,6 +2,7 @@ import { Alert, Button, Card, Empty, Space, Table, Tag, Typography } from 'antd'
 import { FileText, PlayCircle, RefreshCw } from 'lucide-react'
 
 import { riskTone } from '../utils/formatters.js'
+import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
 
 const { Text, Title } = Typography
 
@@ -48,6 +49,11 @@ export function Cases({
   onRefreshCases,
   onRunCase,
 }) {
+  const sourceStatus = getAnalysisSourceStatus({
+    analysis: currentCase?.analysis_result,
+    currentCase,
+  })
+
   const columns = [
     {
       title: '案例',
@@ -153,6 +159,26 @@ export function Cases({
       </div>
 
       {error ? <Alert message="案例数据加载失败" description={error} type="error" showIcon /> : null}
+
+      {currentCase ? (
+        <Card className="panel-card">
+          <div className="panel-heading">
+            <div>
+              <Title level={4}>Current Case Data Source</Title>
+              <Text type="secondary">{sourceStatus.analysisDescription}</Text>
+            </div>
+          </div>
+          <Space size={[8, 8]} wrap>
+            <Tag color={sourceStatus.dataTagColor}>{sourceStatus.dataLabel}</Tag>
+            <Tag color="green">{sourceStatus.analysisLabel}</Tag>
+            <Tag color="purple">{sourceStatus.llmLabel}</Tag>
+            <Tag color="geekblue">{sourceStatus.sourceDetail}</Tag>
+            {sourceStatus.isYoutubeRealData ? (
+              <Tag color="red">YouTube public video/comment data</Tag>
+            ) : null}
+          </Space>
+        </Card>
+      ) : null}
 
       <Card className="panel-card cases-panel">
         {cases.length ? (
