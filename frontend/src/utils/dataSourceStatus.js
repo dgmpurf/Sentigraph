@@ -8,13 +8,16 @@ export function getAnalysisSourceStatus({ analysis, currentCase } = {}) {
   const isCaseRawData = source === 'case_raw_data'
   const isYoutubeRealData = isCaseRawData && platforms.includes('youtube')
 
-  let dataLabel = 'Data source: Mock data'
+  let dataDescription = 'Local mock/fallback data.'
+  let dataLabel = 'Data: Mock'
   let dataTagColor = 'default'
   if (isYoutubeRealData) {
-    dataLabel = 'Data source: YouTube Real'
+    dataDescription = 'YouTube public video/comment data attached to the case.'
+    dataLabel = 'Data: YouTube Real'
     dataTagColor = 'red'
   } else if (isCaseRawData) {
-    dataLabel = 'Data source: Attached case raw data'
+    dataDescription = 'Attached public case raw data.'
+    dataLabel = 'Data: Attached Raw'
     dataTagColor = 'cyan'
   }
 
@@ -22,7 +25,8 @@ export function getAnalysisSourceStatus({ analysis, currentCase } = {}) {
     analysisDescription: isCaseRawData
       ? 'Offline deterministic analysis from attached case raw data.'
       : 'Offline deterministic analysis from mock fallback data.',
-    analysisLabel: 'Analysis: Offline deterministic',
+    analysisLabel: 'Analysis: Offline',
+    dataDescription,
     dataLabel,
     dataTagColor,
     isCaseRawData,

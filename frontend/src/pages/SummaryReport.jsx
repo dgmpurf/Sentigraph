@@ -85,6 +85,7 @@ export function SummaryReport({
             <Tag color="green">{sourceStatus.analysisLabel}</Tag>
             <Tag color="purple">{sourceStatus.llmLabel}</Tag>
             <Tag color="geekblue">{sourceStatus.sourceDetail}</Tag>
+            {sourceStatus.isYoutubeRealData ? <Tag color="red">YouTube public video/comment data</Tag> : null}
             <Tag color={summary ? 'cyan' : 'default'}>summary API {summary ? '已加载' : '暂无数据'}</Tag>
             <Tag color={recommendation ? 'green' : 'default'}>
               recommendation API {recommendation ? '已加载' : '暂无数据'}

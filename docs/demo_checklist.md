@@ -1,6 +1,8 @@
 # Sentigraph Local Demo Checklist
 
-Latest YouTube real-data demo UX polish validation: 2026-05-19. The frontend now separates data provenance from execution mode for real-data cases: completed YouTube cases with `analysis_input_source=case_raw_data` show `Data source: YouTube Real`, `Analysis: Offline deterministic`, `LLM: Mock`, and the raw `analysis_input_source` on the app header, Analysis Result, Summary Report, and Demo Flow surfaces. Backend report selection keeps all attached raw YouTube comments but down-ranks obvious channel promotion/self-promo comments such as `patreon`, `channel member`, `subscribe`, `referral`, `promo code`, `affiliate`, and `join` when substantive event-relevant alternatives exist. Validation passed with `python -m pytest` (`544 passed in 4.79s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 7.78s`, existing large vendor chunk warning remains). Automated validation did not call the real YouTube API, print API keys, modify `.env`, scrape, or call real LLM APIs.
+Latest Keyword Search YouTube real-data frontend QA stabilization: 2026-05-19. The Keyword Search page now keeps the default `Create Case & Run Mock Analysis` path intact and exposes the explicit real-data flow only for YouTube-only selection: `Create YouTube Real Case`, `Crawl YouTube & Attach Raw Data`, and `Run Case Analysis`. After analysis, the page stays on Keyword Search long enough to verify `analysis_input_source=case_raw_data`, raw counts, and YouTube-derived representative comments before using shortcut buttons to open Analysis Result, Summary Report, Risk Monitor, or Simulation Lab. Mixed YouTube plus other-platform selections show `For the real YouTube demo, select YouTube only.` Frontend validation passed with `npm --prefix frontend run build` (`built in 7.81s`, existing large vendor chunk warning remains). Backend tests and offline benchmarks were not rerun because no backend code changed; automated validation did not call the real YouTube API, print API keys, modify `.env`, scrape, or call real LLM APIs.
+
+Latest YouTube real-data demo UX polish validation: 2026-05-19. The frontend now separates data provenance from execution mode for real-data cases: completed YouTube cases with `analysis_input_source=case_raw_data` show `Data: YouTube Real`, `Analysis: Offline`, `LLM: Mock`, and the raw `analysis_input_source` on the app header, Analysis Result, Summary Report, and Demo Flow surfaces. The Simulation Lab sidebar item is shortened to `Simulation Lab` with a tooltip for `Simulation Lab / 舆情预演沙盘`, reducing awkward truncation in screenshots. Backend report selection keeps all attached raw YouTube comments but down-ranks obvious channel promotion/self-promo comments such as `patreon`, `channel member`, `subscribe`, `referral`, `promo code`, `affiliate`, and `join` when substantive event-relevant alternatives exist. Validation passed with `python -m pytest` (`544 passed in 5.95s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 8.11s`, existing large vendor chunk warning remains). Automated validation did not call the real YouTube API, print API keys, modify `.env`, scrape, or call real LLM APIs.
 
 Latest YouTube real-data browser-smoke documentation QA: 2026-05-19. Rechecked `docs/youtube_real_data_demo.md`, `docs/demo_story.md`, and this checklist against the manual real-data browser-smoke path: start backend, start frontend, run a tiny `platforms=["youtube"]` crawl, confirm `adapter_mode=real`, confirm cache behavior, attach/store YouTube `raw_posts` / `raw_comments` to a case, run case analysis with `analysis_input_source=case_raw_data`, confirm YouTube-derived representative comments, view Chinese Summary Report, export Markdown, open Risk Monitor/Forecast, initialize Simulation Lab, run A/B strategy comparison, export the Simulation Lab strategy report, and open Benchmark Dashboard plus LLM Safety. The concise demo story now explicitly calls out repeating the same tiny crawl inside the cache TTL to verify `cache_hit=true`. Validation passed with `python -m pytest` (`542 passed in 5.18s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.59s`, existing large vendor chunk warning remains). Automated validation did not call the real YouTube API, print API keys, scrape, modify `.env`, or call real LLM APIs.
 
@@ -412,6 +414,19 @@ This check is manual only. It may call the official YouTube Data API v3, so keep
 
 Full manual demo story: `docs/youtube_real_data_demo.md`. Use that document when preparing screenshots because it covers backend/frontend startup, safe real-mode status verification, tiny crawl, case attachment, case analysis, report export, Risk Monitor/Forecast, Simulation Lab initialization, A/B comparison, strategy report export, cache behavior, and troubleshooting.
 
+Frontend Keyword Search real-data flow:
+
+1. Start the backend and frontend locally.
+2. Open `Keyword Search`.
+3. Select only `YouTube` in the platform selector. If YouTube is selected together with other platforms, use the mock flow or remove the other platforms for the real-data demo.
+4. Confirm the explicit YouTube panel shows `Data: YouTube Real`, `Analysis: Offline deterministic`, and `LLM: Mock`.
+5. Click `Create YouTube Real Case`.
+6. Click `Crawl YouTube & Attach Raw Data`.
+7. Confirm the panel shows safe crawl metadata: `raw_data_status=attached`, `raw_post_count`, `raw_comment_count`, `adapter_mode`, `fallback_used`, `cache_hit`, and `quota_guardrail_status`.
+8. Click `Run Case Analysis`.
+9. Confirm the panel shows `analysis_input_source=case_raw_data`, raw counts, and a representative-comments preview derived from attached YouTube comments when comments are available.
+10. Use the shortcut buttons to open Analysis Result, Summary Report, Risk Monitor, or Simulation Lab from the completed YouTube case.
+
 Prerequisites:
 
 - The backend is running locally.
@@ -507,8 +522,8 @@ Expected result:
 - The case detail shows `raw_data_status=attached`, `crawl_source_mode=case_crawl_start`, and nonzero `raw_comment_count` if YouTube returned comments.
 - The case run shows `analysis_result.analysis_input_source=case_raw_data`.
 - Representative comments in the Chinese report can come from attached YouTube comments.
-- Analysis Result, Summary Report, Demo Flow, and the app header should show the provenance badges `Data source: YouTube Real`, `Analysis: Offline deterministic`, and `LLM: Mock`.
-- Screenshot target: capture the provenance badge row showing `Data source: YouTube Real / Analysis: Offline deterministic / LLM: Mock`; this proves real source data and offline deterministic analysis are separate.
+- Analysis Result, Summary Report, Demo Flow, and the app header should show the provenance badges `Data: YouTube Real`, `Analysis: Offline`, and `LLM: Mock`.
+- Screenshot target: capture the provenance badge row showing `Data: YouTube Real / Analysis: Offline / LLM: Mock`; this proves real source data and offline deterministic analysis are separate.
 - If YouTube comments include low-quality channel promotion/self-promo, the stored raw comments remain attached, but `representative_comments` should prefer substantive event/topic comments when alternatives exist.
 - The same completed case can be used by Simulation Lab case initialization; the preview returns only aggregate event-frame, audience, and scenario data.
 - API key values are never returned; only boolean credential metadata is shown.

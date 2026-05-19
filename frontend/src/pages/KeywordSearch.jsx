@@ -1,8 +1,12 @@
-import { Button, Card, DatePicker, Form, Input, InputNumber, Select, Space, Tag, Typography } from 'antd'
-import { Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, List, Select, Space, Tag, Typography } from 'antd'
+import { Database, PlayCircle, RadioTower, Search } from 'lucide-react'
+import { createCase, crawlCaseRawData, getCase, runCase } from '../api/sentigraphApi.js'
 
 const { RangePicker } = DatePicker
 const { Text, Title } = Typography
+
+const YOUTUBE_REAL_LIMIT_MAX = 5
 
 const DEFAULT_PLATFORM_OPTIONS = [
   { label: 'Reddit', value: 'reddit' },
@@ -169,15 +173,89 @@ function normalizeDateRange(dateRange) {
   }
 }
 
+function normalizeSelectedPlatforms(platforms) {
+  if (!Array.isArray(platforms)) return []
+  return platforms.map((platform) => String(platform || '').toLowerCase()).filter(Boolean)
+}
+
+function getSafeYoutubeLimit(limit) {
+  const numericLimit = Number(limit)
+  if (!Number.isFinite(numericLimit)) return 3
+  return Math.min(YOUTUBE_REAL_LIMIT_MAX, Math.max(1, Math.floor(numericLimit)))
+}
+
+function getYoutubeMetadata(caseDetail) {
+  const crawlMetadata = Array.isArray(caseDetail?.crawl_metadata) ? caseDetail.crawl_metadata : []
+  return crawlMetadata.find((item) => item?.platform === 'youtube') || crawlMetadata[0] || {}
+}
+
+function getDisplayValue(value) {
+  if (value === true) return 'true'
+  if (value === false) return 'false'
+  if (value === null || value === undefined || value === '') return 'n/a'
+  return String(value)
+}
+
+function getRepresentativeComments(caseDetail) {
+  const candidateLists = [
+    caseDetail?.report?.representative_comments,
+    caseDetail?.analysis_result?.representative_comments,
+    caseDetail?.report?.top_comments,
+    caseDetail?.analysis_result?.top_comments,
+  ]
+  const comments = candidateLists.find((items) => Array.isArray(items) && items.length) || []
+  return comments
+    .map((comment) => {
+      if (typeof comment === 'string') return comment
+      if (!comment || typeof comment !== 'object') return ''
+      return comment.content || comment.text || comment.comment || comment.summary || ''
+    })
+    .filter(Boolean)
+    .slice(0, 3)
+}
+
+function MetadataGrid({ items }) {
+  return (
+    <div className="platform-status-summary">
+      {items.map((item) => (
+        <Tag color={item.color || 'geekblue'} key={item.label}>
+          {item.label}: {getDisplayValue(item.value)}
+        </Tag>
+      ))}
+    </div>
+  )
+}
+
 export function KeywordSearch({
   expandedKeywords,
   initialPlatforms = ['reddit', 'weibo'],
   loading,
+  onCaseReady,
+  onNavigate,
   onStartAnalysis,
   platformOptions = DEFAULT_PLATFORM_OPTIONS,
   platformRegistry = [],
 }) {
+  const [form] = Form.useForm()
+  const watchedPlatforms = Form.useWatch('platforms', form)
+  const [youtubeFlow, setYoutubeFlow] = useState({
+    loadingStep: '',
+    error: '',
+    createdCase: null,
+    attachedCase: null,
+    completedCase: null,
+  })
+
   const selectOptions = [{ label: 'MVP mock-selectable platforms', options: platformOptions }]
+  const selectedPlatforms = normalizeSelectedPlatforms(watchedPlatforms || initialPlatforms)
+  const youtubeOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === 'youtube'
+  const youtubeMixed = selectedPlatforms.includes('youtube') && !youtubeOnly
+  const youtubeCase = youtubeFlow.completedCase || youtubeFlow.attachedCase || youtubeFlow.createdCase
+  const youtubeMetadata = useMemo(() => getYoutubeMetadata(youtubeFlow.attachedCase || youtubeFlow.completedCase), [
+    youtubeFlow.attachedCase,
+    youtubeFlow.completedCase,
+  ])
+  const representativeComments = getRepresentativeComments(youtubeFlow.completedCase)
 
   const handleFinish = (values) => {
     onStartAnalysis({
@@ -188,6 +266,91 @@ export function KeywordSearch({
       limit: values.limit,
       date_range: normalizeDateRange(values.date_range),
     })
+  }
+
+  const updateCaseState = async (caseDetail, patch = {}) => {
+    if (caseDetail) {
+      await onCaseReady?.(caseDetail)
+    }
+    setYoutubeFlow((current) => ({
+      ...current,
+      ...patch,
+      loadingStep: '',
+      error: '',
+    }))
+  }
+
+  const handleYoutubeCreateCase = async () => {
+    const values = form.getFieldsValue()
+    setYoutubeFlow((current) => ({ ...current, loadingStep: 'create', error: '' }))
+    try {
+      const createdCase = await createCase({
+        title: values.title || 'YouTube Real Data Case',
+        keyword: values.keyword || 'Tesla',
+        platforms: ['youtube'],
+        report_language: 'zh-CN',
+      })
+      await updateCaseState(createdCase, {
+        createdCase,
+        attachedCase: null,
+        completedCase: null,
+      })
+    } catch (requestError) {
+      setYoutubeFlow((current) => ({
+        ...current,
+        loadingStep: '',
+        error: requestError?.message || 'Unable to create the YouTube real-data case.',
+      }))
+    }
+  }
+
+  const handleYoutubeCrawlAttach = async () => {
+    if (!youtubeFlow.createdCase?.case_id) {
+      setYoutubeFlow((current) => ({ ...current, error: 'Create a YouTube case before crawling.' }))
+      return
+    }
+    const values = form.getFieldsValue()
+    setYoutubeFlow((current) => ({ ...current, loadingStep: 'crawl', error: '' }))
+    try {
+      const attachedCase = await crawlCaseRawData(youtubeFlow.createdCase.case_id, {
+        limit: getSafeYoutubeLimit(values.limit),
+      })
+      await updateCaseState(attachedCase, {
+        createdCase: attachedCase,
+        attachedCase,
+        completedCase: null,
+      })
+    } catch (requestError) {
+      setYoutubeFlow((current) => ({
+        ...current,
+        loadingStep: '',
+        error: requestError?.message || 'Unable to crawl and attach YouTube raw data.',
+      }))
+    }
+  }
+
+  const handleYoutubeRunCase = async () => {
+    const caseId = youtubeFlow.attachedCase?.case_id || youtubeFlow.createdCase?.case_id
+    if (!caseId) {
+      setYoutubeFlow((current) => ({ ...current, error: 'Create and attach raw data before running analysis.' }))
+      return
+    }
+    setYoutubeFlow((current) => ({ ...current, loadingStep: 'run', error: '' }))
+    try {
+      const completedCase = await runCase(caseId)
+      const refreshedCase = await getCase(caseId).catch(() => completedCase)
+      await updateCaseState(refreshedCase, {
+        createdCase: refreshedCase,
+        attachedCase: refreshedCase,
+        completedCase: refreshedCase,
+      })
+    } catch (requestError) {
+      setYoutubeFlow((current) => ({
+        ...current,
+        loadingStep: '',
+        error: requestError?.message || 'Unable to run analysis for the YouTube real-data case.',
+      }))
+    }
   }
 
   return (
@@ -201,6 +364,7 @@ export function KeywordSearch({
 
       <Card className="panel-card form-panel">
         <Form
+          form={form}
           layout="vertical"
           initialValues={{ keyword: 'Tesla', platforms: initialPlatforms, language: 'auto', limit: 100 }}
           onFinish={handleFinish}
@@ -246,6 +410,147 @@ export function KeywordSearch({
           </Button>
         </Form>
       </Card>
+
+      {youtubeMixed ? (
+        <Alert
+          showIcon
+          type="warning"
+          message="For the real YouTube demo, select YouTube only."
+          description="Multi-platform selections remain available for the offline mock flow. The real-data case flow is intentionally explicit so crawl, attach, and analysis steps are visible."
+        />
+      ) : null}
+
+      {youtubeOnly ? (
+        <Card className="panel-card">
+          <div className="panel-heading">
+            <div>
+              <Title level={4}>YouTube Real-Data Case Flow</Title>
+              <Text type="secondary">
+                Create a YouTube-only case, attach tiny-limit public YouTube data, then run offline deterministic analysis.
+              </Text>
+            </div>
+          </div>
+          <Space size={[8, 8]} wrap>
+            <Tag color="red">Data: YouTube Real</Tag>
+            <Tag color="cyan">Analysis: Offline deterministic</Tag>
+            <Tag color="purple">LLM: Mock</Tag>
+            <Tag color="default">API key values are never displayed</Tag>
+          </Space>
+
+          <Space className="section-actions" wrap>
+            <Button
+              icon={<Database size={16} />}
+              loading={youtubeFlow.loadingStep === 'create'}
+              onClick={handleYoutubeCreateCase}
+              type="default"
+            >
+              Create YouTube Real Case
+            </Button>
+            <Button
+              disabled={!youtubeFlow.createdCase?.case_id}
+              icon={<RadioTower size={16} />}
+              loading={youtubeFlow.loadingStep === 'crawl'}
+              onClick={handleYoutubeCrawlAttach}
+              type="default"
+            >
+              Crawl YouTube & Attach Raw Data
+            </Button>
+            <Button
+              disabled={!youtubeFlow.attachedCase?.case_id}
+              icon={<PlayCircle size={16} />}
+              loading={youtubeFlow.loadingStep === 'run'}
+              onClick={handleYoutubeRunCase}
+              type="primary"
+            >
+              Run Case Analysis
+            </Button>
+          </Space>
+
+          {youtubeFlow.error ? (
+            <Alert className="app-alert" showIcon type="error" message={youtubeFlow.error} />
+          ) : null}
+
+          {youtubeCase ? (
+            <div className="platform-group">
+              <Text strong>Current YouTube case</Text>
+              <MetadataGrid
+                items={[
+                  { label: 'case_id', value: youtubeCase.case_id, color: 'cyan' },
+                  { label: 'raw_data_status', value: youtubeCase.raw_data_status, color: 'green' },
+                  { label: 'raw_post_count', value: youtubeCase.raw_post_count ?? youtubeMetadata.post_count },
+                  { label: 'raw_comment_count', value: youtubeCase.raw_comment_count ?? youtubeMetadata.comment_count },
+                ]}
+              />
+            </div>
+          ) : null}
+
+          {youtubeFlow.attachedCase ? (
+            <div className="platform-group">
+              <Text strong>YouTube crawl attachment metadata</Text>
+              <MetadataGrid
+                items={[
+                  { label: 'adapter_mode', value: youtubeMetadata.adapter_mode, color: 'blue' },
+                  { label: 'fallback_used', value: youtubeMetadata.fallback_used, color: youtubeMetadata.fallback_used ? 'orange' : 'green' },
+                  { label: 'fallback_reason_category', value: youtubeMetadata.fallback_reason_category, color: youtubeMetadata.fallback_used ? 'orange' : 'default' },
+                  { label: 'cache_hit', value: youtubeMetadata.cache_hit, color: youtubeMetadata.cache_hit ? 'green' : 'default' },
+                  { label: 'quota_guardrail_status', value: youtubeMetadata.quota_guardrail_status, color: 'geekblue' },
+                ]}
+              />
+              {youtubeMetadata.fallback_used ? (
+                <Alert
+                  showIcon
+                  type="warning"
+                  message="YouTube crawl used a safe fallback."
+                  description={`fallback_used=true; fallback_reason_category=${getDisplayValue(youtubeMetadata.fallback_reason_category)}. No credentials or secret values are shown.`}
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+          {youtubeFlow.completedCase ? (
+            <div className="platform-group">
+              <Text strong>Offline analysis result</Text>
+              <MetadataGrid
+                items={[
+                  {
+                    label: 'analysis_input_source',
+                    value: youtubeFlow.completedCase.analysis_result?.analysis_input_source,
+                    color: 'cyan',
+                  },
+                  {
+                    label: 'raw_post_count',
+                    value: youtubeFlow.completedCase.analysis_result?.raw_post_count ?? youtubeFlow.completedCase.raw_post_count,
+                  },
+                  {
+                    label: 'raw_comment_count',
+                    value: youtubeFlow.completedCase.analysis_result?.raw_comment_count ?? youtubeFlow.completedCase.raw_comment_count,
+                  },
+                ]}
+              />
+              <List
+                bordered
+                dataSource={representativeComments}
+                header={<Text strong>Representative comments preview</Text>}
+                locale={{ emptyText: 'No representative comments available yet.' }}
+                renderItem={(comment) => (
+                  <List.Item>
+                    <Text>{comment}</Text>
+                  </List.Item>
+                )}
+                size="small"
+              />
+              <Space className="section-actions" wrap>
+                <Button onClick={() => onNavigate?.('analysis')} type="primary">
+                  Open Analysis Result
+                </Button>
+                <Button onClick={() => onNavigate?.('summary')}>Open Summary Report</Button>
+                <Button onClick={() => onNavigate?.('risk')}>Open Risk Monitor</Button>
+                <Button onClick={() => onNavigate?.('simulationLab')}>Open Simulation Lab</Button>
+              </Space>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
 
       <PlatformRoadmap platformRegistry={platformRegistry} />
 

@@ -74,6 +74,7 @@ During the 2026-05-18 browser smoke, screenshots were captured under `.benchmark
 | --- | --- |
 | `01_dashboard_overview.png` | The command center loads risk, topic, chart, alert, and platform summaries. |
 | `02_demo_flow.png` / `03_demo_flow_ready.png` | The one-page demo guide is visible and clearly labeled mock/offline. |
+| `youtube_real_data_badges.png` | Optional YouTube real-data path clearly separates `Data: YouTube Real`, `Analysis: Offline`, and `LLM: Mock`. |
 | `05_analysis_v15_topic_risk.png` | V1.5 topic-risk fields and top risk topics are visible. |
 | `06_chinese_summary_report.png` | The Chinese public-opinion report and public-response draft are available. |
 | `07_risk_monitor_forecast.png` | Monitoring and deterministic forecasting are visible. |

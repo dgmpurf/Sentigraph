@@ -36,7 +36,15 @@ const navItems = [
   { key: 'selectorRepair', label: 'Selector 修复工具', icon: <Wrench size={17} /> },
   { key: 'llmSafety', label: '大模型安全状态', icon: <ShieldCheck size={17} /> },
   { key: 'benchmarks', label: 'Benchmarks / 离线评测', icon: <ClipboardCheck size={17} /> },
-  { key: 'simulationLab', label: 'Simulation Lab / 舆情预演沙盘', icon: <Activity size={17} /> },
+  {
+    key: 'simulationLab',
+    label: (
+      <Tooltip title="Simulation Lab / 舆情预演沙盘" placement="right">
+        <span>Simulation Lab</span>
+      </Tooltip>
+    ),
+    icon: <Activity size={17} />,
+  },
 ]
 
 const riskLevelLabels = {
@@ -59,8 +67,7 @@ export function AppShell({
   riskScore,
   sourceStatus,
 }) {
-  const dataBadgeLabel = sourceStatus?.isCaseRawData ? sourceStatus.dataLabel : 'Mock Mode'
-  const dataBadgeColor = sourceStatus?.isCaseRawData ? sourceStatus.dataTagColor : 'cyan'
+  const showSourceBadges = Boolean(sourceStatus?.isCaseRawData)
 
   return (
     <Layout className="app-shell">
@@ -85,9 +92,15 @@ export function AppShell({
       <Layout>
         <Header className="app-header">
           <Space size={14} wrap>
-            <Tag color={dataBadgeColor}>{dataBadgeLabel}</Tag>
-            <Tag color="green">Analysis: Offline deterministic</Tag>
-            <Tag color="purple">LLM: Mock</Tag>
+            {showSourceBadges ? (
+              <>
+                <Tag color={sourceStatus.dataTagColor}>{sourceStatus.dataLabel}</Tag>
+                <Tag color="green">{sourceStatus.analysisLabel}</Tag>
+                <Tag color="purple">{sourceStatus.llmLabel}</Tag>
+              </>
+            ) : (
+              <Tag color="cyan">Mock Mode</Tag>
+            )}
             {caseTitle ? <Tag color="geekblue">{caseTitle}</Tag> : null}
             <Text className="project-label">{projectId}</Text>
             <Tag color={riskTone(riskLevel)}>

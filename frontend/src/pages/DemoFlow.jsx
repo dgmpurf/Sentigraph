@@ -101,7 +101,7 @@ function DemoReadinessCard({ benchmarkSummary, demoCase, llmStatus, loading, sou
           </div>
           <div className="demo-readiness-row">
             <Text type="secondary">Analysis</Text>
-            <Tag color="green">Offline deterministic</Tag>
+            <Tag color="green">Offline</Tag>
           </div>
           <div className="demo-readiness-row">
             <Text type="secondary">LLM</Text>
@@ -238,7 +238,7 @@ export function DemoFlow({
     : '运行离线 mock pipeline，生成 V1.5 风险、中文报告、监控快照、告警和本地通知。'
   const runAnalysisButton = sourceStatus.isCaseRawData ? '运行离线分析' : '运行 mock 分析'
   const demoNotice = sourceStatus.isYoutubeRealData
-    ? '当前案例的数据来源为 YouTube Real；分析、报告、预测、Simulation Lab 和 LLM 仍保持离线确定性/Mock，不调用真实大模型。'
+    ? '当前案例的数据来源为 YouTube public video/comment data；分析、报告、预测、Simulation Lab 和 LLM 仍保持离线确定性/Mock，不调用真实大模型。'
     : '当前演示使用 mock/offline 数据，不调用真实平台 API 或真实大模型。Simulation Lab 输出仅用于聚合级人工复核。'
 
   const steps = [
@@ -247,7 +247,7 @@ export function DemoFlow({
       status: getStatus(Boolean(demoCase)),
       icon: <Rocket size={18} />,
       description: sourceStatus.isYoutubeRealData
-        ? '加载已附加 YouTube Real 原始数据的 Tesla / 特斯拉演示案例。'
+        ? '加载已附加 YouTube public video/comment data 的 Tesla / 特斯拉演示案例。'
         : '准备 Tesla / 特斯拉本地 mock 案例，平台固定为 reddit、weibo、bilibili。',
       action: (
         <Button icon={<PlayCircle size={15} />} loading={loading} onClick={handleLoadDemo} type="primary">
@@ -355,6 +355,7 @@ export function DemoFlow({
           <Tag color="green">{sourceStatus.analysisLabel}</Tag>
           <Tag color="purple">{sourceStatus.llmLabel}</Tag>
           <Tag color="geekblue">{sourceStatus.sourceDetail}</Tag>
+          {sourceStatus.isYoutubeRealData ? <Tag color="red">YouTube public comments</Tag> : null}
           <Tag color="orange">{sourceStatus.isYoutubeRealData ? 'Manual YouTube API data' : 'No Real APIs'}</Tag>
           <Tag color="volcano">No Real LLMs</Tag>
         </Space>
@@ -396,10 +397,14 @@ export function DemoFlow({
                 </Space>
               </div>
               <Space direction="vertical" size={8}>
-                <Text>{sourceStatus.isCaseRawData ? sourceStatus.analysisDescription : '只使用确定性 mock pipeline 和本地 JSON 运行数据。'}</Text>
+                <Text>
+                  {sourceStatus.isCaseRawData
+                    ? `${sourceStatus.analysisDescription} ${sourceStatus.dataDescription}`
+                    : '只使用确定性 mock pipeline 和本地 JSON 运行数据。'}
+                </Text>
                 <Text>
                   {sourceStatus.isYoutubeRealData
-                    ? '本页不会自动调用真实平台 API；YouTube Real 数据来自用户手动附加的本地案例原始数据，不启用真实 LLM、真实通知或 live public fetching。'
+                    ? '本页不会自动调用真实平台 API；YouTube public video/comment data 来自用户手动附加的本地案例原始数据，不启用真实 LLM、真实通知或 live public fetching。'
                     : '不启用真实平台 API、真实 LLM、真实通知或 live public fetching。'}
                 </Text>
                 <Text>不提供虚假共识、机器人放大、伪造事件、隐蔽引导或个体定向建议。</Text>

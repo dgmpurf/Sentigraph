@@ -120,13 +120,30 @@ export async function createAnalysisCase(payload) {
   return normalizeCaseDetail(data)
 }
 
+export async function createCase(payload) {
+  return createAnalysisCase(payload)
+}
+
 export async function getAnalysisCase(caseId) {
   const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}`)
   return normalizeCaseDetail(data)
 }
 
+export async function getCase(caseId) {
+  return getAnalysisCase(caseId)
+}
+
 export async function runAnalysisCase(caseId) {
   const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/run`)
+  return normalizeCaseDetail(data)
+}
+
+export async function runCase(caseId) {
+  return runAnalysisCase(caseId)
+}
+
+export async function crawlCaseRawData(caseId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/crawl/start`, payload)
   return normalizeCaseDetail(data)
 }
 

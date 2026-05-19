@@ -423,6 +423,17 @@ function App() {
     }
   }, [applyCaseDetail, loadCaseMonitoring, refreshCases])
 
+  const handleCaseReady = useCallback(async (caseDetail) => {
+    if (!caseDetail?.case_id) return
+    applyCaseDetail(caseDetail)
+    await refreshCases()
+    try {
+      await loadCaseMonitoring(caseDetail.case_id)
+    } catch {
+      // A just-created case can still be useful before monitoring artifacts exist.
+    }
+  }, [applyCaseDetail, loadCaseMonitoring, refreshCases])
+
   const handleOpenCaseReport = useCallback(async (caseId) => {
     setLoading(true)
     setError('')
@@ -674,6 +685,7 @@ function App() {
     schedulerLoading,
     schedulerStatus,
     onGetMarkdownReport: handleGetMarkdownReport,
+    onCaseReady: handleCaseReady,
     onLoadDemoCase: handleLoadDemoCase,
     onEnableMonitoring: handleEnableMonitoring,
     onDisableMonitoring: handleDisableMonitoring,
