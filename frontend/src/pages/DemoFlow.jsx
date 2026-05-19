@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { getLatestBenchmarkSummary, getLlmStatus } from '../api/sentigraphApi.js'
+import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -72,7 +73,7 @@ function StepCard({ action, description, icon, mockLabel = 'mock/offline', statu
   )
 }
 
-function DemoReadinessCard({ benchmarkSummary, demoCase, llmStatus, loading }) {
+function DemoReadinessCard({ benchmarkSummary, demoCase, llmStatus, loading, sourceStatus }) {
   return (
     <Card className="panel-card demo-readiness-card">
       <div className="panel-heading">
@@ -93,6 +94,18 @@ function DemoReadinessCard({ benchmarkSummary, demoCase, llmStatus, loading }) {
           <div className="demo-readiness-row">
             <Text type="secondary">案例风险</Text>
             <Text>{formatScore(demoCase?.risk_score)}/100</Text>
+          </div>
+          <div className="demo-readiness-row">
+            <Text type="secondary">Data</Text>
+            <Tag color={sourceStatus.dataTagColor}>{sourceStatus.dataLabel}</Tag>
+          </div>
+          <div className="demo-readiness-row">
+            <Text type="secondary">Analysis</Text>
+            <Tag color="green">Offline deterministic</Tag>
+          </div>
+          <div className="demo-readiness-row">
+            <Text type="secondary">LLM</Text>
+            <Tag color="purple">Mock</Tag>
           </div>
           <div className="demo-readiness-row">
             <Text type="secondary">离线评测</Text>
@@ -163,6 +176,11 @@ export function DemoFlow({
   }, [cases, currentCase])
 
   const selectedDemoCase = currentCase?.case_id && currentCase.case_id === demoCase?.case_id ? currentCase : null
+  const sourceCase = selectedDemoCase || demoCase || currentCase
+  const sourceStatus = getAnalysisSourceStatus({
+    analysis: analysis || sourceCase?.analysis_result,
+    currentCase: sourceCase,
+  })
   const completed = demoCase?.status === 'completed' || selectedDemoCase?.status === 'completed'
   const topicRisks = analysis?.topic_risks || selectedDemoCase?.analysis_result?.topic_risks || []
   const riskReady = completed && topicRisks.length > 0
@@ -214,28 +232,41 @@ export function DemoFlow({
     }
   }, [onGetMarkdownReport])
 
+  const runAnalysisTitle = sourceStatus.isCaseRawData ? '2 运行离线确定性分析' : '2 运行 mock 分析'
+  const runAnalysisDescription = sourceStatus.isCaseRawData
+    ? '使用已附加的案例原始数据运行离线确定性分析，生成 V1.5 风险、中文报告、监控快照、告警和本地通知。'
+    : '运行离线 mock pipeline，生成 V1.5 风险、中文报告、监控快照、告警和本地通知。'
+  const runAnalysisButton = sourceStatus.isCaseRawData ? '运行离线分析' : '运行 mock 分析'
+  const demoNotice = sourceStatus.isYoutubeRealData
+    ? '当前案例的数据来源为 YouTube Real；分析、报告、预测、Simulation Lab 和 LLM 仍保持离线确定性/Mock，不调用真实大模型。'
+    : '当前演示使用 mock/offline 数据，不调用真实平台 API 或真实大模型。Simulation Lab 输出仅用于聚合级人工复核。'
+
   const steps = [
     {
       title: '1 创建/加载演示案例',
       status: getStatus(Boolean(demoCase)),
       icon: <Rocket size={18} />,
-      description: '准备 Tesla / 特斯拉本地 mock 案例，平台固定为 reddit、weibo、bilibili。',
+      description: sourceStatus.isYoutubeRealData
+        ? '加载已附加 YouTube Real 原始数据的 Tesla / 特斯拉演示案例。'
+        : '准备 Tesla / 特斯拉本地 mock 案例，平台固定为 reddit、weibo、bilibili。',
       action: (
         <Button icon={<PlayCircle size={15} />} loading={loading} onClick={handleLoadDemo} type="primary">
           一键准备演示数据
         </Button>
       ),
+      mockLabel: sourceStatus.isYoutubeRealData ? 'youtube-real/offline' : 'mock/offline',
     },
     {
-      title: '2 运行 mock 分析',
+      title: runAnalysisTitle,
       status: getStatus(completed, Boolean(demoCase)),
       icon: <FlaskConical size={18} />,
-      description: '运行离线 mock pipeline，生成 V1.5 风险、中文报告、监控快照、告警和本地通知。',
+      description: runAnalysisDescription,
       action: (
         <Button disabled={!demoCase?.case_id} loading={loading} onClick={handleRunDemo}>
-          运行 mock 分析
+          {runAnalysisButton}
         </Button>
       ),
+      mockLabel: sourceStatus.isCaseRawData ? 'offline/raw-data' : 'mock/offline',
     },
     {
       title: '3 查看风险结果',
@@ -316,17 +347,21 @@ export function DemoFlow({
       <div className="page-heading">
         <div>
           <Title level={2}>演示流程</Title>
-          <Text>一页串起 Sentigraph 的本地 mock/offline 端到端演示路径。</Text>
+          <Text>一页串起 Sentigraph 的本地演示路径，并区分真实数据来源、离线分析和 Mock LLM。</Text>
         </div>
         <Space>
           <Tag color="cyan">Demo Flow</Tag>
-          <Tag color="green">Mock / Offline</Tag>
-          <Tag color="orange">No Real APIs</Tag>
+          <Tag color={sourceStatus.dataTagColor}>{sourceStatus.dataLabel}</Tag>
+          <Tag color="green">{sourceStatus.analysisLabel}</Tag>
+          <Tag color="purple">{sourceStatus.llmLabel}</Tag>
+          <Tag color="geekblue">{sourceStatus.sourceDetail}</Tag>
+          <Tag color="orange">{sourceStatus.isYoutubeRealData ? 'Manual YouTube API data' : 'No Real APIs'}</Tag>
+          <Tag color="volcano">No Real LLMs</Tag>
         </Space>
       </div>
 
       <Alert
-        message="当前演示使用 mock/offline 数据，不调用真实平台 API 或真实大模型。Simulation Lab 输出仅用于聚合级人工复核。"
+        message={demoNotice}
         type="info"
         showIcon
       />
@@ -351,6 +386,7 @@ export function DemoFlow({
               demoCase={demoCase}
               llmStatus={readiness.llmStatus}
               loading={readiness.loading}
+              sourceStatus={sourceStatus}
             />
             <Card className="panel-card demo-scope-card">
               <div className="panel-heading">
@@ -360,8 +396,12 @@ export function DemoFlow({
                 </Space>
               </div>
               <Space direction="vertical" size={8}>
-                <Text>只使用确定性 mock pipeline 和本地 JSON 运行数据。</Text>
-                <Text>不启用真实平台 API、真实 LLM、真实通知或 live public fetching。</Text>
+                <Text>{sourceStatus.isCaseRawData ? sourceStatus.analysisDescription : '只使用确定性 mock pipeline 和本地 JSON 运行数据。'}</Text>
+                <Text>
+                  {sourceStatus.isYoutubeRealData
+                    ? '本页不会自动调用真实平台 API；YouTube Real 数据来自用户手动附加的本地案例原始数据，不启用真实 LLM、真实通知或 live public fetching。'
+                    : '不启用真实平台 API、真实 LLM、真实通知或 live public fetching。'}
+                </Text>
                 <Text>不提供虚假共识、机器人放大、伪造事件、隐蔽引导或个体定向建议。</Text>
               </Space>
             </Card>

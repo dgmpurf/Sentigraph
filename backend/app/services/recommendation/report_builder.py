@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
@@ -9,6 +10,35 @@ from app.schemas.propagation import PropagationResponse
 from app.schemas.report import PublicOpinionReport, ReportLanguage
 from app.schemas.risk import TopicRiskScore, TopicRiskScoreResult
 from app.schemas.visualization import VisualizationResponse
+
+PROMOTIONAL_COMMENT_TERMS = (
+    "patreon",
+    "channel member",
+    "subscribe",
+    "referral",
+    "promo code",
+    "affiliate",
+    "join",
+)
+
+COMMENT_RELEVANCE_TERMS = (
+    "quality",
+    "safety",
+    "delay",
+    "delayed",
+    "response",
+    "official",
+    "evidence",
+    "issue",
+    "problem",
+    "trust",
+    "refund",
+    "timeline",
+    "support",
+    "crisis",
+    "risk",
+    "recall",
+)
 
 
 def build_public_opinion_report(
@@ -130,11 +160,16 @@ def _overall_summary(
             f"主要风险压力来自{_dominant_factor_label(factor_values, language)}。"
         )
 
+    pipeline_label = (
+        "offline deterministic raw-data pipeline"
+        if analysis.analysis_input_source == "case_raw_data"
+        else "offline mock pipeline"
+    )
     return (
         f"Public opinion risk is {analysis.risk.risk_level} at {analysis.risk.risk_score}/100. "
         f"Negative sentiment is {_format_percent(analysis.sentiment.negative_ratio)}, "
         f"with the strongest discussion around {leading_topic}. "
-        f"The offline mock pipeline observed {trend_points} sentiment time bucket(s) "
+        f"The {pipeline_label} observed {trend_points} sentiment time bucket(s) "
         f"and {graph_nodes} propagation node(s). "
         f"Key risk pressure is {_dominant_factor_label(factor_values, language)}."
     )
@@ -379,7 +414,68 @@ def _representative_comments(
     for topic in topics:
         candidates.extend(comment for comment in topic.representative_comments if comment)
 
-    return _dedupe_preserve_order(candidates)[:5]
+    deduped = _dedupe_preserve_order(candidates)
+    return rank_representative_comments(deduped, topics=topics, limit=5)
+
+
+def rank_representative_comments(
+    comments: list[str],
+    *,
+    topics: list[TopicCluster] | None = None,
+    limit: int = 5,
+) -> list[str]:
+    """Prefer substantive event-relevant comments while keeping raw inputs untouched."""
+    deduped = _dedupe_preserve_order([comment for comment in comments if comment])
+    topic_terms = _topic_relevance_terms(topics or [])
+    ranked = sorted(
+        enumerate(deduped),
+        key=lambda item: _representative_comment_rank(item[1], item[0], topic_terms),
+    )
+    return [comment for _, comment in ranked[:limit]]
+
+
+def _representative_comment_rank(value: str, original_index: int, topic_terms: set[str]) -> tuple[int, int, int, int, int]:
+    normalized = _normalize_comment_for_ranking(value)
+    promo_penalty = 1 if _contains_any_term(normalized, PROMOTIONAL_COMMENT_TERMS) else 0
+    relevance_penalty = 0 if _is_relevant_comment(normalized, topic_terms) else 1
+    substance_penalty = 0 if _is_substantive_comment(normalized) else 1
+    length_score = min(len(normalized), 240)
+    return (promo_penalty, relevance_penalty, substance_penalty, -length_score, original_index)
+
+
+def _topic_relevance_terms(topics: list[TopicCluster]) -> set[str]:
+    terms: set[str] = set(COMMENT_RELEVANCE_TERMS)
+    for topic in topics:
+        for token in re.findall(r"[\w-]+", topic.topic.lower()):
+            if len(token) >= 3:
+                terms.add(token)
+    return terms
+
+
+def _normalize_comment_for_ranking(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _is_relevant_comment(normalized: str, topic_terms: set[str]) -> bool:
+    return _contains_any_term(normalized, topic_terms)
+
+
+def _is_substantive_comment(normalized: str) -> bool:
+    if len(normalized) >= 48:
+        return True
+    return len(re.findall(r"[\w-]+", normalized)) >= 8
+
+
+def _contains_any_term(normalized: str, terms: Any) -> bool:
+    return any(_contains_term(normalized, str(term).lower()) for term in terms if term)
+
+
+def _contains_term(normalized: str, term: str) -> bool:
+    if not term:
+        return False
+    if " " in term:
+        return term in normalized
+    return re.search(rf"\b{re.escape(term)}\b", normalized) is not None
 
 
 def _bot_signals(

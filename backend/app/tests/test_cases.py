@@ -158,6 +158,10 @@ def test_run_case_uses_attached_youtube_raw_comments(monkeypatch) -> None:
     assert body["status"] == "completed"
     assert body["analysis_input_source"] == "case_raw_data"
     assert body["analysis_result"]["analysis_input_source"] == "case_raw_data"
+    assert body["analysis_result"]["summary"].startswith(
+        "Offline deterministic analysis from attached case raw data"
+    )
+    assert "Mock pipeline analysis" not in body["analysis_result"]["summary"]
     assert body["analysis_result"]["raw_post_count"] == 1
     assert body["analysis_result"]["raw_comment_count"] == 2
     assert body["report"]["generated_from_mock_pipeline"] is False
@@ -174,6 +178,28 @@ def test_run_case_uses_attached_youtube_raw_comments(monkeypatch) -> None:
     assert "I think this product has serious quality issues." not in markdown
     assert "raw_data" not in markdown
     assert '"source_type"' not in markdown
+
+
+def test_youtube_raw_data_report_downranks_promotional_comments(monkeypatch) -> None:
+    case_id = _create_case(platforms=["youtube"])
+    monkeypatch.setattr(
+        "app.services.case_store.start_crawl_with_adapters",
+        lambda payload: _youtube_crawl_response_with_promotional_comment(),
+    )
+    attach_response = client.post(f"/api/v1/cases/{case_id}/crawl/start", json={"limit": 3})
+    assert attach_response.status_code == 200
+    attached = attach_response.json()
+    assert any("patreon" in comment["content"].lower() for comment in attached["raw_comments"])
+
+    run_response = client.post(f"/api/v1/cases/{case_id}/run")
+
+    assert run_response.status_code == 200
+    body = run_response.json()
+    representative_comments = body["report"]["representative_comments"]
+    assert body["analysis_input_source"] == "case_raw_data"
+    assert any("official response timeline" in comment for comment in representative_comments)
+    assert all("patreon" not in comment.lower() for comment in representative_comments)
+    assert all("promo code" not in comment.lower() for comment in representative_comments)
 
 
 def test_case_specific_crawl_start_missing_case_returns_404(monkeypatch) -> None:
@@ -371,3 +397,101 @@ def _youtube_crawl_response() -> CrawlStartResponse:
             ),
         ],
     )
+
+
+def _youtube_crawl_response_with_promotional_comment() -> CrawlStartResponse:
+    base = _youtube_crawl_response()
+    comments = [
+        RawComment(
+            platform="youtube",
+            post_id="yt_fixture_video_001",
+            comment_id="yt_fixture_comment_promo",
+            parent_id=None,
+            author_id="yt_fixture_commenter_promo",
+            author_name="Fixture Promo Viewer",
+            content="Subscribe to my channel and join my Patreon for a promo code.",
+            like_count=50,
+            reply_count=0,
+            share_count=0,
+            created_at="2026-05-17T12:04:00Z",
+            url="https://www.youtube.com/watch?v=yt_fixture_video_001&lc=yt_fixture_comment_promo",
+            raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+        ),
+        RawComment(
+            platform="youtube",
+            post_id="yt_fixture_video_001",
+            comment_id="yt_fixture_comment_quality_001",
+            parent_id=None,
+            author_id="yt_fixture_commenter_quality_001",
+            author_name="Fixture Viewer Quality 1",
+            content="Tesla quality issue looks serious because the official response timeline is still unclear.",
+            like_count=11,
+            reply_count=0,
+            share_count=0,
+            created_at="2026-05-17T12:05:00Z",
+            url="https://www.youtube.com/watch?v=yt_fixture_video_001&lc=yt_fixture_comment_quality_001",
+            raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+        ),
+        RawComment(
+            platform="youtube",
+            post_id="yt_fixture_video_001",
+            comment_id="yt_fixture_comment_quality_002",
+            parent_id=None,
+            author_id="yt_fixture_commenter_quality_002",
+            author_name="Fixture Viewer Quality 2",
+            content="The safety concern needs evidence and a clearer product support path.",
+            like_count=8,
+            reply_count=0,
+            share_count=0,
+            created_at="2026-05-17T12:06:00Z",
+            url="https://www.youtube.com/watch?v=yt_fixture_video_001&lc=yt_fixture_comment_quality_002",
+            raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+        ),
+        RawComment(
+            platform="youtube",
+            post_id="yt_fixture_video_001",
+            comment_id="yt_fixture_comment_quality_003",
+            parent_id=None,
+            author_id="yt_fixture_commenter_quality_003",
+            author_name="Fixture Viewer Quality 3",
+            content="A delayed response makes the problem feel worse for affected owners.",
+            like_count=7,
+            reply_count=0,
+            share_count=0,
+            created_at="2026-05-17T12:07:00Z",
+            url="https://www.youtube.com/watch?v=yt_fixture_video_001&lc=yt_fixture_comment_quality_003",
+            raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+        ),
+        RawComment(
+            platform="youtube",
+            post_id="yt_fixture_video_001",
+            comment_id="yt_fixture_comment_quality_004",
+            parent_id=None,
+            author_id="yt_fixture_commenter_quality_004",
+            author_name="Fixture Viewer Quality 4",
+            content="The issue should be addressed with a transparent refund or repair timeline.",
+            like_count=6,
+            reply_count=0,
+            share_count=0,
+            created_at="2026-05-17T12:08:00Z",
+            url="https://www.youtube.com/watch?v=yt_fixture_video_001&lc=yt_fixture_comment_quality_004",
+            raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+        ),
+        RawComment(
+            platform="youtube",
+            post_id="yt_fixture_video_001",
+            comment_id="yt_fixture_comment_quality_005",
+            parent_id=None,
+            author_id="yt_fixture_commenter_quality_005",
+            author_name="Fixture Viewer Quality 5",
+            content="Trust recovery depends on direct evidence and visible support operations.",
+            like_count=5,
+            reply_count=0,
+            share_count=0,
+            created_at="2026-05-17T12:09:00Z",
+            url="https://www.youtube.com/watch?v=yt_fixture_video_001&lc=yt_fixture_comment_quality_005",
+            raw_data={"source_type": "youtube_data_api_v3", "mode": "real"},
+        ),
+    ]
+    metadata = base.platform_metadata[0].model_copy(update={"comment_count": len(comments)})
+    return base.model_copy(update={"platform_metadata": [metadata], "raw_comments": comments})

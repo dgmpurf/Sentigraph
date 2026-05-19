@@ -35,6 +35,7 @@ import {
 import { AppShell } from './components/layout/AppShell.jsx'
 import { ErrorBoundary } from './components/layout/ErrorBoundary.jsx'
 import { NotFound } from './pages/NotFound.jsx'
+import { getAnalysisSourceStatus } from './utils/dataSourceStatus.js'
 
 const DEFAULT_PROJECT_ID = 'project_001'
 const DEFAULT_DATE_RANGE = { start: '2026-05-01', end: '2026-05-13' }
@@ -645,6 +646,11 @@ function App() {
     [],
   )
 
+  const sourceStatus = useMemo(
+    () => getAnalysisSourceStatus({ analysis, currentCase }),
+    [analysis, currentCase],
+  )
+
   const pageProps = {
     alerts,
     analysis,
@@ -725,6 +731,7 @@ function App() {
           projectId={projectId}
           riskLevel={riskLevel}
           riskScore={riskScore}
+          sourceStatus={sourceStatus}
         >
           {error ? <Alert className="app-alert" message={error} type="error" showIcon /> : null}
           <Spin spinning={loading}>

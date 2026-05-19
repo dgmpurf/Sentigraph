@@ -57,7 +57,11 @@ export function AppShell({
   projectId,
   riskLevel,
   riskScore,
+  sourceStatus,
 }) {
+  const dataBadgeLabel = sourceStatus?.isCaseRawData ? sourceStatus.dataLabel : 'Mock Mode'
+  const dataBadgeColor = sourceStatus?.isCaseRawData ? sourceStatus.dataTagColor : 'cyan'
+
   return (
     <Layout className="app-shell">
       <Sider width={256} className="app-sider">
@@ -81,7 +85,9 @@ export function AppShell({
       <Layout>
         <Header className="app-header">
           <Space size={14} wrap>
-            <Tag color="cyan">Mock Mode</Tag>
+            <Tag color={dataBadgeColor}>{dataBadgeLabel}</Tag>
+            <Tag color="green">Analysis: Offline deterministic</Tag>
+            <Tag color="purple">LLM: Mock</Tag>
             {caseTitle ? <Tag color="geekblue">{caseTitle}</Tag> : null}
             <Text className="project-label">{projectId}</Text>
             <Tag color={riskTone(riskLevel)}>

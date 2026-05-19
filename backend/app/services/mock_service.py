@@ -17,7 +17,7 @@ from app.services.mock_pipeline import (
     build_pipeline_propagation,
     build_pipeline_visualization,
 )
-from app.services.recommendation.report_builder import build_public_opinion_report
+from app.services.recommendation.report_builder import build_public_opinion_report, rank_representative_comments
 from app.services.visualization.chart_data_builder import build_visualization_response
 
 MOCK_DATA_DIR = Path(__file__).resolve().parents[3] / "mock_data"
@@ -150,4 +150,8 @@ def _pipeline_representative_comments(pipeline) -> list[str]:
             comment.clean_comment_id,
         ),
     )
-    return [comment.clean_text for comment in ranked_comments if comment.clean_text][:5]
+    return rank_representative_comments(
+        [comment.clean_text for comment in ranked_comments if comment.clean_text],
+        topics=pipeline.analysis.topics,
+        limit=5,
+    )

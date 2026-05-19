@@ -3,6 +3,7 @@ import { Bot, ClipboardCopy, Download, FileText, ShieldAlert, Siren, Target } fr
 
 import { PublicOpinionReport } from '../components/report/PublicOpinionReport.jsx'
 import { copyTextToClipboard } from '../utils/clipboard.js'
+import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
 import { formatPercent, riskTone } from '../utils/formatters.js'
 import { buildPublicOpinionReportModel, hasReportContent } from '../utils/reportModel.js'
 
@@ -35,6 +36,7 @@ export function SummaryReport({
     analysis?.bot_score?.suspected_bot_comment_ratio ??
     0
   const overallRisk = report.overallRisk ?? report.riskScore ?? 0
+  const sourceStatus = getAnalysisSourceStatus({ analysis, currentCase })
 
   const copyMarkdown = async () => {
     try {
@@ -77,8 +79,12 @@ export function SummaryReport({
       <div className="page-heading">
         <div>
           <Title level={2}>舆情报告</Title>
-          <Text>来自后端离线 mock 管线和模板报告生成器的结构化中文报告。</Text>
+          <Text>{sourceStatus.analysisDescription} The report builder is deterministic and does not call real LLMs.</Text>
           <Space wrap className="report-source-strip">
+            <Tag color={sourceStatus.dataTagColor}>{sourceStatus.dataLabel}</Tag>
+            <Tag color="green">{sourceStatus.analysisLabel}</Tag>
+            <Tag color="purple">{sourceStatus.llmLabel}</Tag>
+            <Tag color="geekblue">{sourceStatus.sourceDetail}</Tag>
             <Tag color={summary ? 'cyan' : 'default'}>summary API {summary ? '已加载' : '暂无数据'}</Tag>
             <Tag color={recommendation ? 'green' : 'default'}>
               recommendation API {recommendation ? '已加载' : '暂无数据'}

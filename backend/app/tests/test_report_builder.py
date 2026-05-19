@@ -136,6 +136,50 @@ def test_report_builder_can_omit_representative_comments() -> None:
     assert report.representative_comments == []
 
 
+def test_report_builder_downranks_promotional_representative_comments() -> None:
+    analysis = AnalysisResultResponse(
+        project_id="project_youtube_quality",
+        summary="Offline deterministic analysis from attached case raw data.",
+        sentiment=SentimentSummary(
+            positive_ratio=0.1,
+            neutral_ratio=0.2,
+            negative_ratio=0.7,
+            average_sentiment_score=-0.5,
+        ),
+        topics=[
+            TopicCluster(
+                cluster_id="topic_001",
+                topic="Product quality issues",
+                summary="Users discuss quality and response timing.",
+                comment_count=6,
+                average_sentiment_score=-0.6,
+                representative_comments=[],
+            )
+        ],
+        conflicts=[],
+        bot_score=BotImpactSummary(suspected_bot_ratio=0.0, suspected_bot_comment_ratio=0.0),
+        risk=RiskBrief(risk_score=72, risk_level="high"),
+    )
+    promotional = "Subscribe to my channel and join my Patreon for a promo code."
+    substantive_comments = [
+        "Tesla quality issue looks serious because the official response timeline is still unclear.",
+        "The safety concern needs evidence and a clearer product support path.",
+        "A delayed response makes the problem feel worse for affected owners.",
+        "The issue should be addressed with a transparent refund or repair timeline.",
+        "Trust recovery depends on direct evidence, not channel promotion.",
+    ]
+
+    report = build_public_opinion_report(
+        analysis,
+        representative_comments=[promotional, *substantive_comments],
+        report_language="en-US",
+    )
+
+    assert promotional not in report.representative_comments
+    assert report.representative_comments[0] == substantive_comments[0]
+    assert len(report.representative_comments) == 5
+
+
 def test_report_builder_uses_visualization_trend_and_graph_outputs() -> None:
     pipeline, visualization = _pipeline_with_visualization()
     trend_visualization = visualization.model_copy(

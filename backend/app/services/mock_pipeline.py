@@ -124,7 +124,7 @@ def _build_pipeline(
     )
     analysis = AnalysisResultResponse(
         project_id=project_id,
-        summary=_build_analysis_summary(topic_risk_result.risk_level, topics),
+        summary=_build_analysis_summary(topic_risk_result.risk_level, topics, analysis_input_source),
         sentiment=sentiment_summary,
         topics=topics,
         conflicts=conflicts,
@@ -324,11 +324,16 @@ def _build_mock_conflicts(
     ]
 
 
-def _build_analysis_summary(risk_level: str, topics: list) -> str:
+def _build_analysis_summary(risk_level: str, topics: list, analysis_input_source: str) -> str:
     if topics:
         leading_topic = topics[0].topic.lower()
     else:
         leading_topic = "general discussion"
+    if analysis_input_source == "case_raw_data":
+        return (
+            f"Offline deterministic analysis from attached case raw data rates the current project "
+            f"as {risk_level} risk, with conversation concentrated around {leading_topic}."
+        )
     return (
         f"Mock pipeline analysis rates the current project as {risk_level} risk, "
         f"with conversation concentrated around {leading_topic}."
