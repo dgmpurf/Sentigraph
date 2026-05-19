@@ -147,7 +147,7 @@ GitHub Actions CI is intentionally disabled for this project checkpoint. Do not 
 - Dashboard、Keyword Search、Cases、Analysis Result、Propagation Graph、Risk Monitor、Summary Report、Public Parser Status、Platform Integration Overview、Selector Repair Tool 页面。
 - Demo Flow / 演示流程页面：一页引导本地端到端演示，包含 Tesla mock 案例准备、mock 分析、V1.5 风险、中文报告、Markdown 导出、Simulation Lab、离线评测和 LLM Safety 状态。
 - Public Parser Status 页面支持 `the_paper`、`jiemian`、`hupu`、`maimai`、`tieba`、`nga` 的 fixture-first 状态查看和安全预览；前端不会启用 live public fetching。
-- Platform Integration Overview 页面集中展示官方 API scaffold、公开页面解析、Reddit API-pending 状态和未来可选来源；凭证只显示 present/missing 布尔状态，前端不会启用真实模式或 live public fetching。
+- Platform Integration Overview 页面集中展示统一 real-data readiness：Real Ready、Configured but Guarded、Permission Pending、OAuth Pending、Mock / Scaffold Only；凭证只显示 present/missing 布尔状态，前端不会输入密钥、启用抓取或启用 live public fetching。
 - Selector Repair Tool 页面只使用 fixture/sanitized HTML 和 MockProvider selector 建议；不会抓取真实网页、调用真实 LLM API 或自动修改 parser profile。
 - ECharts 图表：情绪趋势、风险雷达、话题图、平台热力、传播图谱。
 - 中文结构化舆情报告：
@@ -583,6 +583,7 @@ Base path:
 - `GET /api/v1/health`
 - `GET /api/v1/platforms`
 - `GET /api/v1/platforms/status`
+- `GET /api/v1/platforms/readiness`
 - `GET /api/v1/llm/status`
 - `GET /api/v1/llm/usage`
 - `GET /api/v1/benchmarks/latest`

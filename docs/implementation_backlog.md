@@ -8,6 +8,44 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Real Data Source Readiness Framework
+
+Status: implemented, QA complete, and locally validated on 2026-05-19.
+
+Completed:
+
+- Added normalized readiness fields to platform source metadata: `integration_type`, `required_credentials`, `required_scopes`, `scope_status`, `oauth_required`, `oauth_status`, `real_mode_configured`, `credential_present`, `data_access_level`, `next_user_action`, and `quota_cache_protected`.
+- Added `GET /api/v1/platforms/readiness` while preserving `GET /api/v1/platforms/status` as a compatible alias.
+- Applied readiness semantics to YouTube, Douyin, Xiaohongshu, Reddit, Bilibili, Weibo, Kuaishou, Zhihu, Douban, Toutiao, and public-parser/future sources.
+- YouTube is real-capable but real-selectable only when both `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` are locally configured; cache/quota guardrails remain visible.
+- Douyin is grouped as OAuth pending with Web App developer access obtained, `user_info` and `item.comment` as required scopes, and OAuth/scope/item-id verification still blocking real mode.
+- Weibo records `company_age_requirement_pending`; Reddit/Bilibili record `approval_pending`; Xiaohongshu records `comment_api_unknown_or_not_confirmed`.
+- Platform Integration Overview now groups sources into Real Ready, Configured but Guarded, Permission Pending, OAuth Pending, and Mock / Scaffold Only.
+
+Acceptance:
+
+- Backend tests passed with `python -m pytest` (`559 passed in 5.41s`).
+- Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`).
+- Frontend build passed with `npm run build` from `frontend/` (`built in 7.82s`; existing non-blocking vendor chunk warning remains).
+- No real YouTube or Douyin API calls in automated tests.
+- No API keys, tokens, or `.env` values exposed; credential presence remains boolean only.
+- GitHub Actions CI remains intentionally disabled.
+
+QA stabilization:
+
+- Added regression coverage for the complete readiness field set returned by `/api/v1/platforms/readiness`.
+- Reconfirmed YouTube readiness as official API, public video/comment data, real-capable, credential-gated, and quota/cache protected.
+- Reconfirmed Douyin readiness as Web App OAuth pending with `item.comment`, HTTPS `redirect_uri`, whitelist/test account, token flow, and lawful `item_id` source still requiring console verification.
+- Reconfirmed Weibo `company_age_requirement_pending`, Reddit/Bilibili `approval_pending`, and Xiaohongshu `comment_api_unknown_or_not_confirmed` blockers.
+- Reconfirmed no secret values are returned; required credential names and presence booleans remain safe display metadata.
+
+Next options:
+
+- Browser-smoke the Platform Integration Overview page against a running local backend/frontend.
+- Continue Douyin console verification for Web App redirect URI, whitelist/test account, `item.comment`, token flow, and lawful `item_id` source.
+- Add a future quota/status dashboard only if repeated real-data demos need operator-facing cache diagnostics.
+- Keep other real platforms as future work behind official approvals, mocked fixtures, and redacted readiness metadata.
+
 ### Douyin Web App OAuth and item.comment Readiness Scaffold
 
 Status: QA complete as a readiness/documentation scaffold on 2026-05-19.

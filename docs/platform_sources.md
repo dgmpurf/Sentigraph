@@ -8,19 +8,31 @@ Cross-platform adapter QA is now stabilized with a parametrized local test matri
 
 ## Data-source readiness layer
 
-Sentigraph exposes platform readiness through `GET /api/v1/platforms/status`. The status layer is safe for frontend display and contains only non-secret metadata:
+Sentigraph exposes platform readiness through `GET /api/v1/platforms/readiness`; `GET /api/v1/platforms/status` remains a backward-compatible alias with the same response shape. The status layer is safe for frontend display and contains only non-secret metadata:
 
+- `integration_type`
 - `mock_available`
 - `real_mode_available`
+- `real_mode_configured`
 - `api_approval_required`
 - `api_approval_status`
 - `developer_access_status`
+- `app_type`
 - `comment_api_status`
 - `recommended_comment_scope`
 - `video_comment_scope_status`
+- `required_credentials`
+- `required_scopes`
+- `scope_status`
+- `oauth_required`
+- `oauth_status`
 - `real_mode_blocker`
+- `data_access_level`
+- `next_user_action`
+- `quota_cache_protected`
 - `credentials_required`
 - `credentials_present` as present/missing booleans only
+- `credential_present` as a combined boolean only
 - `enabled_in_mvp`
 - `selectable_for_mock`
 - `selectable_for_real`
@@ -28,18 +40,27 @@ Sentigraph exposes platform readiness through `GET /api/v1/platforms/status`. Th
 Current global status:
 
 - Reddit: `api_pending`; mock mode available; real API mode disabled until Reddit approval is granted.
+- Reddit readiness: `integration_type=official_api_pending`, `scope_status=approval_pending`, `real_mode_blocker=approval_pending`.
 - Reddit scraping: not implemented and not used to bypass API approval.
 - Official API planned platforms: Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, Toutiao, YouTube.
-- Weibo: official API adapter scaffold available in mock mode; real API mode disabled and not called.
-- Bilibili: official API adapter scaffold available in mock mode; real API mode disabled and not called.
-- Douyin: official API adapter scaffold available in mock mode; developer access obtained; Web App OAuth and `item.comment` scope are not verified; `item.comment` is the recommended MVP comment scope; `video.comment` is not recommended for MVP; real API mode disabled and not called.
+- Weibo: official API adapter scaffold available in mock mode; real API mode disabled and not called; blocker is `company_age_requirement_pending`.
+- Bilibili: official API adapter scaffold available in mock mode; real API mode disabled and not called; blocker is `approval_pending`.
+- Douyin: official API OAuth readiness scaffold available in mock mode; developer access obtained; Web App OAuth and `item.comment` scope are not verified; `item.comment` is the recommended MVP comment scope; `required_scopes=["user_info","item.comment"]`; `oauth_required=true`; `oauth_status=oauth_pending`; `video.comment` is not recommended for MVP; real API mode disabled and not called.
 - Kuaishou: official API adapter scaffold available in mock mode; real API mode disabled and not called.
-- Xiaohongshu: official API adapter scaffold available in mock mode; developer access obtained; note/comment API availability not verified; real API mode disabled and not called.
+- Xiaohongshu: official API adapter scaffold available in mock mode; developer access obtained; note/comment API availability not verified; `scope_status=comment_api_unknown_or_not_confirmed`; real API mode disabled and not called.
 - Zhihu: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Douban: official API adapter scaffold available in mock mode; real API mode disabled and not called.
 - Toutiao: official API adapter scaffold available in mock mode; real API mode disabled and not called.
-- YouTube: official Data API v3 adapter available in mock mode by default; real mode available only when configured with a local API key.
+- YouTube: official Data API v3 adapter available in mock mode by default; real-capable with `integration_type=official_api`, `data_access_level=public_video_comment_data`, and `quota_cache_protected=true`; real-selectable only when `YOUTUBE_ADAPTER_MODE=real` and a local API key are both configured.
 - Crawler-later platforms: Hupu, Baidu Tieba, Tianya, NGA, Maimai, The Paper / Pengpai News, Jiemian News.
+
+Frontend grouping:
+
+- `Real Ready`: currently only includes YouTube when both real mode and the local API key are configured.
+- `Configured but Guarded`: real-capable sources that are still protected by local mode, credentials, quota/cache, or manual-demo guardrails.
+- `Permission Pending`: sources blocked by official approval, company-age requirements, or unknown comment API permissions.
+- `OAuth Pending`: sources such as Douyin that require redirect URI, state/CSRF, authorization code, token lifecycle, verified scope, whitelist/test account, and lawful item-id source before any real call.
+- `Mock / Scaffold Only`: fixture/mock/future sources that must not call real APIs, scrape, use cookies, or enable live fetching.
 
 ## MVP mock-selectable platforms
 

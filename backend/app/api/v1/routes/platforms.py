@@ -21,3 +21,8 @@ def list_platforms() -> PlatformRegistryResponse:
 @router.get("/status", response_model=PlatformStatusResponse)
 def list_platform_status() -> PlatformStatusResponse:
     return get_platform_status_response()
+
+
+@router.get("/readiness", response_model=PlatformStatusResponse)
+def list_platform_readiness() -> PlatformStatusResponse:
+    return get_platform_status_response()

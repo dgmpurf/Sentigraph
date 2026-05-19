@@ -14,28 +14,40 @@ MongoDB document keys must always be strings.
 
 ```json
 {
+  "platform": "reddit",
   "platform_id": "reddit",
   "display_name": "Reddit",
   "category": "future_real_adapter_candidate",
   "source_type": "mock_data_future_adapter_placeholder",
+  "integration_type": "official_api_pending",
   "status": "api_pending",
   "enabled_in_mvp": true,
   "selectable_for_mock": true,
   "mock_available": true,
   "real_mode_available": false,
+  "real_mode_configured": false,
   "api_approval_required": true,
   "api_approval_status": "api_pending",
   "developer_access_status": null,
   "comment_api_status": null,
   "recommended_comment_scope": null,
   "video_comment_scope_status": null,
-  "real_mode_blocker": null,
+  "required_credentials": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
+  "required_scopes": [],
+  "scope_status": "approval_pending",
+  "oauth_required": false,
+  "oauth_status": "not_required",
+  "real_mode_blocker": "approval_pending",
+  "data_access_level": "mock_reddit_style_data",
+  "next_user_action": "Wait for Reddit API approval; do not use public-page scraping as a bypass.",
+  "quota_cache_protected": false,
   "credentials_required": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
   "credentials_present": {
     "REDDIT_CLIENT_ID": false,
     "REDDIT_CLIENT_SECRET": false,
     "REDDIT_USER_AGENT": false
   },
+  "credential_present": false,
   "api_pending": true,
   "real_mode_disabled": true,
   "selectable_for_real": false,
@@ -53,9 +65,13 @@ crawler_later
 disabled_or_optional_future
 ```
 
-Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-first and must not trigger real crawlers. `mock_available`, `real_mode_available`, `api_approval_required`, `api_approval_status`, `developer_access_status`, `app_type`, `comment_api_status`, `recommended_comment_scope`, `video_comment_scope_status`, `real_mode_blocker`, `credentials_required`, `credentials_present`, `api_pending`, `real_mode_disabled`, and `selectable_for_real` are safe status fields for frontend/backend diagnostics. `credentials_present` must contain only booleans and must never expose credential values. Reddit currently has `mock_available=true`, `api_approval_status="api_pending"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Weibo, Bilibili, Kuaishou, Zhihu, Douban, and Toutiao currently have `source_type="official_api_adapter_scaffold"`, `mock_available=true`, `api_approval_status="planned"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Douyin records `developer_access_status="obtained"`, `app_type="web_app"`, `comment_api_status="item_comment_scope_not_verified"`, `recommended_comment_scope="item.comment"`, `video_comment_scope_status="not_recommended_for_mvp"`, and `real_mode_blocker="oauth_and_scope_not_verified"` until Web App OAuth, `item.comment`, and item-id source are verified. Xiaohongshu records `developer_access_status="obtained"`, `comment_api_status="unknown_or_not_confirmed"`, and `real_mode_blocker="permission_not_verified"` until console permissions are verified. YouTube uses `source_type="youtube_data_api_v3"`, remains mock by default, and becomes `selectable_for_real=true` only when `YOUTUBE_API_KEY` is present locally.
+Only `selectable_for_mock=true` platforms should appear in active MVP frontend selectors. These selections are mock-first and must not trigger real crawlers. `mock_available`, `real_mode_available`, `real_mode_configured`, `api_approval_required`, `api_approval_status`, `developer_access_status`, `app_type`, `comment_api_status`, `recommended_comment_scope`, `video_comment_scope_status`, `required_credentials`, `required_scopes`, `scope_status`, `oauth_required`, `oauth_status`, `real_mode_blocker`, `data_access_level`, `next_user_action`, `quota_cache_protected`, `credentials_required`, `credentials_present`, `credential_present`, `api_pending`, `real_mode_disabled`, and `selectable_for_real` are safe status fields for frontend/backend diagnostics. `credentials_present` and `credential_present` must contain only booleans and must never expose credential values. Reddit currently has `integration_type="official_api_pending"`, `scope_status="approval_pending"`, `real_mode_blocker="approval_pending"`, `mock_available=true`, `api_approval_status="api_pending"`, `api_pending=true`, `real_mode_available=false`, `selectable_for_real=false`, and `real_mode_disabled=true`. Weibo reports `real_mode_blocker="company_age_requirement_pending"`. Bilibili reports `real_mode_blocker="approval_pending"`. Douyin records `integration_type="official_api_oauth"`, `developer_access_status="obtained"`, `app_type="web_app"`, `required_scopes=["user_info","item.comment"]`, `scope_status="item_comment_not_verified"`, `oauth_required=true`, `oauth_status="oauth_pending"`, `comment_api_status="item_comment_scope_not_verified"`, `recommended_comment_scope="item.comment"`, `video_comment_scope_status="not_recommended_for_mvp"`, and `real_mode_blocker="oauth_and_scope_not_verified"` until Web App OAuth, `item.comment`, and item-id source are verified. Xiaohongshu records `developer_access_status="obtained"`, `scope_status="comment_api_unknown_or_not_confirmed"`, `comment_api_status="unknown_or_not_confirmed"`, and `real_mode_blocker="permission_not_verified"` until console permissions are verified. YouTube uses `integration_type="official_api"`, `source_type="youtube_data_api_v3"`, `data_access_level="public_video_comment_data"`, and `quota_cache_protected=true`; it remains mock by default and becomes `selectable_for_real=true` only when `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` are both configured locally.
 
 ### PlatformStatusResponse
+
+Returned by both `GET /api/v1/platforms/status` and
+`GET /api/v1/platforms/readiness`. The latter is the preferred endpoint for
+the Real Data Source Readiness Framework.
 
 ```json
 {

@@ -18,6 +18,11 @@ export async function getPlatformStatus() {
   return data
 }
 
+export async function getPlatformReadiness() {
+  const { data } = await apiClient.get(`${API_PREFIX}/platforms/readiness`)
+  return data
+}
+
 export async function getPublicParserStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/public-parsers/status`)
   return normalizePublicParserStatus(data)

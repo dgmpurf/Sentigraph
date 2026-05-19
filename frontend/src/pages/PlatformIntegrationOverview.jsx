@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
   getPlatforms,
+  getPlatformReadiness,
   getPlatformStatus,
   getPublicParserStatus,
   previewPublicParser,
@@ -12,6 +13,11 @@ import {
 const { Paragraph, Text, Title } = Typography
 
 const groupLabels = {
+  realReady: 'Real Ready',
+  configuredGuarded: 'Configured but Guarded',
+  permissionPending: 'Permission Pending',
+  oauthPending: 'OAuth Pending',
+  mockScaffoldOnly: 'Mock / Scaffold Only',
   official: '官方 API 规划平台',
   publicParser: '公开页面解析平台',
   reddit: 'Reddit 状态',
@@ -25,6 +31,14 @@ const statusTone = {
   future_crawler_integration: 'gold',
   disabled_optional_future: 'default',
   disabled_or_optional_future: 'default',
+  real_api_available_when_configured: 'green',
+  approval_pending: 'orange',
+  oauth_pending: 'purple',
+  credential_missing: 'gold',
+  adapter_mode_mock: 'blue',
+  item_comment_not_verified: 'purple',
+  company_age_requirement_pending: 'orange',
+  comment_api_unknown_or_not_confirmed: 'orange',
 }
 
 function safeText(value, fallback = '-') {
@@ -48,6 +62,11 @@ function formatNumber(value, suffix = '') {
   return Number.isFinite(numericValue) ? `${numericValue}${suffix}` : '-'
 }
 
+function formatList(values, fallback = '-') {
+  if (!Array.isArray(values) || values.length === 0) return fallback
+  return values.map((value) => String(value)).join(', ')
+}
+
 function schemaTag(valid) {
   return <Tag color={valid ? 'green' : 'red'}>{valid ? '通过' : '异常'}</Tag>
 }
@@ -65,6 +84,18 @@ function getStatusBadges(platform = {}, parser = null) {
   const badges = []
   if (platform.mock_available) {
     badges.push({ key: 'mock_available', color: 'green', label: 'Mock 可用' })
+  }
+  if (platform.real_mode_configured && platform.selectable_for_real) {
+    badges.push({ key: 'real_ready', color: 'green', label: 'Real Ready' })
+  }
+  if (platform.platform_id === 'youtube' && platform.real_mode_available && !platform.real_mode_configured) {
+    badges.push({ key: 'configured_guarded', color: 'blue', label: 'Real-capable / Guarded' })
+  }
+  if (platform.oauth_required || platform.oauth_status === 'oauth_pending') {
+    badges.push({ key: 'oauth_pending', color: 'purple', label: 'OAuth Pending' })
+  }
+  if (platform.real_mode_blocker === 'approval_pending' || platform.scope_status === 'approval_pending') {
+    badges.push({ key: 'approval_pending', color: 'orange', label: 'Permission Pending' })
   }
   if (platform.status === 'api_pending' || platform.api_approval_status === 'api_pending') {
     badges.push({ key: 'api_pending', color: 'orange', label: 'API 待接入' })
@@ -145,6 +176,7 @@ function CredentialStatus({ platform }) {
 function RegistrySafetyFields({ platform }) {
   return (
     <Space wrap size={4} className="integration-safe-field-tags">
+      <Tag color="geekblue">integration: {safeText(platform.integration_type)}</Tag>
       <Tag color={statusTone[platform.status] || 'default'}>status: {safeText(platform.status)}</Tag>
       <Tag color={platform.mock_available ? 'green' : 'default'}>
         {platform.mock_available ? 'Mock 可用' : 'Mock 不可用'}
@@ -152,10 +184,24 @@ function RegistrySafetyFields({ platform }) {
       <Tag color={platform.real_mode_available ? 'green' : 'default'}>
         {platform.real_mode_available ? '真实模式可用' : '真实模式未启用'}
       </Tag>
+      <Tag color={platform.real_mode_configured ? 'green' : 'default'}>
+        configured: {platform.real_mode_configured ? 'yes' : 'no'}
+      </Tag>
       <Tag color={platform.api_approval_required ? 'orange' : 'default'}>
         API 审批: {platform.api_approval_required ? '需要' : '不需要'}
       </Tag>
       <Tag>{safeText(platform.api_approval_status, 'not_applicable')}</Tag>
+      <Tag color={statusTone[platform.scope_status] || 'default'}>
+        scope: {safeText(platform.scope_status)}
+      </Tag>
+      <Tag color={platform.oauth_required ? 'purple' : 'default'}>
+        OAuth: {platform.oauth_required ? safeText(platform.oauth_status, 'required') : 'not_required'}
+      </Tag>
+      {platform.real_mode_blocker ? (
+        <Tag color={statusTone[platform.real_mode_blocker] || 'orange'}>
+          blocker: {platform.real_mode_blocker}
+        </Tag>
+      ) : null}
       <Tag color={platform.enabled_in_mvp ? 'green' : 'default'}>
         MVP: {platform.enabled_in_mvp ? '启用' : '未启用'}
       </Tag>
@@ -165,6 +211,20 @@ function RegistrySafetyFields({ platform }) {
       <Tag color={platform.selectable_for_real ? 'green' : 'default'}>
         Real: {platform.selectable_for_real ? '可选' : '不可选'}
       </Tag>
+      <Tag>{safeText(platform.data_access_level)}</Tag>
+      {platform.quota_cache_protected ? <Tag color="cyan">quota/cache protected</Tag> : null}
+    </Space>
+  )
+}
+
+function ReadinessDetails({ platform }) {
+  return (
+    <Space direction="vertical" size={4} className="full-width">
+      <Text type="secondary">凭证：{platform.credential_present ? '已配置必要凭证' : '未完整配置必要凭证'}</Text>
+      <Text type="secondary">Required credentials: {formatList(platform.required_credentials || platform.credentials_required)}</Text>
+      <Text type="secondary">Required scopes: {formatList(platform.required_scopes, 'not_required')}</Text>
+      <Text type="secondary">Blocker: {safeText(platform.real_mode_blocker, 'none')}</Text>
+      <Text type="secondary">Next: {safeText(platform.next_user_action)}</Text>
     </Space>
   )
 }
@@ -317,7 +377,7 @@ function PreviewPanel({ loading, preview, selectedPlatform }) {
 
 function MetricCards({ platforms, publicParsers, summary }) {
   const officialCount = platforms.filter((platform) => platform.category === 'official_api_planned').length
-  const redditCount = platforms.filter((platform) => platform.platform_id === 'reddit').length
+  const oauthPendingCount = platforms.filter((platform) => platform.oauth_required || platform.oauth_status === 'oauth_pending').length
   const realSelectableCount = summary?.real_selectable_count ?? platforms.filter((platform) => platform.selectable_for_real).length
 
   return (
@@ -329,7 +389,7 @@ function MetricCards({ platforms, publicParsers, summary }) {
             <Text>总平台数</Text>
           </Space>
           <Title level={2}>{formatNumber(summary?.total_platforms || platforms.length)}</Title>
-          <Text type="secondary">来自平台 registry/status 的安全展示字段。</Text>
+          <Text type="secondary">来自平台 readiness/status 的安全展示字段。</Text>
         </Card>
       </Col>
       <Col span={6}>
@@ -339,7 +399,7 @@ function MetricCards({ platforms, publicParsers, summary }) {
             <Text>官方 API 规划</Text>
           </Space>
           <Title level={2}>{officialCount}</Title>
-          <Text type="secondary">当前均为 scaffold/mock，不调用真实 API。</Text>
+          <Text type="secondary">YouTube real-capable；其他官方源仍为权限/实现待验证。</Text>
         </Card>
       </Col>
       <Col span={6}>
@@ -359,7 +419,7 @@ function MetricCards({ platforms, publicParsers, summary }) {
             <Text>真实可选</Text>
           </Space>
           <Title level={2}>{formatNumber(realSelectableCount)}</Title>
-          <Text type="secondary">Reddit 数量：{redditCount}，真实模式仍关闭。</Text>
+          <Text type="secondary">OAuth pending：{oauthPendingCount}；所有凭证只显示布尔状态。</Text>
         </Card>
       </Col>
     </Row>
@@ -369,22 +429,22 @@ function MetricCards({ platforms, publicParsers, summary }) {
 function ExplanationCards() {
   const items = [
     {
-      key: 'reddit',
-      title: 'Reddit',
-      color: 'orange',
-      text: 'API 审批中，当前仅使用 mock/fallback，不做网页抓取绕过。',
+      key: 'youtube',
+      title: 'YouTube',
+      color: 'green',
+      text: '官方 Data API v3 已接入为 real-capable，只有本地 .env 同时配置 real mode 和 API key 时才可真实调用，并受缓存/配额保护。',
     },
     {
-      key: 'official',
-      title: 'Official API',
-      color: 'blue',
-      text: '当前为 scaffold/mock 模式，未来需申请官方 API 权限。',
+      key: 'douyin',
+      title: 'Douyin',
+      color: 'purple',
+      text: 'Web App 开发者访问已记录，但 OAuth、item.comment、redirect URI、白名单和 item_id 来源仍待控制台验证。',
     },
     {
-      key: 'public',
-      title: 'Public Parsers',
+      key: 'safety',
+      title: 'Safety',
       color: 'cyan',
-      text: '当前以 fixture/parser 方式验证解析结构，live fetch 默认关闭。',
+      text: '页面只展示非秘密 readiness 字段；不展示 API key、token、.env 值，不启用抓取或真实 LLM。',
     },
   ]
 
@@ -426,6 +486,7 @@ function PlatformTileList({ platforms, emptyText }) {
             <Tag color={statusTone[platform.status] || 'default'}>{safeText(platform.status)}</Tag>
           </Space>
           <RegistrySafetyFields platform={platform} />
+          <ReadinessDetails platform={platform} />
           <CredentialStatus platform={platform} />
           <Paragraph className="integration-note" ellipsis={{ rows: 3 }}>
             {safeText(platform.notes, '暂无备注')}
@@ -433,6 +494,40 @@ function PlatformTileList({ platforms, emptyText }) {
         </div>
       ))}
     </div>
+  )
+}
+
+function classifyReadiness(platform = {}) {
+  if (platform.real_mode_configured && platform.selectable_for_real) return 'realReady'
+  if (platform.platform_id === 'youtube' && platform.real_mode_available) return 'configuredGuarded'
+  if (platform.oauth_required || platform.oauth_status === 'oauth_pending') return 'oauthPending'
+  if (
+    platform.real_mode_blocker === 'approval_pending' ||
+    platform.scope_status === 'approval_pending' ||
+    platform.scope_status === 'company_age_requirement_pending' ||
+    platform.scope_status === 'comment_api_unknown_or_not_confirmed' ||
+    platform.comment_api_status === 'unknown_or_not_confirmed'
+  ) {
+    return 'permissionPending'
+  }
+  return 'mockScaffoldOnly'
+}
+
+function ReadinessGroupSection({ title, color, description, platforms }) {
+  return (
+    <Card className="panel-card integration-section-card">
+      <div className="panel-heading">
+        <Space>
+          <ShieldCheck size={18} />
+          <Title level={4}>{title}</Title>
+        </Space>
+        <Tag color={color}>{platforms.length}</Tag>
+      </div>
+      <Paragraph type="secondary" className="integration-table-note">
+        {description}
+      </Paragraph>
+      <PlatformTileList platforms={platforms} emptyText={`${title} 暂无平台`} />
+    </Card>
   )
 }
 
@@ -451,9 +546,13 @@ export function PlatformIntegrationOverview() {
     setLoading(true)
     setError('')
     setWarning('')
+    const readinessRequest = getPlatformReadiness().catch(async () => {
+      const fallback = await getPlatformStatus()
+      return { ...fallback, readiness_fallback_used: true }
+    })
     const [platformsResult, statusResult, parsersResult] = await Promise.allSettled([
       getPlatforms(),
-      getPlatformStatus(),
+      readinessRequest,
       getPublicParserStatus(),
     ])
 
@@ -467,7 +566,10 @@ export function PlatformIntegrationOverview() {
 
     const partialWarnings = []
     if (platformsResult.status === 'rejected') partialWarnings.push('GET /api/v1/platforms 加载失败')
-    if (statusResult.status === 'rejected') partialWarnings.push('GET /api/v1/platforms/status 加载失败')
+    if (statusResult.status === 'rejected') partialWarnings.push('GET /api/v1/platforms/readiness 加载失败')
+    if (nextPlatformStatus?.readiness_fallback_used) {
+      partialWarnings.push('GET /api/v1/platforms/readiness 不可用，已回退到 /platforms/status')
+    }
     if (parsersResult.status === 'rejected') partialWarnings.push('GET /api/v1/public-parsers/status 加载失败')
     setWarning(partialWarnings.join('；'))
 
@@ -542,6 +644,20 @@ export function PlatformIntegrationOverview() {
       ),
     [platforms],
   )
+
+  const readinessGroups = useMemo(() => {
+    const groups = {
+      realReady: [],
+      configuredGuarded: [],
+      permissionPending: [],
+      oauthPending: [],
+      mockScaffoldOnly: [],
+    }
+    platforms.forEach((platform) => {
+      groups[classifyReadiness(platform)].push(platform)
+    })
+    return groups
+  }, [platforms])
 
   const selectedPreview = selectedPlatform ? previewByPlatform[selectedPlatform] : null
 
@@ -764,6 +880,48 @@ export function PlatformIntegrationOverview() {
         <>
           <MetricCards platforms={platforms} publicParsers={publicParsers} summary={platformStatus?.summary} />
           <ExplanationCards />
+
+          <Row gutter={[16, 16]}>
+            <Col span={12}>
+              <ReadinessGroupSection
+                title={groupLabels.realReady}
+                color="green"
+                description="可真实调用的官方 API 源；仍只显示安全元数据和凭证布尔状态。"
+                platforms={readinessGroups.realReady}
+              />
+            </Col>
+            <Col span={12}>
+              <ReadinessGroupSection
+                title={groupLabels.configuredGuarded}
+                color="blue"
+                description="具备真实模式能力但仍受本地配置、缓存、配额和手动 demo 边界保护。"
+                platforms={readinessGroups.configuredGuarded}
+              />
+            </Col>
+            <Col span={12}>
+              <ReadinessGroupSection
+                title={groupLabels.oauthPending}
+                color="purple"
+                description="需要 OAuth、scope、redirect URI、白名单、token 或授权账号验证。"
+                platforms={readinessGroups.oauthPending}
+              />
+            </Col>
+            <Col span={12}>
+              <ReadinessGroupSection
+                title={groupLabels.permissionPending}
+                color="orange"
+                description="开发者权限、审批、评论接口、公司资质或数据范围仍未确认。"
+                platforms={readinessGroups.permissionPending}
+              />
+            </Col>
+          </Row>
+
+          <ReadinessGroupSection
+            title={groupLabels.mockScaffoldOnly}
+            color="default"
+            description="仅用于 mock、fixture 或未来规划；不触发真实 API、抓取、cookies 或 live fetch。"
+            platforms={readinessGroups.mockScaffoldOnly}
+          />
 
           <Card className="panel-card integration-section-card">
             <div className="panel-heading">

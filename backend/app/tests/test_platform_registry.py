@@ -25,9 +25,33 @@ MOCK_SELECTABLE_PLATFORM_IDS = [
     "youtube",
 ]
 
+READINESS_REQUIRED_FIELDS = {
+    "platform",
+    "integration_type",
+    "developer_access_status",
+    "app_type",
+    "api_approval_status",
+    "credential_present",
+    "required_credentials",
+    "required_scopes",
+    "scope_status",
+    "oauth_required",
+    "oauth_status",
+    "real_mode_available",
+    "real_mode_configured",
+    "real_mode_blocker",
+    "mock_available",
+    "selectable_for_mock",
+    "selectable_for_real",
+    "data_access_level",
+    "notes",
+    "next_user_action",
+}
+
 
 def test_platform_registry_categories_and_active_mvp(monkeypatch) -> None:
     monkeypatch.setenv("YOUTUBE_API_KEY", "")
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "mock")
 
     platforms = get_platform_registry()
     by_id = {platform.platform_id: platform for platform in platforms}
@@ -126,9 +150,13 @@ def test_platform_registry_categories_and_active_mvp(monkeypatch) -> None:
     assert by_id["youtube"].selectable_for_mock is True
     assert by_id["youtube"].mock_available is True
     assert by_id["youtube"].real_mode_available is True
+    assert by_id["youtube"].real_mode_configured is False
     assert by_id["youtube"].api_pending is False
     assert by_id["youtube"].real_mode_disabled is False
     assert by_id["youtube"].selectable_for_real is False
+    assert by_id["youtube"].integration_type == "official_api"
+    assert by_id["youtube"].data_access_level == "public_video_comment_data"
+    assert by_id["youtube"].quota_cache_protected is True
     assert by_id["hupu"].category == CRAWLER_LATER
     assert by_id["hupu"].source_type == "public_page_parser"
     assert by_id["hupu"].status == "fixture_only"
@@ -232,6 +260,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     monkeypatch.setenv("TOUTIAO_CLIENT_ID", "toutiao-client-should-not-appear")
     monkeypatch.setenv("TOUTIAO_CLIENT_SECRET", "toutiao-secret-should-not-appear")
     monkeypatch.setenv("TOUTIAO_ACCESS_TOKEN", "toutiao-token-should-not-appear")
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
     monkeypatch.setenv("YOUTUBE_API_KEY", "youtube-api-key-should-not-appear")
 
     response = client.get("/api/v1/platforms/status")
@@ -256,6 +285,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert body["summary"]["mock_selectable_count"] == len(MOCK_SELECTABLE_PLATFORM_IDS)
     assert body["summary"]["real_selectable_count"] == 1
     assert reddit["status"] == "api_pending"
+    assert reddit["integration_type"] == "official_api_pending"
     assert reddit["mock_available"] is True
     assert reddit["real_mode_available"] is False
     assert reddit["api_approval_required"] is True
@@ -273,7 +303,11 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert reddit["selectable_for_mock"] is True
     assert reddit["selectable_for_real"] is False
     assert reddit["real_mode_disabled"] is True
+    assert reddit["real_mode_blocker"] == "approval_pending"
+    assert reddit["scope_status"] == "approval_pending"
+    assert reddit["credential_present"] is True
     assert weibo["status"] == "official_api_planned"
+    assert weibo["integration_type"] == "official_api_scaffold"
     assert weibo["source_type"] == "official_api_adapter_scaffold"
     assert weibo["mock_available"] is True
     assert weibo["real_mode_available"] is False
@@ -292,7 +326,10 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert weibo["selectable_for_mock"] is True
     assert weibo["selectable_for_real"] is False
     assert weibo["real_mode_disabled"] is True
+    assert weibo["real_mode_blocker"] == "company_age_requirement_pending"
+    assert weibo["scope_status"] == "company_age_requirement_pending"
     assert bilibili["status"] == "official_api_planned"
+    assert bilibili["integration_type"] == "official_api_scaffold"
     assert bilibili["source_type"] == "official_api_adapter_scaffold"
     assert bilibili["mock_available"] is True
     assert bilibili["real_mode_available"] is False
@@ -311,7 +348,10 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert bilibili["selectable_for_mock"] is True
     assert bilibili["selectable_for_real"] is False
     assert bilibili["real_mode_disabled"] is True
+    assert bilibili["real_mode_blocker"] == "approval_pending"
+    assert bilibili["scope_status"] == "approval_pending"
     assert douyin["status"] == "official_api_planned"
+    assert douyin["integration_type"] == "official_api_oauth"
     assert douyin["source_type"] == "official_api_adapter_scaffold"
     assert douyin["mock_available"] is True
     assert douyin["real_mode_available"] is False
@@ -323,6 +363,15 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert douyin["recommended_comment_scope"] == "item.comment"
     assert douyin["video_comment_scope_status"] == "not_recommended_for_mvp"
     assert douyin["real_mode_blocker"] == "oauth_and_scope_not_verified"
+    assert douyin["required_credentials"] == douyin["credentials_required"]
+    assert douyin["required_scopes"] == ["user_info", "item.comment"]
+    assert douyin["scope_status"] == "item_comment_not_verified"
+    assert douyin["oauth_required"] is True
+    assert douyin["oauth_status"] == "oauth_pending"
+    assert douyin["real_mode_configured"] is False
+    assert douyin["credential_present"] is True
+    assert douyin["data_access_level"] == "authorized_item_comment_data_pending"
+    assert "item.comment" in douyin["next_user_action"]
     assert douyin["credentials_required"] == [
         "DOUYIN_CLIENT_KEY",
         "DOUYIN_CLIENT_SECRET",
@@ -368,6 +417,7 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert xiaohongshu["developer_access_status"] == "obtained"
     assert xiaohongshu["comment_api_status"] == "unknown_or_not_confirmed"
     assert xiaohongshu["real_mode_blocker"] == "permission_not_verified"
+    assert xiaohongshu["scope_status"] == "comment_api_unknown_or_not_confirmed"
     assert xiaohongshu["credentials_required"] == [
         "XIAOHONGSHU_CLIENT_ID",
         "XIAOHONGSHU_CLIENT_SECRET",
@@ -439,13 +489,25 @@ def test_platform_status_endpoint_reports_safe_readiness(monkeypatch) -> None:
     assert toutiao["selectable_for_real"] is False
     assert toutiao["real_mode_disabled"] is True
     assert youtube["status"] == "real_api_available_when_configured"
+    assert youtube["integration_type"] == "official_api"
     assert youtube["source_type"] == "youtube_data_api_v3"
     assert youtube["mock_available"] is True
     assert youtube["real_mode_available"] is True
     assert youtube["api_approval_required"] is False
     assert youtube["api_approval_status"] == "api_key_configurable"
     assert youtube["credentials_required"] == ["YOUTUBE_API_KEY"]
+    assert youtube["required_credentials"] == ["YOUTUBE_API_KEY"]
     assert youtube["credentials_present"] == {"YOUTUBE_API_KEY": True}
+    assert youtube["credential_present"] is True
+    assert youtube["required_scopes"] == []
+    assert youtube["scope_status"] == "not_required"
+    assert youtube["oauth_required"] is False
+    assert youtube["oauth_status"] == "not_required"
+    assert youtube["real_mode_configured"] is True
+    assert youtube["real_mode_blocker"] is None
+    assert youtube["data_access_level"] == "public_video_comment_data"
+    assert youtube["quota_cache_protected"] is True
+    assert "cache" in youtube["next_user_action"].lower()
     assert youtube["selectable_for_mock"] is True
     assert youtube["selectable_for_real"] is True
     assert youtube["real_mode_disabled"] is False
@@ -512,6 +574,7 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     monkeypatch.setenv("TOUTIAO_CLIENT_ID", "")
     monkeypatch.setenv("TOUTIAO_CLIENT_SECRET", "")
     monkeypatch.setenv("TOUTIAO_ACCESS_TOKEN", "")
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
     monkeypatch.setenv("YOUTUBE_API_KEY", "")
 
     response = client.get("/api/v1/platforms/status")
@@ -594,8 +657,107 @@ def test_platform_status_endpoint_reports_missing_credentials_safely(monkeypatch
     }
     assert toutiao["real_mode_available"] is False
     assert youtube["credentials_present"] == {"YOUTUBE_API_KEY": False}
+    assert youtube["credential_present"] is False
     assert youtube["real_mode_available"] is True
+    assert youtube["real_mode_configured"] is False
+    assert youtube["real_mode_blocker"] == "credential_missing"
     assert youtube["selectable_for_real"] is False
+
+
+def test_youtube_readiness_requires_real_mode_and_api_key(monkeypatch) -> None:
+    monkeypatch.setenv("YOUTUBE_API_KEY", "youtube-api-key-should-not-appear")
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "mock")
+
+    response = client.get("/api/v1/platforms/readiness")
+
+    assert response.status_code == 200
+    body = response.json()
+    youtube = {platform["platform_id"]: platform for platform in body["platforms"]}["youtube"]
+    assert youtube["credential_present"] is True
+    assert youtube["real_mode_available"] is True
+    assert youtube["real_mode_configured"] is False
+    assert youtube["selectable_for_real"] is False
+    assert youtube["real_mode_blocker"] == "adapter_mode_mock"
+    assert body["real_selectable_platforms"] == []
+    assert "youtube-api-key-should-not-appear" not in response.text
+
+
+def test_platform_readiness_endpoint_matches_status_shape(monkeypatch) -> None:
+    monkeypatch.setenv("YOUTUBE_API_KEY", "")
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "mock")
+
+    status_response = client.get("/api/v1/platforms/status")
+    readiness_response = client.get("/api/v1/platforms/readiness")
+
+    assert status_response.status_code == 200
+    assert readiness_response.status_code == 200
+    status_body = status_response.json()
+    readiness_body = readiness_response.json()
+    assert set(status_body) == set(readiness_body)
+    assert {item["platform_id"] for item in readiness_body["platforms"]} >= set(MOCK_SELECTABLE_PLATFORM_IDS)
+    assert all("integration_type" in item for item in readiness_body["platforms"])
+    assert all("credential_present" in item for item in readiness_body["platforms"])
+    assert all("next_user_action" in item for item in readiness_body["platforms"])
+
+
+def test_platform_readiness_endpoint_returns_complete_safe_framework_fields(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("YOUTUBE_API_KEY", "youtube-readiness-secret-marker")
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
+    monkeypatch.setenv("DOUYIN_CLIENT_KEY", "douyin-client-key-secret-marker")
+    monkeypatch.setenv("DOUYIN_CLIENT_SECRET", "douyin-client-secret-marker")
+    monkeypatch.setenv("DOUYIN_REDIRECT_URI", "https://example.invalid/douyin/callback")
+    monkeypatch.setenv("DOUYIN_ACCESS_TOKEN", "douyin-access-token-secret-marker")
+    monkeypatch.setenv("DOUYIN_REFRESH_TOKEN", "douyin-refresh-token-secret-marker")
+
+    response = client.get("/api/v1/platforms/readiness")
+
+    assert response.status_code == 200
+    body = response.json()
+    by_id = {platform["platform_id"]: platform for platform in body["platforms"]}
+    assert READINESS_REQUIRED_FIELDS <= set(by_id["youtube"])
+    assert all(READINESS_REQUIRED_FIELDS <= set(platform) for platform in body["platforms"])
+
+    youtube = by_id["youtube"]
+    assert youtube["integration_type"] == "official_api"
+    assert youtube["developer_access_status"] == "obtained"
+    assert youtube["real_mode_available"] is True
+    assert youtube["real_mode_configured"] is True
+    assert youtube["credential_present"] is True
+    assert youtube["quota_cache_protected"] is True
+    assert youtube["data_access_level"] == "public_video_comment_data"
+    assert youtube["selectable_for_real"] is True
+    assert "cache" in youtube["next_user_action"].lower()
+
+    douyin = by_id["douyin"]
+    assert douyin["integration_type"] == "official_api_oauth"
+    assert douyin["developer_access_status"] == "obtained"
+    assert douyin["app_type"] == "web_app"
+    assert douyin["required_scopes"] == ["user_info", "item.comment"]
+    assert douyin["oauth_required"] is True
+    assert douyin["scope_status"] == "item_comment_not_verified"
+    assert douyin["real_mode_available"] is False
+    assert douyin["real_mode_configured"] is False
+    assert douyin["real_mode_blocker"] == "oauth_and_scope_not_verified"
+    next_action = douyin["next_user_action"]
+    assert "item.comment" in next_action
+    assert "redirect_uri" in next_action
+    assert "whitelist" in next_action
+    assert "item_id" in next_action
+
+    assert by_id["weibo"]["real_mode_blocker"] == "company_age_requirement_pending"
+    assert by_id["reddit"]["real_mode_blocker"] == "approval_pending"
+    assert by_id["bilibili"]["real_mode_blocker"] == "approval_pending"
+    assert by_id["xiaohongshu"]["developer_access_status"] == "obtained"
+    assert by_id["xiaohongshu"]["scope_status"] == "comment_api_unknown_or_not_confirmed"
+
+    response_text = response.text
+    assert "youtube-readiness-secret-marker" not in response_text
+    assert "douyin-client-key-secret-marker" not in response_text
+    assert "douyin-client-secret-marker" not in response_text
+    assert "douyin-access-token-secret-marker" not in response_text
+    assert "douyin-refresh-token-secret-marker" not in response_text
 
 
 def test_platform_status_keeps_crawler_later_not_real_selectable() -> None:

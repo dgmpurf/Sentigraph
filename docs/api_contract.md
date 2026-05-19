@@ -286,6 +286,7 @@ Important:
 
 - `selectable_for_mock=true` means the frontend may show the platform in mock-first selectors.
 - `mock_available=true` means the platform has safe local mock data behavior.
+- `GET /api/v1/platforms` and the readiness/status endpoints expose the same per-platform readiness fields; examples may omit some optional fields for brevity.
 - `real_mode_available=true` means the backend may use a real source path for that platform when all explicit gates pass. YouTube is real-capable when locally configured; other current platform adapters remain mock-only or approval-gated.
 - `credentials_present` is a safe boolean map only. It must never contain credential values.
 - `developer_access_status`, `comment_api_status`, `recommended_comment_scope`, `video_comment_scope_status`, and `real_mode_blocker` are safe non-secret readiness fields. They describe console/access status only and must not expose credential values.
@@ -294,14 +295,19 @@ Important:
 - Official API planned platforms may be selectable for mock analysis, but they must not trigger real API calls until credentials, permissions, and compliance checks are available.
 - Reddit is visible and mock-selectable as a future real adapter candidate, but its current real API status is `api_pending`.
 - Weibo, Bilibili, Douyin, Kuaishou, Xiaohongshu, Zhihu, Douban, and Toutiao are mock-selectable through official API adapter scaffolds. Their real API modes are disabled and not called until credentials, approval, permission verification, and implementation are added. Douyin additionally shows `developer_access_status="obtained"`, `app_type="web_app"`, `comment_api_status="item_comment_scope_not_verified"`, `recommended_comment_scope="item.comment"`, `video_comment_scope_status="not_recommended_for_mvp"`, and `real_mode_blocker="oauth_and_scope_not_verified"`. Xiaohongshu shows developer access obtained but note/comment permission not verified.
-- YouTube is mock-selectable and uses `source_type="youtube_data_api_v3"`. It is real-capable only when `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured; `credentials_present` and crawl metadata expose booleans only.
+- YouTube is mock-selectable and uses `source_type="youtube_data_api_v3"`. It is real-capable by design, but real-selectable only when `YOUTUBE_ADAPTER_MODE=real` and a local `YOUTUBE_API_KEY` are configured; `credential_present`, `credentials_present`, and crawl metadata expose booleans only.
 - Crawler-later platforms are not selectable for real crawling in the MVP.
 
 ### Platform Readiness Status
 
 ```http
 GET /api/v1/platforms/status
+GET /api/v1/platforms/readiness
 ```
+
+`/platforms/readiness` is the preferred endpoint for the Real Data Source
+Readiness Framework. `/platforms/status` remains a backward-compatible alias
+with the same response shape.
 
 Response:
 
@@ -310,20 +316,32 @@ Response:
   "platforms": [
     {
       "platform_id": "reddit",
+      "platform": "reddit",
       "display_name": "Reddit",
       "category": "future_real_adapter_candidate",
       "source_type": "mock_data_future_adapter_placeholder",
+      "integration_type": "official_api_pending",
       "status": "api_pending",
       "mock_available": true,
       "real_mode_available": false,
+      "real_mode_configured": false,
       "api_approval_required": true,
       "api_approval_status": "api_pending",
+      "required_credentials": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
+      "required_scopes": [],
+      "scope_status": "approval_pending",
+      "oauth_required": false,
+      "oauth_status": "not_required",
+      "real_mode_blocker": "approval_pending",
+      "data_access_level": "mock_reddit_style_data",
+      "next_user_action": "Wait for Reddit API approval; do not use public-page scraping as a bypass.",
       "credentials_required": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
       "credentials_present": {
         "REDDIT_CLIENT_ID": false,
         "REDDIT_CLIENT_SECRET": false,
         "REDDIT_USER_AGENT": false
       },
+      "credential_present": false,
       "enabled_in_mvp": true,
       "selectable_for_mock": true,
       "selectable_for_real": false,
@@ -351,9 +369,12 @@ Important:
 
 - This endpoint is safe for UI diagnostics.
 - It returns credential presence as booleans only.
+- Unified readiness fields include `integration_type`, `required_credentials`, `required_scopes`, `scope_status`, `oauth_required`, `oauth_status`, `real_mode_configured`, `real_mode_blocker`, `data_access_level`, `next_user_action`, and `quota_cache_protected`.
 - Reddit remains `api_pending`; real API mode is disabled until approval is granted.
 - Crawler-later platforms are visible for roadmap planning but never real-selectable in the MVP.
-- YouTube appears in mock-selectable platforms. `real_selectable_platforms` includes `youtube` only when a local `YOUTUBE_API_KEY` is configured.
+- YouTube appears in mock-selectable platforms. `real_selectable_platforms` includes `youtube` only when `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY` are configured locally.
+- Douyin reports `integration_type=official_api_oauth`, `developer_access_status=obtained`, `app_type=web_app`, `required_scopes=["user_info", "item.comment"]`, `scope_status=item_comment_not_verified`, `oauth_required=true`, and `real_mode_blocker=oauth_and_scope_not_verified` until console verification is complete.
+- Weibo reports `real_mode_blocker=company_age_requirement_pending`; Reddit and Bilibili report approval-pending blockers; Xiaohongshu reports `comment_api_unknown_or_not_confirmed`.
 
 ## 0.2 Public Parser Status and Preview
 

@@ -347,6 +347,7 @@ def test_platform_status_is_complete_and_does_not_expose_credentials(
             monkeypatch.setenv(credential_name, marker)
             secret_markers.append(marker)
     monkeypatch.setenv("YOUTUBE_API_KEY", "youtube-key-secret-marker")
+    monkeypatch.setenv("YOUTUBE_ADAPTER_MODE", "real")
     secret_markers.append("youtube-key-secret-marker")
 
     response = client.get("/api/v1/platforms/status")
@@ -368,6 +369,7 @@ def test_platform_status_is_complete_and_does_not_expose_credentials(
     assert by_id["reddit"]["real_mode_available"] is False
     assert by_id["reddit"]["selectable_for_real"] is False
     assert by_id["youtube"]["status"] == "real_api_available_when_configured"
+    assert by_id["youtube"]["integration_type"] == "official_api"
     assert by_id["youtube"]["source_type"] == "youtube_data_api_v3"
     assert by_id["youtube"]["mock_available"] is True
     assert by_id["youtube"]["real_mode_available"] is True
@@ -375,7 +377,16 @@ def test_platform_status_is_complete_and_does_not_expose_credentials(
     assert by_id["youtube"]["api_pending"] is False
     assert by_id["youtube"]["real_mode_disabled"] is False
     assert by_id["youtube"]["credentials_required"] == ["YOUTUBE_API_KEY"]
+    assert by_id["youtube"]["required_credentials"] == ["YOUTUBE_API_KEY"]
     assert by_id["youtube"]["credentials_present"] == {"YOUTUBE_API_KEY": True}
+    assert by_id["youtube"]["credential_present"] is True
+    assert by_id["youtube"]["required_scopes"] == []
+    assert by_id["youtube"]["scope_status"] == "not_required"
+    assert by_id["youtube"]["oauth_required"] is False
+    assert by_id["youtube"]["real_mode_configured"] is True
+    assert by_id["youtube"]["real_mode_blocker"] is None
+    assert by_id["youtube"]["data_access_level"] == "public_video_comment_data"
+    assert by_id["youtube"]["quota_cache_protected"] is True
     assert by_id["youtube"]["selectable_for_mock"] is True
     assert by_id["youtube"]["selectable_for_real"] is True
     for platform_id in OFFICIAL_PLATFORM_IDS:
@@ -383,6 +394,7 @@ def test_platform_status_is_complete_and_does_not_expose_credentials(
         assert item["category"] == "official_api_planned"
         assert item["source_type"] == "official_api_adapter_scaffold"
         assert item["status"] == "official_api_planned"
+        assert item["integration_type"] in {"official_api_scaffold", "official_api_oauth"}
         assert item["mock_available"] is True
         assert item["real_mode_available"] is False
         assert item["api_approval_required"] is True
@@ -400,6 +412,13 @@ def test_platform_status_is_complete_and_does_not_expose_credentials(
             assert item["video_comment_scope_status"] == expected_video_scope
         if expected_blocker := OFFICIAL_PLATFORM_CONFIG[platform_id].get("real_mode_blocker"):
             assert item["real_mode_blocker"] == expected_blocker
+        assert "required_credentials" in item
+        assert item["credential_present"] is True
+        assert isinstance(item["required_scopes"], list)
+        assert isinstance(item["scope_status"], str)
+        assert isinstance(item["oauth_required"], bool)
+        assert isinstance(item["oauth_status"], str)
+        assert isinstance(item["next_user_action"], str)
         assert item["credentials_required"] == list(OFFICIAL_PLATFORM_CONFIG[platform_id]["credentials"])
         assert all(item["credentials_present"].values())
         assert item["selectable_for_mock"] is True
