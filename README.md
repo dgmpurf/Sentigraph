@@ -1,43 +1,76 @@
-# Sentigraph 舆情图谱系统
+# Sentigraph Public Opinion Intelligence
 
-Sentigraph 是一个 AI-powered public opinion analysis and risk monitoring system，用于围绕关键词监测公开舆情、分析情绪与话题、识别重复话术/疑似水军信号、计算舆情风险，并在桌面端仪表盘中展示图表、传播图谱和结构化舆情报告。
+Sentigraph is a desktop-first public-opinion intelligence MVP. It turns a keyword-driven case into normalized public comments, deterministic offline analysis, V1.5 topic-risk scoring, Chinese reports, monitoring and forecasting, ethical Simulation Lab scenario rehearsal, benchmark status, and platform/LLM safety diagnostics.
 
-当前项目处于 **desktop-first Web MVP** 阶段。系统优先使用本地 mock/offline 数据和确定性的规则/模板逻辑，暂不依赖真实爬虫、真实平台 API、OpenAI API 或任何外部 LLM API。
+The project is **demo-ready, not production-ready**. Default mode remains mock/offline. The optional YouTube real-data demo works only when a local ignored `.env` is configured with `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY`; automated tests never call the real YouTube API. Other platform APIs remain mock/scaffold/pending. Douyin Web App integration is still under console verification, and no real Douyin API call is implemented. The LLM provider remains mock.
 
-本项目还不是生产系统。
+GitHub Actions CI is intentionally disabled. Do not recreate `.github/workflows/ci.yml` unless explicitly requested; use the local validation commands below.
 
-## v6.3 Demo Package
+## Current Demo-Ready Status
 
-Sentigraph v6.3 is packaged for screenshot and recording production around the optional YouTube real-data end-to-end demo.
+- Real data source: YouTube public video/comment data can be manually fetched through the official YouTube Data API v3, attached to a case, and analyzed as `analysis_input_source=case_raw_data`.
+- Case flow: attached YouTube raw comments can feed Analysis Result, Summary Report, Markdown report export, Risk Monitor / Forecast, and Simulation Lab initialization.
+- Offline deterministic systems: analysis, V1.5 topic risk, Chinese report generation, monitoring, forecasting, Simulation Lab, and Simulation Lab strategy report export.
+- Mock system: LLM provider and any LLM-assisted behavior. No real OpenAI, DeepSeek, Qwen, or other external LLM API is called.
+- Pending systems: Douyin Web App OAuth, redirect URI, whitelist/test account, token flow, `item.comment`, and lawful `item_id` source; Xiaohongshu comment permissions; Reddit/Bilibili/Weibo approvals; other official platform APIs.
 
-Demo package docs:
+## Real vs Mock Boundary
 
-- `docs/demo_package.md` - product summary, local run commands, real-vs-mock boundaries, limitations, and safety notes.
-- `docs/demo_recording_script.md` - 3-minute and 8-minute recording scripts with page order and talking points.
-- `docs/demo_screenshot_checklist.md` - canonical 14-screen screenshot checklist.
-- `docs/youtube_real_data_demo.md` - manual YouTube real-data walkthrough and PowerShell commands.
+| Area | Current status | What is real | What is mock/offline | What is pending |
+| --- | --- | --- | --- | --- |
+| YouTube data | Optional real-data demo works when local `.env` is configured. | Public video/comment data via official YouTube Data API v3 with tiny limits and cache guardrails. | Default YouTube adapter mode is mock; automated tests use mocked responses. | Broader quota strategy, deeper reply crawling, and production credential handling. |
+| Analysis pipeline | Working for mock cases and attached raw-data cases. | Attached YouTube comments can become case raw data. | Sentiment/topic/risk/report logic is deterministic offline code. | Empirical calibration and production data-quality review. |
+| V1.5 risk model | Working offline. | No external service dependency. | Deterministic local scoring. | Future V2 dynamic model and validation. |
+| Chinese report | Working offline with Markdown export. | Can include YouTube-derived representative comments when raw data is attached. | Template/rule-based deterministic report builder. | PDF export and review workflow. |
+| Forecasting | Working offline from local snapshots. | No real-time external polling. | Deterministic MVP trend/forecast logic; not a guaranteed prediction. | Empirical calibration and production monitoring. |
+| Simulation Lab | Working offline, aggregate-level, human-review-oriented. | Can initialize from YouTube-based aggregate case analysis. | Deterministic bubble simulation, A/B comparison, visibility tradeoff model, and Markdown strategy report. | Richer animation, empirical calibration, PDF/export workflow, policy/legal review. |
+| LLM | Mock only. | Nothing real is called. | `MockProvider`, readiness metadata, and usage guardrails. | Real provider integration later after explicit safety gates. |
+| Douyin | Readiness scaffold only. | Developer access is recorded as obtained by the user. | Adapter remains mock/blocked; no real Douyin API calls. | Web App OAuth, HTTPS redirect URI, test whitelist, token flow, `item.comment`, and lawful `item_id` source verification. |
+| Xiaohongshu | Readiness/adapter scaffold. | Developer access is recorded as obtained by the user. | Mock adapter only. | Note/comment API permission confirmation. |
+| Reddit/Bilibili/Weibo | Mock/scaffold/pending. | No real collection in current demo. | Mock adapters or registry status. | Reddit/Bilibili approvals; Weibo company-age requirement; future official API work. |
+| Public parsers | Fixture-first safety scaffolds. | Sanitized fixture HTML only. | No live fetching by default. | Compliant live public-page pilot only after explicit review. |
 
-What v6.3 demonstrates:
+## Local Run Commands
 
-- Real: YouTube public video/comment data, only when a local ignored `.env` is configured and the manual YouTube flow is run.
-- Offline deterministic: analysis, V1.5 topic risk, Chinese reports, monitoring, forecasting, and Simulation Lab.
-- Mock: LLM provider; no real OpenAI, DeepSeek, Qwen, or other external LLM call is made.
-- Scaffold/mock: all other platform APIs unless future official permissions and implementations are added.
-- Pending: Douyin Web App OAuth and `item.comment` verification; no real Douyin API call is part of v6.3.
-
-Quick validation and demo commands:
+Run local validation from the repository root:
 
 ```cmd
 python -m pytest
 python scripts\run_offline_benchmarks.py
 npm --prefix frontend run build
+```
+
+Start the backend:
+
+```cmd
 python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+Start the frontend in a second terminal:
+
+```cmd
 npm --prefix frontend run dev
 ```
 
-GitHub Actions CI remains intentionally disabled. Do not recreate `.github/workflows/ci.yml` unless explicitly requested.
+Open the Vite URL, usually:
 
-## v5.6 Demo-Ready Snapshot
+```text
+http://127.0.0.1:5173
+```
+
+## Demo Package Docs
+
+- `docs/demo_package.md` - product summary, local run commands, real-vs-mock boundaries, limitations, and safety notes.
+- `docs/demo_recording_script.md` - 3-minute and 8-minute recording scripts with page order and talking points.
+- `docs/demo_screenshot_checklist.md` - canonical 14-screen screenshot checklist.
+- `docs/youtube_real_data_demo.md` - manual YouTube real-data walkthrough and PowerShell commands.
+- `docs/demo_story.md` and `docs/demo_checklist.md` - expanded demo story and local checklist.
+
+## Historical MVP Notes
+
+The sections below preserve older mock-first MVP background and implementation notes. Treat them as historical/default-mode context. The current status is the table above: default mode remains mock/offline, while the optional YouTube real-data path is implemented for local manual demos.
+
+### v5.6 Demo-Ready Snapshot
 
 Sentigraph v5.6 is packaged as a local, mock/offline demo MVP for showing the complete public-opinion intelligence workflow without real platform access or real LLM calls.
 
@@ -89,7 +122,7 @@ python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
 
 GitHub Actions CI is intentionally disabled for this project checkpoint. Do not recreate `.github/workflows/ci.yml` unless explicitly requested; use the local validation commands above.
 
-## 1. Project Overview
+### Legacy Mock-First Project Overview
 
 - 产品形态：PC/浏览器端深色科幻风格舆情分析仪表盘。
 - 当前定位：mock-first MVP，先验证完整产品链路和前后端数据契约。
@@ -103,7 +136,7 @@ GitHub Actions CI is intentionally disabled for this project checkpoint. Do not 
 关键词输入 -> 平台选择 -> mock 数据 -> 清洗/去重 -> 情绪/话题/水军/风险分析 -> 报告生成 -> 桌面仪表盘展示
 ```
 
-## 2. Current MVP Status
+### Legacy Mock-First MVP Status
 
 当前已经可用：
 
@@ -128,16 +161,16 @@ GitHub Actions CI is intentionally disabled for this project checkpoint. Do not 
 
 当前没有实现：
 
-- 真实平台 API 调用。
+- 除可选本地 YouTube Data API 演示外，其他真实平台 API 调用。
 - 真实爬虫。
 - OpenAI 或外部 LLM 调用。
 - MongoDB/Redis 生产级持久化。
 - 登录、鉴权、用户系统。
 - 生产级部署和监控。
 
-## 3. Features
+### Legacy Feature Inventory
 
-### MVP Available Features
+#### MVP Available Features
 
 - 关键词输入与 mock 关键词扩展。
 - mock 平台选择与 mock 分析流程。
@@ -169,7 +202,7 @@ GitHub Actions CI is intentionally disabled for this project checkpoint. Do not 
 - LLM Safety / 大模型安全状态 page: displays mock-first provider readiness, real-call disabled status, API key presence booleans only, and metadata-only usage guardrail summaries. It has no real-call toggle, API key input, or `.env` modification path.
 - Simulation Lab / 舆情预演沙盘 page: displays a deterministic, offline, aggregate-level bubble simulation using the existing backend toy simulator, allowed intervention controls, event cards, metrics, explanations, a step timeline, A/B intervention comparison, lawful content visibility tradeoff modeling, case-to-simulation initialization from completed aggregate case analysis, and safe Markdown strategy report export. It does not expose forbidden manipulation options, real API toggles, real LLM toggles, real platform action execution, or individual targeting outputs.
 
-### Planned Features
+#### Planned Features
 
 - 更完整的浏览器端 smoke test。
 - 后端响应中以兼容方式加入 `risk_model_version` 和中文风险等级展示字段。
@@ -178,7 +211,7 @@ GitHub Actions CI is intentionally disabled for this project checkpoint. Do not 
 - 真实平台 adapter 接口设计。
 - MongoDB/Redis/Celery 或调度任务支持。
 
-### Future Advanced Features
+#### Future Advanced Features
 
 - Ethical Simulation Lab: backend MVP scaffold, frontend bubble visualization, A/B intervention comparison, content visibility backlash modeling, case-to-simulation initialization, and Markdown strategy report export are available for deterministic, aggregate scenario rehearsal and transparent crisis-response comparison. It explicitly rejects fake consensus, bot amplification, fake events, covert seeding, deceptive diversion, illegal/covert suppression, and individual-level targeting. PDF export, richer animation, empirical calibration, and real-data replay remain future work. See `docs/simulation_lab_design.md`.
 - Reddit real adapter。
@@ -632,7 +665,7 @@ Base path:
 
 - mock-first：当前优先使用 mock/offline data。
 - no real crawlers yet。
-- no real platform APIs yet。
+- no unapproved real platform APIs; the only current real-data path is the optional local YouTube Data API demo with an ignored `.env` key。
 - no OpenAI API or external LLM API required；`LLM_PROVIDER=mock` 和 `LLM_ENABLE_REAL_CALLS=false` 是默认安全模式。
 - LLM usage guardrails currently record metadata only：provider/operation labels、字符数、估算 token、timestamp、success/failure category；不记录 prompt、原文、密钥、cookie、headers 或响应正文。
 - no login bypass。
@@ -698,7 +731,7 @@ Sentigraph/
 - 每次开始新任务前，先读 `AGENTS.md` 和 `docs/progress.md`。
 - 涉及 API、schema、frontend 数据映射时，对照 `docs/api_contract.md` 和 `docs/data_schema.md`。
 - 每个 major Codex task 后更新 `docs/progress.md`，除非任务明确要求只改某个文件。
-- 保持 mock-first，不要提前接入真实爬虫、真实平台 API 或外部 LLM。
+- 保持 mock-first；除已明确记录的本地 YouTube Data API 演示路径外，不要提前接入真实爬虫、未获批准的真实平台 API 或外部 LLM。
 - 保持 backend route thin，把业务逻辑放在 services。
 - 保持 frontend API 调用集中在 `frontend/src/api`。
 - 不要声称生产可用，除非后续完成真实数据、鉴权、持久化、部署和合规审查。

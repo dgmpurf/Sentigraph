@@ -8,6 +8,35 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### README and Project Status Consolidation
+
+Status: complete as a documentation/status cleanup checkpoint on 2026-05-21.
+
+Completed:
+
+- Reworked the top of `README.md` so the current state appears first: what Sentigraph is, current demo-ready status, what is real, what is offline deterministic, what is mock, what is pending, how to run locally, and where the demo docs live.
+- Added a concise real-vs-mock boundary table for YouTube data, analysis pipeline, V1.5 risk model, Chinese report, forecasting, Simulation Lab, LLM, Douyin, Xiaohongshu, Reddit/Bilibili/Weibo, and public parsers.
+- Clarified that default mode remains mock/offline, while the optional YouTube real-data demo works when local `.env` has `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY`.
+- Clarified that YouTube public video/comment data can enter case raw data, `analysis_input_source=case_raw_data`, Summary Report, Risk Monitor/Forecast, and Simulation Lab.
+- Clarified that analysis, risk, report, forecast, and Simulation Lab remain offline deterministic; LLM remains mock.
+- Clarified that Douyin remains Web App OAuth / `item.comment` pending and no real Douyin API call is implemented.
+- Moved old MVP material under a historical/default-mode note so older mock-first wording does not override the current status.
+
+Acceptance:
+
+- Backend tests passed with `python -m pytest` (`559 passed in 5.93s`).
+- Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`; safety line confirms no real LLM calls, no real platform API calls, and live fetch disabled).
+- Frontend build passed with `npm run build` from `frontend/` (`built in 8.15s`; existing non-blocking vendor chunk warning remains).
+- Documentation does not claim all platforms are real, does not claim real LLM is active, does not imply guaranteed predictions, does not imply Simulation Lab or content moderation executes real-world actions, does not imply individual targeting, and does not imply Douyin real API integration is complete.
+- GitHub Actions CI remains intentionally disabled.
+
+Next options:
+
+- Produce the actual screenshot set and short recording from the v6.3 demo package.
+- Continue Douyin console verification for Web App redirect URI, whitelist/test account, `item.comment`, token flow, and lawful `item_id` source.
+- Implement Douyin OAuth real mode only after `item.comment`, `redirect_uri`, whitelist/test account, token flow, and lawful `item_id` source are confirmed.
+- Keep real LLM integration as later work behind explicit safety gates.
+
 ### Real Data Source Readiness Framework
 
 Status: implemented, QA complete, and locally validated on 2026-05-19.
