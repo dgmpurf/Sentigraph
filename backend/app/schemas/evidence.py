@@ -72,6 +72,25 @@ EvidenceVerificationStatus = Literal[
 
 EvidenceTrustLabel = Literal["high", "medium", "low", "unverified", "rejected"]
 
+EvidenceReviewStatus = Literal[
+    "not_reviewed",
+    "review_needed",
+    "approved",
+    "rejected",
+    "marked_weak",
+    "needs_more_source",
+    "duplicate_merged",
+]
+
+EvidenceReviewDecision = Literal[
+    "approve",
+    "reject",
+    "mark_weak",
+    "request_more_source",
+    "merge_duplicate",
+    "reset_review",
+]
+
 
 class EvidenceNormalizationMetadata(BaseModel):
     normalized_from: str = "manual_payload"
@@ -139,6 +158,83 @@ class EvidenceTrustSummary(BaseModel):
     )
 
 
+class EvidenceReviewQueueItem(BaseModel):
+    evidence_id: str
+    case_id: str | None = None
+    platform: str = "uploaded_dataset"
+    evidence_type: EvidenceType = "body_text"
+    title: str | None = None
+    body_text_preview: str | None = None
+    comment_text_preview: str | None = None
+    url: str | None = None
+    provenance_type: EvidenceProvenanceType = "user_upload"
+    verification_status: EvidenceVerificationStatus = "needs_review"
+    trust_label: EvidenceTrustLabel = "unverified"
+    trust_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    risk_flags: list[str] = Field(default_factory=list)
+    duplicate_group_id: str | None = None
+    duplicate_count: int = Field(default=1, ge=1)
+    source_url_present: bool = False
+    user_attestation_required: bool = True
+    user_attestation_text: str | None = None
+    review_status: EvidenceReviewStatus = "not_reviewed"
+    review_reason_codes: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+    submitted_at: datetime | None = None
+
+
+class EvidenceReviewSummary(BaseModel):
+    case_id: str
+    total_evidence_count: int = 0
+    queue_count: int = 0
+    review_needed_count: int = 0
+    low_trust_count: int = 0
+    duplicate_group_count: int = 0
+    rejected_count: int = 0
+    approved_count: int = 0
+    marked_weak_count: int = 0
+    needs_more_source_count: int = 0
+    duplicate_merged_count: int = 0
+    queue_items: list[EvidenceReviewQueueItem] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "human_review_only": True,
+            "real_ai_review": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
+class EvidenceReviewDecisionRequest(BaseModel):
+    decision: EvidenceReviewDecision
+    reviewer_label: str | None = None
+    notes: str | None = None
+
+
+class EvidenceReviewDecisionResult(BaseModel):
+    case_id: str
+    evidence_id: str
+    decision: EvidenceReviewDecision
+    review_status: EvidenceReviewStatus
+    evidence_item: "EvidenceItem"
+    summary: EvidenceReviewSummary
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "human_review_only": True,
+            "real_ai_review": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
 _EVIDENCE_NUMERIC_FIELDS = ("like_count", "reply_count", "share_count", "view_count")
 
 
@@ -189,6 +285,11 @@ class EvidenceItem(BaseModel):
     duplicate_count: int = Field(default=1, ge=1)
     duplicate_group_size: int = Field(default=1, ge=1)
     risk_flags: list[str] = Field(default_factory=list)
+    review_status: EvidenceReviewStatus = "not_reviewed"
+    review_reason_codes: list[str] = Field(default_factory=list)
+    reviewed_at: datetime | None = None
+    reviewer_label: str | None = None
+    review_notes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod

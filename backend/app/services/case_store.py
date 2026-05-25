@@ -20,6 +20,9 @@ from app.schemas.evidence import (
     EvidenceImportPreviewResult,
     EvidenceIngestionBatch,
     EvidenceIngestionResult,
+    EvidenceReviewDecisionRequest,
+    EvidenceReviewDecisionResult,
+    EvidenceReviewSummary,
     EvidenceTrustSummary,
 )
 from app.services.evidence_import import (
@@ -32,8 +35,11 @@ from app.services.evidence_ingestion import (
     build_deduplication_summary,
     build_evidence_ingestion_result,
     build_evidence_items_from_raw_data,
+    build_review_summary,
     build_trust_summary,
     enrich_and_deduplicate_evidence_items,
+    apply_review_decision,
+    analysis_eligible_evidence_items,
     merge_evidence_items,
     normalize_manual_evidence_batch,
 )
@@ -256,6 +262,49 @@ def get_case_evidence_dedup_summary(case_id: str) -> EvidenceDeduplicationSummar
     return build_deduplication_summary(evidence_items)
 
 
+def get_case_evidence_review_summary(case_id: str) -> EvidenceReviewSummary | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    evidence_items = case.evidence_items
+    if not evidence_items and (case.raw_posts or case.raw_comments):
+        evidence_items = build_evidence_items_from_raw_data(
+            case_id=case_id,
+            raw_posts=case.raw_posts,
+            raw_comments=case.raw_comments,
+            crawl_metadata=case.crawl_metadata,
+        )
+    return build_review_summary(case_id, evidence_items)
+
+
+def review_case_evidence_item(
+    case_id: str,
+    evidence_id: str,
+    payload: EvidenceReviewDecisionRequest,
+) -> EvidenceReviewDecisionResult | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    decision = apply_review_decision(
+        case_id=case_id,
+        evidence_items=case.evidence_items,
+        evidence_id=evidence_id,
+        request=payload,
+        reviewed_at=repository.next_timestamp(),
+    )
+    if not decision:
+        return None
+    updated_items, result = decision
+    repository.save_case_evidence(
+        case_id,
+        evidence_items=updated_items,
+        updated_at=repository.next_timestamp(),
+    )
+    return result
+
+
 def attach_case_evidence(case_id: str, payload: EvidenceIngestionBatch) -> EvidenceIngestionResult | None:
     repository = get_case_repository()
     case = repository.get_case(case_id)
@@ -441,7 +490,7 @@ def _build_monitoring_status(
 
 def _case_representative_comments(case: AnalysisCaseDetail, pipeline) -> list[str]:
     comments = _pipeline_representative_comments(pipeline)
-    for item in case.evidence_items:
+    for item in analysis_eligible_evidence_items(case.evidence_items):
         text = (item.comment_text or item.body_text or "").strip()
         if text and text not in comments:
             comments.append(text)
@@ -483,6 +532,7 @@ def _build_markdown(case: AnalysisCaseDetail) -> str:
         f"- Evidence trust labels: {evidence_trust_summary}",
         f"- Evidence review needed: {report.evidence_review_needed_count}",
         f"- Duplicate evidence collapsed: {report.evidence_duplicate_item_count}",
+        f"- Rejected evidence excluded from analysis: {report.evidence_review_excluded_count}",
         "",
         "## 舆情总览",
         "",

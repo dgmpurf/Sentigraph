@@ -18,6 +18,11 @@ from app.schemas.evidence import (
     EvidenceIngestionResult,
     EvidenceItem,
     EvidenceNormalizationMetadata,
+    EvidenceReviewDecisionRequest,
+    EvidenceReviewDecisionResult,
+    EvidenceReviewQueueItem,
+    EvidenceReviewSummary,
+    EvidenceReviewStatus,
     EvidenceSourceType,
     EvidenceTrustSummary,
 )
@@ -42,6 +47,8 @@ SECRET_TEXT_PATTERN = re.compile(
     r"\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|cookie|authorization)\b\s*[:=]\s*([^\s,;]+)",
     re.IGNORECASE,
 )
+
+NON_ANALYSIS_REVIEW_STATUSES = {"rejected"}
 
 MANUAL_TEXT_FIELDS = (
     "title",
@@ -389,6 +396,17 @@ def enrich_evidence_item(item: EvidenceItem) -> EvidenceItem:
         source_url_present=source_url_present,
         risk_flags=risk_flags,
     )
+    if normalized.review_status == "rejected" or normalized.verification_status == "rejected":
+        verification_status = "rejected"
+        trust_score = 0.0
+        trust_label = "rejected"
+        risk_flags = _dedupe_warnings([*risk_flags, "human_review_rejected"])
+        verification_notes = _dedupe_warnings([*verification_notes, "Human review rejected this evidence for analysis by default."])
+    elif normalized.review_status == "marked_weak":
+        trust_score = min(trust_score, 0.35)
+        trust_label = _trust_label_for_score(trust_score, verification_status, [*risk_flags, "marked_weak_evidence"])
+        risk_flags = _dedupe_warnings([*risk_flags, "marked_weak_evidence"])
+        verification_notes = _dedupe_warnings([*verification_notes, "Human review marked this as weak evidence."])
     duplicate_group_id = normalized.duplicate_group_id or f"dup_{normalized_content_hash[:16]}"
     source_capture_method = normalized.source_capture_method or _capture_method_for_provenance(provenance_type)
     user_attestation_required = provenance_type in {"manual_url", "manual_text", "screenshot_transcription", "user_upload"}
@@ -532,6 +550,206 @@ def build_trust_summary(
         low_trust_count=int(trust_distribution.get("low", 0)),
         unverified_count=int(trust_distribution.get("unverified", 0)),
         duplicate_summary=dedup_summary or build_deduplication_summary(unique_items),
+    )
+
+
+def analysis_eligible_evidence_items(evidence_items: list[EvidenceItem]) -> list[EvidenceItem]:
+    """Return deduplicated evidence that is usable for deterministic analysis."""
+
+    return [
+        item
+        for item in enrich_and_deduplicate_evidence_items(evidence_items)
+        if item.review_status not in NON_ANALYSIS_REVIEW_STATUSES
+        and item.verification_status != "rejected"
+        and item.trust_label != "rejected"
+    ]
+
+
+def build_review_summary(case_id: str, evidence_items: list[EvidenceItem]) -> EvidenceReviewSummary:
+    unique_items = enrich_and_deduplicate_evidence_items(evidence_items)
+    queue_items = [
+        _review_queue_item(item)
+        for item in unique_items
+        if _include_in_review_queue(item)
+    ]
+    return EvidenceReviewSummary(
+        case_id=case_id,
+        total_evidence_count=len(unique_items),
+        queue_count=len(queue_items),
+        review_needed_count=sum(1 for item in queue_items if item.review_status == "review_needed"),
+        low_trust_count=sum(1 for item in unique_items if item.trust_label in {"low", "unverified", "rejected"}),
+        duplicate_group_count=sum(1 for item in unique_items if max(1, int(item.duplicate_count or 1)) > 1),
+        rejected_count=sum(1 for item in unique_items if item.review_status == "rejected"),
+        approved_count=sum(1 for item in unique_items if item.review_status == "approved"),
+        marked_weak_count=sum(1 for item in unique_items if item.review_status == "marked_weak"),
+        needs_more_source_count=sum(1 for item in unique_items if item.review_status == "needs_more_source"),
+        duplicate_merged_count=sum(1 for item in unique_items if item.review_status == "duplicate_merged"),
+        queue_items=queue_items,
+    )
+
+
+def apply_review_decision(
+    *,
+    case_id: str,
+    evidence_items: list[EvidenceItem],
+    evidence_id: str,
+    request: EvidenceReviewDecisionRequest,
+    reviewed_at: datetime | None = None,
+) -> tuple[list[EvidenceItem], EvidenceReviewDecisionResult] | None:
+    unique_items = enrich_and_deduplicate_evidence_items(evidence_items)
+    updated_items: list[EvidenceItem] = []
+    updated_item: EvidenceItem | None = None
+    timestamp = reviewed_at or datetime.now(timezone.utc)
+    for item in unique_items:
+        if item.evidence_id != evidence_id:
+            updated_items.append(item)
+            continue
+        updated_item = _apply_decision_to_item(item, request, reviewed_at=timestamp)
+        updated_items.append(updated_item)
+    if updated_item is None:
+        return None
+    deduped_items = enrich_and_deduplicate_evidence_items(updated_items)
+    persisted_item = next((item for item in deduped_items if item.evidence_id == updated_item.evidence_id), updated_item)
+    result = EvidenceReviewDecisionResult(
+        case_id=case_id,
+        evidence_id=persisted_item.evidence_id,
+        decision=request.decision,
+        review_status=persisted_item.review_status,
+        evidence_item=persisted_item,
+        summary=build_review_summary(case_id, deduped_items),
+    )
+    return deduped_items, result
+
+
+def _include_in_review_queue(item: EvidenceItem) -> bool:
+    if item.review_status in {"approved", "rejected", "marked_weak", "needs_more_source", "duplicate_merged"}:
+        return True
+    return bool(_review_reason_codes(item))
+
+
+def _review_queue_item(item: EvidenceItem) -> EvidenceReviewQueueItem:
+    reason_codes = _review_reason_codes(item)
+    review_status = _effective_review_status(item, reason_codes)
+    return EvidenceReviewQueueItem(
+        evidence_id=item.evidence_id,
+        case_id=item.case_id,
+        platform=item.platform,
+        evidence_type=item.evidence_type,
+        title=item.title,
+        body_text_preview=_trim_text(item.body_text or "", 180) or None,
+        comment_text_preview=_trim_text(item.comment_text or "", 180) or None,
+        url=item.source_url or item.url,
+        provenance_type=item.provenance_type,
+        verification_status=item.verification_status,
+        trust_label=item.trust_label,
+        trust_score=item.trust_score,
+        risk_flags=item.risk_flags,
+        duplicate_group_id=item.duplicate_group_id,
+        duplicate_count=item.duplicate_count,
+        source_url_present=item.source_url_present,
+        user_attestation_required=item.user_attestation_required,
+        user_attestation_text=item.user_attestation_text,
+        review_status=review_status,
+        review_reason_codes=reason_codes,
+        created_at=item.created_at,
+        submitted_at=item.submitted_at,
+    )
+
+
+def _review_reason_codes(item: EvidenceItem) -> list[str]:
+    reasons: list[str] = []
+    if item.verification_status in {"needs_review", "source_url_provided_unverified", "user_attested_unverified", "screenshot_unverified"}:
+        reasons.append(f"verification:{item.verification_status}")
+    if item.trust_label in {"low", "unverified", "rejected"}:
+        reasons.append(f"trust:{item.trust_label}")
+    if item.provenance_type == "screenshot_transcription":
+        reasons.append("provenance:screenshot_transcription")
+    if not item.source_url_present:
+        reasons.append("source_url_missing")
+    if max(1, int(item.duplicate_count or 1)) > 1:
+        reasons.append("duplicate_group")
+    if item.user_attestation_required and not (item.user_attestation_text or "").strip():
+        reasons.append("user_attestation_missing")
+    reasons.extend(f"risk_flag:{flag}" for flag in item.risk_flags if flag)
+    if item.review_status in {"rejected", "marked_weak", "needs_more_source", "duplicate_merged"}:
+        reasons.append(f"review_status:{item.review_status}")
+    return _dedupe_warnings(reasons)
+
+
+def _effective_review_status(item: EvidenceItem, reason_codes: list[str] | None = None) -> EvidenceReviewStatus:
+    if item.review_status != "not_reviewed":
+        return item.review_status
+    active_reasons = reason_codes if reason_codes is not None else _review_reason_codes(item)
+    if active_reasons:
+        return "review_needed"
+    return "not_reviewed"
+
+
+def _apply_decision_to_item(
+    item: EvidenceItem,
+    request: EvidenceReviewDecisionRequest,
+    *,
+    reviewed_at: datetime,
+) -> EvidenceItem:
+    notes = list(item.review_notes)
+    if request.notes:
+        notes.append(request.notes)
+    reviewer_label = request.reviewer_label or item.reviewer_label
+    base_update = {
+        "reviewed_at": reviewed_at,
+        "reviewer_label": reviewer_label,
+        "review_notes": _dedupe_warnings(notes),
+    }
+    if request.decision == "approve":
+        return item.model_copy(update={**base_update, "review_status": "approved"}, deep=True)
+    if request.decision == "reject":
+        flags = _dedupe_warnings([*item.risk_flags, "human_review_rejected"])
+        return item.model_copy(
+            update={
+                **base_update,
+                "review_status": "rejected",
+                "verification_status": "rejected",
+                "trust_score": 0.0,
+                "trust_label": "rejected",
+                "risk_flags": flags,
+            },
+            deep=True,
+        )
+    if request.decision == "mark_weak":
+        flags = _dedupe_warnings([*item.risk_flags, "marked_weak_evidence"])
+        return item.model_copy(
+            update={
+                **base_update,
+                "review_status": "marked_weak",
+                "trust_score": min(item.trust_score, 0.35),
+                "trust_label": "low",
+                "risk_flags": flags,
+            },
+            deep=True,
+        )
+    if request.decision == "request_more_source":
+        flags = _dedupe_warnings([*item.risk_flags, "source_review_requested"])
+        return item.model_copy(
+            update={**base_update, "review_status": "needs_more_source", "risk_flags": flags},
+            deep=True,
+        )
+    if request.decision == "merge_duplicate":
+        flags = _dedupe_warnings([*item.risk_flags, "duplicate_merged"])
+        return item.model_copy(
+            update={**base_update, "review_status": "duplicate_merged", "risk_flags": flags},
+            deep=True,
+        )
+    return item.model_copy(
+        update={
+            "review_status": "not_reviewed",
+            "reviewed_at": None,
+            "reviewer_label": None,
+            "review_notes": [],
+            "verification_status": "needs_review",
+            "trust_label": "unverified",
+            "risk_flags": [flag for flag in item.risk_flags if flag not in {"human_review_rejected", "marked_weak_evidence", "source_review_requested", "duplicate_merged"}],
+        },
+        deep=True,
     )
 
 

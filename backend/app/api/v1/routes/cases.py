@@ -16,6 +16,9 @@ from app.schemas.evidence import (
     EvidenceImportPreviewResult,
     EvidenceIngestionBatch,
     EvidenceIngestionResult,
+    EvidenceReviewDecisionRequest,
+    EvidenceReviewDecisionResult,
+    EvidenceReviewSummary,
     EvidenceTrustSummary,
 )
 from app.services.evidence_import import EvidenceImportError
@@ -35,12 +38,14 @@ from app.services.case_store import (
     export_case_markdown,
     get_case,
     get_case_evidence_dedup_summary,
+    get_case_evidence_review_summary,
     get_case_evidence_trust_summary,
     list_case_evidence,
     list_case_alerts,
     list_case_snapshots,
     list_cases,
     preview_case_evidence_import,
+    review_case_evidence_item,
     run_case,
     run_case_crawl,
     run_monitoring_check,
@@ -115,6 +120,22 @@ def get_case_evidence_dedup(case_id: str) -> EvidenceDeduplicationSummary:
     return result
 
 
+@router.get("/{case_id}/evidence/review-queue", response_model=EvidenceReviewSummary)
+def get_case_evidence_review_queue(case_id: str) -> EvidenceReviewSummary:
+    result = get_case_evidence_review_summary(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.get("/{case_id}/evidence/review-summary", response_model=EvidenceReviewSummary)
+def get_case_evidence_review_summary_route(case_id: str) -> EvidenceReviewSummary:
+    result = get_case_evidence_review_summary(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
 @router.post("/{case_id}/evidence/attach", response_model=EvidenceIngestionResult)
 def attach_evidence_to_case(case_id: str, payload: EvidenceIngestionBatch) -> EvidenceIngestionResult:
     try:
@@ -132,6 +153,18 @@ def attach_evidence_to_case(case_id: str, payload: EvidenceIngestionBatch) -> Ev
         ) from exc
     if not result:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.post("/{case_id}/evidence/{evidence_id}/review", response_model=EvidenceReviewDecisionResult)
+def review_evidence_for_case(
+    case_id: str,
+    evidence_id: str,
+    payload: EvidenceReviewDecisionRequest,
+) -> EvidenceReviewDecisionResult:
+    result = review_case_evidence_item(case_id, evidence_id, payload)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case or evidence item not found.")
     return result
 
 

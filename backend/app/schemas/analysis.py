@@ -112,3 +112,4 @@ class AnalysisResultResponse(BaseModel):
     evidence_review_needed_count: int = 0
     evidence_unique_item_count: int = 0
     evidence_duplicate_item_count: int = 0
+    evidence_review_excluded_count: int = 0

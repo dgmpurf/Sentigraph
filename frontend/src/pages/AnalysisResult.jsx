@@ -149,6 +149,7 @@ function buildEvidenceSummary({ analysis, currentCase }) {
   const trustLabels = {}
   const verificationStatuses = {}
   const provenanceTypes = {}
+  const reviewStatuses = {}
   const riskFlags = {}
   const itemSources = {}
   const itemTypes = {}
@@ -167,9 +168,11 @@ function buildEvidenceSummary({ analysis, currentCase }) {
     const trustLabel = item.trust_label || 'unknown'
     const verificationStatus = item.verification_status || 'unknown'
     const provenanceType = item.provenance_type || 'unknown'
+    const reviewStatus = item.review_status || 'not_reviewed'
     trustLabels[trustLabel] = (trustLabels[trustLabel] || 0) + 1
     verificationStatuses[verificationStatus] = (verificationStatuses[verificationStatus] || 0) + 1
     provenanceTypes[provenanceType] = (provenanceTypes[provenanceType] || 0) + 1
+    reviewStatuses[reviewStatus] = (reviewStatuses[reviewStatus] || 0) + 1
     if (item.source_url_present || item.source_url || item.url) sourceUrlPresent += 1
     else sourceUrlMissing += 1
     if (!analysis?.evidence_review_needed_count && (['low', 'unverified', 'rejected'].includes(trustLabel) || verificationStatus === 'needs_review')) {
@@ -192,7 +195,9 @@ function buildEvidenceSummary({ analysis, currentCase }) {
     provenanceTypes: Object.keys(analysis?.evidence_provenance_type_distribution || {}).length
       ? analysis.evidence_provenance_type_distribution
       : provenanceTypes,
+    reviewExcluded: Number(analysis?.evidence_review_excluded_count || 0),
     reviewNeeded,
+    reviewStatuses,
     riskFlags,
     sourceDistribution: Object.keys(analysisSources).length ? analysisSources : itemSources,
     sourceUrlMissing,
@@ -308,6 +313,7 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
                   <DistributionTags color="magenta" values={evidenceSummary.provenanceTypes} />
                   <DistributionTags color="lime" values={evidenceSummary.trustLabels} />
                   <DistributionTags color="blue" values={evidenceSummary.verificationStatuses} />
+                  <DistributionTags color="volcano" values={evidenceSummary.reviewStatuses} />
                   <Tag color={evidenceSummary.sourceUrlMissing ? 'orange' : 'green'}>
                     source_url_present: {evidenceSummary.sourceUrlPresent}/{evidenceSummary.count}
                   </Tag>
@@ -316,6 +322,7 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
                     attestation_missing: {evidenceSummary.riskFlags?.user_attestation_missing || 0}
                   </Tag>
                   <Tag color={evidenceSummary.duplicateItems ? 'orange' : 'default'}>duplicates collapsed: {evidenceSummary.duplicateItems}</Tag>
+                  {evidenceSummary.reviewExcluded ? <Tag color="red">rejected excluded: {evidenceSummary.reviewExcluded}</Tag> : null}
                 </Space>
                 {Object.keys(evidenceSummary.riskFlags).length ? (
                   <Space size={[4, 4]} wrap>
@@ -328,6 +335,13 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
                     message="部分证据来自用户上传或手动录入，需结合来源和人工复核判断。"
                     showIcon
                     type="warning"
+                  />
+                ) : null}
+                {evidenceSummary.reviewExcluded ? (
+                  <Alert
+                    message="Rejected evidence was excluded from this deterministic analysis by default."
+                    showIcon
+                    type="info"
                   />
                 ) : null}
                 {evidenceSummary.titles.length ? (

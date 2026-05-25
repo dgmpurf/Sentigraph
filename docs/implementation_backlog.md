@@ -1,12 +1,48 @@
 # Sentigraph Implementation Backlog
 
-Last updated: 2026-05-25
+Last updated: 2026-05-26
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
 
-CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate `.github/workflows/ci.yml` unless explicitly requested. Use local/Codex validation commands such as `python -m pytest` and `npm run build`; future CI can be reconsidered only if cost and notification concerns are resolved.
+CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate `.github/workflows/ci.yml` unless explicitly requested. Use local/Codex validation commands from the repository root: `python -m pytest`, `python scripts/run_offline_benchmarks.py`, and `npm --prefix frontend run build`; future CI can be reconsidered only if cost and notification concerns are resolved.
 
 ## Completed Pre-v1.0 Hardening Items
+
+### Evidence Review Queue MVP
+
+Status: implemented on 2026-05-25; browser-smoke QA complete on 2026-05-26.
+
+Completed:
+
+- Extended `EvidenceItem` with review status, review reason codes, reviewer label, review notes, and reviewed time.
+- Added `EvidenceReviewQueueItem`, `EvidenceReviewSummary`, `EvidenceReviewDecisionRequest`, and `EvidenceReviewDecisionResult`.
+- Added `GET /api/v1/cases/{case_id}/evidence/review-queue`, `GET /api/v1/cases/{case_id}/evidence/review-summary`, and `POST /api/v1/cases/{case_id}/evidence/{evidence_id}/review`.
+- Review queue includes low-trust, unverified, screenshot/transcription, source-url-missing, duplicate, attestation-missing, and risk-flagged evidence.
+- Human decisions support approve, reject, mark weak, request more source, merge duplicate, and reset review.
+- Rejected evidence remains stored but is excluded from default `case_evidence_items` analysis and representative comments.
+- Duplicate evidence remains collapsed so repeated submissions do not directly inflate sentiment, topic, or risk counts.
+- Added a Cases-page `Evidence Review / 证据复核` panel with queue counts, filters, trust/provenance/review fields, warnings, and decision actions.
+- Analysis Result and Summary Report now surface review-needed and rejected-excluded evidence notes.
+- Added `docs/evidence_review_workflow.md`.
+- Browser smoke verified the Cases queue, summary counts, filters, decision actions, rejected-evidence exclusion, low-trust/unverified report warnings, no screenshot/AI authenticity overclaim, no raw object rendering, and existing page navigation.
+- Fixed the Simulation Lab benchmark pytest working-directory false failure by using the repository-root `BENCHMARK_DIR` in the test instead of a relative `Path("benchmarks")`.
+
+Acceptance:
+
+- The workflow is human review only; no real AI review is implemented.
+- Screenshots and transcriptions are not called verified.
+- Rejecting evidence excludes it from analysis by default without deleting the normalized audit record.
+- `case_raw_data` still wins over `case_evidence_items`; evidence still wins over mock fallback.
+- CSV/Excel import, Manual URL Evidence, YouTube raw-data flow, trust/dedup summaries, and mock fallback remain compatible.
+- No real APIs, real search APIs, real YouTube/Douyin/Bilibili APIs, real LLM APIs, URL fetching, scraping, cookies, login/captcha/anti-bot bypasses, MediaCrawler, or secret exposure are introduced.
+- Latest validation passed with `python -m pytest` from the repository root, `python scripts/run_offline_benchmarks.py`, and `npm --prefix frontend run build`; the direct `backend/` working-directory fixture-path false failure is fixed.
+
+Future tasks:
+
+- Add optional review history/audit timeline only if demos need it.
+- Large-scale evidence ingestion remains future work after review controls are stable.
+- AI-assisted review remains future work behind explicit safety gates and must not claim authenticity verification.
+- Search Discovery candidate-review UI remains future work.
 
 ### Evidence Trust, Provenance, and Deduplication
 

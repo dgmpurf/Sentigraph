@@ -36,13 +36,15 @@ GitHub Actions CI is intentionally disabled. Do not recreate `.github/workflows/
 
 ## Local Run Commands
 
-Run local validation from the repository root:
+Run local validation from the repository root. This is the canonical working directory for local/Codex validation:
 
 ```cmd
 python -m pytest
 python scripts\run_offline_benchmarks.py
 npm --prefix frontend run build
 ```
+
+The backend simulation benchmark test resolves benchmark fixtures through the repository-root benchmark path, so accidental `backend/` working-directory test runs should not fail because of missing `benchmarks/*.json` fixtures. The root command remains the recommended full-suite entry point.
 
 Start the backend:
 

@@ -463,6 +463,191 @@ def test_trust_summary_endpoint_reports_distributions() -> None:
     assert body["warning_counts"]["user_attestation_missing"] == 1
 
 
+def test_review_queue_lists_needs_review_screenshot_missing_source_and_duplicate_evidence() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    duplicate_item = {
+        "evidence_type": "comment",
+        "comment_text": "Repeated complaint should collapse but still be review-visible.",
+        "url": "https://example.test/thread?utm_source=tracking",
+        "user_attestation_text": "I confirm lawful source.",
+    }
+    response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={
+            "source": {
+                "platform": "public_web",
+                "source_type": "public_web",
+                "acquisition_mode": "manual_url",
+            },
+            "evidence_items": [
+                {
+                    "evidence_type": "comment",
+                    "comment_text": "Screenshot transcription still needs source verification.",
+                    "source_capture_method": "screenshot_transcription",
+                    "provenance_type": "screenshot_transcription",
+                },
+                {
+                    "evidence_type": "comment",
+                    "comment_text": "Manual evidence without a URL should request source review.",
+                    "user_attestation_text": "I confirm lawful source.",
+                },
+                duplicate_item,
+                duplicate_item,
+            ],
+        },
+    )
+    assert response.status_code == 200
+
+    queue_response = client.get(f"/api/v1/cases/{case_id}/evidence/review-queue")
+
+    assert queue_response.status_code == 200
+    body = queue_response.json()
+    assert body["queue_count"] == 3
+    reason_codes = {code for item in body["queue_items"] for code in item["review_reason_codes"]}
+    assert "provenance:screenshot_transcription" in reason_codes
+    assert "source_url_missing" in reason_codes
+    assert "duplicate_group" in reason_codes
+    assert body["duplicate_group_count"] == 1
+    assert body["safe_mode"]["real_ai_review"] is False
+
+
+def test_official_api_high_trust_evidence_is_not_in_review_queue_unless_flagged(monkeypatch) -> None:
+    case_id = _create_case(platforms=["youtube"])
+
+    def fake_start_crawl(payload):
+        return _crawl_response()
+
+    monkeypatch.setattr("app.services.case_store.start_crawl_with_adapters", fake_start_crawl)
+    crawl_response = client.post(f"/api/v1/cases/{case_id}/crawl/start", json={"limit": 3})
+    assert crawl_response.status_code == 200
+
+    queue_response = client.get(f"/api/v1/cases/{case_id}/evidence/review-queue")
+
+    assert queue_response.status_code == 200
+    assert queue_response.json()["queue_count"] == 0
+
+
+def test_review_decisions_update_status_and_analysis_excludes_rejected_evidence() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={
+            "source": {
+                "platform": "public_web",
+                "source_type": "public_web",
+                "acquisition_mode": "manual_url",
+            },
+            "evidence_items": [
+                {
+                    "evidence_type": "comment",
+                    "comment_text": "Approved evidence should remain in representative comments.",
+                    "url": "https://example.test/approved",
+                    "user_attestation_text": "I confirm lawful source.",
+                },
+                {
+                    "evidence_type": "comment",
+                    "comment_text": "Rejected evidence should not appear in representative comments.",
+                    "url": "https://example.test/rejected",
+                    "user_attestation_text": "I confirm lawful source.",
+                },
+                {
+                    "evidence_type": "comment",
+                    "comment_text": "Weak evidence remains usable but should stay warning-tagged.",
+                    "user_attestation_text": "I confirm lawful source.",
+                },
+                {
+                    "evidence_type": "comment",
+                    "comment_text": "Evidence needs a better source URL before full confidence.",
+                },
+            ],
+        },
+    )
+    assert response.status_code == 200
+    items = response.json()["evidence_items"]
+    ids_by_text = {item["comment_text"]: item["evidence_id"] for item in items}
+
+    approve_response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/{ids_by_text['Approved evidence should remain in representative comments.']}/review",
+        json={"decision": "approve", "reviewer_label": "qa"},
+    )
+    reject_response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/{ids_by_text['Rejected evidence should not appear in representative comments.']}/review",
+        json={"decision": "reject", "notes": "Not relevant to this event."},
+    )
+    weak_response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/{ids_by_text['Weak evidence remains usable but should stay warning-tagged.']}/review",
+        json={"decision": "mark_weak"},
+    )
+    source_response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/{ids_by_text['Evidence needs a better source URL before full confidence.']}/review",
+        json={"decision": "request_more_source"},
+    )
+
+    assert approve_response.status_code == 200
+    assert approve_response.json()["review_status"] == "approved"
+    assert reject_response.status_code == 200
+    assert reject_response.json()["review_status"] == "rejected"
+    assert weak_response.status_code == 200
+    assert weak_response.json()["review_status"] == "marked_weak"
+    assert source_response.status_code == 200
+    assert source_response.json()["review_status"] == "needs_more_source"
+
+    summary_response = client.get(f"/api/v1/cases/{case_id}/evidence/review-summary")
+    assert summary_response.status_code == 200
+    summary = summary_response.json()
+    assert summary["approved_count"] == 1
+    assert summary["rejected_count"] == 1
+    assert summary["marked_weak_count"] == 1
+    assert summary["needs_more_source_count"] == 1
+
+    run_response = client.post(f"/api/v1/cases/{case_id}/run")
+    assert run_response.status_code == 200
+    body = run_response.json()
+    representative_comments = body["report"]["representative_comments"]
+    assert body["analysis_input_source"] == "case_evidence_items"
+    assert body["analysis_result"]["evidence_item_count"] == 3
+    assert body["analysis_result"]["evidence_review_excluded_count"] == 1
+    assert any("Approved evidence" in comment for comment in representative_comments)
+    assert not any("Rejected evidence" in comment for comment in representative_comments)
+
+
+def test_merge_duplicate_review_status_preserves_collapse_without_inflating_counts() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    duplicate_item = {
+        "evidence_type": "comment",
+        "comment_text": "Duplicate group should be merged by human review.",
+        "url": "https://example.test/duplicate",
+        "user_attestation_text": "I confirm lawful source.",
+    }
+    response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={
+            "source": {
+                "platform": "public_web",
+                "source_type": "public_web",
+                "acquisition_mode": "manual_url",
+            },
+            "evidence_items": [duplicate_item, duplicate_item],
+        },
+    )
+    assert response.status_code == 200
+    item = response.json()["evidence_items"][0]
+
+    review_response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/{item['evidence_id']}/review",
+        json={"decision": "merge_duplicate"},
+    )
+    assert review_response.status_code == 200
+    assert review_response.json()["review_status"] == "duplicate_merged"
+
+    run_response = client.post(f"/api/v1/cases/{case_id}/run")
+    assert run_response.status_code == 200
+    body = run_response.json()
+    assert body["analysis_result"]["evidence_item_count"] == 1
+    assert body["analysis_result"]["evidence_duplicate_item_count"] == 1
+    assert body["analysis_result"]["evidence_review_excluded_count"] == 0
+
+
 def test_raw_comments_take_priority_over_evidence_items_when_both_exist(monkeypatch) -> None:
     case_id = _create_case(platforms=["youtube"])
     attach_response = client.post(

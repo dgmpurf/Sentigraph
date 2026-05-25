@@ -164,6 +164,27 @@ export function buildPublicOpinionReportModel({ analysis, recommendation, summar
       recommendation?.analysis_input_source ||
       analysis?.analysis_input_source ||
       '',
+    evidenceReviewNeededCount: Number(
+      normalizedReport?.evidence_review_needed_count ||
+        summary?.evidence_review_needed_count ||
+        recommendation?.evidence_review_needed_count ||
+        analysis?.evidence_review_needed_count ||
+        0,
+    ),
+    evidenceReviewExcludedCount: Number(
+      normalizedReport?.evidence_review_excluded_count ||
+        summary?.evidence_review_excluded_count ||
+        recommendation?.evidence_review_excluded_count ||
+        analysis?.evidence_review_excluded_count ||
+        0,
+    ),
+    evidenceDuplicateItemCount: Number(
+      normalizedReport?.evidence_duplicate_item_count ||
+        summary?.evidence_duplicate_item_count ||
+        recommendation?.evidence_duplicate_item_count ||
+        analysis?.evidence_duplicate_item_count ||
+        0,
+    ),
     generatedFromMockPipeline: Boolean(normalizedReport?.generated_from_mock_pipeline),
     hasSummaryData: Boolean(summary),
     hasRecommendationData: Boolean(recommendation),

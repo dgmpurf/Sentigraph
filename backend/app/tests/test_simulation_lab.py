@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -28,7 +26,7 @@ from app.services.simulation.simulation_engine import (
     create_misinformation_correction_scenario,
     run_simulation,
 )
-from scripts.run_offline_benchmarks import _run_simulation_lab_benchmark
+from scripts.run_offline_benchmarks import BENCHMARK_DIR, _run_simulation_lab_benchmark
 
 
 client = TestClient(app)
@@ -515,7 +513,7 @@ def test_simulation_api_accepts_visibility_intervention_payload() -> None:
 
 
 def test_simulation_lab_offline_benchmark_suite_passes() -> None:
-    result = _run_simulation_lab_benchmark(Path("benchmarks"))
+    result = _run_simulation_lab_benchmark(BENCHMARK_DIR)
 
     assert result["suite"] == "simulation_lab"
     assert result["status"] == "pass"

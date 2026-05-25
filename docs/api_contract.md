@@ -1539,6 +1539,9 @@ GET /api/v1/cases/{case_id}/evidence
 POST /api/v1/cases/{case_id}/evidence/attach
 GET /api/v1/cases/{case_id}/evidence/trust-summary
 GET /api/v1/cases/{case_id}/evidence/dedup-summary
+GET /api/v1/cases/{case_id}/evidence/review-queue
+GET /api/v1/cases/{case_id}/evidence/review-summary
+POST /api/v1/cases/{case_id}/evidence/{evidence_id}/review
 ```
 
 `GET /cases/{case_id}/evidence` returns a normalized case-level evidence view. If a case has `evidence_items`, the endpoint returns them directly. If the case only has `raw_posts` / `raw_comments`, it derives evidence items from those raw records. If neither exists, it returns `status="empty"`.
@@ -1548,6 +1551,40 @@ GET /api/v1/cases/{case_id}/evidence/dedup-summary
 Manual URL evidence is a first-class safe attach mode. It uses the same attach endpoint with `acquisition_mode="manual_url"` and stores the URL as plain text review context only. The backend does not fetch the URL, follow links, run a parser, use cookies, scrape, call real APIs, or call real LLM APIs. At least one of `title`, `body_text`, or `comment_text` is required for every manual URL evidence item. Secret-like pasted values in manual text fields are redacted before storage/output; invalid numeric metrics are coerced to `0` and returned with warnings.
 
 Trust and dedup endpoints are read-only summaries over normalized case evidence. They expose only aggregate distributions and hash/group identifiers; they do not expose credentials, fetch sources, or verify screenshots.
+
+Review endpoints implement a human review workflow only. They do not run AI review, verify screenshot authenticity, fetch source URLs, call real search/platform APIs, or call real LLM APIs. The review queue includes low-trust, unverified, screenshot/transcription, source-url-missing, duplicate, attestation-missing, and risk-flagged evidence.
+
+Review decision request:
+
+```json
+{
+  "decision": "reject",
+  "reviewer_label": "local_reviewer",
+  "review_notes": "Screenshot transcription without a source URL."
+}
+```
+
+Supported `decision` values:
+
+- `approve`
+- `reject`
+- `mark_weak`
+- `request_more_source`
+- `merge_duplicate`
+- `reset_review`
+
+Review decision effects:
+
+- `approve` sets `review_status=approved` and keeps evidence usable.
+- `reject` sets `review_status=rejected`, keeps the normalized evidence stored, and excludes it from default analysis and representative comments.
+- `mark_weak` keeps evidence usable while surfacing a weak-evidence warning.
+- `request_more_source` keeps evidence visible but flags it for better source context.
+- `merge_duplicate` preserves duplicate grouping and duplicate-collapse behavior.
+- `reset_review` returns review state to the computed default based on risk flags.
+
+Review summary response includes `total_items`, `queue_count`, `review_needed_count`, `low_trust_count`, `duplicate_group_count`, `missing_source_count`, `screenshot_count`, `approved_count`, `rejected_count`, `marked_weak_count`, `needs_more_source_count`, distributions for `review_status`, `review_reason_codes`, `trust_label`, `verification_status`, and `provenance_type`, plus `safe_mode` flags.
+
+If analysis is based on `case_evidence_items`, rejected evidence is excluded by default. `case_raw_data` still takes priority when attached raw comments exist, and mock fallback remains unchanged when neither raw data nor evidence exists.
 
 Manual URL request:
 

@@ -7,10 +7,12 @@ import {
   attachCaseEvidence,
   commitCaseEvidenceImport,
   getCase,
+  getCaseEvidenceReviewQueue,
   getEvidenceImportTemplateCsvUrl,
   previewCaseEvidenceImport,
+  reviewCaseEvidence,
 } from '../api/sentigraphApi.js'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const { Text, Title } = Typography
 const { Dragger } = Upload
@@ -56,6 +58,7 @@ function buildEvidenceSummary(items = []) {
   const provenanceTypes = {}
   const trustLabels = {}
   const verificationStatuses = {}
+  const reviewStatuses = {}
   const riskFlags = {}
   let sourceUrlPresent = 0
   let sourceUrlMissing = 0
@@ -73,9 +76,11 @@ function buildEvidenceSummary(items = []) {
     const provenanceType = item.provenance_type || 'unknown'
     const trustLabel = item.trust_label || 'unknown'
     const verificationStatus = item.verification_status || 'unknown'
+    const reviewStatus = item.review_status || 'not_reviewed'
     provenanceTypes[provenanceType] = (provenanceTypes[provenanceType] || 0) + 1
     trustLabels[trustLabel] = (trustLabels[trustLabel] || 0) + 1
     verificationStatuses[verificationStatus] = (verificationStatuses[verificationStatus] || 0) + 1
+    reviewStatuses[reviewStatus] = (reviewStatuses[reviewStatus] || 0) + 1
     if (item.source_url_present || item.source_url || item.url) sourceUrlPresent += 1
     else sourceUrlMissing += 1
     if (['low', 'unverified', 'rejected'].includes(trustLabel) || verificationStatus === 'needs_review') reviewNeeded += 1
@@ -94,6 +99,7 @@ function buildEvidenceSummary(items = []) {
     duplicateItems,
     provenanceTypes,
     reviewNeeded,
+    reviewStatuses,
     riskFlags,
     sourceDistribution,
     sourceUrlMissing,
@@ -695,6 +701,251 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
   )
 }
 
+const reviewFilterOptions = [
+  { label: 'all', value: 'all' },
+  { label: 'needs_review', value: 'needs_review' },
+  { label: 'low_trust', value: 'low_trust' },
+  { label: 'screenshot', value: 'screenshot' },
+  { label: 'missing_source', value: 'missing_source' },
+  { label: 'duplicates', value: 'duplicates' },
+  { label: 'rejected', value: 'rejected' },
+  { label: 'approved', value: 'approved' },
+]
+
+const reviewActionOptions = [
+  { label: '通过', value: 'approve' },
+  { label: '驳回', value: 'reject' },
+  { label: '标记为弱证据', value: 'mark_weak' },
+  { label: '要求补充来源', value: 'request_more_source' },
+  { label: '合并重复', value: 'merge_duplicate' },
+  { label: '重置', value: 'reset_review' },
+]
+
+function trustColor(value) {
+  if (value === 'high') return 'green'
+  if (value === 'medium') return 'blue'
+  if (value === 'low') return 'orange'
+  if (value === 'rejected') return 'red'
+  return 'default'
+}
+
+function reviewStatusColor(value) {
+  if (value === 'approved') return 'green'
+  if (value === 'rejected') return 'red'
+  if (value === 'marked_weak') return 'orange'
+  if (value === 'needs_more_source') return 'gold'
+  if (value === 'duplicate_merged') return 'purple'
+  if (value === 'review_needed') return 'volcano'
+  return 'default'
+}
+
+function matchesReviewFilter(item, filter) {
+  if (filter === 'all') return true
+  if (filter === 'needs_review') return item.review_status === 'review_needed' || item.review_reason_codes.length > 0
+  if (filter === 'low_trust') return ['low', 'unverified', 'rejected'].includes(item.trust_label)
+  if (filter === 'screenshot') return item.provenance_type === 'screenshot_transcription'
+  if (filter === 'missing_source') return !item.source_url_present
+  if (filter === 'duplicates') return Number(item.duplicate_count || 1) > 1
+  if (filter === 'rejected') return item.review_status === 'rejected'
+  if (filter === 'approved') return item.review_status === 'approved'
+  return true
+}
+
+function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
+  const [filter, setFilter] = useState('all')
+  const [queueSummary, setQueueSummary] = useState(null)
+  const [queueLoading, setQueueLoading] = useState(false)
+  const [decisionLoadingId, setDecisionLoadingId] = useState('')
+  const [queueError, setQueueError] = useState('')
+  const [queueSuccess, setQueueSuccess] = useState('')
+
+  const caseId = currentCase?.case_id
+
+  useEffect(() => {
+    if (!caseId) {
+      setQueueSummary(null)
+      return
+    }
+    let cancelled = false
+    const loadQueue = async () => {
+      setQueueLoading(true)
+      setQueueError('')
+      try {
+        const result = await getCaseEvidenceReviewQueue(caseId)
+        if (!cancelled) setQueueSummary(result)
+      } catch (error) {
+        if (!cancelled) setQueueError(error?.message || 'Evidence review queue load failed.')
+      } finally {
+        if (!cancelled) setQueueLoading(false)
+      }
+    }
+    void loadQueue()
+    return () => {
+      cancelled = true
+    }
+  }, [caseId, currentCase?.evidence_item_count, currentCase?.updated_at])
+
+  if (!caseId) return null
+
+  const filteredItems = (queueSummary?.queue_items || []).filter((item) => matchesReviewFilter(item, filter))
+
+  const refreshQueue = async () => {
+    const result = await getCaseEvidenceReviewQueue(caseId)
+    setQueueSummary(result)
+  }
+
+  const handleDecision = async (item, decision) => {
+    setQueueError('')
+    setQueueSuccess('')
+    setDecisionLoadingId(`${item.evidence_id}:${decision}`)
+    try {
+      const result = await reviewCaseEvidence(caseId, item.evidence_id, {
+        decision,
+        reviewer_label: 'local_human_reviewer',
+      })
+      setQueueSummary(result.summary)
+      setQueueSuccess(`${item.evidence_id} -> ${result.review_status}`)
+      const refreshedCase = await getCase(caseId)
+      onCaseReady?.(refreshedCase)
+      await refreshQueue()
+    } catch (error) {
+      setQueueError(error?.response?.data?.detail || error?.message || 'Review decision failed.')
+    } finally {
+      setDecisionLoadingId('')
+    }
+  }
+
+  const columns = [
+    {
+      title: 'Evidence',
+      key: 'evidence',
+      render: (_, record) => (
+        <Space direction="vertical" size={3}>
+          <Space wrap>
+            <Tag color="purple">{record.evidence_type}</Tag>
+            <Tag>{record.platform}</Tag>
+          </Space>
+          {record.title ? <Text strong>{record.title}</Text> : null}
+          <Text type="secondary">{record.comment_text_preview || record.body_text_preview || record.url || '-'}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: 'Trust',
+      key: 'trust',
+      width: 220,
+      render: (_, record) => (
+        <Space direction="vertical" size={4}>
+          <Tag color={trustColor(record.trust_label)}>{record.trust_label}</Tag>
+          <Tag color="blue">{record.verification_status}</Tag>
+          <Tag color="magenta">{record.provenance_type}</Tag>
+          <Tag color={record.source_url_present ? 'green' : 'orange'}>
+            {record.source_url_present ? 'source URL present' : 'source URL missing'}
+          </Tag>
+        </Space>
+      ),
+    },
+    {
+      title: 'Review',
+      key: 'review',
+      width: 260,
+      render: (_, record) => (
+        <Space direction="vertical" size={4}>
+          <Tag color={reviewStatusColor(record.review_status)}>{record.review_status}</Tag>
+          {record.duplicate_count > 1 ? <Tag color="orange">duplicate x{record.duplicate_count}</Tag> : null}
+          <Space wrap size={[4, 4]}>
+            {record.review_reason_codes.slice(0, 4).map((code) => (
+              <Tag color="orange" key={`${record.evidence_id}-${code}`}>{code}</Tag>
+            ))}
+          </Space>
+          {record.user_attestation_required ? (
+            <Tag color={record.user_attestation_text ? 'green' : 'orange'}>
+              {record.user_attestation_text ? 'attested' : 'attestation missing'}
+            </Tag>
+          ) : null}
+        </Space>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 300,
+      render: (_, record) => (
+        <Space wrap size={[4, 4]}>
+          {reviewActionOptions.map((action) => (
+            <Button
+              danger={action.value === 'reject'}
+              key={action.value}
+              loading={decisionLoadingId === `${record.evidence_id}:${action.value}`}
+              onClick={() => handleDecision(record, action.value)}
+              size="small"
+              type={action.value === 'approve' ? 'primary' : 'default'}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </Space>
+      ),
+    },
+  ]
+
+  return (
+    <Card className="panel-card">
+      <Space direction="vertical" className="full-width" size={14}>
+        <div className="panel-heading">
+          <Space>
+            <CheckCircle2 size={18} />
+            <Title level={4}>Evidence Review / 证据复核</Title>
+          </Space>
+          <Space wrap>
+            <Tag color="cyan">human review only</Tag>
+            <Tag color="purple">AI not used for authenticity</Tag>
+            <Tag color="orange">rejected excluded from analysis</Tag>
+          </Space>
+        </div>
+        <Alert
+          message="Human review queue"
+          description={
+            <Space direction="vertical" size={2}>
+              <Text>截图或转录内容不能自动视为真实，需要人工核验。AI 未参与真实性验证。</Text>
+              <Text>被驳回证据默认不进入分析；重复证据会折叠，不会重复放大情绪或风险。</Text>
+            </Space>
+          }
+          showIcon
+          type="warning"
+        />
+        {queueError ? <Alert message="Evidence review queue error" description={String(queueError)} type="error" showIcon /> : null}
+        {queueSuccess ? <Alert message="Review decision saved" description={queueSuccess} type="success" showIcon /> : null}
+        <Space size={[8, 8]} wrap>
+          <Tag color="cyan">queue: {queueSummary?.queue_count || 0}</Tag>
+          <Tag color="orange">needs_review: {queueSummary?.review_needed_count || 0}</Tag>
+          <Tag color="gold">low_trust: {queueSummary?.low_trust_count || 0}</Tag>
+          <Tag color="purple">duplicate_groups: {queueSummary?.duplicate_group_count || 0}</Tag>
+          <Tag color="green">approved: {queueSummary?.approved_count || 0}</Tag>
+          <Tag color="red">rejected: {queueSummary?.rejected_count || 0}</Tag>
+          <Tag color="orange">marked_weak: {queueSummary?.marked_weak_count || 0}</Tag>
+          <Tag color="geekblue">needs_more_source: {queueSummary?.needs_more_source_count || 0}</Tag>
+        </Space>
+        <Space wrap>
+          <Select options={reviewFilterOptions} value={filter} onChange={setFilter} style={{ width: 190 }} />
+          <Button loading={queueLoading} onClick={refreshQueue} icon={<RefreshCw size={15} />}>
+            Refresh review queue
+          </Button>
+        </Space>
+        <Table
+          columns={columns}
+          dataSource={filteredItems}
+          loading={queueLoading}
+          locale={{ emptyText: 'No evidence currently needs human review.' }}
+          pagination={{ pageSize: 5 }}
+          rowKey="evidence_id"
+          size="small"
+        />
+      </Space>
+    </Card>
+  )
+}
+
 export function Cases({
   cases = [],
   currentCase,
@@ -855,6 +1106,7 @@ export function Cases({
                 <DistributionTags color="magenta" values={evidenceSummary.provenanceTypes} />
                 <DistributionTags color="lime" values={evidenceSummary.trustLabels} />
                 <DistributionTags color="blue" values={evidenceSummary.verificationStatuses} />
+                <DistributionTags color="volcano" values={evidenceSummary.reviewStatuses} />
                 <Tag color={evidenceSummary.sourceUrlMissing ? 'orange' : 'green'}>
                   source_url_present: {evidenceSummary.sourceUrlPresent}/{currentCase.evidence_item_count}
                 </Tag>
@@ -882,6 +1134,10 @@ export function Cases({
             </Space>
           ) : null}
         </Card>
+      ) : null}
+
+      {currentCase ? (
+        <EvidenceReviewQueuePanel currentCase={currentCase} onCaseReady={onCaseReady} />
       ) : null}
 
       {currentCase ? (

@@ -134,6 +134,7 @@ def build_public_opinion_report(
         evidence_review_needed_count=effective_analysis.evidence_review_needed_count,
         evidence_unique_item_count=effective_analysis.evidence_unique_item_count,
         evidence_duplicate_item_count=effective_analysis.evidence_duplicate_item_count,
+        evidence_review_excluded_count=effective_analysis.evidence_review_excluded_count,
     )
 
 
@@ -691,16 +692,21 @@ def _evidence_finding(analysis: AnalysisResultResponse, language: ReportLanguage
         if analysis.evidence_duplicate_item_count
         else ""
     )
+    excluded_note = (
+        f" Human review excluded {analysis.evidence_review_excluded_count} rejected item(s) from analysis."
+        if analysis.evidence_review_excluded_count
+        else ""
+    )
     if language == "zh-CN":
         return (
             f"Evidence layer normalized {analysis.evidence_item_count} item(s): "
             f"sources {source_summary}; types {type_summary}; trust {trust_summary}."
-            f"{review_note}{duplicate_note}"
+            f"{review_note}{duplicate_note}{excluded_note}"
         )
     return (
         f"Evidence layer normalized {analysis.evidence_item_count} item(s): "
         f"sources {source_summary}; types {type_summary}; trust {trust_summary}."
-        f"{review_note}{duplicate_note}"
+        f"{review_note}{duplicate_note}{excluded_note}"
     )
 
 

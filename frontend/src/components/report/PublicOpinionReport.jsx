@@ -130,6 +130,8 @@ export function PublicOpinionReport({ report }) {
             <Tag color={report.generatedFromMockPipeline ? 'purple' : 'cyan'}>
               {reportModeLabel}
             </Tag>
+            {report.evidenceReviewNeededCount ? <Tag color="orange">evidence review needed: {report.evidenceReviewNeededCount}</Tag> : null}
+            {report.evidenceReviewExcludedCount ? <Tag color="red">rejected excluded: {report.evidenceReviewExcludedCount}</Tag> : null}
             <Tag color="geekblue">{report.reportLanguage}</Tag>
             {report.riskModelVersion ? <Tag color="blue">{report.riskModelVersion}</Tag> : null}
           </Space>
@@ -174,6 +176,28 @@ export function PublicOpinionReport({ report }) {
           <Text strong>{scoreText(report.manipulationRisk ?? 0)}/100</Text>
         </div>
       </div>
+
+      {report.evidenceReviewNeededCount || report.evidenceReviewExcludedCount || report.evidenceDuplicateItemCount ? (
+        <section className="report-section">
+          <Space direction="vertical" size={6}>
+            {report.evidenceReviewNeededCount ? (
+              <Text type="warning">
+                部分证据来自用户上传或手动录入，需结合来源和人工复核判断；截图或转录内容不会被自动视为已验证事实。
+              </Text>
+            ) : null}
+            {report.evidenceReviewExcludedCount ? (
+              <Text type="danger">
+                Human review rejected {report.evidenceReviewExcludedCount} evidence item(s); rejected evidence is excluded from analysis by default.
+              </Text>
+            ) : null}
+            {report.evidenceDuplicateItemCount ? (
+              <Text type="secondary">
+                Duplicate evidence was collapsed and does not directly amplify sentiment or risk counts.
+              </Text>
+            ) : null}
+          </Space>
+        </section>
+      ) : null}
 
       <Row gutter={[16, 16]}>
         <Col span={24}>

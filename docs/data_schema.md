@@ -437,7 +437,12 @@ Rules:
   "canonical_url_hash": "sha256...",
   "duplicate_count": 1,
   "duplicate_group_size": 1,
-  "risk_flags": []
+  "risk_flags": [],
+  "review_status": "not_reviewed",
+  "review_reason_codes": [],
+  "reviewed_at": null,
+  "reviewer_label": null,
+  "review_notes": null
 }
 ```
 
@@ -525,6 +530,29 @@ unverified
 rejected
 ```
 
+Allowed `review_status` values:
+
+```text
+not_reviewed
+review_needed
+approved
+rejected
+marked_weak
+needs_more_source
+duplicate_merged
+```
+
+Allowed human review decisions:
+
+```text
+approve
+reject
+mark_weak
+request_more_source
+merge_duplicate
+reset_review
+```
+
 `EvidenceIngestionBatch` contains an optional `EvidenceSource` plus `evidence_items`. `EvidenceIngestionResult` returns normalized evidence items, `source_distribution`, `evidence_type_counts`, `top_titles`, `representative_comments`, `trust_summary`, `deduplication_summary`, warnings, and safe-mode flags.
 
 Manual URL evidence uses `acquisition_mode="manual_url"` and usually `source_type="public_web"`. It is for user-entered public evidence only: URLs are stored as plain text review context and are never fetched, followed, scraped, or parsed automatically. Every manual URL evidence item must include at least one of `title`, `body_text`, or `comment_text`. Invalid numeric metric inputs are coerced to `0` with `invalid_numeric_metric:<field>` warnings. Secret-like pasted values in text fields are redacted and surfaced with `secret_like_text_redacted:<field>` warnings. The backend must never persist cookies, tokens, API keys, `.env` values, or raw credential data in manual evidence.
@@ -553,6 +581,37 @@ Trust and dedup summaries:
 ```
 
 Analysis uses unique evidence items by default. Duplicate submissions are preserved as `duplicate_count` / `duplicate_group_size` repetition signals but must not directly inflate sentiment, topic, or risk counts.
+
+Human review summaries:
+
+```json
+{
+  "review_summary": {
+    "case_id": "case_001",
+    "total_items": 5,
+    "queue_count": 3,
+    "review_needed_count": 2,
+    "low_trust_count": 1,
+    "duplicate_group_count": 1,
+    "missing_source_count": 1,
+    "screenshot_count": 1,
+    "approved_count": 1,
+    "rejected_count": 1,
+    "marked_weak_count": 1,
+    "needs_more_source_count": 0,
+    "review_status_distribution": {"review_needed": 2, "rejected": 1},
+    "review_reason_distribution": {"missing_source_url": 1},
+    "safe_mode": {
+      "real_api_calls": false,
+      "real_llm_calls": false,
+      "url_fetching": false,
+      "ai_review": false
+    }
+  }
+}
+```
+
+Review queue items include evidence previews, provenance/trust fields, duplicate metadata, source URL status, attestation status, `review_status`, and `review_reason_codes`. They are meant for human review only. Sentigraph does not call an LLM to verify evidence and does not claim screenshots or pasted transcriptions are authentic. Rejected evidence remains stored but is excluded from default `case_evidence_items` analysis and representative comments.
 
 ### CSV / Excel Evidence Import Schemas
 

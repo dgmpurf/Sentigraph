@@ -21,6 +21,7 @@ from app.services.preprocessing.user_aggregator import aggregate_users
 from app.services.scoring.risk_score import RiskScoreResult, calculate_risk_score
 from app.services.scoring.topic_risk_score import calculate_topic_risk_score
 from app.services.evidence_ingestion import (
+    analysis_eligible_evidence_items,
     build_deduplication_summary,
     build_trust_summary,
     enrich_and_deduplicate_evidence_items,
@@ -107,13 +108,15 @@ def build_pipeline_from_evidence_items(
             item for item in normalized_evidence if item.platform.lower() in selected_platforms
         ]
         normalized_evidence = filtered_evidence or normalized_evidence
-    raw_posts, raw_comments = evidence_items_to_raw_data(normalized_evidence)
+    eligible_evidence = analysis_eligible_evidence_items(normalized_evidence)
+    raw_posts, raw_comments = evidence_items_to_raw_data(eligible_evidence)
     return _build_pipeline(
         project_id,
         raw_comments=raw_comments,
         raw_posts=raw_posts,
         analysis_input_source="case_evidence_items",
-        evidence_items=normalized_evidence,
+        evidence_items=eligible_evidence,
+        evidence_review_excluded_count=max(0, len(normalized_evidence) - len(eligible_evidence)),
     )
 
 
@@ -124,6 +127,7 @@ def _build_pipeline(
     raw_posts: list[RawPost],
     analysis_input_source: str,
     evidence_items: list[EvidenceItem] | None = None,
+    evidence_review_excluded_count: int = 0,
 ) -> MockPipelineResult:
     evidence_items = evidence_items or []
     evidence_sources = evidence_source_distribution(evidence_items)
@@ -202,6 +206,7 @@ def _build_pipeline(
         evidence_review_needed_count=evidence_trust.review_needed_count,
         evidence_unique_item_count=evidence_dedup.unique_items,
         evidence_duplicate_item_count=evidence_dedup.duplicate_items,
+        evidence_review_excluded_count=evidence_review_excluded_count,
     )
 
     return MockPipelineResult(

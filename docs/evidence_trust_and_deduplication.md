@@ -48,6 +48,23 @@ Normalization trims whitespace, lower-cases comparable text, removes common trac
 
 Repeated submissions remain visible as repetition signals, but they do not directly inflate sentiment, topic, or risk counts. Analysis uses the unique evidence set by default.
 
+## Human Review Queue
+
+The Evidence Review Queue is a human review workflow layered on top of trust and dedup metadata. It is not an AI authenticity verifier.
+
+Items enter the queue when they are low-trust, unverified, screenshot/transcription-based, missing a source URL, missing required user attestation, part of a duplicate group, or carrying risk flags such as secret-like text, suspiciously short content, or raw HTML/script-like input.
+
+Review decisions:
+
+- `approve`: keep the item usable and mark it reviewed.
+- `reject`: keep the normalized item stored but exclude it from default analysis and representative comments.
+- `mark_weak`: keep the item usable while preserving a weak-evidence warning.
+- `request_more_source`: keep the item visible but flag that stronger source context is needed.
+- `merge_duplicate`: preserve duplicate grouping so the item does not inflate counts.
+- `reset_review`: return to computed default review status.
+
+Rejected evidence is excluded only from default analysis. It is not deleted, so an analyst can audit what was submitted and why it was rejected. Screenshot or transcribed evidence is never called verified unless a separate trusted source confirms it.
+
 ## User Attestation
 
 Manual and uploaded evidence records require or record this attestation:
