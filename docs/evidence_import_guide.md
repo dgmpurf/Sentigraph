@@ -4,6 +4,50 @@ Status: implemented for local/offline evidence normalization.
 
 This feature lets a user upload a lawful CSV or Excel dataset and map rows into Sentigraph `EvidenceItem` records. It is designed for all-web public-opinion monitoring when platform APIs are unavailable, pending, or intentionally not used.
 
+## Manual URL / Manual Evidence
+
+The Cases page also includes `手动添加证据` for one-off public evidence entry. This is for a user who already has lawful public material and wants to attach a single article, video, post, comment, reply, or interaction-metric record without preparing a spreadsheet.
+
+Important boundary:
+
+- Sentigraph does not fetch the URL.
+- Sentigraph does not follow links.
+- Sentigraph does not scrape the page.
+- Sentigraph does not use cookies, login sessions, captcha handling, proxy evasion, or anti-bot bypasses.
+- Sentigraph stores only normalized `EvidenceItem` records, not credentials, cookies, API keys, or raw secret values.
+
+Recommended manual fields:
+
+- `URL`: optional review context. It is stored as plain text and is never fetched.
+- `平台`: a display/source label such as `manual_url`, `youtube`, `news_site`, or `public_web`.
+- `来源类型`: usually `public_web`; use `news_site`, `forum`, `youtube`, or `uploaded_dataset` when that better describes the evidence.
+- `证据类型`: `article`, `video`, `post`, `comment`, `reply`, or `interaction_metric`.
+- `标题`, `正文 / 摘要`, `评论内容`: at least one of these text fields is required so the evidence is human-reviewable and analyzable.
+- `作者`, `发布时间`, and metric fields: optional public context.
+
+Manual URL evidence always uses `acquisition_mode=manual_url`. If a user accidentally pastes `api_key`, `access_token`, `refresh_token`, `client_secret`, `password`, or `cookie` style values into text fields, the backend redacts them before storage/output and returns a warning. Invalid numeric metrics are coerced to `0` with a warning instead of crashing.
+
+Example article entry:
+
+```text
+URL: https://example.test/news/tesla-quality-update
+平台: news_site
+证据类型: article
+标题: Tesla quality discussion
+正文 / 摘要: A public article says users want a clearer repair timeline.
+```
+
+Example comment entry:
+
+```text
+URL: https://example.test/public-thread/1
+平台: public_web
+证据类型: comment
+评论内容: 用户认为官方回应太慢，希望看到明确进展。
+```
+
+After clicking `添加到案例`, the UI shows evidence count, type/source distribution, `acquisition_mode=manual_url`, and the latest evidence preview. Click `添加后运行分析` to run the deterministic offline case analysis; when no attached raw comments exist, the case should report `analysis_input_source=case_evidence_items`.
+
 ## Accepted Formats
 
 - `.csv`

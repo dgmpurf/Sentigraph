@@ -224,9 +224,22 @@ def attach_case_evidence(case_id: str, payload: EvidenceIngestionBatch) -> Evide
     if not case:
         return None
     evidence_items = normalize_manual_evidence_batch(case_id, payload)
+    used_ids = {item.evidence_id for item in case.evidence_items if item.evidence_id}
+    appended_items = []
+    for item in evidence_items:
+        evidence_id = item.evidence_id
+        if evidence_id in used_ids:
+            base_id = evidence_id
+            suffix = 2
+            while f"{base_id}_{suffix}" in used_ids:
+                suffix += 1
+            evidence_id = f"{base_id}_{suffix}"
+            item = item.model_copy(update={"evidence_id": evidence_id}, deep=True)
+        used_ids.add(evidence_id)
+        appended_items.append(item)
     saved_case = repository.save_case_evidence(
         case_id,
-        evidence_items=evidence_items,
+        evidence_items=[*case.evidence_items, *appended_items],
         updated_at=repository.next_timestamp(),
     )
     if not saved_case:
@@ -416,11 +429,12 @@ def _build_markdown(case: AnalysisCaseDetail) -> str:
 
     risk_score = _report_score(report)
     platforms = ", ".join(case.platforms) if case.platforms else "mock default platforms"
-    generation_label = (
-        "离线 mock 管线"
-        if report.generated_from_mock_pipeline
-        else "attached case raw data offline deterministic analysis"
-    )
+    if report.generated_from_mock_pipeline:
+        generation_label = "离线 mock 管线"
+    elif case.analysis_input_source == "case_evidence_items":
+        generation_label = "normalized case evidence offline deterministic analysis"
+    else:
+        generation_label = "attached case raw data offline deterministic analysis"
     evidence_source_summary = _format_distribution(report.evidence_source_distribution)
     evidence_type_summary = _format_distribution(report.evidence_type_counts)
     lines = [

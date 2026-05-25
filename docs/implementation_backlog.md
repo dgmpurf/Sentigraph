@@ -8,6 +8,32 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Manual URL Evidence Import UI
+
+Status: implemented and browser-smoke QA complete on 2026-05-25 as a safe one-off evidence entry flow on the Cases page.
+
+Completed:
+
+- Added a `手动添加证据` panel to `Cases` for article, video, post, comment, reply, and interaction-metric evidence.
+- Reused `POST /api/v1/cases/{case_id}/evidence/attach` with `acquisition_mode=manual_url`; no new crawler or URL-fetch path was introduced.
+- Added UI fields for URL, platform, source type, evidence type, title, body/summary, comment text, parent/root IDs, public author labels, created time, metrics, and language.
+- Added `添加到案例` and `添加后运行分析` actions plus a result summary showing evidence count, evidence type counts, source distribution, `acquisition_mode=manual_url`, latest preview text, and backend warnings.
+- Hardened backend normalization so manual URL evidence requires at least one reviewable text field, redacts secret-like pasted text values, coerces invalid numeric metrics to `0` with warnings, and keeps URLs as plain text only.
+
+- Added a safe `打开` action to select/open draft cases without forcing mock analysis first.
+- Browser-smoke QA verified adding article, video, comment, reply, and `interaction_metric` evidence through the UI on one case; repeated single-evidence attach calls now append instead of replacing prior evidence.
+- The manual evidence form now resets after successful attach to avoid stale values during repeated demo entry.
+- Analysis Result and Summary Report/Markdown wording now distinguish `case_evidence_items` from mock fallback and attached raw-data cases.
+
+Acceptance:
+
+- Manual URL evidence does not fetch URLs, follow links, scrape pages, use cookies, call real APIs, call real LLM APIs, or integrate MediaCrawler.
+- Users are told that they must paste lawful public evidence manually and that Sentigraph stores normalized `EvidenceItem` records only.
+- Manual evidence can drive `analysis_input_source=case_evidence_items` when no attached raw comments exist.
+- `case_raw_data` still wins over evidence items, CSV/Excel import still works, YouTube real-data flow remains explicit, and mock fallback remains intact.
+- Latest validation passed with `python -m pytest` (`585 passed in 7.05s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 8.57s`; existing non-blocking vendor chunk warning remains).
+- Browser smoke verified Dashboard, Cases, Analysis Result, Summary Report, Risk Monitor, Simulation Lab, Benchmark Dashboard, LLM Safety, and Platform Integration Overview with no Sentigraph runtime errors, no raw object rendering, no secret exposure, and no URL fetching/scraping.
+
 ### CSV / Excel Evidence Import
 
 Status: implemented, browser-smoke QA complete, and template-download supported as a safe user-upload import flow on 2026-05-25.
@@ -39,8 +65,8 @@ Acceptance:
 
 Next options:
 
-- Manual URL Evidence Import UI.
-- Search discovery planning.
+- Manual URL Evidence UI browser smoke is complete.
+- Search Discovery planning remains the next/future task; do not add live fetching in that planning step.
 - Douyin/Bilibili official API verification when console/API access is ready.
 - Add a richer sample-data gallery only if repeated demos need more scenario variety.
 - Add larger import-size UX only after memory/file-size guardrails are revisited.

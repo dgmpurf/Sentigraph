@@ -468,6 +468,8 @@ uploaded_record
 
 `EvidenceIngestionBatch` contains an optional `EvidenceSource` plus `evidence_items`. `EvidenceIngestionResult` returns normalized evidence items, `source_distribution`, `evidence_type_counts`, `top_titles`, `representative_comments`, warnings, and safe-mode flags.
 
+Manual URL evidence uses `acquisition_mode="manual_url"` and usually `source_type="public_web"`. It is for user-entered public evidence only: URLs are stored as plain text review context and are never fetched, followed, scraped, or parsed automatically. Every manual URL evidence item must include at least one of `title`, `body_text`, or `comment_text`. Invalid numeric metric inputs are coerced to `0` with `invalid_numeric_metric:<field>` warnings. Secret-like pasted values in text fields are redacted and surfaced with `secret_like_text_redacted:<field>` warnings. The backend must never persist cookies, tokens, API keys, `.env` values, or raw credential data in manual evidence.
+
 ### CSV / Excel Evidence Import Schemas
 
 `GET /api/v1/evidence/import/template.csv` returns a static UTF-8 CSV template attachment named `sentigraph_evidence_import_template.csv`. The template uses the mapping fields below and includes safe article, video, and comment sample rows. It contains no credentials and can be parsed by the same preview endpoint as a normal user-uploaded CSV.

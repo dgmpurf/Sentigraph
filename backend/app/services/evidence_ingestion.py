@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 from app.schemas.comment import RawComment, RawPost
@@ -31,10 +32,32 @@ SECRET_KEY_MARKERS = (
     ".env",
 )
 
+SECRET_TEXT_PATTERN = re.compile(
+    r"\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|cookie|authorization)\b\s*[:=]\s*([^\s,;]+)",
+    re.IGNORECASE,
+)
+
+MANUAL_TEXT_FIELDS = (
+    "title",
+    "body_text",
+    "comment_text",
+    "parent_id",
+    "root_id",
+    "author_id",
+    "author_name",
+    "url",
+    "created_at",
+    "language",
+)
+
 VIDEO_PLATFORMS = {"youtube", "douyin", "bilibili", "kuaishou"}
 NEWS_PLATFORMS = {"the_paper", "jiemian", "toutiao"}
 FORUM_PLATFORMS = {"hupu", "tieba", "nga", "maimai", "douban", "zhihu"}
 DIRECT_SOURCE_TYPES = {"youtube", "douyin", "bilibili", "weibo", "xiaohongshu", "reddit"}
+
+
+class EvidenceValidationError(ValueError):
+    """Raised when user-provided evidence cannot be normalized safely."""
 
 
 def build_evidence_items_from_raw_data(
@@ -155,8 +178,16 @@ def normalize_manual_evidence_batch(case_id: str, batch: EvidenceIngestionBatch)
         platform = platform or item.platform or "uploaded_dataset"
         source_type = source.source_type if source else item.source_type
         acquisition_mode = source.acquisition_mode if source else item.acquisition_mode
+        is_manual_url = acquisition_mode == "manual_url"
+        if is_manual_url:
+            platform = platform if platform and platform != "uploaded_dataset" else "manual_url"
+            source_type = source_type if source_type and source_type != "uploaded_dataset" else "public_web"
+            acquisition_mode = "manual_url"
+            if not _has_reviewable_text(item):
+                raise EvidenceValidationError("manual_evidence_text_required")
         evidence_type = _manual_evidence_type(item) if item.evidence_type == "body_text" else item.evidence_type
         record_id = item.evidence_id or f"{case_id}_{index + 1}"
+        redacted_item, redaction_warnings = _redact_manual_text_fields(item)
         normalized_metadata = item.ingestion_metadata.model_copy(
             update={
                 "normalized_from": "manual_payload",
@@ -164,20 +195,21 @@ def normalize_manual_evidence_batch(case_id: str, batch: EvidenceIngestionBatch)
                 "source_type": source_type,
                 "acquisition_mode": acquisition_mode,
                 "normalized_at": datetime.now(timezone.utc),
+                "warnings": _dedupe_warnings([*item.ingestion_metadata.warnings, *redaction_warnings]),
             },
             deep=True,
         )
         items.append(
-            item.model_copy(
+            redacted_item.model_copy(
                 update={
-                    "evidence_id": item.evidence_id or _evidence_id(platform, evidence_type, record_id),
+                    "evidence_id": redacted_item.evidence_id or _evidence_id(platform, evidence_type, record_id),
                     "case_id": case_id,
                     "platform": platform,
                     "source_type": source_type,
                     "acquisition_mode": acquisition_mode,
                     "evidence_type": evidence_type,
-                    "raw_data_safe": sanitize_raw_data(item.raw_data_safe),
-                    "language": item.language if item.language != "unknown" else _infer_language(item.title, item.body_text, item.comment_text),
+                    "raw_data_safe": sanitize_raw_data(redacted_item.raw_data_safe),
+                    "language": redacted_item.language if redacted_item.language != "unknown" else _infer_language(redacted_item.title, redacted_item.body_text, redacted_item.comment_text),
                     "ingestion_metadata": normalized_metadata,
                 },
                 deep=True,
@@ -256,6 +288,16 @@ def build_evidence_ingestion_result(
     evidence_type_counts = evidence_type_distribution(evidence_items)
     top_titles = _top_titles(evidence_items)
     representative_comments = _representative_comments(evidence_items)
+    result_warnings = _dedupe_warnings(
+        [
+            *(warnings or []),
+            *[
+                warning
+                for item in evidence_items
+                for warning in item.ingestion_metadata.warnings
+            ],
+        ]
+    )
     return EvidenceIngestionResult(
         case_id=case_id,
         status=status or ("attached" if evidence_items else "empty"),
@@ -271,7 +313,7 @@ def build_evidence_ingestion_result(
             source_type=_dominant_source_type(evidence_items),
             acquisition_mode=_dominant_acquisition_mode(evidence_items),
         ),
-        warnings=warnings or [],
+        warnings=result_warnings,
     )
 
 
@@ -296,6 +338,35 @@ def sanitize_raw_data(value: Any) -> Any:
     if isinstance(value, list):
         return [sanitize_raw_data(item) for item in value]
     return value
+
+
+def _has_reviewable_text(item: EvidenceItem) -> bool:
+    return any((value or "").strip() for value in (item.title, item.body_text, item.comment_text))
+
+
+def _redact_manual_text_fields(item: EvidenceItem) -> tuple[EvidenceItem, list[str]]:
+    updates: dict[str, str] = {}
+    warnings: list[str] = []
+    for field_name in MANUAL_TEXT_FIELDS:
+        value = getattr(item, field_name, None)
+        if not isinstance(value, str) or not value:
+            continue
+        redacted = SECRET_TEXT_PATTERN.sub(lambda match: f"{match.group(1)}=[REDACTED]", value)
+        if redacted != value:
+            updates[field_name] = redacted
+            warnings.append(f"secret_like_text_redacted:{field_name}")
+
+    if not updates:
+        return item, warnings
+    return item.model_copy(update=updates, deep=True), _dedupe_warnings(warnings)
+
+
+def _dedupe_warnings(warnings: list[str]) -> list[str]:
+    values: list[str] = []
+    for warning in warnings:
+        if warning and warning not in values:
+            values.append(warning)
+    return values
 
 
 def _source_type_for_platform(platform: str) -> EvidenceSourceType:

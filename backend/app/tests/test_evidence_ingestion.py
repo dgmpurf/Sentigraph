@@ -1,4 +1,5 @@
 from pathlib import Path
+import urllib.request
 
 import pytest
 from fastapi.testclient import TestClient
@@ -145,6 +146,11 @@ def test_manual_evidence_attach_is_sanitized_and_feeds_analysis() -> None:
     assert any("Manual evidence comment" in comment for comment in body["report"]["representative_comments"])
     assert "secret-marker-should-not-appear" not in run_response.text
 
+    markdown_response = client.get(f"/api/v1/cases/{case_id}/report/markdown")
+    assert markdown_response.status_code == 200
+    assert "normalized case evidence offline deterministic analysis" in markdown_response.json()["markdown"]
+    assert "attached case raw data offline deterministic analysis" not in markdown_response.json()["markdown"]
+
 
 def test_manual_url_video_reply_and_metric_attach_are_supported() -> None:
     case_id = _create_case(platforms=["public_web"])
@@ -173,6 +179,7 @@ def test_manual_url_video_reply_and_metric_attach_are_supported() -> None:
             },
             {
                 "evidence_type": "interaction_metric",
+                "title": "Manual video interaction metrics",
                 "root_id": "manual_video_001",
                 "like_count": 23,
                 "reply_count": 5,
@@ -191,8 +198,112 @@ def test_manual_url_video_reply_and_metric_attach_are_supported() -> None:
     assert body["evidence_type_counts"]["reply"] == 1
     assert body["evidence_type_counts"]["interaction_metric"] == 1
     assert {item["acquisition_mode"] for item in body["evidence_items"]} == {"manual_url"}
-    assert body["top_titles"] == ["Manual public video title"]
+    assert body["top_titles"][:2] == ["Manual public video title", "Manual video interaction metrics"]
     assert any("official timeline" in comment for comment in body["representative_comments"])
+
+
+def test_manual_evidence_attach_appends_across_calls() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    base_payload = {
+        "source": {
+            "platform": "public_web",
+            "source_type": "public_web",
+            "acquisition_mode": "manual_url",
+        },
+        "evidence_items": [
+            {
+                "evidence_type": "comment",
+                "comment_text": "First manual public comment for the case.",
+            }
+        ],
+    }
+    second_payload = {
+        **base_payload,
+        "evidence_items": [
+            {
+                "evidence_type": "comment",
+                "comment_text": "Second manual public comment should append instead of replacing.",
+            }
+        ],
+    }
+
+    first_response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=base_payload)
+    second_response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=second_payload)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    body = second_response.json()
+    assert body["evidence_item_count"] == 2
+    assert body["evidence_type_counts"] == {"comment": 2}
+    assert body["evidence_items"][0]["evidence_id"] != body["evidence_items"][1]["evidence_id"]
+    assert any("First manual public comment" in text for text in body["representative_comments"])
+    assert any("Second manual public comment" in text for text in body["representative_comments"])
+
+
+def test_manual_url_evidence_redacts_text_secrets_and_warns_on_invalid_metrics(monkeypatch) -> None:
+    case_id = _create_case(platforms=["public_web"])
+
+    def fail_urlopen(*args, **kwargs):
+        raise AssertionError("Manual URL evidence attach must not fetch URLs.")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fail_urlopen)
+    payload = {
+        "source": {
+            "platform": "",
+            "source_type": "uploaded_dataset",
+            "acquisition_mode": "manual_url",
+        },
+        "evidence_items": [
+            {
+                "evidence_type": "comment",
+                "comment_text": "Manual public comment includes access_token=secret-marker and should be sanitized.",
+                "url": "https://example.invalid/should-not-be-fetched?api_key=secret-marker",
+                "like_count": "not-a-number",
+                "reply_count": "7",
+            }
+        ],
+    }
+
+    response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=payload)
+
+    assert response.status_code == 200
+    assert "secret-marker" not in response.text
+    body = response.json()
+    assert body["source_distribution"] == {"public_web": 1}
+    assert body["evidence_items"][0]["platform"] == "manual_url"
+    assert body["evidence_items"][0]["source_type"] == "public_web"
+    assert body["evidence_items"][0]["acquisition_mode"] == "manual_url"
+    assert body["evidence_items"][0]["comment_text"].endswith("access_token=[REDACTED] and should be sanitized.")
+    assert body["evidence_items"][0]["url"] == "https://example.invalid/should-not-be-fetched?api_key=[REDACTED]"
+    assert body["evidence_items"][0]["like_count"] == 0
+    assert body["evidence_items"][0]["reply_count"] == 7
+    assert "invalid_numeric_metric:like_count" in body["warnings"]
+    assert "secret_like_text_redacted:comment_text" in body["warnings"]
+    assert "secret_like_text_redacted:url" in body["warnings"]
+
+
+def test_manual_url_evidence_requires_reviewable_text() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    payload = {
+        "source": {
+            "platform": "public_web",
+            "source_type": "public_web",
+            "acquisition_mode": "manual_url",
+        },
+        "evidence_items": [
+            {
+                "evidence_type": "interaction_metric",
+                "url": "https://example.test/metric-only",
+                "like_count": 12,
+            }
+        ],
+    }
+
+    response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["error"] == "evidence_attach_rejected"
+    assert response.json()["detail"]["message"] == "manual_evidence_text_required"
 
 
 def test_raw_comments_take_priority_over_evidence_items_when_both_exist(monkeypatch) -> None:

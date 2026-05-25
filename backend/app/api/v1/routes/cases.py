@@ -17,6 +17,7 @@ from app.schemas.evidence import (
     EvidenceIngestionResult,
 )
 from app.services.evidence_import import EvidenceImportError
+from app.services.evidence_ingestion import EvidenceValidationError
 from app.schemas.forecast import ForecastResult
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.scheduler import MonitoringScheduleConfig
@@ -96,7 +97,19 @@ def get_case_evidence(case_id: str) -> EvidenceIngestionResult:
 
 @router.post("/{case_id}/evidence/attach", response_model=EvidenceIngestionResult)
 def attach_evidence_to_case(case_id: str, payload: EvidenceIngestionBatch) -> EvidenceIngestionResult:
-    result = attach_case_evidence(case_id, payload)
+    try:
+        result = attach_case_evidence(case_id, payload)
+    except EvidenceValidationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "evidence_attach_rejected",
+                "message": str(exc),
+                "real_api_calls": False,
+                "real_llm_calls": False,
+                "url_fetching": False,
+            },
+        ) from exc
     if not result:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return result

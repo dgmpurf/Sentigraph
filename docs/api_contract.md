@@ -1543,6 +1543,52 @@ POST /api/v1/cases/{case_id}/evidence/attach
 
 `POST /cases/{case_id}/evidence/attach` accepts safe manual/user-provided evidence such as article title/body, video title/description, comments, replies, public URLs, public author labels, and interaction metrics. It does not fetch external URLs and does not call platform APIs.
 
+Manual URL evidence is a first-class safe attach mode. It uses the same attach endpoint with `acquisition_mode="manual_url"` and stores the URL as plain text review context only. The backend does not fetch the URL, follow links, run a parser, use cookies, scrape, call real APIs, or call real LLM APIs. At least one of `title`, `body_text`, or `comment_text` is required for every manual URL evidence item. Secret-like pasted values in manual text fields are redacted before storage/output; invalid numeric metrics are coerced to `0` and returned with warnings.
+
+Manual URL request:
+
+```json
+{
+  "source": {
+    "platform": "manual_url",
+    "source_type": "public_web",
+    "acquisition_mode": "manual_url",
+    "source_name": "Manual URL evidence",
+    "source_url": "https://example.test/public-thread",
+    "credential_present": false
+  },
+  "evidence_items": [
+    {
+      "evidence_type": "comment",
+      "title": "Public discussion thread",
+      "comment_text": "用户认为官方回应太慢，希望看到明确进展。",
+      "author_name": "Public author label",
+      "url": "https://example.test/public-thread",
+      "like_count": 12,
+      "reply_count": 3,
+      "raw_data_safe": {
+        "manual_entry": true,
+        "no_url_fetch": true
+      }
+    }
+  ]
+}
+```
+
+Manual URL validation failure:
+
+```json
+{
+  "detail": {
+    "error": "evidence_attach_rejected",
+    "message": "manual_evidence_text_required",
+    "real_api_calls": false,
+    "real_llm_calls": false,
+    "url_fetching": false
+  }
+}
+```
+
 CSV / Excel import endpoints:
 
 ```http

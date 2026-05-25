@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 EvidenceType = Literal[
@@ -75,6 +75,9 @@ class EvidenceSource(BaseModel):
     notes: str | None = None
 
 
+_EVIDENCE_NUMERIC_FIELDS = ("like_count", "reply_count", "share_count", "view_count")
+
+
 class EvidenceItem(BaseModel):
     evidence_id: str = ""
     case_id: str | None = None
@@ -101,6 +104,40 @@ class EvidenceItem(BaseModel):
     content_visibility: str = "public_or_user_provided"
     access_scope: str = "public_or_user_provided"
     ingestion_metadata: EvidenceNormalizationMetadata = Field(default_factory=EvidenceNormalizationMetadata)
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_metric_counts_with_warnings(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        patched = dict(data)
+        warnings: list[str] = []
+        for field_name in _EVIDENCE_NUMERIC_FIELDS:
+            if field_name not in patched:
+                continue
+            value = patched.get(field_name)
+            if value is None or value == "":
+                patched[field_name] = 0
+                continue
+            try:
+                numeric_value = int(float(str(value).replace(",", "").strip()))
+                patched[field_name] = max(0, numeric_value)
+            except (TypeError, ValueError):
+                patched[field_name] = 0
+                warnings.append(f"invalid_numeric_metric:{field_name}")
+
+        if warnings:
+            metadata = patched.get("ingestion_metadata")
+            if isinstance(metadata, EvidenceNormalizationMetadata):
+                existing = list(metadata.warnings)
+                patched["ingestion_metadata"] = metadata.model_copy(update={"warnings": [*existing, *warnings]})
+            elif isinstance(metadata, dict):
+                existing = list(metadata.get("warnings") or [])
+                patched["ingestion_metadata"] = {**metadata, "warnings": [*existing, *warnings]}
+            else:
+                patched["ingestion_metadata"] = {"warnings": warnings}
+        return patched
 
 
 class EvidenceIngestionBatch(BaseModel):

@@ -389,6 +389,17 @@ body {
   width: 100%;
 }
 
+.evidence-manual-grid {
+  display: grid;
+  gap: 10px 14px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  width: 100%;
+}
+
+.evidence-manual-wide {
+  grid-column: 1 / -1;
+}
+
 .demo-flow-page .ant-alert {
   border-radius: 8px;
 }

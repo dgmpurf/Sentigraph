@@ -1,9 +1,10 @@
-import { Alert, Button, Card, Empty, Select, Space, Table, Tag, Typography, Upload } from 'antd'
-import { CheckCircle2, Download, FileText, PlayCircle, RefreshCw, UploadCloud } from 'lucide-react'
+import { Alert, Button, Card, Empty, Form, Input, InputNumber, Select, Space, Table, Tag, Typography, Upload } from 'antd'
+import { CheckCircle2, Download, FileText, Link2, PlayCircle, PlusCircle, RefreshCw, UploadCloud } from 'lucide-react'
 
 import { riskTone } from '../utils/formatters.js'
 import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
 import {
+  attachCaseEvidence,
   commitCaseEvidenceImport,
   getCase,
   getEvidenceImportTemplateCsvUrl,
@@ -13,6 +14,7 @@ import { useState } from 'react'
 
 const { Text, Title } = Typography
 const { Dragger } = Upload
+const { TextArea } = Input
 
 const riskLevelLabels = {
   low: '低风险',
@@ -106,6 +108,31 @@ const importMappingFields = [
   ['language', 'language'],
 ]
 
+const manualEvidenceTypes = [
+  { label: '文章 article', value: 'article' },
+  { label: '视频 video', value: 'video' },
+  { label: '帖子 post', value: 'post' },
+  { label: '评论 comment', value: 'comment' },
+  { label: '回复 reply', value: 'reply' },
+  { label: '互动指标 interaction_metric', value: 'interaction_metric' },
+]
+
+const manualSourceTypes = [
+  { label: 'public_web', value: 'public_web' },
+  { label: 'news_site', value: 'news_site' },
+  { label: 'forum', value: 'forum' },
+  { label: 'youtube', value: 'youtube' },
+  { label: 'uploaded_dataset', value: 'uploaded_dataset' },
+]
+
+function trimValue(value) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function evidenceTextPreview(item = {}) {
+  return item.comment_text || item.body_text || item.title || item.url || ''
+}
+
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -126,6 +153,221 @@ function evidenceImportPayload(filePayload, columnMapping) {
       Object.entries(columnMapping || {}).filter(([, value]) => value),
     ),
   }
+}
+
+function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
+  const [form] = Form.useForm()
+  const [manualLoading, setManualLoading] = useState(false)
+  const [manualError, setManualError] = useState('')
+  const [manualResult, setManualResult] = useState(null)
+
+  if (!currentCase?.case_id) return null
+
+  const latestEvidence = manualResult?.evidence_items?.[manualResult.evidence_items.length - 1]
+
+  const handleAttach = async (values) => {
+    setManualError('')
+    setManualResult(null)
+    const title = trimValue(values.title)
+    const bodyText = trimValue(values.body_text)
+    const commentText = trimValue(values.comment_text)
+    if (!title && !bodyText && !commentText) {
+      setManualError('请至少填写标题、正文/摘要或评论内容之一。')
+      return
+    }
+
+    const platform = trimValue(values.platform) || 'manual_url'
+    const sourceType = values.source_type || 'public_web'
+    const evidenceItem = {
+      platform,
+      source_type: sourceType,
+      acquisition_mode: 'manual_url',
+      evidence_type: values.evidence_type || 'comment',
+      title: title || null,
+      body_text: bodyText || null,
+      comment_text: commentText || null,
+      parent_id: trimValue(values.parent_id) || null,
+      root_id: trimValue(values.root_id) || null,
+      author_id: trimValue(values.author_id) || null,
+      author_name: trimValue(values.author_name) || null,
+      url: trimValue(values.url) || null,
+      created_at: trimValue(values.created_at) || null,
+      like_count: Number(values.like_count || 0),
+      reply_count: Number(values.reply_count || 0),
+      share_count: Number(values.share_count || 0),
+      view_count: Number(values.view_count || 0),
+      language: trimValue(values.language) || 'unknown',
+      content_visibility: 'public_or_user_provided',
+      access_scope: 'manual_url_user_provided',
+      raw_data_safe: {
+        manual_entry: true,
+        no_url_fetch: true,
+        no_scraping: true,
+        user_attested_public_or_lawful_source: true,
+      },
+    }
+
+    setManualLoading(true)
+    try {
+      const result = await attachCaseEvidence(currentCase.case_id, {
+        source: {
+          platform,
+          source_type: sourceType,
+          acquisition_mode: 'manual_url',
+          source_name: 'Manual URL evidence',
+          source_url: trimValue(values.url) || null,
+          access_scope: 'manual_url_user_provided',
+          credential_present: false,
+          notes: 'User-entered public evidence text only; Sentigraph does not fetch this URL.',
+        },
+        evidence_items: [evidenceItem],
+      })
+      setManualResult(result)
+      const refreshedCase = await getCase(currentCase.case_id)
+      onCaseReady?.(refreshedCase)
+      form.resetFields()
+    } catch (error) {
+      setManualError(error?.response?.data?.detail?.message || error?.message || 'Manual evidence attach failed.')
+    } finally {
+      setManualLoading(false)
+    }
+  }
+
+  return (
+    <Card className="panel-card">
+      <Space direction="vertical" className="full-width" size={14}>
+        <div className="panel-heading">
+          <Space>
+            <Link2 size={18} />
+            <Title level={4}>手动添加证据</Title>
+          </Space>
+          <Space wrap>
+            <Tag color="cyan">manual_url</Tag>
+            <Tag color="green">normalized EvidenceItem</Tag>
+            <Tag color="purple">no fetch</Tag>
+          </Space>
+        </div>
+        <Alert
+          message="手动 URL / 单条证据录入"
+          description={
+            <Space direction="vertical" size={2}>
+              <Text>本功能不会自动抓取网页内容，请手动粘贴你有权使用的公开证据文本。</Text>
+              <Text>系统只保存规范化 EvidenceItem，不保存凭证、Cookie 或密钥。</Text>
+              <Text>用户需确保数据来源合法合规。</Text>
+            </Space>
+          }
+          showIcon
+          type="info"
+        />
+        {manualError ? <Alert message="手动证据添加失败" description={manualError} type="error" showIcon /> : null}
+        <Form
+          form={form}
+          initialValues={{
+            acquisition_mode: 'manual_url',
+            evidence_type: 'comment',
+            platform: 'manual_url',
+            source_type: 'public_web',
+          }}
+          layout="vertical"
+          onFinish={handleAttach}
+        >
+          <div className="evidence-manual-grid">
+            <Form.Item label="URL" name="url">
+              <Input placeholder="https://example.com/public-post" />
+            </Form.Item>
+            <Form.Item label="平台" name="platform">
+              <Input placeholder="manual_url / youtube / news_site" />
+            </Form.Item>
+            <Form.Item label="来源类型" name="source_type">
+              <Select options={manualSourceTypes} />
+            </Form.Item>
+            <Form.Item label="证据类型" name="evidence_type">
+              <Select options={manualEvidenceTypes} />
+            </Form.Item>
+            <Form.Item label="标题" name="title">
+              <Input placeholder="公开文章、视频或帖子标题" />
+            </Form.Item>
+            <Form.Item label="作者" name="author_name">
+              <Input placeholder="公开作者名或来源名，可留空" />
+            </Form.Item>
+            <Form.Item className="evidence-manual-wide" label="正文 / 摘要" name="body_text">
+              <TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="手动粘贴公开正文、摘要或视频描述" />
+            </Form.Item>
+            <Form.Item className="evidence-manual-wide" label="评论内容" name="comment_text">
+              <TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="手动粘贴公开评论或回复内容" />
+            </Form.Item>
+            <Form.Item label="父级ID" name="parent_id">
+              <Input placeholder="回复所属评论 ID，可留空" />
+            </Form.Item>
+            <Form.Item label="根证据ID" name="root_id">
+              <Input placeholder="文章/视频/帖子 ID，可留空" />
+            </Form.Item>
+            <Form.Item label="作者ID" name="author_id">
+              <Input placeholder="公开作者 ID，可留空" />
+            </Form.Item>
+            <Form.Item label="发布时间" name="created_at">
+              <Input placeholder="2026-05-25T09:00:00Z" />
+            </Form.Item>
+            <Form.Item label="点赞数" name="like_count">
+              <InputNumber className="full-width" min={0} precision={0} />
+            </Form.Item>
+            <Form.Item label="回复数" name="reply_count">
+              <InputNumber className="full-width" min={0} precision={0} />
+            </Form.Item>
+            <Form.Item label="分享数" name="share_count">
+              <InputNumber className="full-width" min={0} precision={0} />
+            </Form.Item>
+            <Form.Item label="浏览数" name="view_count">
+              <InputNumber className="full-width" min={0} precision={0} />
+            </Form.Item>
+            <Form.Item label="语言" name="language">
+              <Input placeholder="zh-CN / en-US，可留空自动推断" />
+            </Form.Item>
+          </div>
+          <Space wrap>
+            <Button htmlType="submit" icon={<PlusCircle size={15} />} loading={manualLoading} type="primary">
+              添加到案例
+            </Button>
+            <Button
+              disabled={!manualResult?.evidence_item_count && !currentCase.evidence_item_count}
+              icon={<PlayCircle size={15} />}
+              onClick={() => onRunCase?.(currentCase.case_id, 'analysis')}
+            >
+              添加后运行分析
+            </Button>
+          </Space>
+        </Form>
+        {manualResult ? (
+          <Alert
+            message="手动证据已添加"
+            description={
+              <Space direction="vertical" size={6}>
+                <Space wrap>
+                  <Tag color="green">evidence_count: {manualResult.evidence_item_count}</Tag>
+                  <DistributionTags color="purple" values={manualResult.evidence_type_counts} />
+                  <DistributionTags color="geekblue" values={manualResult.source_distribution} />
+                  <Tag color="gold">acquisition_mode=manual_url</Tag>
+                </Space>
+                {latestEvidence ? (
+                  <Text type="secondary">Latest evidence: {evidenceTextPreview(latestEvidence)}</Text>
+                ) : null}
+                {manualResult.warnings?.length ? (
+                  <Space wrap size={[4, 4]}>
+                    {manualResult.warnings.map((warning) => (
+                      <Tag color="orange" key={warning}>{warning}</Tag>
+                    ))}
+                  </Space>
+                ) : null}
+              </Space>
+            }
+            icon={<CheckCircle2 size={16} />}
+            showIcon
+            type="success"
+          />
+        ) : null}
+      </Space>
+    </Card>
+  )
 }
 
 function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
@@ -448,9 +690,18 @@ export function Cases({
     {
       title: '操作',
       key: 'actions',
-      width: 210,
+      width: 270,
       render: (_, record) => (
         <Space>
+          <Button
+            icon={<Link2 size={15} />}
+            onClick={() => {
+              void getCase(record.case_id).then((caseDetail) => onCaseReady?.(caseDetail))
+            }}
+            size="small"
+          >
+            打开
+          </Button>
           <Button
             icon={<PlayCircle size={15} />}
             loading={loading && currentCase?.case_id === record.case_id}
@@ -530,6 +781,10 @@ export function Cases({
             </Space>
           ) : null}
         </Card>
+      ) : null}
+
+      {currentCase ? (
+        <ManualEvidencePanel currentCase={currentCase} onCaseReady={onCaseReady} onRunCase={onRunCase} />
       ) : null}
 
       {currentCase ? (
