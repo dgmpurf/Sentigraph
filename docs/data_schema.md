@@ -516,7 +516,7 @@ cookies, inspect `.env`, or start crawlers.
 ```json
 {
   "categories": [],
-  "total_categories": 8,
+  "total_categories": 12,
   "total_sources": 22,
   "safe_mode": {
     "static_metadata_only": true,

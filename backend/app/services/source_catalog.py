@@ -318,14 +318,14 @@ def _build_categories() -> list[SourceCatalogCategory]:
             ],
         ),
         SourceCatalogCategory(
-            category_id="discovery_upload_vendor",
-            display_name="Discovery / Upload / Vendor",
-            description="Source-neutral discovery and import paths that produce evidence records without platform-specific crawling.",
+            category_id="search_discovery",
+            display_name="Search Discovery",
+            description="Approved search/discovery metadata sources that find candidate public evidence without scraping search result pages.",
             sources=[
                 _entry(
                     "search_discovery",
                     "GDELT / Google Programmable Search / Search Discovery",
-                    "discovery_upload_vendor",
+                    "search_discovery",
                     "yellow",
                     ["search_discovery", "data_vendor", "manual_url", "mock_fixture"],
                     ["search_result", "title", "body_text"],
@@ -335,10 +335,17 @@ def _build_categories() -> list[SourceCatalogCategory]:
                     "Design provider-specific connector only after terms review.",
                     "medium",
                 ),
+            ],
+        ),
+        SourceCatalogCategory(
+            category_id="rss",
+            display_name="RSS",
+            description="Public RSS/Atom feed metadata and article links from sources whose terms allow feed consumption.",
+            sources=[
                 _entry(
                     "rss",
                     "RSS",
-                    "discovery_upload_vendor",
+                    "rss",
                     "green",
                     ["public_parser", "manual_url", "user_upload", "mock_fixture"],
                     ["search_result", "article", "title", "body_text"],
@@ -348,10 +355,17 @@ def _build_categories() -> list[SourceCatalogCategory]:
                     "Add RSS fixture/import pilot when needed.",
                     "medium",
                 ),
+            ],
+        ),
+        SourceCatalogCategory(
+            category_id="user_uploaded_datasets",
+            display_name="User-Uploaded Datasets",
+            description="CSV, Excel, or JSON records supplied by the user with lawful-source attestation and secret screening.",
+            sources=[
                 _entry(
                     "uploaded_datasets",
                     "CSV / Excel / JSON Upload",
-                    "discovery_upload_vendor",
+                    "user_uploaded_datasets",
                     "green",
                     ["user_upload", "mock_fixture"],
                     ["uploaded_record", "article", "post", "comment", "reply", "title", "body_text", "interaction_metric"],
@@ -361,10 +375,17 @@ def _build_categories() -> list[SourceCatalogCategory]:
                     "Add CSV/Excel UI import after manual evidence attach QA.",
                     "high",
                 ),
+            ],
+        ),
+        SourceCatalogCategory(
+            category_id="manual_url_evidence",
+            display_name="Manual URL Evidence",
+            description="User-entered public URL, title/body, video description, and comment snippets without automatic page fetching.",
+            sources=[
                 _entry(
                     "manual_url",
                     "Manual URL Evidence",
-                    "discovery_upload_vendor",
+                    "manual_url_evidence",
                     "green",
                     ["manual_url", "user_upload", "mock_fixture"],
                     ["article", "video", "post", "comment", "title", "body_text"],
@@ -374,10 +395,17 @@ def _build_categories() -> list[SourceCatalogCategory]:
                     "Add a UI form only if demos need it.",
                     "high",
                 ),
+            ],
+        ),
+        SourceCatalogCategory(
+            category_id="data_vendor_future_integration",
+            display_name="Data Vendor Future Integration",
+            description="Licensed vendor feeds that may provide public-opinion evidence after contract, retention, and redaction review.",
+            sources=[
                 _entry(
                     "data_vendor",
                     "Data Vendor Future Integration",
-                    "discovery_upload_vendor",
+                    "data_vendor_future_integration",
                     "yellow",
                     ["data_vendor", "user_upload", "mock_fixture"],
                     ["uploaded_record", "article", "post", "comment", "reply", "search_result", "interaction_metric"],

@@ -1,6 +1,6 @@
 # Sentigraph Implementation Backlog
 
-Last updated: 2026-05-19
+Last updated: 2026-05-25
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
 
@@ -10,28 +10,29 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### Source Catalog
 
-Status: implemented as a static metadata and planning endpoint on 2026-05-25.
+Status: implemented and QA-stabilized as a static metadata and planning endpoint on 2026-05-25.
 
 Completed:
 
 - Added `docs/source_catalog.md` covering video platforms, news/media sites, forums/communities, Q&A sites, complaint/review sites, finance/investor forums, social platforms, search discovery, RSS, user-uploaded datasets, manual URL evidence, and future data-vendor integrations.
 - Added static backend schemas for `SourceCatalogEntry`, `SourceCatalogCategory`, and `SourceCatalogResponse`.
-- Added `GET /api/v1/sources/catalog` and a thin service returning source metadata only.
+- Added `GET /api/v1/sources/catalog` and a thin service returning source metadata only across the same 12 readable source categories.
 - Added frontend API helper `getSourceCatalog()` and normalizers for future UI reuse.
 - Added tests for category coverage, YouTube green/real-capable status, Douyin OAuth/permission pending status, Bilibili official-permission pending status, safe secret exposure, and no MediaCrawler integration in product code.
+- QA-stabilized the endpoint shape so search discovery, RSS, user-uploaded datasets, manual URL evidence, and data-vendor future integration are separate categories rather than one compressed bucket.
 
 Acceptance:
 
 - The endpoint is static metadata only. It does not call real APIs, real Douyin/Bilibili APIs, real LLM APIs, crawlers, live fetch, cookies, or `.env` readers.
 - No secret values are exposed; the response contains no API keys, client secrets, access tokens, refresh tokens, cookies, authorization headers, or `.env` values.
 - MediaCrawler is not integrated as a core source.
-- `python -m pytest` passed with `571 passed in 5.88s`.
+- `python -m pytest` passed with `573 passed in 5.91s`.
 - `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
-- `npm run build` from `frontend/` passed in 8.27s with the existing non-blocking vendor chunk warning.
+- `npm run build` from `frontend/` passed in 7.79s with the existing non-blocking vendor chunk warning.
 
 Next options:
 
-- Browser-smoke `GET /api/v1/sources/catalog` and the Evidence attach flow.
+- Browser-smoke `GET /api/v1/sources/catalog` and the Evidence attach flow in local pages.
 - Add CSV/Excel upload only after manual evidence demos prove the schema is stable.
 - Use the catalog/matrix to evaluate Douyin or Bilibili once official API gates are confirmed.
 
@@ -62,7 +63,7 @@ Next options:
 
 ### Universal Evidence Ingestion Layer
 
-Status: implemented as a thin, source-neutral normalization layer on 2026-05-25.
+Status: implemented and QA-stabilized as a thin, source-neutral normalization layer on 2026-05-25.
 
 Completed:
 
@@ -78,6 +79,7 @@ Acceptance:
 
 - Evidence attachment is normalization only; it does not call real APIs, real Douyin/Bilibili APIs, real LLM APIs, crawlers, live public fetch, or scraping bypasses.
 - Secret-like fields are removed from `raw_data_safe`; API keys, tokens, cookies, authorization headers, passwords, client secrets, credential values, and `.env` values are not returned.
+- QA coverage confirms manual evidence attach supports article/body evidence, video metadata, comments, replies, standalone `interaction_metric` records, `manual_url` and `user_upload` acquisition labels, and deterministic run priority: `case_raw_data` > `case_evidence_items` > `mock_data_fallback`.
 - Existing mock flow and YouTube raw-data flow remain backward compatible.
 - Backend tests passed with `python -m pytest` (`565 passed in 5.59s`).
 - Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`).

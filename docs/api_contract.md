@@ -1638,7 +1638,7 @@ Response:
       ]
     }
   ],
-  "total_categories": 8,
+  "total_categories": 12,
   "total_sources": 22,
   "safe_mode": {
     "static_metadata_only": true,
@@ -1656,7 +1656,7 @@ Response:
 Important:
 
 - The catalog is a planning/status endpoint, not a crawler.
-- It returns source categories such as video platforms, news/media sites, forums, Q&A, complaints/reviews, finance/investor forums, social platforms, search/RSS/upload/vendor sources.
+- It returns source categories such as video platforms, news/media sites, forums, Q&A, complaints/reviews, finance/investor forums, social platforms, search discovery, RSS, user-uploaded datasets, manual URL evidence, and data-vendor future integration.
 - It must not expose API keys, client secrets, OAuth tokens, cookies, `.env` values, or local secret paths.
 - MediaCrawler is not integrated as a core source. Third-party crawler exports may only enter as user-provided datasets with lawful-source attestation.
 

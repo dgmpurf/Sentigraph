@@ -22,8 +22,13 @@ def test_source_catalog_returns_expected_categories() -> None:
         "complaint_review_sites",
         "finance_investor_forums",
         "social_platforms",
-        "discovery_upload_vendor",
+        "search_discovery",
+        "rss",
+        "user_uploaded_datasets",
+        "manual_url_evidence",
+        "data_vendor_future_integration",
     }.issubset(category_ids)
+    assert body["total_categories"] >= 12
     assert body["safe_mode"]["static_metadata_only"] is True
     assert body["safe_mode"]["real_api_calls"] is False
     assert body["safe_mode"]["third_party_crawler_integrated"] is False

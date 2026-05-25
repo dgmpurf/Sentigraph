@@ -146,6 +146,93 @@ def test_manual_evidence_attach_is_sanitized_and_feeds_analysis() -> None:
     assert "secret-marker-should-not-appear" not in run_response.text
 
 
+def test_manual_url_video_reply_and_metric_attach_are_supported() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    payload = {
+        "source": {
+            "platform": "public_web",
+            "source_type": "public_web",
+            "acquisition_mode": "manual_url",
+            "source_name": "Manual public URL evidence",
+            "source_url": "https://example.test/video",
+        },
+        "evidence_items": [
+            {
+                "evidence_type": "video",
+                "title": "Manual public video title",
+                "body_text": "A public video description about delayed response.",
+                "root_id": "manual_video_001",
+                "url": "https://example.test/video",
+            },
+            {
+                "evidence_type": "reply",
+                "comment_text": "A reply says the official timeline is unclear.",
+                "root_id": "manual_video_001",
+                "parent_id": "manual_comment_001",
+                "raw_data_safe": {"client_secret": "secret-marker-should-not-appear"},
+            },
+            {
+                "evidence_type": "interaction_metric",
+                "root_id": "manual_video_001",
+                "like_count": 23,
+                "reply_count": 5,
+                "view_count": 900,
+            },
+        ],
+    }
+
+    response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=payload)
+
+    assert response.status_code == 200
+    assert "secret-marker-should-not-appear" not in response.text
+    body = response.json()
+    assert body["source_distribution"] == {"public_web": 3}
+    assert body["evidence_type_counts"]["video"] == 1
+    assert body["evidence_type_counts"]["reply"] == 1
+    assert body["evidence_type_counts"]["interaction_metric"] == 1
+    assert {item["acquisition_mode"] for item in body["evidence_items"]} == {"manual_url"}
+    assert body["top_titles"] == ["Manual public video title"]
+    assert any("official timeline" in comment for comment in body["representative_comments"])
+
+
+def test_raw_comments_take_priority_over_evidence_items_when_both_exist(monkeypatch) -> None:
+    case_id = _create_case(platforms=["youtube"])
+    attach_response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={
+            "source": {
+                "platform": "uploaded_dataset",
+                "source_type": "uploaded_dataset",
+                "acquisition_mode": "user_upload",
+            },
+            "evidence_items": [
+                {
+                    "evidence_type": "comment",
+                    "comment_text": "Manual evidence exists but raw YouTube comments should win.",
+                }
+            ],
+        },
+    )
+    assert attach_response.status_code == 200
+
+    def fake_start_crawl(payload):
+        return _crawl_response()
+
+    monkeypatch.setattr("app.services.case_store.start_crawl_with_adapters", fake_start_crawl)
+    crawl_response = client.post(f"/api/v1/cases/{case_id}/crawl/start", json={"limit": 3})
+    assert crawl_response.status_code == 200
+
+    run_response = client.post(f"/api/v1/cases/{case_id}/run")
+
+    assert run_response.status_code == 200
+    body = run_response.json()
+    assert body["analysis_input_source"] == "case_raw_data"
+    assert body["analysis_result"]["analysis_input_source"] == "case_raw_data"
+    assert body["raw_comment_count"] == 1
+    assert body["evidence_item_count"] == 2
+    assert any("YouTube fixture quality issue comment" in comment for comment in body["report"]["representative_comments"])
+
+
 def test_case_without_evidence_still_falls_back_to_mock_data() -> None:
     case_id = _create_case()
     response = client.post(f"/api/v1/cases/{case_id}/run")
