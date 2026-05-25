@@ -89,6 +89,14 @@ Planned evidence sources include manual URL evidence, uploaded CSV/Excel/JSON re
 
 The case-specific crawl endpoint still preserves `raw_posts` and `raw_comments` for backward compatibility. It also stores normalized `evidence_items` so future source types can share one evidence surface.
 
+Search Discovery is a lead-generation layer, not an evidence collector. `SearchDiscoveryCandidate` records contain URL/title/snippet metadata with `acquisition_mode=search_discovery` and `status=pending_review`. They become `EvidenceItem` records only after user review and one of these routes:
+
+- Manual URL Evidence with user-provided title/body/comment text.
+- CSV/Excel import with user-provided rows.
+- A separately reviewed public parser path that explicitly allows fetching for that source.
+
+The current Search Discovery endpoints are static/mock only and do not fetch URLs.
+
 ## Case Pipeline Priority
 
 `POST /api/v1/cases/{case_id}/run` uses:

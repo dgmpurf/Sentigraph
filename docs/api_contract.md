@@ -1751,6 +1751,90 @@ Important:
 - It must not expose API keys, client secrets, OAuth tokens, cookies, `.env` values, or local secret paths.
 - MediaCrawler is not integrated as a core source. Third-party crawler exports may only enter as user-provided datasets with lawful-source attestation.
 
+### Search Discovery Static Status
+
+```http
+GET /api/v1/search-discovery/status
+```
+
+Returns static Search Discovery planning metadata. It does not call real search APIs, call website APIs, fetch URLs, scrape pages, use cookies, inspect `.env`, call real LLM APIs, or expose secrets.
+
+Response includes:
+
+- `status="planning_mock_only"`
+- `provider_statuses`
+- `review_flow`
+- `next_actions`
+- `safe_mode`
+
+Provider classes covered by the status endpoint:
+
+- search engine APIs
+- news discovery APIs
+- RSS / Atom feeds
+- site-specific public search pages
+- user-provided URL lists
+- data vendor discovery indexes
+- mock fixtures
+
+`safe_mode` must keep `real_search_api_calls=false`, `real_website_api_calls=false`, `url_fetching=false`, `scraping=false`, `cookies_used=false`, `captcha_bypass=false`, `anti_bot_bypass=false`, `real_llm_calls=false`, `secrets_exposed=false`, and `third_party_crawler_integrated=false`.
+
+### Search Discovery Mock Candidates
+
+```http
+GET /api/v1/search-discovery/mock-candidates?query=Tesla
+```
+
+Returns deterministic mock candidate URL/title/snippet metadata for UI planning and regression tests. The endpoint uses `example.test` URLs and never fetches them.
+
+Response:
+
+```json
+{
+  "query": "Tesla",
+  "candidate_count": 4,
+  "candidates": [
+    {
+      "candidate_id": "mock_search_tesla_article_001",
+      "query": "Tesla",
+      "provider": "mock_fixture",
+      "platform_hint": "news_site",
+      "title": "Tesla public article discussion",
+      "snippet": "Mock discovery metadata only.",
+      "url": "https://example.test/news/tesla-public-article",
+      "published_at": "2026-05-25T08:00:00Z",
+      "source_name": "Mock News Index",
+      "content_type_hint": "article",
+      "confidence": 0.82,
+      "acquisition_mode": "search_discovery",
+      "status": "pending_review",
+      "safety_notes": ["mock fixture only", "URL was not fetched", "human review required before attach"]
+    }
+  ],
+  "safe_mode": {
+    "static_metadata_only": true,
+    "mock_candidates_only": true,
+    "real_search_api_calls": false,
+    "real_website_api_calls": false,
+    "url_fetching": false,
+    "scraping": false,
+    "cookies_used": false,
+    "captcha_bypass": false,
+    "anti_bot_bypass": false,
+    "real_llm_calls": false,
+    "secrets_exposed": false,
+    "third_party_crawler_integrated": false
+  }
+}
+```
+
+Important:
+
+- Search Discovery candidates are not automatically attached to a case.
+- A human must review candidates before using candidate URLs/text as evidence.
+- Accepted candidates should route to Manual URL Evidence, CSV/Excel import, or a separately reviewed public parser path.
+- Full content extraction is not part of Search Discovery.
+
 ### Run Case
 
 ```http

@@ -609,6 +609,84 @@ cookies, inspect `.env`, or start crawlers.
 }
 ```
 
+## 0.5 Search Discovery Schemas
+
+Search Discovery is a planned candidate-discovery layer. Current API support is static/mock only:
+
+```http
+GET /api/v1/search-discovery/status
+GET /api/v1/search-discovery/mock-candidates?query=Tesla
+```
+
+It does not call real search APIs, call website APIs, fetch URLs, scrape pages, use cookies, inspect `.env`, expose secrets, integrate MediaCrawler, or call real LLM APIs.
+
+`SearchDiscoveryQuery`:
+
+```json
+{
+  "query": "Tesla",
+  "providers": ["mock_fixture"],
+  "max_candidates": 5,
+  "language": "auto"
+}
+```
+
+`SearchDiscoveryCandidate`:
+
+```json
+{
+  "candidate_id": "mock_search_tesla_article_001",
+  "query": "Tesla",
+  "provider": "mock_fixture",
+  "platform_hint": "news_site",
+  "title": "Tesla public article discussion",
+  "snippet": "Mock discovery metadata only.",
+  "url": "https://example.test/news/tesla-public-article",
+  "published_at": "2026-05-25T08:00:00Z",
+  "source_name": "Mock News Index",
+  "content_type_hint": "article",
+  "confidence": 0.82,
+  "acquisition_mode": "search_discovery",
+  "status": "pending_review",
+  "safety_notes": ["mock fixture only", "URL was not fetched", "human review required before attach"]
+}
+```
+
+`SearchDiscoveryProviderStatus`:
+
+```json
+{
+  "provider_id": "rss_feeds",
+  "display_name": "RSS / Atom Feeds",
+  "provider_class": "rss",
+  "status": "pilot_candidate",
+  "allowed_use": "Use public feed metadata when feed terms permit it.",
+  "forbidden_use": "Do not fetch private feeds, paywalled content, or subscriber-only metadata.",
+  "data_returned": ["url", "title", "summary_or_snippet", "source_name", "published_at"],
+  "full_content_available": false,
+  "requires_api_key": false,
+  "credential_present": false,
+  "user_review_required": true,
+  "current_sentigraph_status": "planned_only",
+  "next_action": "Add an RSS fixture pilot only after source-specific review."
+}
+```
+
+`SearchDiscoveryBatch` returns a query, generated time, candidates, provider statuses, counts, and safe-mode flags. `SearchDiscoveryReviewDecision` is a planned review object with `candidate_id`, `decision`, `reviewer_note`, and `route_to`.
+
+Candidate status values:
+
+- `pending_review`
+- `accepted`
+- `rejected`
+- `attached`
+
+Review rule:
+
+- Search Discovery candidates are not evidence by themselves.
+- Accepted candidates must become `manual_url` evidence, user-upload/import evidence, or go through a separately reviewed public parser route.
+- Search Discovery never performs automatic page fetching by itself.
+
 ### Case Raw Data Ingestion
 
 `POST /api/v1/cases/{case_id}/crawl/start` stores adapter output on a case:

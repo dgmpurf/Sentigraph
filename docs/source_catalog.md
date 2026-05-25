@@ -395,6 +395,8 @@ Examples:
 - GDELT
 - Google Custom Search / Programmable Search
 - approved data vendor discovery indexes
+- mock search-discovery fixtures
+- user-provided URL lists
 
 Allowed acquisition modes:
 
@@ -407,21 +409,28 @@ Allowed data types:
 
 - `search_result`
 - `title`
-- `body_text`
+- URL/title/snippet metadata
+- source name and published time when available
 
 Forbidden data types:
 
 - SERP scraping without permission
 - proxy evasion output
 - captcha bypass output
+- automatic page fetching
+- full-content extraction without an approved API, reviewed public parser, licensed vendor payload, or user-provided text
 
 Current Sentigraph status:
 
-- Schema/catalog only. No connector implemented.
+- Static status/mock endpoint only. `GET /api/v1/search-discovery/status` and `GET /api/v1/search-discovery/mock-candidates?query=Tesla` return planning metadata and deterministic mock candidates only.
+- No real search provider is configured.
+- Search Discovery candidates are metadata leads, not evidence records, until a user reviews and attaches usable text.
 
 Next action:
 
-- Design provider-specific connectors after terms and quota review.
+- Design user-reviewed candidate attach flow.
+- Research RSS and GDELT/news discovery with fixtures before any real provider call.
+- Keep full content extraction behind Manual URL Evidence, user upload, licensed vendor data, or reviewed public parser rules.
 
 Priority:
 

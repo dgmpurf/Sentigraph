@@ -7,6 +7,7 @@ import {
   getPlatformReadiness,
   getPlatformStatus,
   getPublicParserStatus,
+  getSearchDiscoveryStatus,
   getSourceCatalog,
   previewPublicParser,
 } from '../api/sentigraphApi.js'
@@ -541,6 +542,93 @@ function SourceCatalogPanel({ catalog }) {
   )
 }
 
+function SearchDiscoveryStatusPanel({ status }) {
+  const providers = Array.isArray(status?.provider_statuses) ? status.provider_statuses : []
+  const safeMode = status?.safe_mode || {}
+
+  return (
+    <Card className="panel-card integration-section-card">
+      <div className="panel-heading">
+        <Space>
+          <FileSearch size={18} />
+          <Title level={4}>Search Discovery / URL Candidate Planning</Title>
+        </Space>
+        <Space wrap>
+          <Tag color="purple">{safeText(status?.status, 'planning_mock_only')}</Tag>
+          <Tag color="cyan">{providers.length} providers</Tag>
+          <Tag color={safeMode.mock_candidates_only ? 'green' : 'default'}>mock/static only</Tag>
+          <Tag color={safeMode.real_search_api_calls ? 'red' : 'green'}>no real search API</Tag>
+          <Tag color={safeMode.url_fetching ? 'red' : 'green'}>no URL fetch</Tag>
+          <Tag color={safeMode.scraping ? 'red' : 'green'}>no scraping</Tag>
+        </Space>
+      </div>
+      <Paragraph type="secondary" className="integration-table-note">
+        Search Discovery is planned as candidate URL/title/snippet discovery. It is not crawling: users must
+        review candidates before attaching text as Manual URL evidence or routing a source to a reviewed public parser.
+      </Paragraph>
+      <Row gutter={[16, 16]}>
+        <Col span={15}>
+          {providers.length ? (
+            <div className="integration-tile-grid">
+              {providers.map((provider) => (
+                <div className="integration-tile" key={provider.provider_id}>
+                  <Space direction="vertical" size={7} className="full-width">
+                    <div className="integration-tile-header">
+                      <Space direction="vertical" size={2}>
+                        <Text strong>{provider.display_name}</Text>
+                        <Text type="secondary">{provider.provider_class}</Text>
+                      </Space>
+                      <Tag color={provider.status === 'available_now' ? 'green' : 'gold'}>
+                        {provider.status}
+                      </Tag>
+                    </div>
+                    <Space wrap size={4}>
+                      <Tag>{provider.requires_api_key ? 'API key later' : 'No key required'}</Tag>
+                      <Tag color={provider.credential_present ? 'green' : 'default'}>
+                        credential_present={String(provider.credential_present)}
+                      </Tag>
+                      <Tag color={provider.user_review_required ? 'purple' : 'default'}>
+                        review_required={String(provider.user_review_required)}
+                      </Tag>
+                      <Tag color={provider.full_content_available ? 'orange' : 'default'}>
+                        full_content={String(provider.full_content_available)}
+                      </Tag>
+                    </Space>
+                    <Text type="secondary">Data: {formatList(provider.data_returned)}</Text>
+                    <Paragraph className="integration-note" ellipsis={{ rows: 2 }}>
+                      {provider.next_action}
+                    </Paragraph>
+                  </Space>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Empty description="Search Discovery status is unavailable." image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          )}
+        </Col>
+        <Col span={9}>
+          <Card className="panel-card integration-explanation-card">
+            <Space direction="vertical" size={10} className="full-width">
+              <Text strong>Review flow</Text>
+              {(status?.review_flow || []).slice(0, 5).map((step, index) => (
+                <Text type="secondary" key={step}>
+                  {index + 1}. {step}
+                </Text>
+              ))}
+              <Alert
+                type="info"
+                showIcon
+                message="Boundary"
+                description="No automatic page fetching, no website scraping, no cookies, no real search provider, and no real LLM call in the current status design."
+              />
+            </Space>
+          </Card>
+        </Col>
+      </Row>
+    </Card>
+  )
+}
+
 function PlatformTileList({ platforms, emptyText }) {
   if (!platforms.length) {
     return <Empty description={emptyText} image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -613,6 +701,7 @@ export function PlatformIntegrationOverview() {
   const [platformRegistry, setPlatformRegistry] = useState(null)
   const [parserStatus, setParserStatus] = useState(null)
   const [sourceCatalog, setSourceCatalog] = useState(null)
+  const [searchDiscoveryStatus, setSearchDiscoveryStatus] = useState(null)
   const [previewByPlatform, setPreviewByPlatform] = useState({})
   const [selectedPlatform, setSelectedPlatform] = useState('')
   const [loading, setLoading] = useState(true)
@@ -628,22 +717,25 @@ export function PlatformIntegrationOverview() {
       const fallback = await getPlatformStatus()
       return { ...fallback, readiness_fallback_used: true }
     })
-    const [platformsResult, statusResult, parsersResult, catalogResult] = await Promise.allSettled([
+    const [platformsResult, statusResult, parsersResult, catalogResult, searchDiscoveryResult] = await Promise.allSettled([
       getPlatforms(),
       readinessRequest,
       getPublicParserStatus(),
       getSourceCatalog(),
+      getSearchDiscoveryStatus(),
     ])
 
     const nextPlatformRegistry = platformsResult.status === 'fulfilled' ? platformsResult.value : null
     const nextPlatformStatus = statusResult.status === 'fulfilled' ? statusResult.value : null
     const nextParserStatus = parsersResult.status === 'fulfilled' ? parsersResult.value : null
     const nextSourceCatalog = catalogResult.status === 'fulfilled' ? catalogResult.value : null
+    const nextSearchDiscoveryStatus = searchDiscoveryResult.status === 'fulfilled' ? searchDiscoveryResult.value : null
 
     setPlatformRegistry(nextPlatformRegistry)
     setPlatformStatus(nextPlatformStatus)
     setParserStatus(nextParserStatus)
     setSourceCatalog(nextSourceCatalog)
+    setSearchDiscoveryStatus(nextSearchDiscoveryStatus)
 
     const partialWarnings = []
     if (platformsResult.status === 'rejected') partialWarnings.push('GET /api/v1/platforms 加载失败')
@@ -962,6 +1054,7 @@ export function PlatformIntegrationOverview() {
           <MetricCards platforms={platforms} publicParsers={publicParsers} summary={platformStatus?.summary} />
           <ExplanationCards />
           <SourceCatalogPanel catalog={sourceCatalog} />
+          <SearchDiscoveryStatusPanel status={searchDiscoveryStatus} />
 
           <Row gutter={[16, 16]}>
             <Col span={12}>

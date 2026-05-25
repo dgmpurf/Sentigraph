@@ -8,6 +8,36 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Search Discovery Planning and Static Status
+
+Status: planning and static mock status implemented on 2026-05-25.
+
+Completed:
+
+- Added `docs/search_discovery_design.md` and `docs/search_discovery_source_matrix.md`.
+- Added planned schemas for `SearchDiscoveryQuery`, `SearchDiscoveryCandidate`, `SearchDiscoveryBatch`, `SearchDiscoveryProviderStatus`, and `SearchDiscoveryReviewDecision`.
+- Added static endpoints `GET /api/v1/search-discovery/status` and `GET /api/v1/search-discovery/mock-candidates?query=Tesla`.
+- Added a read-only Platform Integration Overview panel showing Search Discovery as planning/mock only.
+- Updated source catalog, feasibility matrix, API contract, data schema, demo checklist, and progress notes.
+
+Acceptance:
+
+- Search Discovery status and mock candidates are static/mock metadata only.
+- No real search APIs, website APIs, real YouTube/Douyin/Bilibili APIs, real LLM APIs, URL fetching, scraping, cookies, login/captcha/anti-bot bypasses, MediaCrawler, or secret exposure are introduced.
+- Candidate URLs are review leads only and must route through Manual URL Evidence, CSV/Excel import, or a separately reviewed public parser before affecting analysis.
+- Latest validation passed with `python -m pytest` (`589 passed in 6.78s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 8.54s`; existing non-blocking vendor chunk warning remains).
+
+Future tasks:
+
+- Mock Search Discovery UI for candidate review.
+- Provider adapter design with fail-closed no-network tests.
+- RSS discovery pilot with fixtures.
+- GDELT/news discovery research.
+- User-reviewed candidate attach workflow.
+- No automatic scraping.
+- MediaCrawler remains not integrated.
+- GitHub Actions CI remains intentionally disabled.
+
 ### Manual URL Evidence Import UI
 
 Status: implemented and browser-smoke QA complete on 2026-05-25 as a safe one-off evidence entry flow on the Cases page.

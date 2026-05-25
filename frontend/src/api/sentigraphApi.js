@@ -28,6 +28,11 @@ export async function getSourceCatalog() {
   return normalizeSourceCatalog(data)
 }
 
+export async function getSearchDiscoveryStatus() {
+  const { data } = await apiClient.get(`${API_PREFIX}/search-discovery/status`)
+  return normalizeSearchDiscoveryStatus(data)
+}
+
 export async function getPublicParserStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/public-parsers/status`)
   return normalizePublicParserStatus(data)
@@ -580,6 +585,48 @@ function normalizeSourceCatalogEntry(source) {
     compliance_notes: String(source.compliance_notes || ''),
     next_action: String(source.next_action || ''),
     priority: String(source.priority || ''),
+  }
+}
+
+function normalizeSearchDiscoveryStatus(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      status: 'planning_mock_only',
+      provider_statuses: [],
+      review_flow: [],
+      next_actions: [],
+      safe_mode: {},
+    }
+  }
+  return {
+    status: String(data.status || 'planning_mock_only'),
+    provider_statuses: Array.isArray(data.provider_statuses)
+      ? data.provider_statuses.map(normalizeSearchDiscoveryProvider).filter(Boolean)
+      : [],
+    review_flow: Array.isArray(data.review_flow) ? data.review_flow.map((item) => String(item)) : [],
+    next_actions: Array.isArray(data.next_actions) ? data.next_actions.map((item) => String(item)) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeSearchDiscoveryProvider(provider) {
+  if (!provider || typeof provider !== 'object') return null
+  return {
+    provider_id: String(provider.provider_id || ''),
+    display_name: String(provider.display_name || ''),
+    provider_class: String(provider.provider_class || ''),
+    status: String(provider.status || ''),
+    allowed_use: String(provider.allowed_use || ''),
+    forbidden_use: String(provider.forbidden_use || ''),
+    data_returned: Array.isArray(provider.data_returned)
+      ? provider.data_returned.map((item) => String(item))
+      : [],
+    full_content_available: Boolean(provider.full_content_available),
+    requires_api_key: Boolean(provider.requires_api_key),
+    credential_present: Boolean(provider.credential_present),
+    user_review_required: provider.user_review_required !== false,
+    current_sentigraph_status: String(provider.current_sentigraph_status || ''),
+    next_action: String(provider.next_action || ''),
   }
 }
 
