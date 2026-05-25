@@ -35,10 +35,13 @@ Acceptance:
 - Validation passed after browser-smoke stabilization with `python -m pytest` (`580 passed in 6.01s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.94s`; existing non-blocking vendor chunk warning remains).
 - Template download regression coverage verifies the endpoint headers, safe sample rows, no secret-like template values, and that the template can be parsed by the import preview flow.
 - Latest validation after template download passed with `python -m pytest` (`582 passed in 6.45s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.84s`; existing non-blocking vendor chunk warning remains).
+- Browser-smoke QA for the template flow is complete: the Cases page shows `下载 CSV 模板` and safety helper text, the static template endpoint returns safe attachment headers, the template parses through preview, commit stores normalized evidence, and rerun analysis uses `analysis_input_source=case_evidence_items`.
 
 Next options:
 
-- Browser-smoke the template download -> upload -> preview -> commit -> run-analysis loop once before recording a demo.
+- Manual URL Evidence Import UI.
+- Search discovery planning.
+- Douyin/Bilibili official API verification when console/API access is ready.
 - Add a richer sample-data gallery only if repeated demos need more scenario variety.
 - Add larger import-size UX only after memory/file-size guardrails are revisited.
 - Douyin/Bilibili official APIs remain pending official permission/OAuth gates.
