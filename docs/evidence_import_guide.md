@@ -24,6 +24,22 @@ Unsupported:
 
 Sentigraph does not execute formulas. Cells beginning with `=`, `+`, `-`, or `@` are treated as plain text.
 
+## Download Template
+
+The Cases page Evidence Import panel includes `下载 CSV 模板`. The same template is available from:
+
+```http
+GET /api/v1/evidence/import/template.csv
+```
+
+The response is a UTF-8 CSV attachment named `sentigraph_evidence_import_template.csv`. It contains the full recommended header and three safe sample rows:
+
+- article evidence from a public news/media source
+- video evidence from a public YouTube-style source
+- comment evidence from a user-uploaded dataset
+
+No credentials, cookies, API keys, tokens, or private data are included in the template. The template is a starting point only; users are still responsible for ensuring uploaded datasets come from lawful sources.
+
 ## Recommended Columns
 
 Recommended CSV header:
@@ -55,6 +71,19 @@ Supported mapping fields:
 - `view_count`
 - `language`
 
+Column notes:
+
+- `platform`: display/source label such as `youtube`, `news_site`, or `uploaded_dataset`.
+- `source_type`: normalized source bucket such as `youtube`, `news_site`, `public_web`, or `uploaded_dataset`.
+- `acquisition_mode`: usually `user_upload` for imported files.
+- `evidence_type`: `article`, `video`, `post`, `comment`, `reply`, `title`, `body_text`, or `interaction_metric`.
+- `title`, `body_text`, `comment_text`: public text that can be analyzed.
+- `parent_id` and `root_id`: optional relationship IDs for replies, threads, videos, articles, or posts.
+- `author_id` and `author_name`: optional public labels from the uploaded dataset.
+- `url`: optional public source URL for review context; Sentigraph does not fetch it during import.
+- metric columns: optional non-negative counts parsed safely.
+- `language`: optional language hint such as `zh-CN` or `en-US`.
+
 Defaults:
 
 - `acquisition_mode=user_upload`
@@ -82,12 +111,14 @@ Defaults:
 1. Open `Cases`.
 2. Select or create a case.
 3. Use `导入证据数据`.
-4. Click `上传 CSV / Excel`.
-5. Confirm or adjust `字段映射`.
-6. Click `预览导入结果`.
-7. Review warnings, duplicates, and normalized rows.
-8. Click `确认导入`.
-9. Click `导入后运行分析`.
+4. Click `下载 CSV 模板` if you need a starter file.
+5. Fill the template with lawful public/user-provided evidence.
+6. Click `上传 CSV / Excel`.
+7. Confirm or adjust `字段映射`.
+8. Click `预览导入结果`.
+9. Review warnings, duplicates, and normalized rows.
+10. Click `确认导入`.
+11. Click `导入后运行分析`.
 
 Expected success signs:
 
@@ -102,9 +133,11 @@ Expected success signs:
 Preview:
 
 ```powershell
-$bytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes("sample_evidence_import.csv"))
+$template = "sentigraph_evidence_import_template.csv"
+Invoke-WebRequest "http://127.0.0.1:8000/api/v1/evidence/import/template.csv" -OutFile $template
+$bytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($template))
 $body = @{
-  filename = "sample_evidence_import.csv"
+  filename = $template
   content_base64 = $bytes
 } | ConvertTo-Json -Depth 8
 Invoke-RestMethod -Method Post "http://127.0.0.1:8000/api/v1/cases/case_001/evidence/import/preview" -ContentType "application/json" -Body $body

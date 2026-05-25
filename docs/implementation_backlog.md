@@ -10,7 +10,7 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### CSV / Excel Evidence Import
 
-Status: implemented and browser-smoke QA complete as a safe user-upload import flow on 2026-05-25.
+Status: implemented, browser-smoke QA complete, and template-download supported as a safe user-upload import flow on 2026-05-25.
 
 Completed:
 
@@ -18,6 +18,7 @@ Completed:
 - Added `POST /api/v1/cases/{case_id}/evidence/import/preview` and `POST /api/v1/cases/{case_id}/evidence/import/commit`.
 - Added an in-memory import parser for CSV, UTF-8/UTF-8-BOM CSV, GB18030/GBK CSV fallback, and macro-free `.xlsx` without adding a runtime spreadsheet dependency.
 - Added frontend Cases-page import UI for `导入证据数据`, upload, field mapping, preview, warnings, commit, result summary, and `导入后运行分析`.
+- Added `GET /api/v1/evidence/import/template.csv` with a safe UTF-8 CSV attachment and a `下载 CSV 模板` button in the Cases import panel.
 - Added `docs/evidence_import_guide.md` and a sample CSV fixture for regression coverage.
 - Browser-smoke QA verified the Cases import panel, local endpoint flow, evidence summary, Analysis Result, Summary Report representative comments, Risk Monitor, Simulation Lab, Benchmark Dashboard, LLM Safety, and Platform Integration Overview.
 - Fixed import-adjacent UI polish found during smoke: uploaded `case_evidence_items` now show `Data: Evidence` instead of being mislabeled as YouTube real raw data when the platform list contains YouTube, and evidence-backed propagation graphs now pass explicit graph node IDs to avoid duplicate-node ECharts console errors.
@@ -32,10 +33,13 @@ Acceptance:
 - `case_raw_data` still takes priority over imported `evidence_items`; mock fallback still works when neither raw data nor evidence exists.
 - The feature does not call real APIs, real YouTube APIs in automated tests, real Douyin/Bilibili APIs, real LLM APIs, crawlers, cookies, login/captcha/anti-bot bypasses, or MediaCrawler.
 - Validation passed after browser-smoke stabilization with `python -m pytest` (`580 passed in 6.01s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.94s`; existing non-blocking vendor chunk warning remains).
+- Template download regression coverage verifies the endpoint headers, safe sample rows, no secret-like template values, and that the template can be parsed by the import preview flow.
+- Latest validation after template download passed with `python -m pytest` (`582 passed in 6.45s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.84s`; existing non-blocking vendor chunk warning remains).
 
 Next options:
 
-- Add a downloadable CSV template if repeated demos need a cleaner starting file.
+- Browser-smoke the template download -> upload -> preview -> commit -> run-analysis loop once before recording a demo.
+- Add a richer sample-data gallery only if repeated demos need more scenario variety.
 - Add larger import-size UX only after memory/file-size guardrails are revisited.
 - Douyin/Bilibili official APIs remain pending official permission/OAuth gates.
 - MediaCrawler remains not integrated.

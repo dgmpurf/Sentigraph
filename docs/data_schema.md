@@ -470,6 +470,8 @@ uploaded_record
 
 ### CSV / Excel Evidence Import Schemas
 
+`GET /api/v1/evidence/import/template.csv` returns a static UTF-8 CSV template attachment named `sentigraph_evidence_import_template.csv`. The template uses the mapping fields below and includes safe article, video, and comment sample rows. It contains no credentials and can be parsed by the same preview endpoint as a normal user-uploaded CSV.
+
 `EvidenceImportColumnMapping` maps uploaded file columns to normalized evidence fields:
 
 ```json

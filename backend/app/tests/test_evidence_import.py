@@ -13,6 +13,7 @@ from app.repositories.case_repository import CaseRepository
 from app.schemas.comment import RawComment, RawPost
 from app.schemas.crawl import CrawlStartResponse, PlatformCrawlMetadata
 from app.services.case_store import configure_case_repository, reset_case_store
+from app.services.evidence_import import EVIDENCE_IMPORT_TEMPLATE_HEADERS, build_evidence_import_template_csv
 from app.services.storage.local_json_store import LocalJsonCaseStore
 
 
@@ -47,6 +48,40 @@ def test_csv_import_preview_and_commit_preserve_chinese_and_emoji() -> None:
     assert committed["source_distribution"] == {"uploaded_dataset": 2}
     assert committed["evidence_type_counts"] == {"comment": 2}
     assert any(item["comment_text"] == "用户说官方回应太慢 😟" for item in committed["evidence_items"])
+
+
+def test_template_csv_endpoint_returns_expected_headers_and_safe_samples() -> None:
+    response = client.get("/api/v1/evidence/import/template.csv")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].lower().startswith("text/csv")
+    assert "charset=utf-8" in response.headers["content-type"].lower()
+    assert response.headers["content-disposition"] == 'attachment; filename="sentigraph_evidence_import_template.csv"'
+    lines = response.text.splitlines()
+    assert lines[0].split(",") == EVIDENCE_IMPORT_TEMPLATE_HEADERS
+    assert len(lines) == 4
+    lowered = response.text.lower()
+    for marker in ("api_key", "access_token", "refresh_token", "client_secret", "password", "cookie", "token", "secret"):
+        assert marker not in lowered
+
+
+def test_template_csv_sample_rows_can_be_previewed() -> None:
+    case_id = _create_case()
+    template_csv = build_evidence_import_template_csv()
+
+    response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/import/preview",
+        json=_text_payload("sentigraph_evidence_import_template.csv", template_csv),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "preview_ready"
+    assert body["valid_row_count"] == 3
+    assert body["duplicate_row_count"] == 0
+    evidence_types = {row["evidence_type"] for row in body["preview_rows"]}
+    assert {"article", "video", "comment"}.issubset(evidence_types)
+    assert any(row["comment_text"] == "用户反馈需要更透明的进展说明。" for row in body["preview_rows"])
 
 
 def test_csv_import_redacts_secret_like_fields_and_plain_text_formulas() -> None:

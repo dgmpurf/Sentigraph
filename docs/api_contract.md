@@ -1546,9 +1546,12 @@ POST /api/v1/cases/{case_id}/evidence/attach
 CSV / Excel import endpoints:
 
 ```http
+GET /api/v1/evidence/import/template.csv
 POST /api/v1/cases/{case_id}/evidence/import/preview
 POST /api/v1/cases/{case_id}/evidence/import/commit
 ```
+
+`GET /evidence/import/template.csv` returns a static UTF-8 CSV attachment named `sentigraph_evidence_import_template.csv`. It includes the recommended evidence import headers plus safe sample rows for article, video, and comment evidence. It does not read case data, does not expose credentials, does not fetch external sources, and does not call real APIs.
 
 These endpoints implement a stateless upload-confirm flow: the frontend reads the selected file locally, sends `filename`, `content_base64`, and optional `column_mapping`, then the backend parses the bytes in memory. Preview returns normalized row samples and warnings. Commit saves only sanitized `EvidenceItem` records on the case; the original uploaded file is not persisted by default.
 

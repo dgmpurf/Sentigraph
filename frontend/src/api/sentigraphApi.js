@@ -177,6 +177,11 @@ export async function commitCaseEvidenceImport(caseId, payload = {}) {
   return normalizeEvidenceImportCommit(data)
 }
 
+export function getEvidenceImportTemplateCsvUrl() {
+  const baseUrl = String(apiClient.defaults.baseURL || '').replace(/\/$/, '')
+  return `${baseUrl}${API_PREFIX}/evidence/import/template.csv`
+}
+
 export async function getCaseMarkdownReport(caseId) {
   const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/report/markdown`)
   return data

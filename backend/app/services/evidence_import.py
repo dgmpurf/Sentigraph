@@ -104,9 +104,101 @@ FIELD_SYNONYMS = {
     "language": ["language", "lang", "语言"],
 }
 
+EVIDENCE_IMPORT_TEMPLATE_FILENAME = "sentigraph_evidence_import_template.csv"
+EVIDENCE_IMPORT_TEMPLATE_HEADERS = [
+    "platform",
+    "source_type",
+    "acquisition_mode",
+    "evidence_type",
+    "title",
+    "body_text",
+    "comment_text",
+    "parent_id",
+    "root_id",
+    "author_id",
+    "author_name",
+    "url",
+    "created_at",
+    "like_count",
+    "reply_count",
+    "share_count",
+    "view_count",
+    "language",
+]
+EVIDENCE_IMPORT_TEMPLATE_ROWS = [
+    {
+        "platform": "news_site",
+        "source_type": "news_site",
+        "acquisition_mode": "user_upload",
+        "evidence_type": "article",
+        "title": "Sample public article about product delivery delay",
+        "body_text": "A public article summarizes visible service-delay concerns and the company response timeline.",
+        "comment_text": "",
+        "parent_id": "",
+        "root_id": "sample_article_001",
+        "author_id": "public_editor_001",
+        "author_name": "Public News Desk",
+        "url": "https://example.test/news/sample-public-article",
+        "created_at": "2026-05-25T09:00:00Z",
+        "like_count": "12",
+        "reply_count": "4",
+        "share_count": "3",
+        "view_count": "1200",
+        "language": "en-US",
+    },
+    {
+        "platform": "youtube",
+        "source_type": "youtube",
+        "acquisition_mode": "user_upload",
+        "evidence_type": "video",
+        "title": "Sample YouTube public video discussing customer concerns",
+        "body_text": "A public video description notes questions about product quality and response transparency.",
+        "comment_text": "",
+        "parent_id": "",
+        "root_id": "yt_sample_video_001",
+        "author_id": "yt_public_channel_001",
+        "author_name": "Public Video Channel",
+        "url": "https://www.youtube.com/watch?v=yt_sample_video_001",
+        "created_at": "2026-05-25T10:00:00Z",
+        "like_count": "38",
+        "reply_count": "9",
+        "share_count": "0",
+        "view_count": "2600",
+        "language": "en-US",
+    },
+    {
+        "platform": "user_upload",
+        "source_type": "uploaded_dataset",
+        "acquisition_mode": "user_upload",
+        "evidence_type": "comment",
+        "title": "",
+        "body_text": "",
+        "comment_text": "用户反馈需要更透明的进展说明。",
+        "parent_id": "",
+        "root_id": "sample_thread_001",
+        "author_id": "public_commenter_001",
+        "author_name": "Public Commenter",
+        "url": "https://example.test/comments/sample-thread-001",
+        "created_at": "2026-05-25T10:05:00Z",
+        "like_count": "7",
+        "reply_count": "1",
+        "share_count": "0",
+        "view_count": "0",
+        "language": "zh-CN",
+    },
+]
+
 
 class EvidenceImportError(ValueError):
     """Safe import error shown to users without leaking local paths or secrets."""
+
+
+def build_evidence_import_template_csv() -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=EVIDENCE_IMPORT_TEMPLATE_HEADERS, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(EVIDENCE_IMPORT_TEMPLATE_ROWS)
+    return buffer.getvalue()
 
 
 def preview_evidence_import(case_id: str, request: EvidenceImportPreviewRequest) -> EvidenceImportPreviewResult:

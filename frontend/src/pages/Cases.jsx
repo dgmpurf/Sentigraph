@@ -1,9 +1,14 @@
 import { Alert, Button, Card, Empty, Select, Space, Table, Tag, Typography, Upload } from 'antd'
-import { CheckCircle2, FileText, PlayCircle, RefreshCw, UploadCloud } from 'lucide-react'
+import { CheckCircle2, Download, FileText, PlayCircle, RefreshCw, UploadCloud } from 'lucide-react'
 
 import { riskTone } from '../utils/formatters.js'
 import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
-import { commitCaseEvidenceImport, getCase, previewCaseEvidenceImport } from '../api/sentigraphApi.js'
+import {
+  commitCaseEvidenceImport,
+  getCase,
+  getEvidenceImportTemplateCsvUrl,
+  previewCaseEvidenceImport,
+} from '../api/sentigraphApi.js'
 import { useState } from 'react'
 
 const { Text, Title } = Typography
@@ -133,6 +138,7 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
 
   if (!currentCase?.case_id) return null
 
+  const templateCsvUrl = getEvidenceImportTemplateCsvUrl()
   const columnOptions = (preview?.detected_columns || []).map((column) => ({ label: column, value: column }))
   const previewColumns = [
     { title: 'row', dataIndex: 'row_number', key: 'row_number', width: 70 },
@@ -243,7 +249,19 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
             <Tag color="purple">EvidenceItem</Tag>
           </Space>
         </div>
-        <Text type="secondary">上传 CSV / Excel 后先预览字段映射，再确认导入。系统不执行公式，不保存原始文件，不读取凭证。</Text>
+        <Space direction="vertical" size={6}>
+          <Text type="secondary">按模板填写后上传，支持评论、文章、视频、回复和互动指标。用户需确保上传数据来源合法。</Text>
+          <Text type="secondary">系统不会执行公式，不保存原始文件，不读取凭证。</Text>
+          <Space wrap>
+            <Button
+              download="sentigraph_evidence_import_template.csv"
+              href={templateCsvUrl}
+              icon={<Download size={15} />}
+            >
+              下载 CSV 模板
+            </Button>
+          </Space>
+        </Space>
         {importError ? <Alert message="证据导入失败" description={importError} type="error" showIcon /> : null}
         <Dragger
           accept=".csv,.txt,.xlsx"
