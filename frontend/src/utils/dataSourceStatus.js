@@ -8,7 +8,7 @@ export function getAnalysisSourceStatus({ analysis, currentCase } = {}) {
   const isCaseRawData = source === 'case_raw_data'
   const isCaseEvidence = source === 'case_evidence_items'
   const isAttachedCaseData = isCaseRawData || isCaseEvidence
-  const isYoutubeRealData = isAttachedCaseData && platforms.includes('youtube')
+  const isYoutubeRealData = isCaseRawData && platforms.includes('youtube')
 
   let dataDescription = 'Local mock/fallback data.'
   let dataLabel = 'Data: Mock'

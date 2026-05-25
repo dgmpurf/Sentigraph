@@ -87,6 +87,7 @@ export function PropagationGraphChart({ graph }) {
           const sentiment = Number(node.sentiment_score ?? 0)
           const platform = node.platform || 'unknown'
           return {
+            id: node.node_id,
             name: node.node_id,
             value: influence,
             category: platform,

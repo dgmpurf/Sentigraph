@@ -10,7 +10,7 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### CSV / Excel Evidence Import
 
-Status: implemented as a safe user-upload import flow on 2026-05-25.
+Status: implemented and browser-smoke QA complete as a safe user-upload import flow on 2026-05-25.
 
 Completed:
 
@@ -19,6 +19,8 @@ Completed:
 - Added an in-memory import parser for CSV, UTF-8/UTF-8-BOM CSV, GB18030/GBK CSV fallback, and macro-free `.xlsx` without adding a runtime spreadsheet dependency.
 - Added frontend Cases-page import UI for `导入证据数据`, upload, field mapping, preview, warnings, commit, result summary, and `导入后运行分析`.
 - Added `docs/evidence_import_guide.md` and a sample CSV fixture for regression coverage.
+- Browser-smoke QA verified the Cases import panel, local endpoint flow, evidence summary, Analysis Result, Summary Report representative comments, Risk Monitor, Simulation Lab, Benchmark Dashboard, LLM Safety, and Platform Integration Overview.
+- Fixed import-adjacent UI polish found during smoke: uploaded `case_evidence_items` now show `Data: Evidence` instead of being mislabeled as YouTube real raw data when the platform list contains YouTube, and evidence-backed propagation graphs now pass explicit graph node IDs to avoid duplicate-node ECharts console errors.
 
 Acceptance:
 
@@ -29,13 +31,14 @@ Acceptance:
 - Duplicate rows are deduped by deterministic content hash.
 - `case_raw_data` still takes priority over imported `evidence_items`; mock fallback still works when neither raw data nor evidence exists.
 - The feature does not call real APIs, real YouTube APIs in automated tests, real Douyin/Bilibili APIs, real LLM APIs, crawlers, cookies, login/captcha/anti-bot bypasses, or MediaCrawler.
-- Validation passed with `python -m pytest` (`580 passed in 5.96s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.91s`; existing non-blocking vendor chunk warning remains).
+- Validation passed after browser-smoke stabilization with `python -m pytest` (`580 passed in 6.01s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.94s`; existing non-blocking vendor chunk warning remains).
 
 Next options:
 
-- Browser-smoke CSV/XLSX import end to end on a local case.
 - Add a downloadable CSV template if repeated demos need a cleaner starting file.
 - Add larger import-size UX only after memory/file-size guardrails are revisited.
+- Douyin/Bilibili official APIs remain pending official permission/OAuth gates.
+- MediaCrawler remains not integrated.
 
 ### Source Catalog
 
