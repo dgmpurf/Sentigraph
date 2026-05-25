@@ -1539,6 +1539,9 @@ GET /api/v1/cases/{case_id}/evidence
 POST /api/v1/cases/{case_id}/evidence/attach
 GET /api/v1/cases/{case_id}/evidence/trust-summary
 GET /api/v1/cases/{case_id}/evidence/dedup-summary
+GET /api/v1/cases/{case_id}/evidence/summary
+GET /api/v1/cases/{case_id}/evidence/jobs
+GET /api/v1/cases/{case_id}/evidence/coverage
 GET /api/v1/cases/{case_id}/evidence/review-queue
 GET /api/v1/cases/{case_id}/evidence/review-summary
 GET /api/v1/cases/{case_id}/evidence/review-timeline
@@ -1554,6 +1557,14 @@ POST /api/v1/cases/{case_id}/evidence/{evidence_id}/review
 Manual URL evidence is a first-class safe attach mode. It uses the same attach endpoint with `acquisition_mode="manual_url"` and stores the URL as plain text review context only. The backend does not fetch the URL, follow links, run a parser, use cookies, scrape, call real APIs, or call real LLM APIs. At least one of `title`, `body_text`, or `comment_text` is required for every manual URL evidence item. Secret-like pasted values in manual text fields are redacted before storage/output; invalid numeric metrics are coerced to `0` and returned with warnings.
 
 Trust and dedup endpoints are read-only summaries over normalized case evidence. They expose only aggregate distributions and hash/group identifiers; they do not expose credentials, fetch sources, or verify screenshots.
+
+Batch and coverage endpoints are read-only local summaries:
+
+- `GET /cases/{case_id}/evidence/summary` returns total, unique, duplicate, source, acquisition-mode, trust, verification, and review-status distributions, latest ingestion jobs, latest review events, rejected evidence count, weak/unverified evidence count, and the coverage note `This is coverage of imported/available evidence, not full platform coverage.`
+- `GET /cases/{case_id}/evidence/jobs` returns lightweight local job records created by CSV/XLSX import commits and manual evidence attach calls.
+- `GET /cases/{case_id}/evidence/coverage` returns platforms/source types/acquisition modes/time range/counts for currently available case evidence only.
+
+These endpoints do not start background workers, call real APIs, call search providers, fetch URLs, scrape pages, persist raw uploaded files, expose secrets, or claim full all-web/platform coverage.
 
 Review endpoints implement a human review workflow only. They do not run AI review, verify screenshot authenticity, fetch source URLs, call real search/platform APIs, or call real LLM APIs. The review queue includes low-trust, unverified, screenshot/transcription, source-url-missing, duplicate, attestation-missing, and risk-flagged evidence.
 
@@ -1679,6 +1690,8 @@ Request:
 ```
 
 Preview response includes `detected_format`, `detected_columns`, confirmed `column_mapping`, `valid_row_count`, `duplicate_row_count`, `skipped_row_count`, `preview_rows`, warnings, and safe-mode flags. Commit response includes `imported_count`, `total_evidence_item_count`, imported `evidence_items`, source/type distributions, warnings, and the same safe-mode flags.
+
+Import commit also records an `EvidenceIngestionJob` on the case. The job includes `job_id`, `case_id`, `status`, `source_type`, `acquisition_mode`, `input_type`, row counts, warning/review-needed counts, timestamps, progress, and safe metadata such as `raw_file_persisted=false`, `formulas_executed=false`, `url_fetching=false`, and `scraping=false`.
 
 Optional CSV/Excel mapping fields now include `provenance_type`, `verification_status`, `source_capture_method`, and `user_attestation`. Missing attestation is allowed but records `user_attestation_missing` and lowers trust/review status for user-uploaded evidence.
 

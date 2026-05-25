@@ -9,12 +9,15 @@ from app.schemas.case import (
     MarkdownExportResponse,
 )
 from app.schemas.evidence import (
+    EvidenceBatchSummary,
+    EvidenceCoverageSummary,
     EvidenceDeduplicationSummary,
     EvidenceImportCommitRequest,
     EvidenceImportCommitResult,
     EvidenceImportPreviewRequest,
     EvidenceImportPreviewResult,
     EvidenceIngestionBatch,
+    EvidenceIngestionJob,
     EvidenceIngestionResult,
     EvidenceReviewAuditSummary,
     EvidenceReviewDecisionRequest,
@@ -39,6 +42,8 @@ from app.services.case_store import (
     create_case,
     export_case_markdown,
     get_case,
+    get_case_evidence_batch_summary,
+    get_case_evidence_coverage,
     get_case_evidence_dedup_summary,
     get_case_evidence_review_audit_summary,
     get_case_evidence_review_summary,
@@ -46,6 +51,7 @@ from app.services.case_store import (
     get_case_evidence_trust_summary,
     list_case_evidence,
     list_case_alerts,
+    list_case_evidence_jobs,
     list_case_snapshots,
     list_cases,
     preview_case_evidence_import,
@@ -119,6 +125,30 @@ def get_case_evidence_trust(case_id: str) -> EvidenceTrustSummary:
 @router.get("/{case_id}/evidence/dedup-summary", response_model=EvidenceDeduplicationSummary)
 def get_case_evidence_dedup(case_id: str) -> EvidenceDeduplicationSummary:
     result = get_case_evidence_dedup_summary(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.get("/{case_id}/evidence/summary", response_model=EvidenceBatchSummary)
+def get_case_evidence_summary(case_id: str) -> EvidenceBatchSummary:
+    result = get_case_evidence_batch_summary(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.get("/{case_id}/evidence/jobs", response_model=list[EvidenceIngestionJob])
+def get_case_evidence_jobs(case_id: str) -> list[EvidenceIngestionJob]:
+    result = list_case_evidence_jobs(case_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.get("/{case_id}/evidence/coverage", response_model=EvidenceCoverageSummary)
+def get_case_evidence_coverage_route(case_id: str) -> EvidenceCoverageSummary:
+    result = get_case_evidence_coverage(case_id)
     if not result:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return result

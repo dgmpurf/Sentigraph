@@ -243,6 +243,44 @@ def test_manual_evidence_attach_appends_across_calls() -> None:
     assert any("Second manual public comment" in text for text in body["representative_comments"])
 
 
+def test_manual_evidence_attach_records_local_ingestion_jobs() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    payload = {
+        "source": {
+            "platform": "public_web",
+            "source_type": "public_web",
+            "acquisition_mode": "manual_url",
+        },
+        "evidence_items": [
+            {
+                "evidence_type": "comment",
+                "comment_text": "Manual job summary comment one.",
+                "user_attestation_text": "I confirm lawful source.",
+            },
+            {
+                "evidence_type": "comment",
+                "comment_text": "Manual job summary comment two.",
+                "user_attestation_text": "I confirm lawful source.",
+            },
+        ],
+    }
+
+    attach_response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=payload)
+
+    assert attach_response.status_code == 200
+    jobs_response = client.get(f"/api/v1/cases/{case_id}/evidence/jobs")
+    assert jobs_response.status_code == 200
+    jobs = jobs_response.json()
+    assert len(jobs) == 1
+    assert jobs[0]["input_type"] == "manual"
+    assert jobs[0]["source_type"] == "public_web"
+    assert jobs[0]["acquisition_mode"] == "manual_url"
+    assert jobs[0]["total_rows"] == 2
+    assert jobs[0]["accepted_rows"] == 2
+    assert jobs[0]["safe_metadata"]["url_fetching"] is False
+    assert jobs[0]["safe_metadata"]["scraping"] is False
+
+
 def test_manual_url_evidence_redacts_text_secrets_and_warns_on_invalid_metrics(monkeypatch) -> None:
     case_id = _create_case(platforms=["public_web"])
 

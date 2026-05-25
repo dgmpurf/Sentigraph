@@ -358,6 +358,7 @@ failed
   "raw_posts": [],
   "raw_comments": [],
   "evidence_items": [],
+  "evidence_ingestion_jobs": [],
   "crawl_metadata": [],
   "crawl_source_mode": null,
   "crawl_attached_at": null,
@@ -376,6 +377,7 @@ Rules:
 - `report` uses the normalized `PublicOpinionReport` schema.
 - `raw_posts` and `raw_comments` use the shared `RawPost` / `RawComment` schemas returned by platform adapters and public-parser fixtures.
 - `evidence_items` uses the shared `EvidenceItem` schema. Case-specific crawl output may be normalized into this field while preserving the original `raw_posts` and `raw_comments`.
+- `evidence_ingestion_jobs` stores lightweight local batch/manual import summaries. It does not store uploaded raw files, credentials, crawler state, or external fetch output.
 - `crawl_metadata` uses `PlatformCrawlMetadata` and may include safe booleans such as `credential_present`; it must never include credential values.
 - `raw_data_status` is `missing`, `attached`, or `empty`.
 - `analysis_input_source` is `case_raw_data` when attached case raw comments are used, `case_evidence_items` when attached normalized evidence items are used without raw comments, and `mock_data_fallback` otherwise.
@@ -642,6 +644,51 @@ Review history / audit schemas:
 ```
 
 Allowed `analysis_effect` values are `included_in_analysis`, `excluded_from_analysis`, `weak_evidence`, and `duplicate_collapsed`. Case-level `EvidenceReviewTimeline` returns latest-first history entries plus `total_review_events`. `EvidenceReviewAuditSummary` returns decision counts, `latest_reviewed_at`, and `evidence_with_history_count`. Review history is append-only and stores human review decisions only; it is not official platform verification and does not imply AI verified authenticity.
+
+Large-scale evidence batch scaffold schemas:
+
+```json
+{
+  "job_id": "evidence_job_hash",
+  "case_id": "case_001",
+  "status": "completed",
+  "source_type": "uploaded_dataset",
+  "acquisition_mode": "user_upload",
+  "input_type": "csv",
+  "total_rows": 100,
+  "accepted_rows": 92,
+  "rejected_rows": 3,
+  "duplicate_rows": 5,
+  "warning_count": 4,
+  "review_needed_count": 12,
+  "created_at": "2026-05-26T10:00:00Z",
+  "updated_at": "2026-05-26T10:00:00Z",
+  "completed_at": "2026-05-26T10:00:00Z",
+  "progress": {
+    "total_rows": 100,
+    "processed_rows": 100,
+    "accepted_rows": 92,
+    "rejected_rows": 3,
+    "duplicate_rows": 5,
+    "warning_count": 4,
+    "review_needed_count": 12,
+    "progress_percent": 100.0,
+    "current_stage": "completed"
+  },
+  "safe_metadata": {
+    "raw_file_persisted": false,
+    "url_fetching": false,
+    "scraping": false,
+    "third_party_crawler_integrated": false
+  }
+}
+```
+
+Allowed `EvidenceIngestionJob.status` values are `pending`, `running`, `completed`, `failed`, and `partial`. The current MVP records local completed job summaries only; it does not start background workers or real fetchers. Allowed `input_type` values are `csv`, `xlsx`, `manual`, `api`, `parser`, `search_discovery`, `vendor`, and `mock`.
+
+`EvidenceBatchSummary` returns total/unique/duplicate evidence counts, evidence type counts, source/acquisition/trust/verification/review distributions, rejected and weak evidence counts, latest ingestion jobs, latest review events, and the coverage note: `This is coverage of imported/available evidence, not full platform coverage.`
+
+`EvidenceCoverageSummary` returns covered platforms, source types, acquisition modes, evidence time range, counts by platform/type/trust, per-source coverage rows, limitation warnings, and safe-mode flags. Coverage summaries describe only evidence already imported or available to the case; they do not claim all-web or full-platform coverage.
 
 ### CSV / Excel Evidence Import Schemas
 

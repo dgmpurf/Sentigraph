@@ -98,6 +98,9 @@ EvidenceReviewAnalysisEffect = Literal[
     "duplicate_collapsed",
 ]
 
+EvidenceIngestionJobStatus = Literal["pending", "running", "completed", "failed", "partial"]
+EvidenceIngestionInputType = Literal["csv", "xlsx", "manual", "api", "parser", "search_discovery", "vendor", "mock"]
+
 
 class EvidenceReviewHistoryEntry(BaseModel):
     review_event_id: str
@@ -163,6 +166,113 @@ class EvidenceReviewAuditSummary(BaseModel):
             "real_ai_review": False,
             "url_fetching": False,
             "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
+class EvidenceIngestionProgress(BaseModel):
+    total_rows: int = 0
+    processed_rows: int = 0
+    accepted_rows: int = 0
+    rejected_rows: int = 0
+    duplicate_rows: int = 0
+    warning_count: int = 0
+    review_needed_count: int = 0
+    progress_percent: float = Field(default=0.0, ge=0.0, le=100.0)
+    current_stage: str = "completed"
+
+
+class EvidenceIngestionJob(BaseModel):
+    job_id: str
+    case_id: str
+    status: EvidenceIngestionJobStatus = "completed"
+    source_type: str = "uploaded_dataset"
+    acquisition_mode: str = "user_upload"
+    input_type: EvidenceIngestionInputType = "manual"
+    total_rows: int = 0
+    accepted_rows: int = 0
+    rejected_rows: int = 0
+    duplicate_rows: int = 0
+    warning_count: int = 0
+    review_needed_count: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: datetime | None = None
+    error_summary: str | None = None
+    progress: EvidenceIngestionProgress = Field(default_factory=EvidenceIngestionProgress)
+    safe_metadata: dict[str, Any] = Field(default_factory=dict)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "third_party_crawler_integrated": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
+class EvidenceSourceCoverage(BaseModel):
+    platform: str
+    source_type: str
+    acquisition_mode: str
+    evidence_count: int = 0
+    evidence_type_counts: dict[str, int] = Field(default_factory=dict)
+    trust_label_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class EvidenceCoverageSummary(BaseModel):
+    case_id: str
+    platforms_covered: list[str] = Field(default_factory=list)
+    source_types_covered: list[str] = Field(default_factory=list)
+    acquisition_modes_used: list[str] = Field(default_factory=list)
+    earliest_evidence_time: str | None = None
+    latest_evidence_time: str | None = None
+    evidence_count_by_platform: dict[str, int] = Field(default_factory=dict)
+    evidence_count_by_type: dict[str, int] = Field(default_factory=dict)
+    evidence_count_by_trust_label: dict[str, int] = Field(default_factory=dict)
+    source_coverage: list[EvidenceSourceCoverage] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    coverage_note: str = "This is coverage of imported/available evidence, not full platform coverage."
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "third_party_crawler_integrated": False,
+            "full_platform_coverage_claimed": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
+class EvidenceBatchSummary(BaseModel):
+    case_id: str
+    evidence_count: int = 0
+    unique_evidence_count: int = 0
+    duplicate_evidence_count: int = 0
+    evidence_type_counts: dict[str, int] = Field(default_factory=dict)
+    source_distribution: dict[str, int] = Field(default_factory=dict)
+    acquisition_mode_distribution: dict[str, int] = Field(default_factory=dict)
+    trust_label_distribution: dict[str, int] = Field(default_factory=dict)
+    verification_status_distribution: dict[str, int] = Field(default_factory=dict)
+    review_status_distribution: dict[str, int] = Field(default_factory=dict)
+    rejected_count: int = 0
+    weak_evidence_count: int = 0
+    latest_jobs: list[EvidenceIngestionJob] = Field(default_factory=list)
+    latest_review_events: list[EvidenceReviewHistoryEntry] = Field(default_factory=list)
+    coverage_note: str = "This is coverage of imported/available evidence, not full platform coverage."
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "third_party_crawler_integrated": False,
+            "full_platform_coverage_claimed": False,
             "secrets_exposed": False,
         }
     )

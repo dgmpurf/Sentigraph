@@ -11,9 +11,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from app.schemas.comment import RawComment, RawPost
 from app.schemas.crawl import PlatformCrawlMetadata
 from app.schemas.evidence import (
+    EvidenceBatchSummary,
+    EvidenceCoverageSummary,
     EvidenceDeduplicationSummary,
     EvidenceDuplicateGroup,
     EvidenceAcquisitionMode,
+    EvidenceIngestionJob,
     EvidenceIngestionBatch,
     EvidenceIngestionResult,
     EvidenceItem,
@@ -26,6 +29,7 @@ from app.schemas.evidence import (
     EvidenceReviewSummary,
     EvidenceReviewStatus,
     EvidenceReviewTimeline,
+    EvidenceSourceCoverage,
     EvidenceSourceType,
     EvidenceTrustSummary,
 )
@@ -558,6 +562,92 @@ def build_trust_summary(
     )
 
 
+def build_evidence_batch_summary(
+    case_id: str,
+    evidence_items: list[EvidenceItem],
+    *,
+    jobs: list[EvidenceIngestionJob] | None = None,
+) -> EvidenceBatchSummary:
+    unique_items = enrich_and_deduplicate_evidence_items(evidence_items)
+    dedup_summary = build_deduplication_summary(unique_items)
+    review_timeline = build_review_timeline(case_id, unique_items)
+    latest_jobs = sorted(jobs or [], key=lambda job: job.updated_at, reverse=True)[:5]
+    return EvidenceBatchSummary(
+        case_id=case_id,
+        evidence_count=dedup_summary.total_items,
+        unique_evidence_count=dedup_summary.unique_items,
+        duplicate_evidence_count=dedup_summary.duplicate_items,
+        evidence_type_counts=evidence_type_distribution(unique_items),
+        source_distribution=evidence_source_distribution(unique_items),
+        acquisition_mode_distribution=dict(Counter(item.acquisition_mode for item in unique_items)),
+        trust_label_distribution=dict(Counter(item.trust_label for item in unique_items)),
+        verification_status_distribution=dict(Counter(item.verification_status for item in unique_items)),
+        review_status_distribution=dict(Counter(item.review_status for item in unique_items)),
+        rejected_count=sum(
+            1
+            for item in unique_items
+            if item.review_status == "rejected" or item.verification_status == "rejected" or item.trust_label == "rejected"
+        ),
+        weak_evidence_count=sum(
+            1
+            for item in unique_items
+            if item.review_status == "marked_weak" or item.trust_label in {"low", "unverified"}
+        ),
+        latest_jobs=latest_jobs,
+        latest_review_events=review_timeline.entries[:5],
+    )
+
+
+def build_evidence_coverage_summary(case_id: str, evidence_items: list[EvidenceItem]) -> EvidenceCoverageSummary:
+    unique_items = enrich_and_deduplicate_evidence_items(evidence_items)
+    evidence_times = sorted(
+        [item.created_at for item in unique_items if item.created_at],
+        key=_parse_evidence_time_sort_key,
+    )
+    coverage_groups: dict[tuple[str, str, str], list[EvidenceItem]] = {}
+    for item in unique_items:
+        key = (
+            item.platform or "unknown",
+            item.source_type or "unknown",
+            item.acquisition_mode or "unknown",
+        )
+        coverage_groups.setdefault(key, []).append(item)
+
+    source_coverage = [
+        EvidenceSourceCoverage(
+            platform=platform,
+            source_type=source_type,
+            acquisition_mode=acquisition_mode,
+            evidence_count=len(items),
+            evidence_type_counts=dict(Counter(item.evidence_type for item in items)),
+            trust_label_counts=dict(Counter(item.trust_label for item in items)),
+        )
+        for (platform, source_type, acquisition_mode), items in sorted(coverage_groups.items())
+    ]
+    warnings = [
+        "coverage_is_imported_or_available_evidence_only",
+        "not_full_platform_or_all_web_coverage",
+    ]
+    if any(item.trust_label in {"low", "unverified"} for item in unique_items):
+        warnings.append("low_trust_or_unverified_evidence_present")
+    if any(item.review_status == "rejected" for item in unique_items):
+        warnings.append("rejected_evidence_excluded_from_default_analysis")
+
+    return EvidenceCoverageSummary(
+        case_id=case_id,
+        platforms_covered=sorted({item.platform or "unknown" for item in unique_items}),
+        source_types_covered=sorted({item.source_type or "unknown" for item in unique_items}),
+        acquisition_modes_used=sorted({item.acquisition_mode or "unknown" for item in unique_items}),
+        earliest_evidence_time=evidence_times[0] if evidence_times else None,
+        latest_evidence_time=evidence_times[-1] if evidence_times else None,
+        evidence_count_by_platform=dict(Counter(item.platform or "unknown" for item in unique_items)),
+        evidence_count_by_type=evidence_type_distribution(unique_items),
+        evidence_count_by_trust_label=dict(Counter(item.trust_label for item in unique_items)),
+        source_coverage=source_coverage,
+        warnings=warnings,
+    )
+
+
 def analysis_eligible_evidence_items(evidence_items: list[EvidenceItem]) -> list[EvidenceItem]:
     """Return deduplicated evidence that is usable for deterministic analysis."""
 
@@ -919,6 +1009,17 @@ def _dedupe_warnings(warnings: list[str]) -> list[str]:
         if warning and warning not in values:
             values.append(warning)
     return values
+
+
+def _parse_evidence_time_sort_key(value: str) -> tuple[int, str]:
+    text = (value or "").strip()
+    if not text:
+        return (1, "")
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return (0, parsed.isoformat())
+    except ValueError:
+        return (1, text)
 
 
 def _source_type_for_platform(platform: str) -> EvidenceSourceType:

@@ -235,9 +235,12 @@ def build_imported_evidence_items(
     metadata = {
         "filename": request.filename,
         "detected_format": parsed["format"],
+        "total_rows": normalized["total_rows"],
+        "valid_row_count": len(normalized["items"]),
         "duplicate_count": normalized["duplicate_count"],
         "skipped_count": normalized["skipped_count"],
         "warnings": parsed["warnings"] + normalized["warnings"],
+        "secret_redaction_count": _warning_count(parsed["warnings"] + normalized["warnings"], "secret"),
     }
     return enrich_and_deduplicate_evidence_items(normalized["items"]), metadata
 
@@ -263,6 +266,15 @@ def build_import_commit_result(
         source_distribution=evidence_source_distribution(total_items),
         evidence_type_counts=evidence_type_distribution(total_items),
         warnings=metadata.get("warnings") or [],
+    )
+
+
+def _warning_count(warnings: list[EvidenceImportValidationWarning], marker: str) -> int:
+    marker_text = marker.lower()
+    return sum(
+        1
+        for warning in warnings
+        if marker_text in warning.code.lower() or marker_text in warning.message.lower()
     )
 
 

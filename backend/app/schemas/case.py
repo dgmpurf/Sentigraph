@@ -7,7 +7,7 @@ from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.comment import RawComment, RawPost
 from app.schemas.common import DateRange, RiskLevel
 from app.schemas.crawl import PlatformCrawlMetadata
-from app.schemas.evidence import EvidenceItem
+from app.schemas.evidence import EvidenceIngestionJob, EvidenceItem
 from app.schemas.report import PublicOpinionReport, ReportLanguage
 from app.schemas.scheduler import MonitoringScheduleConfig
 from app.schemas.visualization import VisualizationResponse
@@ -59,6 +59,7 @@ class AnalysisCaseDetail(AnalysisCase):
     raw_posts: list[RawPost] = Field(default_factory=list)
     raw_comments: list[RawComment] = Field(default_factory=list)
     evidence_items: list[EvidenceItem] = Field(default_factory=list)
+    evidence_ingestion_jobs: list[EvidenceIngestionJob] = Field(default_factory=list)
     crawl_metadata: list[PlatformCrawlMetadata] = Field(default_factory=list)
     crawl_source_mode: str | None = None
     crawl_attached_at: datetime | None = None

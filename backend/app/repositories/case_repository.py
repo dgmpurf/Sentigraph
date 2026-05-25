@@ -14,7 +14,7 @@ from app.schemas.case import (
 from app.schemas.comment import RawComment, RawPost
 from app.schemas.common import RiskLevel
 from app.schemas.crawl import PlatformCrawlMetadata
-from app.schemas.evidence import EvidenceItem
+from app.schemas.evidence import EvidenceIngestionJob, EvidenceItem
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.report import PublicOpinionReport
 from app.schemas.scheduler import MonitoringScheduleConfig
@@ -101,6 +101,7 @@ class CaseRepository:
         case_id: str,
         *,
         evidence_items: list[EvidenceItem],
+        evidence_ingestion_jobs: list[EvidenceIngestionJob] | None = None,
         updated_at: datetime | None = None,
     ) -> AnalysisCaseDetail | None:
         case = self.get_case(case_id)
@@ -111,6 +112,9 @@ class CaseRepository:
             update={
                 "evidence_items": evidence_items,
                 "evidence_item_count": len(evidence_items),
+                "evidence_ingestion_jobs": evidence_ingestion_jobs
+                if evidence_ingestion_jobs is not None
+                else case.evidence_ingestion_jobs,
                 "updated_at": timestamp,
             },
             deep=True,
@@ -219,6 +223,10 @@ class CaseRepository:
         timestamps = [BASE_TIME - timedelta(minutes=1)]
         for case in self.store.list_cases():
             timestamps.extend([case.created_at, case.updated_at])
+            for job in case.evidence_ingestion_jobs:
+                timestamps.extend([job.created_at, job.updated_at])
+                if job.completed_at:
+                    timestamps.append(job.completed_at)
         for markdown_report in self.store.list_markdown_reports():
             timestamps.append(markdown_report.generated_at)
         for case in self.store.list_cases():

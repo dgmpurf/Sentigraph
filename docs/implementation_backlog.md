@@ -8,6 +8,36 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Large-Scale Evidence Ingestion Roadmap and Batch Scaffold
+
+Status: roadmap and lightweight local scaffold implemented on 2026-05-26.
+
+Completed:
+
+- Added `docs/large_scale_evidence_ingestion.md` with acquisition tiers, realistic scale targets, batch principles, and coverage boundaries.
+- Added `EvidenceIngestionJob`, `EvidenceIngestionProgress`, `EvidenceBatchSummary`, `EvidenceCoverageSummary`, and `EvidenceSourceCoverage` schemas.
+- Case details now persist lightweight `evidence_ingestion_jobs`.
+- Added read-only endpoints `GET /api/v1/cases/{case_id}/evidence/summary`, `GET /api/v1/cases/{case_id}/evidence/jobs`, and `GET /api/v1/cases/{case_id}/evidence/coverage`.
+- CSV/XLSX import commit records local job summaries with accepted, rejected, duplicate, warning, and review-needed counts.
+- Manual evidence attach records a lightweight manual job summary.
+- Cases now shows an `Evidence Scale / Coverage` panel with source/type/acquisition/trust/review distributions, latest ingestion jobs, source coverage, and the explicit note that imported/available evidence is not full-platform coverage.
+
+Acceptance:
+
+- This is a scaffold only; it does not implement real crawlers, real search providers, URL fetching, background workers, real LLM calls, or real AI review.
+- Coverage reporting describes available/imported case evidence only and must not imply all-web or full-platform capture.
+- `case_raw_data` still wins over `case_evidence_items`; evidence items still win over mock fallback; rejected evidence remains excluded by default.
+- Uploaded raw files are not persisted by default; only normalized evidence and safe job metadata are stored.
+- MediaCrawler remains not integrated and GitHub Actions CI remains intentionally disabled.
+- Validation passed with `python -m pytest` (`602 passed in 6.97s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 7.85s`; existing non-blocking large chunk warning remains).
+
+Future tasks:
+
+- Browser-smoke the Evidence Scale / Coverage panel.
+- Add chunked/resumable CSV/Excel/JSON import only if larger demo datasets require it.
+- Add durable worker/storage backend later for tens of thousands of evidence rows.
+- Keep Search Discovery candidate-review UI, RSS/GDELT research, vendor integrations, and Douyin/Bilibili official API gates as future tasks.
+
 ### Evidence Review History / Audit Timeline MVP
 
 Status: implemented and browser-smoked on 2026-05-26.

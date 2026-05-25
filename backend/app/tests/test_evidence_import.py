@@ -117,6 +117,61 @@ def test_csv_import_invalid_rows_warn_and_duplicates_are_deduped() -> None:
     assert any(warning["code"] == "duplicate_row" for warning in body["warnings"])
 
 
+def test_csv_import_commit_records_batch_job_summary_and_coverage() -> None:
+    case_id = _create_case()
+    csv_text = (
+        "platform,source_type,acquisition_mode,evidence_type,title,comment_text,url,user_attestation\n"
+        "uploaded_dataset,uploaded_dataset,user_upload,comment,Duplicate title,Same public comment,https://example.test/1,true\n"
+        "uploaded_dataset,uploaded_dataset,user_upload,comment,Duplicate title,Same public comment,https://example.test/1,true\n"
+        "uploaded_dataset,uploaded_dataset,user_upload,comment,Second title,Second public comment,https://example.test/2,true\n"
+    )
+
+    commit_response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/import/commit",
+        json=_text_payload("batch_duplicates.csv", csv_text),
+    )
+
+    assert commit_response.status_code == 200
+    assert commit_response.json()["imported_count"] == 2
+    assert commit_response.json()["duplicate_row_count"] == 1
+
+    jobs_response = client.get(f"/api/v1/cases/{case_id}/evidence/jobs")
+    assert jobs_response.status_code == 200
+    jobs = jobs_response.json()
+    assert len(jobs) == 1
+    assert jobs[0]["input_type"] == "csv"
+    assert jobs[0]["status"] == "completed"
+    assert jobs[0]["total_rows"] == 3
+    assert jobs[0]["accepted_rows"] == 2
+    assert jobs[0]["duplicate_rows"] == 1
+    assert jobs[0]["safe_metadata"]["raw_file_persisted"] is False
+    assert jobs[0]["safe_metadata"]["url_fetching"] is False
+    assert jobs[0]["safe_metadata"]["scraping"] is False
+
+    summary_response = client.get(f"/api/v1/cases/{case_id}/evidence/summary")
+    assert summary_response.status_code == 200
+    summary = summary_response.json()
+    assert summary["evidence_count"] == 2
+    assert summary["unique_evidence_count"] == 2
+    assert summary["duplicate_evidence_count"] == 0
+    assert summary["source_distribution"] == {"uploaded_dataset": 2}
+    assert summary["acquisition_mode_distribution"] == {"user_upload": 2}
+    assert summary["latest_jobs"][0]["job_id"] == jobs[0]["job_id"]
+    assert summary["coverage_note"] == "This is coverage of imported/available evidence, not full platform coverage."
+    assert summary["safe_mode"]["full_platform_coverage_claimed"] is False
+
+    coverage_response = client.get(f"/api/v1/cases/{case_id}/evidence/coverage")
+    assert coverage_response.status_code == 200
+    coverage = coverage_response.json()
+    assert coverage["platforms_covered"] == ["uploaded_dataset"]
+    assert coverage["source_types_covered"] == ["uploaded_dataset"]
+    assert coverage["acquisition_modes_used"] == ["user_upload"]
+    assert coverage["evidence_count_by_platform"] == {"uploaded_dataset": 2}
+    assert "not_full_platform_or_all_web_coverage" in coverage["warnings"]
+    assert coverage["safe_mode"]["url_fetching"] is False
+    assert "api_key" not in str(summary).lower()
+
+
 def test_csv_import_supports_trust_and_attestation_columns() -> None:
     case_id = _create_case()
     csv_text = (

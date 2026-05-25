@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from datetime import datetime
 from typing import Iterable
 
 from app.repositories.case_repository import CaseRepository
@@ -13,12 +15,16 @@ from app.schemas.case import (
 )
 from app.schemas.crawl import CrawlStartRequest
 from app.schemas.evidence import (
+    EvidenceBatchSummary,
+    EvidenceCoverageSummary,
     EvidenceDeduplicationSummary,
     EvidenceImportCommitRequest,
     EvidenceImportCommitResult,
     EvidenceImportPreviewRequest,
     EvidenceImportPreviewResult,
     EvidenceIngestionBatch,
+    EvidenceIngestionJob,
+    EvidenceIngestionProgress,
     EvidenceIngestionResult,
     EvidenceReviewAuditSummary,
     EvidenceReviewDecisionRequest,
@@ -35,6 +41,8 @@ from app.services.evidence_import import (
 from app.services.crawling.crawl_service import start_crawl_with_adapters
 from app.services.evidence_ingestion import (
     build_deduplication_summary,
+    build_evidence_batch_summary,
+    build_evidence_coverage_summary,
     build_evidence_ingestion_result,
     build_evidence_items_from_raw_data,
     build_review_audit_summary,
@@ -314,6 +322,34 @@ def get_case_evidence_review_audit_summary(case_id: str) -> EvidenceReviewAuditS
     return build_review_audit_summary(case_id, evidence_items)
 
 
+def get_case_evidence_batch_summary(case_id: str) -> EvidenceBatchSummary | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    return build_evidence_batch_summary(
+        case_id,
+        _case_summary_evidence_items(case),
+        jobs=case.evidence_ingestion_jobs,
+    )
+
+
+def list_case_evidence_jobs(case_id: str) -> list[EvidenceIngestionJob] | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    return sorted(case.evidence_ingestion_jobs, key=lambda job: job.updated_at, reverse=True)
+
+
+def get_case_evidence_coverage(case_id: str) -> EvidenceCoverageSummary | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    return build_evidence_coverage_summary(case_id, _case_summary_evidence_items(case))
+
+
 def review_case_evidence_item(
     case_id: str,
     evidence_id: str,
@@ -347,11 +383,42 @@ def attach_case_evidence(case_id: str, payload: EvidenceIngestionBatch) -> Evide
     if not case:
         return None
     evidence_items = normalize_manual_evidence_batch(case_id, payload)
+    existing_hashes = {item.normalized_content_hash for item in enrich_and_deduplicate_evidence_items(case.evidence_items)}
+    new_items = [
+        item
+        for item in enrich_and_deduplicate_evidence_items(evidence_items)
+        if item.normalized_content_hash not in existing_hashes
+    ]
     total_items = merge_evidence_items(case.evidence_items, evidence_items)
+    timestamp = repository.next_timestamp()
+    job = _build_evidence_ingestion_job(
+        case_id=case_id,
+        input_type="manual",
+        source_type=_job_source_type(evidence_items, default=payload.source.source_type if payload.source else "uploaded_dataset"),
+        acquisition_mode=_job_acquisition_mode(
+            evidence_items,
+            default=payload.source.acquisition_mode if payload.source else "user_upload",
+        ),
+        total_rows=len(payload.evidence_items),
+        accepted_rows=len(new_items),
+        rejected_rows=0,
+        duplicate_rows=max(0, len(payload.evidence_items) - len(new_items)),
+        warning_count=_evidence_warning_count(evidence_items),
+        review_needed_count=build_review_summary(case_id, evidence_items).review_needed_count,
+        timestamp=timestamp,
+        safe_metadata={
+            "source": "manual_evidence_attach",
+            "raw_file_persisted": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        },
+    )
     saved_case = repository.save_case_evidence(
         case_id,
         evidence_items=total_items,
-        updated_at=repository.next_timestamp(),
+        evidence_ingestion_jobs=_prepend_evidence_job(case.evidence_ingestion_jobs, job),
+        updated_at=timestamp,
     )
     if not saved_case:
         return None
@@ -374,10 +441,37 @@ def commit_case_evidence_import(case_id: str, payload: EvidenceImportCommitReque
     total_items = merge_evidence_items(case.evidence_items, imported_items)
     existing_hashes = {item.normalized_content_hash for item in enrich_and_deduplicate_evidence_items(case.evidence_items)}
     new_items = [item for item in enrich_and_deduplicate_evidence_items(imported_items) if item.normalized_content_hash not in existing_hashes]
+    adjusted_duplicate_count = int(import_metadata.get("duplicate_count") or 0) + (len(imported_items) - len(new_items))
+    timestamp = repository.next_timestamp()
+    job = _build_evidence_ingestion_job(
+        case_id=case_id,
+        input_type=_job_input_type(str(import_metadata.get("detected_format") or "csv")),
+        source_type=_job_source_type(imported_items, default="uploaded_dataset"),
+        acquisition_mode=_job_acquisition_mode(imported_items, default="user_upload"),
+        total_rows=int(import_metadata.get("total_rows") or len(imported_items)),
+        accepted_rows=len(new_items),
+        rejected_rows=int(import_metadata.get("skipped_count") or 0),
+        duplicate_rows=max(0, adjusted_duplicate_count),
+        warning_count=len(import_metadata.get("warnings") or []),
+        review_needed_count=build_review_summary(case_id, imported_items).review_needed_count,
+        timestamp=timestamp,
+        safe_metadata={
+            "source": "csv_excel_import_commit",
+            "filename": payload.filename,
+            "detected_format": import_metadata.get("detected_format"),
+            "raw_file_persisted": False,
+            "formulas_executed": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "secret_redaction_count": int(import_metadata.get("secret_redaction_count") or 0),
+        },
+    )
     saved_case = repository.save_case_evidence(
         case_id,
         evidence_items=total_items,
-        updated_at=repository.next_timestamp(),
+        evidence_ingestion_jobs=_prepend_evidence_job(case.evidence_ingestion_jobs, job),
+        updated_at=timestamp,
     )
     if not saved_case:
         return None
@@ -388,7 +482,7 @@ def commit_case_evidence_import(case_id: str, payload: EvidenceImportCommitReque
         total_items=saved_case.evidence_items,
         metadata={
             **import_metadata,
-            "duplicate_count": int(import_metadata.get("duplicate_count") or 0) + (len(imported_items) - len(new_items)),
+            "duplicate_count": adjusted_duplicate_count,
         },
     )
 
@@ -471,6 +565,120 @@ def export_case_markdown(case_id: str) -> MarkdownExportResponse | None:
         generated_at=repository.next_timestamp(),
     )
     return repository.save_markdown_report(case_id, report)
+
+
+def _case_summary_evidence_items(case: AnalysisCaseDetail):
+    if case.evidence_items:
+        return case.evidence_items
+    if case.raw_posts or case.raw_comments:
+        return build_evidence_items_from_raw_data(
+            case_id=case.case_id,
+            raw_posts=case.raw_posts,
+            raw_comments=case.raw_comments,
+            crawl_metadata=case.crawl_metadata,
+        )
+    return []
+
+
+def _build_evidence_ingestion_job(
+    *,
+    case_id: str,
+    input_type: str,
+    source_type: str,
+    acquisition_mode: str,
+    total_rows: int,
+    accepted_rows: int,
+    rejected_rows: int,
+    duplicate_rows: int,
+    warning_count: int,
+    review_needed_count: int,
+    timestamp: datetime,
+    safe_metadata: dict,
+) -> EvidenceIngestionJob:
+    total_rows = max(0, int(total_rows or 0))
+    accepted_rows = max(0, int(accepted_rows or 0))
+    rejected_rows = max(0, int(rejected_rows or 0))
+    duplicate_rows = max(0, int(duplicate_rows or 0))
+    processed_rows = max(total_rows, accepted_rows + rejected_rows + duplicate_rows)
+    status = "completed"
+    if total_rows and not accepted_rows and (rejected_rows or warning_count):
+        status = "partial"
+    progress = EvidenceIngestionProgress(
+        total_rows=total_rows,
+        processed_rows=processed_rows,
+        accepted_rows=accepted_rows,
+        rejected_rows=rejected_rows,
+        duplicate_rows=duplicate_rows,
+        warning_count=max(0, int(warning_count or 0)),
+        review_needed_count=max(0, int(review_needed_count or 0)),
+        progress_percent=100.0,
+        current_stage="completed",
+    )
+    safe_metadata = {
+        **safe_metadata,
+        "raw_secret_persisted": False,
+        "real_api_calls": False,
+        "real_llm_calls": False,
+        "url_fetching": False,
+        "scraping": False,
+        "third_party_crawler_integrated": False,
+        "full_platform_coverage_claimed": False,
+    }
+    return EvidenceIngestionJob(
+        job_id=_evidence_job_id(case_id, input_type, timestamp),
+        case_id=case_id,
+        status=status,
+        source_type=str(source_type or "uploaded_dataset"),
+        acquisition_mode=str(acquisition_mode or "user_upload"),
+        input_type=_job_input_type(input_type),
+        total_rows=total_rows,
+        accepted_rows=accepted_rows,
+        rejected_rows=rejected_rows,
+        duplicate_rows=duplicate_rows,
+        warning_count=max(0, int(warning_count or 0)),
+        review_needed_count=max(0, int(review_needed_count or 0)),
+        created_at=timestamp,
+        updated_at=timestamp,
+        completed_at=timestamp,
+        progress=progress,
+        safe_metadata=safe_metadata,
+    )
+
+
+def _prepend_evidence_job(
+    existing_jobs: list[EvidenceIngestionJob],
+    job: EvidenceIngestionJob,
+    *,
+    limit: int = 20,
+) -> list[EvidenceIngestionJob]:
+    return [job, *existing_jobs][:limit]
+
+
+def _evidence_job_id(case_id: str, input_type: str, timestamp: datetime) -> str:
+    raw = f"{case_id}|{input_type}|{timestamp.isoformat()}"
+    return f"evidence_job_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:18]}"
+
+
+def _job_source_type(evidence_items, *, default: str) -> str:
+    return str(evidence_items[0].source_type if evidence_items else default or "uploaded_dataset")
+
+
+def _job_acquisition_mode(evidence_items, *, default: str) -> str:
+    return str(evidence_items[0].acquisition_mode if evidence_items else default or "user_upload")
+
+
+def _job_input_type(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in {"csv", "xlsx", "manual", "api", "parser", "search_discovery", "vendor", "mock"}:
+        return normalized
+    return "manual"
+
+
+def _evidence_warning_count(evidence_items) -> int:
+    return sum(
+        len(item.risk_flags) + len(item.ingestion_metadata.warnings)
+        for item in enrich_and_deduplicate_evidence_items(evidence_items)
+    )
 
 
 def _save_case_snapshot(

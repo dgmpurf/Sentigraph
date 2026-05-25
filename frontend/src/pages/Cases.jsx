@@ -7,9 +7,12 @@ import {
   attachCaseEvidence,
   commitCaseEvidenceImport,
   getCase,
+  getCaseEvidenceCoverage,
+  getCaseEvidenceJobs,
   getCaseEvidenceReviewAuditSummary,
   getCaseEvidenceReviewQueue,
   getCaseEvidenceReviewTimeline,
+  getCaseEvidenceSummary,
   getEvidenceImportTemplateCsvUrl,
   previewCaseEvidenceImport,
   reviewCaseEvidence,
@@ -1049,6 +1052,178 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
   )
 }
 
+function EvidenceScaleSummaryPanel({ currentCase }) {
+  const [summary, setSummary] = useState(null)
+  const [jobs, setJobs] = useState([])
+  const [coverage, setCoverage] = useState(null)
+  const [loadingSummary, setLoadingSummary] = useState(false)
+  const [summaryError, setSummaryError] = useState('')
+
+  const caseId = currentCase?.case_id
+
+  useEffect(() => {
+    if (!caseId) {
+      setSummary(null)
+      setJobs([])
+      setCoverage(null)
+      return
+    }
+    let cancelled = false
+    const loadScaleState = async () => {
+      setLoadingSummary(true)
+      setSummaryError('')
+      try {
+        const [summaryResult, jobsResult, coverageResult] = await Promise.all([
+          getCaseEvidenceSummary(caseId),
+          getCaseEvidenceJobs(caseId),
+          getCaseEvidenceCoverage(caseId),
+        ])
+        if (!cancelled) {
+          setSummary(summaryResult)
+          setJobs(jobsResult)
+          setCoverage(coverageResult)
+        }
+      } catch (error) {
+        if (!cancelled) setSummaryError(error?.message || 'Evidence batch summary load failed.')
+      } finally {
+        if (!cancelled) setLoadingSummary(false)
+      }
+    }
+    void loadScaleState()
+    return () => {
+      cancelled = true
+    }
+  }, [caseId, currentCase?.evidence_item_count, currentCase?.updated_at])
+
+  if (!caseId) return null
+
+  const latestJobs = jobs.length ? jobs : (summary?.latest_jobs || [])
+  const jobColumns = [
+    {
+      title: 'Job',
+      key: 'job',
+      render: (_, record) => (
+        <Space direction="vertical" size={2}>
+          <Text code>{record.job_id || '-'}</Text>
+          <Space wrap size={[4, 4]}>
+            <Tag color="blue">{record.input_type || 'manual'}</Tag>
+            <Tag color="purple">{record.source_type || 'uploaded_dataset'}</Tag>
+            <Tag color="gold">{record.acquisition_mode || 'user_upload'}</Tag>
+          </Space>
+        </Space>
+      ),
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      width: 140,
+      render: (_, record) => <Tag color={record.status === 'completed' ? 'green' : 'orange'}>{record.status}</Tag>,
+    },
+    {
+      title: 'Rows',
+      key: 'rows',
+      width: 230,
+      render: (_, record) => (
+        <Space size={[4, 4]} wrap>
+          <Tag color="green">accepted {record.accepted_rows}</Tag>
+          <Tag color={record.duplicate_rows ? 'orange' : 'default'}>dup {record.duplicate_rows}</Tag>
+          <Tag color={record.rejected_rows ? 'red' : 'default'}>rejected {record.rejected_rows}</Tag>
+          <Tag color={record.review_needed_count ? 'gold' : 'default'}>review {record.review_needed_count}</Tag>
+        </Space>
+      ),
+    },
+    {
+      title: 'Updated',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
+      width: 170,
+      render: formatDate,
+    },
+  ]
+
+  return (
+    <Card className="panel-card">
+      <Space direction="vertical" className="full-width" size={14}>
+        <div className="panel-heading">
+          <div>
+            <Title level={4}>Evidence Scale / Coverage</Title>
+            <Text type="secondary">Batch-oriented local summaries for imported and available evidence only.</Text>
+          </div>
+          <Space wrap>
+            <Tag color="cyan">local job tracking</Tag>
+            <Tag color="orange">not full-platform coverage</Tag>
+            <Tag color="purple">no crawling</Tag>
+          </Space>
+        </div>
+        <Alert
+          message="Coverage boundary"
+          description="当前覆盖范围仅代表已导入/可用证据，不代表全平台全量覆盖。No URL fetching, scraping, third-party crawler integration, or automatic truth verification is performed."
+          showIcon
+          type="info"
+        />
+        {summaryError ? <Alert message="Evidence scale summary error" description={summaryError} type="error" showIcon /> : null}
+        <Space size={[8, 8]} wrap>
+          <Tag color="cyan">total evidence: {summary?.evidence_count || currentCase?.evidence_item_count || 0}</Tag>
+          <Tag color="green">unique: {summary?.unique_evidence_count || currentCase?.evidence_item_count || 0}</Tag>
+          <Tag color={summary?.duplicate_evidence_count ? 'orange' : 'default'}>duplicates: {summary?.duplicate_evidence_count || 0}</Tag>
+          <Tag color={summary?.rejected_count ? 'red' : 'default'}>rejected: {summary?.rejected_count || 0}</Tag>
+          <Tag color={summary?.weak_evidence_count ? 'gold' : 'default'}>weak/unverified: {summary?.weak_evidence_count || 0}</Tag>
+        </Space>
+        <Space direction="vertical" className="full-width" size={8}>
+          <Space size={[8, 8]} wrap>
+            <Text type="secondary">Sources:</Text>
+            <DistributionTags color="geekblue" values={summary?.source_distribution || {}} />
+          </Space>
+          <Space size={[8, 8]} wrap>
+            <Text type="secondary">Types:</Text>
+            <DistributionTags color="purple" values={summary?.evidence_type_counts || {}} />
+          </Space>
+          <Space size={[8, 8]} wrap>
+            <Text type="secondary">Acquisition:</Text>
+            <DistributionTags color="gold" values={summary?.acquisition_mode_distribution || {}} />
+          </Space>
+          <Space size={[8, 8]} wrap>
+            <Text type="secondary">Trust:</Text>
+            <DistributionTags color="lime" values={summary?.trust_label_distribution || {}} />
+          </Space>
+          <Space size={[8, 8]} wrap>
+            <Text type="secondary">Review:</Text>
+            <DistributionTags color="volcano" values={summary?.review_status_distribution || {}} />
+          </Space>
+        </Space>
+        <Space direction="vertical" className="full-width" size={6}>
+          <Text strong>Source coverage</Text>
+          <Space size={[8, 8]} wrap>
+            <Tag color="blue">platforms: {(coverage?.platforms_covered || []).join(', ') || 'none'}</Tag>
+            <Tag color="purple">source types: {(coverage?.source_types_covered || []).join(', ') || 'none'}</Tag>
+            <Tag color="gold">modes: {(coverage?.acquisition_modes_used || []).join(', ') || 'none'}</Tag>
+            <Tag color="default">time range: {coverage?.earliest_evidence_time || '-'} to {coverage?.latest_evidence_time || '-'}</Tag>
+          </Space>
+          {coverage?.warnings?.length ? (
+            <Space size={[4, 4]} wrap>
+              {coverage.warnings.map((warning) => (
+                <Tag color="orange" key={warning}>{warning}</Tag>
+              ))}
+            </Space>
+          ) : null}
+        </Space>
+        <Space direction="vertical" className="full-width" size={6}>
+          <Text strong>Latest ingestion jobs</Text>
+          <Table
+            columns={jobColumns}
+            dataSource={latestJobs}
+            loading={loadingSummary}
+            locale={{ emptyText: 'No ingestion jobs recorded yet.' }}
+            pagination={false}
+            rowKey="job_id"
+            size="small"
+          />
+        </Space>
+      </Space>
+    </Card>
+  )
+}
+
 export function Cases({
   cases = [],
   currentCase,
@@ -1237,6 +1412,10 @@ export function Cases({
             </Space>
           ) : null}
         </Card>
+      ) : null}
+
+      {currentCase ? (
+        <EvidenceScaleSummaryPanel currentCase={currentCase} />
       ) : null}
 
       {currentCase ? (

@@ -4,6 +4,8 @@ Status: implemented for local/offline evidence normalization.
 
 This feature lets a user upload a lawful CSV or Excel dataset and map rows into Sentigraph `EvidenceItem` records. It is designed for all-web public-opinion monitoring when platform APIs are unavailable, pending, or intentionally not used.
 
+Import commit now records a lightweight local `EvidenceIngestionJob` summary on the case. The job tracks total rows, accepted rows, rejected/skipped rows, duplicate rows, warning count, review-needed count, input type (`csv` / `xlsx`), source type, acquisition mode, and safe metadata. It is a local audit/progress record only: it does not persist the raw uploaded file, start a crawler, fetch URLs, call real APIs, or claim full-platform coverage.
+
 ## Manual URL / Manual Evidence
 
 The Cases page also includes `手动添加证据` for one-off public evidence entry. This is for a user who already has lawful public material and wants to attach a single article, video, post, comment, reply, or interaction-metric record without preparing a spreadsheet.
@@ -161,6 +163,7 @@ Defaults:
 
 - The uploaded raw file is not persisted by default.
 - Only normalized `EvidenceItem` records and safe import metadata are stored.
+- Case evidence summary endpoints can show the latest import job and coverage note: imported/available evidence is not full-platform or all-web coverage.
 - Secret-like columns and values are redacted or omitted, including `api_key`, `access_token`, `refresh_token`, `client_secret`, `password`, and `cookie`.
 - Screenshots and transcriptions are never automatically verified.
 - Source URLs improve review context but do not guarantee truth.

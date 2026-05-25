@@ -177,6 +177,21 @@ export async function getCaseEvidenceDedupSummary(caseId) {
   return normalizeEvidenceDeduplicationSummary(data)
 }
 
+export async function getCaseEvidenceSummary(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence/summary`)
+  return normalizeEvidenceBatchSummary(data)
+}
+
+export async function getCaseEvidenceJobs(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence/jobs`)
+  return Array.isArray(data) ? data.map(normalizeEvidenceIngestionJob).filter(Boolean) : []
+}
+
+export async function getCaseEvidenceCoverage(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence/coverage`)
+  return normalizeEvidenceCoverageSummary(data)
+}
+
 export async function getCaseEvidenceReviewQueue(caseId) {
   const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence/review-queue`)
   return normalizeEvidenceReviewSummary(data)
@@ -411,6 +426,9 @@ function normalizeCaseDetail(data) {
     visualization_data: normalizeRiskExtension(data.visualization_data),
     report: normalizeRiskExtension(data.report),
     evidence_items: Array.isArray(data.evidence_items) ? data.evidence_items.map(normalizeEvidenceItem).filter(Boolean) : [],
+    evidence_ingestion_jobs: Array.isArray(data.evidence_ingestion_jobs)
+      ? data.evidence_ingestion_jobs.map(normalizeEvidenceIngestionJob).filter(Boolean)
+      : [],
     evidence_item_count: Number(data.evidence_item_count || 0),
     monitoring_config: normalizeMonitoringConfig(data.monitoring_config),
   }
@@ -509,6 +527,148 @@ function normalizeEvidenceDuplicateGroup(group) {
     normalized_content_hash: group.normalized_content_hash ? String(group.normalized_content_hash) : '',
     canonical_url_hash: group.canonical_url_hash ? String(group.canonical_url_hash) : '',
     sample_text: group.sample_text ? String(group.sample_text) : '',
+  }
+}
+
+function normalizeEvidenceBatchSummary(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      evidence_count: 0,
+      unique_evidence_count: 0,
+      duplicate_evidence_count: 0,
+      evidence_type_counts: {},
+      source_distribution: {},
+      acquisition_mode_distribution: {},
+      trust_label_distribution: {},
+      verification_status_distribution: {},
+      review_status_distribution: {},
+      rejected_count: 0,
+      weak_evidence_count: 0,
+      latest_jobs: [],
+      latest_review_events: [],
+      coverage_note: '',
+      safe_mode: {},
+    }
+  }
+  return {
+    case_id: String(data.case_id || ''),
+    evidence_count: Number(data.evidence_count || 0),
+    unique_evidence_count: Number(data.unique_evidence_count || 0),
+    duplicate_evidence_count: Number(data.duplicate_evidence_count || 0),
+    evidence_type_counts: normalizeNumberMap(data.evidence_type_counts),
+    source_distribution: normalizeNumberMap(data.source_distribution),
+    acquisition_mode_distribution: normalizeNumberMap(data.acquisition_mode_distribution),
+    trust_label_distribution: normalizeNumberMap(data.trust_label_distribution),
+    verification_status_distribution: normalizeNumberMap(data.verification_status_distribution),
+    review_status_distribution: normalizeNumberMap(data.review_status_distribution),
+    rejected_count: Number(data.rejected_count || 0),
+    weak_evidence_count: Number(data.weak_evidence_count || 0),
+    latest_jobs: Array.isArray(data.latest_jobs) ? data.latest_jobs.map(normalizeEvidenceIngestionJob).filter(Boolean) : [],
+    latest_review_events: Array.isArray(data.latest_review_events)
+      ? data.latest_review_events.map(normalizeEvidenceReviewHistoryEntry).filter(Boolean)
+      : [],
+    coverage_note: data.coverage_note ? String(data.coverage_note) : '',
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceIngestionJob(job) {
+  if (!job || typeof job !== 'object') return null
+  return {
+    job_id: String(job.job_id || ''),
+    case_id: String(job.case_id || ''),
+    status: String(job.status || 'completed'),
+    source_type: String(job.source_type || ''),
+    acquisition_mode: String(job.acquisition_mode || ''),
+    input_type: String(job.input_type || ''),
+    total_rows: Number(job.total_rows || 0),
+    accepted_rows: Number(job.accepted_rows || 0),
+    rejected_rows: Number(job.rejected_rows || 0),
+    duplicate_rows: Number(job.duplicate_rows || 0),
+    warning_count: Number(job.warning_count || 0),
+    review_needed_count: Number(job.review_needed_count || 0),
+    created_at: job.created_at ? String(job.created_at) : '',
+    updated_at: job.updated_at ? String(job.updated_at) : '',
+    completed_at: job.completed_at ? String(job.completed_at) : '',
+    error_summary: job.error_summary ? String(job.error_summary) : '',
+    progress: normalizeEvidenceIngestionProgress(job.progress),
+    safe_metadata: job.safe_metadata && typeof job.safe_metadata === 'object' ? normalizeSafeObject(job.safe_metadata) : {},
+    safe_mode: job.safe_mode && typeof job.safe_mode === 'object' ? normalizeBooleanMap(job.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceIngestionProgress(progress) {
+  if (!progress || typeof progress !== 'object') {
+    return {
+      total_rows: 0,
+      processed_rows: 0,
+      accepted_rows: 0,
+      rejected_rows: 0,
+      duplicate_rows: 0,
+      warning_count: 0,
+      review_needed_count: 0,
+      progress_percent: 0,
+      current_stage: '',
+    }
+  }
+  return {
+    total_rows: Number(progress.total_rows || 0),
+    processed_rows: Number(progress.processed_rows || 0),
+    accepted_rows: Number(progress.accepted_rows || 0),
+    rejected_rows: Number(progress.rejected_rows || 0),
+    duplicate_rows: Number(progress.duplicate_rows || 0),
+    warning_count: Number(progress.warning_count || 0),
+    review_needed_count: Number(progress.review_needed_count || 0),
+    progress_percent: Number(progress.progress_percent || 0),
+    current_stage: String(progress.current_stage || ''),
+  }
+}
+
+function normalizeEvidenceCoverageSummary(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      platforms_covered: [],
+      source_types_covered: [],
+      acquisition_modes_used: [],
+      earliest_evidence_time: '',
+      latest_evidence_time: '',
+      evidence_count_by_platform: {},
+      evidence_count_by_type: {},
+      evidence_count_by_trust_label: {},
+      source_coverage: [],
+      warnings: [],
+      coverage_note: '',
+      safe_mode: {},
+    }
+  }
+  return {
+    case_id: String(data.case_id || ''),
+    platforms_covered: Array.isArray(data.platforms_covered) ? data.platforms_covered.map((item) => String(item)) : [],
+    source_types_covered: Array.isArray(data.source_types_covered) ? data.source_types_covered.map((item) => String(item)) : [],
+    acquisition_modes_used: Array.isArray(data.acquisition_modes_used) ? data.acquisition_modes_used.map((item) => String(item)) : [],
+    earliest_evidence_time: data.earliest_evidence_time ? String(data.earliest_evidence_time) : '',
+    latest_evidence_time: data.latest_evidence_time ? String(data.latest_evidence_time) : '',
+    evidence_count_by_platform: normalizeNumberMap(data.evidence_count_by_platform),
+    evidence_count_by_type: normalizeNumberMap(data.evidence_count_by_type),
+    evidence_count_by_trust_label: normalizeNumberMap(data.evidence_count_by_trust_label),
+    source_coverage: Array.isArray(data.source_coverage) ? data.source_coverage.map(normalizeEvidenceSourceCoverage).filter(Boolean) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    coverage_note: data.coverage_note ? String(data.coverage_note) : '',
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceSourceCoverage(item) {
+  if (!item || typeof item !== 'object') return null
+  return {
+    platform: String(item.platform || ''),
+    source_type: String(item.source_type || ''),
+    acquisition_mode: String(item.acquisition_mode || ''),
+    evidence_count: Number(item.evidence_count || 0),
+    evidence_type_counts: normalizeNumberMap(item.evidence_type_counts),
+    trust_label_counts: normalizeNumberMap(item.trust_label_counts),
   }
 }
 
@@ -2232,6 +2392,19 @@ function normalizeStringMap(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return Object.fromEntries(
     Object.entries(value).map(([key, mapValue]) => [String(key), String(mapValue ?? '')]),
+  )
+}
+
+function normalizeSafeObject(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).map(([key, mapValue]) => {
+      if (mapValue === null || mapValue === undefined) return [String(key), '']
+      if (typeof mapValue === 'boolean' || typeof mapValue === 'number' || typeof mapValue === 'string') {
+        return [String(key), mapValue]
+      }
+      return [String(key), JSON.stringify(mapValue)]
+    }),
   )
 }
 
