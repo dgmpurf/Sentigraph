@@ -103,8 +103,21 @@ This preserves the current YouTube real-data demo while enabling manual article/
 
 - `GET /api/v1/cases/{case_id}/evidence`
 - `POST /api/v1/cases/{case_id}/evidence/attach`
+- `POST /api/v1/cases/{case_id}/evidence/import/preview`
+- `POST /api/v1/cases/{case_id}/evidence/import/commit`
 
 The attach endpoint accepts safe manual evidence payloads such as article title/body, video title/description, comments, and replies. It does not accept or expose credentials.
+
+The CSV / Excel import endpoints add a user-upload path for evidence datasets when official APIs are unavailable or pending. The frontend reads the selected CSV/XLSX file locally and sends base64 bytes to the backend for in-memory parsing. Preview returns detected columns, inferred mapping, normalized row samples, duplicates, skipped-row counts, and validation warnings. Commit stores only normalized `EvidenceItem` records on the case; uploaded raw files are not persisted by default.
+
+Import safety rules:
+
+- Supported formats: CSV, UTF-8/UTF-8-BOM CSV, GB18030/GBK CSV fallback, and macro-free `.xlsx`.
+- Unsupported formats: `.xls`, `.xlsm`, `.xlsb`, unknown binaries, macros, executable content, external crawler exports without lawful-source attestation, and oversized files.
+- Formulas are not executed; formula-like cells are treated as plain text.
+- Secret-like columns or values such as API keys, access tokens, refresh tokens, client secrets, passwords, and cookies are redacted or omitted.
+- Duplicate rows are deduped by deterministic content hash.
+- Default import metadata is `source_type=uploaded_dataset` and `acquisition_mode=user_upload`.
 
 ## Frontend Surface
 

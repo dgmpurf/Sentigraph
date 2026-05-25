@@ -468,6 +468,80 @@ uploaded_record
 
 `EvidenceIngestionBatch` contains an optional `EvidenceSource` plus `evidence_items`. `EvidenceIngestionResult` returns normalized evidence items, `source_distribution`, `evidence_type_counts`, `top_titles`, `representative_comments`, warnings, and safe-mode flags.
 
+### CSV / Excel Evidence Import Schemas
+
+`EvidenceImportColumnMapping` maps uploaded file columns to normalized evidence fields:
+
+```json
+{
+  "platform": "platform",
+  "source_type": "source_type",
+  "acquisition_mode": "acquisition_mode",
+  "evidence_type": "evidence_type",
+  "title": "title",
+  "body_text": "body_text",
+  "comment_text": "comment_text",
+  "parent_id": "parent_id",
+  "root_id": "root_id",
+  "author_id": "author_id",
+  "author_name": "author_name",
+  "url": "url",
+  "created_at": "created_at",
+  "like_count": "like_count",
+  "reply_count": "reply_count",
+  "share_count": "share_count",
+  "view_count": "view_count",
+  "language": "language"
+}
+```
+
+`EvidenceImportPreviewRequest` and `EvidenceImportCommitRequest`:
+
+```json
+{
+  "filename": "sample_evidence.csv",
+  "content_base64": "base64-encoded file bytes",
+  "content_text": null,
+  "column_mapping": {},
+  "preview_limit": 10,
+  "max_rows": 500
+}
+```
+
+`EvidenceImportRowPreview`:
+
+```json
+{
+  "row_number": 2,
+  "evidence_id": "evidence_import_hash",
+  "platform": "uploaded_dataset",
+  "source_type": "uploaded_dataset",
+  "acquisition_mode": "user_upload",
+  "evidence_type": "comment",
+  "title": "Public discussion title",
+  "comment_text": "Public comment text",
+  "author_name": "Public author label",
+  "url": "https://example.test/post",
+  "created_at": "2026-05-25T09:00:00Z",
+  "like_count": 12,
+  "reply_count": 3,
+  "share_count": 0,
+  "view_count": 0,
+  "warnings": []
+}
+```
+
+`EvidenceImportPreviewResult` returns `detected_format`, `detected_columns`, `column_mapping`, row counts, `preview_rows`, warnings, and safe-mode flags. `EvidenceImportCommitResult` returns imported `EvidenceItem` records, `imported_count`, `total_evidence_item_count`, duplicate/skipped counts, source/type distributions, warnings, and safe-mode flags.
+
+Rules:
+
+- Imported evidence defaults to `source_type="uploaded_dataset"` and `acquisition_mode="user_upload"`.
+- CSV import supports UTF-8, UTF-8-BOM, and GB18030/GBK fallback. XLSX import supports macro-free `.xlsx` only.
+- Uploaded raw files are not persisted by default. Only normalized `EvidenceItem` records and safe import metadata are stored.
+- Formula-like cells are treated as plain text and formulas are not executed.
+- Secret-like fields and values are redacted or omitted before preview/commit output.
+- Duplicate rows are skipped by deterministic content hash.
+
 Rules:
 
 - Evidence normalization does not fetch data and does not call real APIs or real LLM APIs.

@@ -8,6 +8,35 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### CSV / Excel Evidence Import
+
+Status: implemented as a safe user-upload import flow on 2026-05-25.
+
+Completed:
+
+- Added import schemas for preview/commit requests and results, column mapping, validation warnings, and row previews.
+- Added `POST /api/v1/cases/{case_id}/evidence/import/preview` and `POST /api/v1/cases/{case_id}/evidence/import/commit`.
+- Added an in-memory import parser for CSV, UTF-8/UTF-8-BOM CSV, GB18030/GBK CSV fallback, and macro-free `.xlsx` without adding a runtime spreadsheet dependency.
+- Added frontend Cases-page import UI for `导入证据数据`, upload, field mapping, preview, warnings, commit, result summary, and `导入后运行分析`.
+- Added `docs/evidence_import_guide.md` and a sample CSV fixture for regression coverage.
+
+Acceptance:
+
+- Uploaded raw files are not persisted by default; only normalized `EvidenceItem` records and safe metadata are stored.
+- Formula-like cells are imported as plain text; formulas are not executed.
+- Unknown binaries, `.xls`, `.xlsm`, `.xlsb`, and macro-enabled workbooks are rejected.
+- Secret-like columns and values are redacted or omitted.
+- Duplicate rows are deduped by deterministic content hash.
+- `case_raw_data` still takes priority over imported `evidence_items`; mock fallback still works when neither raw data nor evidence exists.
+- The feature does not call real APIs, real YouTube APIs in automated tests, real Douyin/Bilibili APIs, real LLM APIs, crawlers, cookies, login/captcha/anti-bot bypasses, or MediaCrawler.
+- Validation passed with `python -m pytest` (`580 passed in 5.96s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.91s`; existing non-blocking vendor chunk warning remains).
+
+Next options:
+
+- Browser-smoke CSV/XLSX import end to end on a local case.
+- Add a downloadable CSV template if repeated demos need a cleaner starting file.
+- Add larger import-size UX only after memory/file-size guardrails are revisited.
+
 ### Source Catalog
 
 Status: implemented, QA-stabilized, and browser-smoke validated as a static metadata and planning endpoint on 2026-05-25.

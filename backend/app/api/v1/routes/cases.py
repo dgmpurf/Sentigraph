@@ -8,7 +8,15 @@ from app.schemas.case import (
     CaseCrawlStartRequest,
     MarkdownExportResponse,
 )
-from app.schemas.evidence import EvidenceIngestionBatch, EvidenceIngestionResult
+from app.schemas.evidence import (
+    EvidenceImportCommitRequest,
+    EvidenceImportCommitResult,
+    EvidenceImportPreviewRequest,
+    EvidenceImportPreviewResult,
+    EvidenceIngestionBatch,
+    EvidenceIngestionResult,
+)
+from app.services.evidence_import import EvidenceImportError
 from app.schemas.forecast import ForecastResult
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.scheduler import MonitoringScheduleConfig
@@ -19,6 +27,7 @@ from app.services.simulation.case_initializer import (
 from app.services.simulation.schemas import CaseSimulationInitializationResult
 from app.services.case_store import (
     attach_case_evidence,
+    commit_case_evidence_import,
     create_case,
     export_case_markdown,
     get_case,
@@ -26,6 +35,7 @@ from app.services.case_store import (
     list_case_alerts,
     list_case_snapshots,
     list_cases,
+    preview_case_evidence_import,
     run_case,
     run_case_crawl,
     run_monitoring_check,
@@ -87,6 +97,28 @@ def get_case_evidence(case_id: str) -> EvidenceIngestionResult:
 @router.post("/{case_id}/evidence/attach", response_model=EvidenceIngestionResult)
 def attach_evidence_to_case(case_id: str, payload: EvidenceIngestionBatch) -> EvidenceIngestionResult:
     result = attach_case_evidence(case_id, payload)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.post("/{case_id}/evidence/import/preview", response_model=EvidenceImportPreviewResult)
+def preview_evidence_import_for_case(case_id: str, payload: EvidenceImportPreviewRequest) -> EvidenceImportPreviewResult:
+    try:
+        result = preview_case_evidence_import(case_id, payload)
+    except EvidenceImportError as exc:
+        raise HTTPException(status_code=400, detail={"error": "evidence_import_rejected", "message": str(exc)}) from exc
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.post("/{case_id}/evidence/import/commit", response_model=EvidenceImportCommitResult)
+def commit_evidence_import_for_case(case_id: str, payload: EvidenceImportCommitRequest) -> EvidenceImportCommitResult:
+    try:
+        result = commit_case_evidence_import(case_id, payload)
+    except EvidenceImportError as exc:
+        raise HTTPException(status_code=400, detail={"error": "evidence_import_rejected", "message": str(exc)}) from exc
     if not result:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return result

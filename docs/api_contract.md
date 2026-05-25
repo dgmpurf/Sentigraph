@@ -1543,6 +1543,48 @@ POST /api/v1/cases/{case_id}/evidence/attach
 
 `POST /cases/{case_id}/evidence/attach` accepts safe manual/user-provided evidence such as article title/body, video title/description, comments, replies, public URLs, public author labels, and interaction metrics. It does not fetch external URLs and does not call platform APIs.
 
+CSV / Excel import endpoints:
+
+```http
+POST /api/v1/cases/{case_id}/evidence/import/preview
+POST /api/v1/cases/{case_id}/evidence/import/commit
+```
+
+These endpoints implement a stateless upload-confirm flow: the frontend reads the selected file locally, sends `filename`, `content_base64`, and optional `column_mapping`, then the backend parses the bytes in memory. Preview returns normalized row samples and warnings. Commit saves only sanitized `EvidenceItem` records on the case; the original uploaded file is not persisted by default.
+
+Request:
+
+```json
+{
+  "filename": "sample_evidence.csv",
+  "content_base64": "base64-encoded CSV or XLSX bytes",
+  "column_mapping": {
+    "platform": "platform",
+    "title": "title",
+    "comment_text": "comment_text",
+    "author_name": "author_name",
+    "url": "url",
+    "created_at": "created_at",
+    "like_count": "like_count",
+    "reply_count": "reply_count"
+  },
+  "preview_limit": 10,
+  "max_rows": 500
+}
+```
+
+Preview response includes `detected_format`, `detected_columns`, confirmed `column_mapping`, `valid_row_count`, `duplicate_row_count`, `skipped_row_count`, `preview_rows`, warnings, and safe-mode flags. Commit response includes `imported_count`, `total_evidence_item_count`, imported `evidence_items`, source/type distributions, warnings, and the same safe-mode flags.
+
+Import rules:
+
+- Supported formats: CSV, UTF-8 / UTF-8-BOM CSV, GB18030 / GBK CSV fallback, and macro-free `.xlsx`.
+- Rejected formats: `.xls`, `.xlsm`, `.xlsb`, unknown binaries, macros, executable content, and oversized files.
+- Cells beginning with `=`, `+`, `-`, or `@` are treated as plain text; formulas are not executed.
+- Secret-like columns or values such as `api_key`, `access_token`, `refresh_token`, `client_secret`, `password`, and `cookie` are redacted or omitted.
+- Duplicate rows are deduped by deterministic content hash.
+- Imported evidence uses `acquisition_mode="user_upload"` and `source_type="uploaded_dataset"` by default.
+- Case analysis uses imported `evidence_items` only when no attached raw comments are available; `case_raw_data` still wins over uploaded evidence.
+
 Request:
 
 ```json

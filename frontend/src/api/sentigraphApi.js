@@ -167,6 +167,16 @@ export async function attachCaseEvidence(caseId, payload = {}) {
   return normalizeEvidenceIngestionResult(data)
 }
 
+export async function previewCaseEvidenceImport(caseId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/evidence/import/preview`, payload)
+  return normalizeEvidenceImportPreview(data)
+}
+
+export async function commitCaseEvidenceImport(caseId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/evidence/import/commit`, payload)
+  return normalizeEvidenceImportCommit(data)
+}
+
 export async function getCaseMarkdownReport(caseId) {
   const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/report/markdown`)
   return data
@@ -406,6 +416,111 @@ function normalizeEvidenceItem(item) {
     confidence: normalizeRatio(item.confidence, 0),
     content_visibility: String(item.content_visibility || ''),
     access_scope: String(item.access_scope || ''),
+  }
+}
+
+function normalizeEvidenceImportPreview(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      filename: '',
+      status: 'empty',
+      detected_format: '',
+      detected_columns: [],
+      column_mapping: {},
+      total_rows: 0,
+      valid_row_count: 0,
+      duplicate_row_count: 0,
+      skipped_row_count: 0,
+      preview_rows: [],
+      warnings: [],
+      safe_mode: {},
+    }
+  }
+  return {
+    ...data,
+    case_id: String(data.case_id || ''),
+    filename: String(data.filename || ''),
+    status: String(data.status || 'empty'),
+    detected_format: data.detected_format ? String(data.detected_format) : '',
+    detected_columns: Array.isArray(data.detected_columns) ? data.detected_columns.map((item) => String(item)) : [],
+    column_mapping: normalizeStringMap(data.column_mapping),
+    total_rows: Number(data.total_rows || 0),
+    valid_row_count: Number(data.valid_row_count || 0),
+    duplicate_row_count: Number(data.duplicate_row_count || 0),
+    skipped_row_count: Number(data.skipped_row_count || 0),
+    preview_rows: Array.isArray(data.preview_rows) ? data.preview_rows.map(normalizeEvidenceImportRow).filter(Boolean) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map(normalizeEvidenceImportWarning).filter(Boolean) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceImportCommit(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      filename: '',
+      status: 'empty',
+      imported_count: 0,
+      total_evidence_item_count: 0,
+      duplicate_row_count: 0,
+      skipped_row_count: 0,
+      evidence_items: [],
+      source_distribution: {},
+      evidence_type_counts: {},
+      warnings: [],
+      safe_mode: {},
+    }
+  }
+  return {
+    ...data,
+    case_id: String(data.case_id || ''),
+    filename: String(data.filename || ''),
+    status: String(data.status || 'empty'),
+    detected_format: data.detected_format ? String(data.detected_format) : '',
+    imported_count: Number(data.imported_count || 0),
+    total_evidence_item_count: Number(data.total_evidence_item_count || 0),
+    duplicate_row_count: Number(data.duplicate_row_count || 0),
+    skipped_row_count: Number(data.skipped_row_count || 0),
+    evidence_items: Array.isArray(data.evidence_items) ? data.evidence_items.map(normalizeEvidenceItem).filter(Boolean) : [],
+    source_distribution: normalizeNumberMap(data.source_distribution),
+    evidence_type_counts: normalizeNumberMap(data.evidence_type_counts),
+    warnings: Array.isArray(data.warnings) ? data.warnings.map(normalizeEvidenceImportWarning).filter(Boolean) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceImportRow(row) {
+  if (!row || typeof row !== 'object') return null
+  return {
+    row_number: Number(row.row_number || 0),
+    evidence_id: String(row.evidence_id || ''),
+    platform: String(row.platform || ''),
+    source_type: String(row.source_type || ''),
+    acquisition_mode: String(row.acquisition_mode || ''),
+    evidence_type: String(row.evidence_type || ''),
+    title: row.title ? String(row.title) : '',
+    body_text: row.body_text ? String(row.body_text) : '',
+    comment_text: row.comment_text ? String(row.comment_text) : '',
+    author_name: row.author_name ? String(row.author_name) : '',
+    url: row.url ? String(row.url) : '',
+    created_at: row.created_at ? String(row.created_at) : '',
+    like_count: Number(row.like_count || 0),
+    reply_count: Number(row.reply_count || 0),
+    share_count: Number(row.share_count || 0),
+    view_count: Number(row.view_count || 0),
+    warnings: Array.isArray(row.warnings) ? row.warnings.map(normalizeEvidenceImportWarning).filter(Boolean) : [],
+  }
+}
+
+function normalizeEvidenceImportWarning(warning) {
+  if (!warning || typeof warning !== 'object') return null
+  return {
+    row_number: warning.row_number === null || warning.row_number === undefined ? null : Number(warning.row_number),
+    field: warning.field ? String(warning.field) : '',
+    code: String(warning.code || ''),
+    message: String(warning.message || ''),
+    severity: String(warning.severity || 'warning'),
   }
 }
 

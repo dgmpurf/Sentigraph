@@ -382,6 +382,13 @@ body {
   width: 100%;
 }
 
+.evidence-import-mapping-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  width: 100%;
+}
+
 .demo-flow-page .ant-alert {
   border-radius: 8px;
 }

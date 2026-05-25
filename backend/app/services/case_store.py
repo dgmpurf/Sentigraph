@@ -12,7 +12,19 @@ from app.schemas.case import (
     MarkdownExportResponse,
 )
 from app.schemas.crawl import CrawlStartRequest
-from app.schemas.evidence import EvidenceIngestionBatch, EvidenceIngestionResult
+from app.schemas.evidence import (
+    EvidenceImportCommitRequest,
+    EvidenceImportCommitResult,
+    EvidenceImportPreviewRequest,
+    EvidenceImportPreviewResult,
+    EvidenceIngestionBatch,
+    EvidenceIngestionResult,
+)
+from app.services.evidence_import import (
+    build_import_commit_result,
+    build_imported_evidence_items,
+    preview_evidence_import,
+)
 from app.services.crawling.crawl_service import start_crawl_with_adapters
 from app.services.evidence_ingestion import (
     build_evidence_ingestion_result,
@@ -220,6 +232,41 @@ def attach_case_evidence(case_id: str, payload: EvidenceIngestionBatch) -> Evide
     if not saved_case:
         return None
     return build_evidence_ingestion_result(case_id, saved_case.evidence_items)
+
+
+def preview_case_evidence_import(case_id: str, payload: EvidenceImportPreviewRequest) -> EvidenceImportPreviewResult | None:
+    repository = get_case_repository()
+    if not repository.get_case(case_id):
+        return None
+    return preview_evidence_import(case_id, payload)
+
+
+def commit_case_evidence_import(case_id: str, payload: EvidenceImportCommitRequest) -> EvidenceImportCommitResult | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    imported_items, import_metadata = build_imported_evidence_items(case_id, payload)
+    existing_by_id = {item.evidence_id: item for item in case.evidence_items}
+    new_items = [item for item in imported_items if item.evidence_id not in existing_by_id]
+    total_items = [*case.evidence_items, *new_items]
+    saved_case = repository.save_case_evidence(
+        case_id,
+        evidence_items=total_items,
+        updated_at=repository.next_timestamp(),
+    )
+    if not saved_case:
+        return None
+    return build_import_commit_result(
+        case_id=case_id,
+        request=payload,
+        imported_items=new_items,
+        total_items=saved_case.evidence_items,
+        metadata={
+            **import_metadata,
+            "duplicate_count": int(import_metadata.get("duplicate_count") or 0) + (len(imported_items) - len(new_items)),
+        },
+    )
 
 
 def list_case_snapshots(case_id: str) -> list[AnalysisSnapshot] | None:
