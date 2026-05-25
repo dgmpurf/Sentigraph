@@ -7,7 +7,9 @@ import {
   attachCaseEvidence,
   commitCaseEvidenceImport,
   getCase,
+  getCaseEvidenceReviewAuditSummary,
   getCaseEvidenceReviewQueue,
+  getCaseEvidenceReviewTimeline,
   getEvidenceImportTemplateCsvUrl,
   previewCaseEvidenceImport,
   reviewCaseEvidence,
@@ -754,6 +756,9 @@ function matchesReviewFilter(item, filter) {
 function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
   const [filter, setFilter] = useState('all')
   const [queueSummary, setQueueSummary] = useState(null)
+  const [reviewTimeline, setReviewTimeline] = useState(null)
+  const [auditSummary, setAuditSummary] = useState(null)
+  const [reviewNote, setReviewNote] = useState('')
   const [queueLoading, setQueueLoading] = useState(false)
   const [decisionLoadingId, setDecisionLoadingId] = useState('')
   const [queueError, setQueueError] = useState('')
@@ -764,22 +769,32 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
   useEffect(() => {
     if (!caseId) {
       setQueueSummary(null)
+      setReviewTimeline(null)
+      setAuditSummary(null)
       return
     }
     let cancelled = false
-    const loadQueue = async () => {
+    const loadReviewState = async () => {
       setQueueLoading(true)
       setQueueError('')
       try {
-        const result = await getCaseEvidenceReviewQueue(caseId)
-        if (!cancelled) setQueueSummary(result)
+        const [queueResult, timelineResult, auditResult] = await Promise.all([
+          getCaseEvidenceReviewQueue(caseId),
+          getCaseEvidenceReviewTimeline(caseId),
+          getCaseEvidenceReviewAuditSummary(caseId),
+        ])
+        if (!cancelled) {
+          setQueueSummary(queueResult)
+          setReviewTimeline(timelineResult)
+          setAuditSummary(auditResult)
+        }
       } catch (error) {
         if (!cancelled) setQueueError(error?.message || 'Evidence review queue load failed.')
       } finally {
         if (!cancelled) setQueueLoading(false)
       }
     }
-    void loadQueue()
+    void loadReviewState()
     return () => {
       cancelled = true
     }
@@ -790,8 +805,14 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
   const filteredItems = (queueSummary?.queue_items || []).filter((item) => matchesReviewFilter(item, filter))
 
   const refreshQueue = async () => {
-    const result = await getCaseEvidenceReviewQueue(caseId)
-    setQueueSummary(result)
+    const [queueResult, timelineResult, auditResult] = await Promise.all([
+      getCaseEvidenceReviewQueue(caseId),
+      getCaseEvidenceReviewTimeline(caseId),
+      getCaseEvidenceReviewAuditSummary(caseId),
+    ])
+    setQueueSummary(queueResult)
+    setReviewTimeline(timelineResult)
+    setAuditSummary(auditResult)
   }
 
   const handleDecision = async (item, decision) => {
@@ -802,9 +823,11 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
       const result = await reviewCaseEvidence(caseId, item.evidence_id, {
         decision,
         reviewer_label: 'local_human_reviewer',
+        notes: reviewNote.trim() || undefined,
       })
       setQueueSummary(result.summary)
       setQueueSuccess(`${item.evidence_id} -> ${result.review_status}`)
+      setReviewNote('')
       const refreshedCase = await getCase(caseId)
       onCaseReady?.(refreshedCase)
       await refreshQueue()
@@ -889,6 +912,52 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
     },
   ]
 
+  const historyColumns = [
+    {
+      title: 'Decision',
+      key: 'decision',
+      width: 180,
+      render: (_, record) => (
+        <Space direction="vertical" size={3}>
+          <Tag color={reviewStatusColor(record.new_review_status)}>{record.decision}</Tag>
+          <Text type="secondary">{record.reason_code || '-'}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      width: 210,
+      render: (_, record) => (
+        <Space direction="vertical" size={3}>
+          <Text>{record.previous_review_status || 'not_reviewed'} -&gt; {record.new_review_status || 'not_reviewed'}</Text>
+          <Tag color="blue">{record.analysis_effect || 'included_in_analysis'}</Tag>
+        </Space>
+      ),
+    },
+    {
+      title: 'Evidence',
+      key: 'evidence',
+      render: (_, record) => (
+        <Space direction="vertical" size={3}>
+          <Text code>{record.evidence_id}</Text>
+          <Text type="secondary">{record.note || 'No reviewer note.'}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: 'Reviewer',
+      key: 'reviewer',
+      width: 190,
+      render: (_, record) => (
+        <Space direction="vertical" size={3}>
+          <Text>{record.reviewer_label || 'local_human_reviewer'}</Text>
+          <Text type="secondary">{formatDate(record.reviewed_at)}</Text>
+        </Space>
+      ),
+    },
+  ]
+
   return (
     <Card className="panel-card">
       <Space direction="vertical" className="full-width" size={14}>
@@ -926,6 +995,25 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
           <Tag color="orange">marked_weak: {queueSummary?.marked_weak_count || 0}</Tag>
           <Tag color="geekblue">needs_more_source: {queueSummary?.needs_more_source_count || 0}</Tag>
         </Space>
+        <Space size={[8, 8]} wrap>
+          <Tag color="cyan">review events: {auditSummary?.total_review_events || 0}</Tag>
+          <Tag color="green">approved history: {auditSummary?.approved_count || 0}</Tag>
+          <Tag color="red">rejected history: {auditSummary?.rejected_count || 0}</Tag>
+          <Tag color="orange">weak history: {auditSummary?.marked_weak_count || 0}</Tag>
+          <Tag color="gold">source requested: {auditSummary?.needs_more_source_count || 0}</Tag>
+          <Tag color="purple">merged history: {auditSummary?.duplicate_merged_count || 0}</Tag>
+          <Tag color="default">latest: {formatDate(auditSummary?.latest_reviewed_at)}</Tag>
+        </Space>
+        <Space direction="vertical" className="full-width" size={4}>
+          <Text strong>Review note</Text>
+          <TextArea
+            allowClear
+            autoSize={{ minRows: 2, maxRows: 4 }}
+            onChange={(event) => setReviewNote(event.target.value)}
+            placeholder="Optional audit note, for example: source URL missing, mark as weak evidence."
+            value={reviewNote}
+          />
+        </Space>
         <Space wrap>
           <Select options={reviewFilterOptions} value={filter} onChange={setFilter} style={{ width: 190 }} />
           <Button loading={queueLoading} onClick={refreshQueue} icon={<RefreshCw size={15} />}>
@@ -939,6 +1027,21 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
           locale={{ emptyText: 'No evidence currently needs human review.' }}
           pagination={{ pageSize: 5 }}
           rowKey="evidence_id"
+          size="small"
+        />
+        <Alert
+          message="Review history / audit timeline"
+          description="Audit records only capture human review decisions. They do not mean the platform officially verified the evidence. The system does not fetch URLs or use AI to verify screenshot authenticity."
+          showIcon
+          type="info"
+        />
+        <Table
+          columns={historyColumns}
+          dataSource={reviewTimeline?.entries || []}
+          loading={queueLoading}
+          locale={{ emptyText: 'No review history yet.' }}
+          pagination={{ pageSize: 5 }}
+          rowKey="review_event_id"
           size="small"
         />
       </Space>

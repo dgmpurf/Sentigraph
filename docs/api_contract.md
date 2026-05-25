@@ -1541,6 +1541,9 @@ GET /api/v1/cases/{case_id}/evidence/trust-summary
 GET /api/v1/cases/{case_id}/evidence/dedup-summary
 GET /api/v1/cases/{case_id}/evidence/review-queue
 GET /api/v1/cases/{case_id}/evidence/review-summary
+GET /api/v1/cases/{case_id}/evidence/review-timeline
+GET /api/v1/cases/{case_id}/evidence/review-audit-summary
+GET /api/v1/cases/{case_id}/evidence/{evidence_id}/review-history
 POST /api/v1/cases/{case_id}/evidence/{evidence_id}/review
 ```
 
@@ -1560,7 +1563,7 @@ Review decision request:
 {
   "decision": "reject",
   "reviewer_label": "local_reviewer",
-  "review_notes": "Screenshot transcription without a source URL."
+  "notes": "Screenshot transcription without a source URL."
 }
 ```
 
@@ -1583,6 +1586,14 @@ Review decision effects:
 - `reset_review` returns review state to the computed default based on risk flags.
 
 Review summary response includes `total_items`, `queue_count`, `review_needed_count`, `low_trust_count`, `duplicate_group_count`, `missing_source_count`, `screenshot_count`, `approved_count`, `rejected_count`, `marked_weak_count`, `needs_more_source_count`, distributions for `review_status`, `review_reason_codes`, `trust_label`, `verification_status`, and `provenance_type`, plus `safe_mode` flags.
+
+Review history and audit responses:
+
+- `GET /cases/{case_id}/evidence/{evidence_id}/review-history` returns an append-only timeline for one evidence item.
+- `GET /cases/{case_id}/evidence/review-timeline` returns the latest review events across the case.
+- `GET /cases/{case_id}/evidence/review-audit-summary` returns counts for approve/reject/mark weak/request source/merge duplicate/reset decisions, latest reviewed time, and evidence-with-history count.
+
+History entries include `previous_review_status`, `new_review_status`, `decision`, `reason_code`, `reviewer_label`, `reviewed_at`, redacted `note`, trust/verification before-after fields, `analysis_effect`, and safe-mode flags. The audit trail is human-review-only; it does not fetch URLs, call real APIs, call real LLMs, or claim AI/platform authenticity verification.
 
 If analysis is based on `case_evidence_items`, rejected evidence is excluded by default. `case_raw_data` still takes priority when attached raw comments exist, and mock fallback remains unchanged when neither raw data nor evidence exists.
 

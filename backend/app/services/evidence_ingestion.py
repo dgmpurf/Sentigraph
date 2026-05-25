@@ -18,11 +18,14 @@ from app.schemas.evidence import (
     EvidenceIngestionResult,
     EvidenceItem,
     EvidenceNormalizationMetadata,
+    EvidenceReviewAuditSummary,
     EvidenceReviewDecisionRequest,
     EvidenceReviewDecisionResult,
+    EvidenceReviewHistoryEntry,
     EvidenceReviewQueueItem,
     EvidenceReviewSummary,
     EvidenceReviewStatus,
+    EvidenceReviewTimeline,
     EvidenceSourceType,
     EvidenceTrustSummary,
 )
@@ -451,10 +454,12 @@ def enrich_and_deduplicate_evidence_items(evidence_items: list[EvidenceItem]) ->
         existing = grouped[group_key]
         merged_flags = _dedupe_warnings([*existing.risk_flags, *enriched.risk_flags, "duplicate_submission"])
         merged_notes = _dedupe_warnings([*existing.verification_notes, *enriched.verification_notes, "Repeated evidence collapsed into one duplicate group."])
+        merged_history = [*existing.review_history, *enriched.review_history]
         grouped[group_key] = existing.model_copy(
             update={
                 "risk_flags": merged_flags,
                 "verification_notes": merged_notes,
+                "review_history": merged_history,
             },
             deep=True,
         )
@@ -588,6 +593,45 @@ def build_review_summary(case_id: str, evidence_items: list[EvidenceItem]) -> Ev
     )
 
 
+def build_review_timeline(
+    case_id: str,
+    evidence_items: list[EvidenceItem],
+    *,
+    evidence_id: str | None = None,
+) -> EvidenceReviewTimeline:
+    unique_items = enrich_and_deduplicate_evidence_items(evidence_items)
+    entries: list[EvidenceReviewHistoryEntry] = []
+    for item in unique_items:
+        if evidence_id is not None and item.evidence_id != evidence_id:
+            continue
+        entries.extend(item.review_history)
+    entries.sort(key=lambda entry: entry.reviewed_at, reverse=True)
+    return EvidenceReviewTimeline(
+        case_id=case_id,
+        evidence_id=evidence_id,
+        entries=entries,
+        total_review_events=len(entries),
+    )
+
+
+def build_review_audit_summary(case_id: str, evidence_items: list[EvidenceItem]) -> EvidenceReviewAuditSummary:
+    unique_items = enrich_and_deduplicate_evidence_items(evidence_items)
+    timeline = build_review_timeline(case_id, unique_items)
+    entries = timeline.entries
+    return EvidenceReviewAuditSummary(
+        case_id=case_id,
+        total_review_events=len(entries),
+        approved_count=sum(1 for entry in entries if entry.decision == "approve"),
+        rejected_count=sum(1 for entry in entries if entry.decision == "reject"),
+        marked_weak_count=sum(1 for entry in entries if entry.decision == "mark_weak"),
+        needs_more_source_count=sum(1 for entry in entries if entry.decision == "request_more_source"),
+        duplicate_merged_count=sum(1 for entry in entries if entry.decision == "merge_duplicate"),
+        reset_count=sum(1 for entry in entries if entry.decision == "reset_review"),
+        latest_reviewed_at=entries[0].reviewed_at if entries else None,
+        evidence_with_history_count=sum(1 for item in unique_items if item.review_history),
+    )
+
+
 def apply_review_decision(
     *,
     case_id: str,
@@ -617,6 +661,7 @@ def apply_review_decision(
         review_status=persisted_item.review_status,
         evidence_item=persisted_item,
         summary=build_review_summary(case_id, deduped_items),
+        history_entry=persisted_item.review_history[-1] if persisted_item.review_history else None,
     )
     return deduped_items, result
 
@@ -692,8 +737,9 @@ def _apply_decision_to_item(
     reviewed_at: datetime,
 ) -> EvidenceItem:
     notes = list(item.review_notes)
-    if request.notes:
-        notes.append(request.notes)
+    sanitized_note = _sanitize_review_note(request.notes)
+    if sanitized_note:
+        notes.append(sanitized_note)
     reviewer_label = request.reviewer_label or item.reviewer_label
     base_update = {
         "reviewed_at": reviewed_at,
@@ -701,10 +747,10 @@ def _apply_decision_to_item(
         "review_notes": _dedupe_warnings(notes),
     }
     if request.decision == "approve":
-        return item.model_copy(update={**base_update, "review_status": "approved"}, deep=True)
-    if request.decision == "reject":
+        updated = item.model_copy(update={**base_update, "review_status": "approved"}, deep=True)
+    elif request.decision == "reject":
         flags = _dedupe_warnings([*item.risk_flags, "human_review_rejected"])
-        return item.model_copy(
+        updated = item.model_copy(
             update={
                 **base_update,
                 "review_status": "rejected",
@@ -715,9 +761,9 @@ def _apply_decision_to_item(
             },
             deep=True,
         )
-    if request.decision == "mark_weak":
+    elif request.decision == "mark_weak":
         flags = _dedupe_warnings([*item.risk_flags, "marked_weak_evidence"])
-        return item.model_copy(
+        updated = item.model_copy(
             update={
                 **base_update,
                 "review_status": "marked_weak",
@@ -727,30 +773,100 @@ def _apply_decision_to_item(
             },
             deep=True,
         )
-    if request.decision == "request_more_source":
+    elif request.decision == "request_more_source":
         flags = _dedupe_warnings([*item.risk_flags, "source_review_requested"])
-        return item.model_copy(
+        updated = item.model_copy(
             update={**base_update, "review_status": "needs_more_source", "risk_flags": flags},
             deep=True,
         )
-    if request.decision == "merge_duplicate":
+    elif request.decision == "merge_duplicate":
         flags = _dedupe_warnings([*item.risk_flags, "duplicate_merged"])
-        return item.model_copy(
+        updated = item.model_copy(
             update={**base_update, "review_status": "duplicate_merged", "risk_flags": flags},
             deep=True,
         )
-    return item.model_copy(
-        update={
-            "review_status": "not_reviewed",
-            "reviewed_at": None,
-            "reviewer_label": None,
-            "review_notes": [],
-            "verification_status": "needs_review",
-            "trust_label": "unverified",
-            "risk_flags": [flag for flag in item.risk_flags if flag not in {"human_review_rejected", "marked_weak_evidence", "source_review_requested", "duplicate_merged"}],
-        },
-        deep=True,
+    else:
+        updated = item.model_copy(
+            update={
+                "review_status": "not_reviewed",
+                "reviewed_at": reviewed_at,
+                "reviewer_label": reviewer_label,
+                "review_notes": _dedupe_warnings(notes),
+                "verification_status": "needs_review",
+                "trust_label": "unverified",
+                "risk_flags": [
+                    flag
+                    for flag in item.risk_flags
+                    if flag not in {"human_review_rejected", "marked_weak_evidence", "source_review_requested", "duplicate_merged"}
+                ],
+            },
+            deep=True,
+        )
+    return _append_review_history(item, updated, request, reviewed_at=reviewed_at, note=sanitized_note)
+
+
+def _append_review_history(
+    original: EvidenceItem,
+    updated: EvidenceItem,
+    request: EvidenceReviewDecisionRequest,
+    *,
+    reviewed_at: datetime,
+    note: str | None,
+) -> EvidenceItem:
+    reason_codes = _review_reason_codes(original) or _review_reason_codes(updated)
+    entry = EvidenceReviewHistoryEntry(
+        review_event_id=_review_event_id(
+            updated.case_id or original.case_id,
+            updated.evidence_id,
+            request.decision,
+            reviewed_at,
+            len(original.review_history),
+        ),
+        evidence_id=updated.evidence_id,
+        case_id=updated.case_id or original.case_id,
+        previous_review_status=_effective_review_status(original, reason_codes),
+        new_review_status=updated.review_status,
+        decision=request.decision,
+        reason_code=reason_codes[0] if reason_codes else f"decision:{request.decision}",
+        reviewer_label=request.reviewer_label or updated.reviewer_label,
+        reviewed_at=reviewed_at,
+        note=note,
+        trust_label_before=original.trust_label,
+        trust_label_after=updated.trust_label,
+        verification_status_before=original.verification_status,
+        verification_status_after=updated.verification_status,
+        analysis_effect=_review_analysis_effect(request.decision),
     )
+    return updated.model_copy(update={"review_history": [*original.review_history, entry]}, deep=True)
+
+
+def _review_event_id(
+    case_id: str | None,
+    evidence_id: str,
+    decision: str,
+    reviewed_at: datetime,
+    existing_history_count: int,
+) -> str:
+    raw = f"{case_id or ''}|{evidence_id}|{decision}|{reviewed_at.isoformat()}|{existing_history_count}"
+    return f"review_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:20]}"
+
+
+def _review_analysis_effect(decision: str) -> str:
+    if decision == "reject":
+        return "excluded_from_analysis"
+    if decision == "mark_weak":
+        return "weak_evidence"
+    if decision == "merge_duplicate":
+        return "duplicate_collapsed"
+    return "included_in_analysis"
+
+
+def _sanitize_review_note(note: str | None) -> str | None:
+    if not note:
+        return None
+    redacted = SECRET_TEXT_PATTERN.sub(lambda match: f"{match.group(1)}=[REDACTED]", note.strip())
+    redacted = _trim_text(redacted, 500)
+    return redacted or None
 
 
 def evidence_source_distribution(evidence_items: list[EvidenceItem]) -> dict[str, int]:

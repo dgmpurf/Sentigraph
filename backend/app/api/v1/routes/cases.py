@@ -16,9 +16,11 @@ from app.schemas.evidence import (
     EvidenceImportPreviewResult,
     EvidenceIngestionBatch,
     EvidenceIngestionResult,
+    EvidenceReviewAuditSummary,
     EvidenceReviewDecisionRequest,
     EvidenceReviewDecisionResult,
     EvidenceReviewSummary,
+    EvidenceReviewTimeline,
     EvidenceTrustSummary,
 )
 from app.services.evidence_import import EvidenceImportError
@@ -38,7 +40,9 @@ from app.services.case_store import (
     export_case_markdown,
     get_case,
     get_case_evidence_dedup_summary,
+    get_case_evidence_review_audit_summary,
     get_case_evidence_review_summary,
+    get_case_evidence_review_timeline,
     get_case_evidence_trust_summary,
     list_case_evidence,
     list_case_alerts,
@@ -136,6 +140,22 @@ def get_case_evidence_review_summary_route(case_id: str) -> EvidenceReviewSummar
     return result
 
 
+@router.get("/{case_id}/evidence/review-timeline", response_model=EvidenceReviewTimeline)
+def get_case_evidence_review_timeline_route(case_id: str) -> EvidenceReviewTimeline:
+    result = get_case_evidence_review_timeline(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.get("/{case_id}/evidence/review-audit-summary", response_model=EvidenceReviewAuditSummary)
+def get_case_evidence_review_audit_summary_route(case_id: str) -> EvidenceReviewAuditSummary:
+    result = get_case_evidence_review_audit_summary(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
 @router.post("/{case_id}/evidence/attach", response_model=EvidenceIngestionResult)
 def attach_evidence_to_case(case_id: str, payload: EvidenceIngestionBatch) -> EvidenceIngestionResult:
     try:
@@ -153,6 +173,14 @@ def attach_evidence_to_case(case_id: str, payload: EvidenceIngestionBatch) -> Ev
         ) from exc
     if not result:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.get("/{case_id}/evidence/{evidence_id}/review-history", response_model=EvidenceReviewTimeline)
+def get_evidence_review_history_for_case(case_id: str, evidence_id: str) -> EvidenceReviewTimeline:
+    result = get_case_evidence_review_timeline(case_id, evidence_id=evidence_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case or evidence item not found.")
     return result
 
 

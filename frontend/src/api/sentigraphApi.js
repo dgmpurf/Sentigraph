@@ -187,6 +187,21 @@ export async function getCaseEvidenceReviewSummary(caseId) {
   return normalizeEvidenceReviewSummary(data)
 }
 
+export async function getCaseEvidenceReviewTimeline(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence/review-timeline`)
+  return normalizeEvidenceReviewTimeline(data)
+}
+
+export async function getCaseEvidenceReviewAuditSummary(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence/review-audit-summary`)
+  return normalizeEvidenceReviewAuditSummary(data)
+}
+
+export async function getCaseEvidenceReviewHistory(caseId, evidenceId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence/${evidenceId}/review-history`)
+  return normalizeEvidenceReviewTimeline(data)
+}
+
 export async function reviewCaseEvidence(caseId, evidenceId, payload = {}) {
   const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/evidence/${evidenceId}/review`, payload)
   return normalizeEvidenceReviewDecisionResult(data)
@@ -544,6 +559,7 @@ function normalizeEvidenceItem(item) {
     reviewed_at: item.reviewed_at ? String(item.reviewed_at) : '',
     reviewer_label: item.reviewer_label ? String(item.reviewer_label) : '',
     review_notes: Array.isArray(item.review_notes) ? item.review_notes.map((note) => String(note)) : [],
+    review_history: Array.isArray(item.review_history) ? item.review_history.map(normalizeEvidenceReviewHistoryEntry).filter(Boolean) : [],
   }
 }
 
@@ -619,6 +635,7 @@ function normalizeEvidenceReviewDecisionResult(data) {
       review_status: '',
       evidence_item: null,
       summary: normalizeEvidenceReviewSummary(null),
+      history_entry: null,
       safe_mode: {},
     }
   }
@@ -629,6 +646,79 @@ function normalizeEvidenceReviewDecisionResult(data) {
     review_status: String(data.review_status || ''),
     evidence_item: normalizeEvidenceItem(data.evidence_item),
     summary: normalizeEvidenceReviewSummary(data.summary),
+    history_entry: normalizeEvidenceReviewHistoryEntry(data.history_entry),
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceReviewHistoryEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null
+  return {
+    review_event_id: String(entry.review_event_id || ''),
+    evidence_id: String(entry.evidence_id || ''),
+    case_id: entry.case_id ? String(entry.case_id) : '',
+    previous_review_status: String(entry.previous_review_status || 'not_reviewed'),
+    new_review_status: String(entry.new_review_status || 'not_reviewed'),
+    decision: String(entry.decision || ''),
+    reason_code: entry.reason_code ? String(entry.reason_code) : '',
+    reviewer_label: entry.reviewer_label ? String(entry.reviewer_label) : '',
+    reviewed_at: entry.reviewed_at ? String(entry.reviewed_at) : '',
+    note: entry.note ? String(entry.note) : '',
+    trust_label_before: String(entry.trust_label_before || ''),
+    trust_label_after: String(entry.trust_label_after || ''),
+    verification_status_before: String(entry.verification_status_before || ''),
+    verification_status_after: String(entry.verification_status_after || ''),
+    analysis_effect: String(entry.analysis_effect || ''),
+    safe_mode: entry.safe_mode && typeof entry.safe_mode === 'object' ? normalizeBooleanMap(entry.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceReviewTimeline(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      evidence_id: '',
+      entries: [],
+      total_review_events: 0,
+      safe_mode: {},
+    }
+  }
+  return {
+    case_id: String(data.case_id || ''),
+    evidence_id: data.evidence_id ? String(data.evidence_id) : '',
+    entries: Array.isArray(data.entries) ? data.entries.map(normalizeEvidenceReviewHistoryEntry).filter(Boolean) : [],
+    total_review_events: Number(data.total_review_events || 0),
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceReviewAuditSummary(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      total_review_events: 0,
+      approved_count: 0,
+      rejected_count: 0,
+      marked_weak_count: 0,
+      needs_more_source_count: 0,
+      duplicate_merged_count: 0,
+      reset_count: 0,
+      latest_reviewed_at: '',
+      evidence_with_history_count: 0,
+      safe_mode: {},
+    }
+  }
+  return {
+    case_id: String(data.case_id || ''),
+    total_review_events: Number(data.total_review_events || 0),
+    approved_count: Number(data.approved_count || 0),
+    rejected_count: Number(data.rejected_count || 0),
+    marked_weak_count: Number(data.marked_weak_count || 0),
+    needs_more_source_count: Number(data.needs_more_source_count || 0),
+    duplicate_merged_count: Number(data.duplicate_merged_count || 0),
+    reset_count: Number(data.reset_count || 0),
+    latest_reviewed_at: data.latest_reviewed_at ? String(data.latest_reviewed_at) : '',
+    evidence_with_history_count: Number(data.evidence_with_history_count || 0),
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }

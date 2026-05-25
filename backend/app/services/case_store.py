@@ -20,9 +20,11 @@ from app.schemas.evidence import (
     EvidenceImportPreviewResult,
     EvidenceIngestionBatch,
     EvidenceIngestionResult,
+    EvidenceReviewAuditSummary,
     EvidenceReviewDecisionRequest,
     EvidenceReviewDecisionResult,
     EvidenceReviewSummary,
+    EvidenceReviewTimeline,
     EvidenceTrustSummary,
 )
 from app.services.evidence_import import (
@@ -35,7 +37,9 @@ from app.services.evidence_ingestion import (
     build_deduplication_summary,
     build_evidence_ingestion_result,
     build_evidence_items_from_raw_data,
+    build_review_audit_summary,
     build_review_summary,
+    build_review_timeline,
     build_trust_summary,
     enrich_and_deduplicate_evidence_items,
     apply_review_decision,
@@ -276,6 +280,38 @@ def get_case_evidence_review_summary(case_id: str) -> EvidenceReviewSummary | No
             crawl_metadata=case.crawl_metadata,
         )
     return build_review_summary(case_id, evidence_items)
+
+
+def get_case_evidence_review_timeline(case_id: str, evidence_id: str | None = None) -> EvidenceReviewTimeline | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    evidence_items = case.evidence_items
+    if not evidence_items and (case.raw_posts or case.raw_comments):
+        evidence_items = build_evidence_items_from_raw_data(
+            case_id=case_id,
+            raw_posts=case.raw_posts,
+            raw_comments=case.raw_comments,
+            crawl_metadata=case.crawl_metadata,
+        )
+    return build_review_timeline(case_id, evidence_items, evidence_id=evidence_id)
+
+
+def get_case_evidence_review_audit_summary(case_id: str) -> EvidenceReviewAuditSummary | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    evidence_items = case.evidence_items
+    if not evidence_items and (case.raw_posts or case.raw_comments):
+        evidence_items = build_evidence_items_from_raw_data(
+            case_id=case_id,
+            raw_posts=case.raw_posts,
+            raw_comments=case.raw_comments,
+            crawl_metadata=case.crawl_metadata,
+        )
+    return build_review_audit_summary(case_id, evidence_items)
 
 
 def review_case_evidence_item(

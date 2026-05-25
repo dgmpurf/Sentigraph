@@ -1,6 +1,6 @@
 # Evidence Review Workflow
 
-Last updated: 2026-05-25
+Last updated: 2026-05-26
 
 Sentigraph now includes a lightweight human review queue for normalized evidence that is low-trust, unverified, duplicated, missing source context, screenshot/transcription-based, or otherwise flagged by the Evidence Layer. This workflow is for human review only. It does not use AI to verify authenticity and it does not fetch URLs, scrape pages, call real APIs, or call real LLM APIs.
 
@@ -38,6 +38,26 @@ Official API evidence is normally not queued unless it has extra risk flags.
 - `request_more_source`: keeps the item visible but marks it as needing better source evidence.
 - `merge_duplicate`: keeps duplicate grouping while preserving the duplicate-collapse behavior.
 - `reset_review`: returns the item to computed default review status based on its trust/provenance flags.
+
+## Review History / Audit Timeline
+
+Every review decision appends an `EvidenceReviewHistoryEntry` to the evidence item. The history is append-only: old decisions are not overwritten when a later reviewer changes the current `review_status`.
+
+Each history entry records:
+
+- previous status and new status
+- decision, reason code, reviewer label, reviewed time, and optional reviewer note
+- trust label and verification status before/after the decision
+- analysis effect: `included_in_analysis`, `excluded_from_analysis`, `weak_evidence`, or `duplicate_collapsed`
+- safe-mode flags showing no AI authenticity verification, no URL fetch, and no secret exposure
+
+The audit timeline endpoints are:
+
+- `GET /api/v1/cases/{case_id}/evidence/{evidence_id}/review-history`
+- `GET /api/v1/cases/{case_id}/evidence/review-timeline`
+- `GET /api/v1/cases/{case_id}/evidence/review-audit-summary`
+
+Reviewer notes are treated as plain text and secret-like values are redacted before they appear in stored history or API responses. The audit trail records human decisions only; it is not platform official verification and does not mean the evidence is true.
 
 ## Analysis Behavior
 

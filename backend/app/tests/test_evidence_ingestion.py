@@ -611,6 +611,83 @@ def test_review_decisions_update_status_and_analysis_excludes_rejected_evidence(
     assert not any("Rejected evidence" in comment for comment in representative_comments)
 
 
+def test_review_history_timeline_and_audit_summary_are_append_only() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    comments_by_decision = {
+        "approve": "History approve evidence.",
+        "reject": "History reject evidence.",
+        "mark_weak": "History weak evidence.",
+        "request_more_source": "History source request evidence.",
+        "merge_duplicate": "History duplicate merge evidence.",
+        "reset_review": "History reset evidence.",
+    }
+    response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={
+            "source": {
+                "platform": "public_web",
+                "source_type": "public_web",
+                "acquisition_mode": "manual_url",
+            },
+            "evidence_items": [
+                {
+                    "evidence_type": "comment",
+                    "comment_text": text,
+                    "url": f"https://example.test/{decision}",
+                    "user_attestation_text": "I confirm lawful source.",
+                }
+                for decision, text in comments_by_decision.items()
+            ],
+        },
+    )
+    assert response.status_code == 200
+    ids_by_text = {item["comment_text"]: item["evidence_id"] for item in response.json()["evidence_items"]}
+
+    for decision, text in comments_by_decision.items():
+        payload = {"decision": decision, "reviewer_label": "qa"}
+        if decision == "approve":
+            payload["notes"] = "approved with access_token=secret-marker-should-not-appear"
+        review_response = client.post(
+            f"/api/v1/cases/{case_id}/evidence/{ids_by_text[text]}/review",
+            json=payload,
+        )
+        assert review_response.status_code == 200
+        body = review_response.json()
+        assert body["history_entry"]["decision"] == decision
+        assert body["history_entry"]["safe_mode"]["no_ai_verification"] is True
+        assert body["history_entry"]["safe_mode"]["no_url_fetch"] is True
+        assert body["history_entry"]["safe_mode"]["no_secret_exposed"] is True
+
+    timeline_response = client.get(f"/api/v1/cases/{case_id}/evidence/review-timeline")
+    assert timeline_response.status_code == 200
+    timeline = timeline_response.json()
+    assert timeline["total_review_events"] == 6
+    assert len(timeline["entries"]) == 6
+    assert "secret-marker-should-not-appear" not in str(timeline)
+    assert "[REDACTED]" in str(timeline)
+
+    audit_response = client.get(f"/api/v1/cases/{case_id}/evidence/review-audit-summary")
+    assert audit_response.status_code == 200
+    audit = audit_response.json()
+    assert audit["total_review_events"] == 6
+    assert audit["approved_count"] == 1
+    assert audit["rejected_count"] == 1
+    assert audit["marked_weak_count"] == 1
+    assert audit["needs_more_source_count"] == 1
+    assert audit["duplicate_merged_count"] == 1
+    assert audit["reset_count"] == 1
+    assert audit["evidence_with_history_count"] == 6
+    assert audit["latest_reviewed_at"]
+
+    approve_history_response = client.get(
+        f"/api/v1/cases/{case_id}/evidence/{ids_by_text[comments_by_decision['approve']]}/review-history"
+    )
+    assert approve_history_response.status_code == 200
+    approve_history = approve_history_response.json()
+    assert approve_history["total_review_events"] == 1
+    assert approve_history["entries"][0]["decision"] == "approve"
+
+
 def test_merge_duplicate_review_status_preserves_collapse_without_inflating_counts() -> None:
     case_id = _create_case(platforms=["public_web"])
     duplicate_item = {

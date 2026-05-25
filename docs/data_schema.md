@@ -442,7 +442,8 @@ Rules:
   "review_reason_codes": [],
   "reviewed_at": null,
   "reviewer_label": null,
-  "review_notes": null
+  "review_notes": [],
+  "review_history": []
 }
 ```
 
@@ -612,6 +613,35 @@ Human review summaries:
 ```
 
 Review queue items include evidence previews, provenance/trust fields, duplicate metadata, source URL status, attestation status, `review_status`, and `review_reason_codes`. They are meant for human review only. Sentigraph does not call an LLM to verify evidence and does not claim screenshots or pasted transcriptions are authentic. Rejected evidence remains stored but is excluded from default `case_evidence_items` analysis and representative comments.
+
+Review history / audit schemas:
+
+```json
+{
+  "review_event_id": "review_abc123",
+  "evidence_id": "evidence_001",
+  "case_id": "case_001",
+  "previous_review_status": "review_needed",
+  "new_review_status": "marked_weak",
+  "decision": "mark_weak",
+  "reason_code": "source_url_missing",
+  "reviewer_label": "local_human_reviewer",
+  "reviewed_at": "2026-05-26T10:00:00Z",
+  "note": "Source URL missing, keep as weak evidence.",
+  "trust_label_before": "unverified",
+  "trust_label_after": "low",
+  "verification_status_before": "needs_review",
+  "verification_status_after": "needs_review",
+  "analysis_effect": "weak_evidence",
+  "safe_mode": {
+    "no_ai_verification": true,
+    "no_url_fetch": true,
+    "no_secret_exposed": true
+  }
+}
+```
+
+Allowed `analysis_effect` values are `included_in_analysis`, `excluded_from_analysis`, `weak_evidence`, and `duplicate_collapsed`. Case-level `EvidenceReviewTimeline` returns latest-first history entries plus `total_review_events`. `EvidenceReviewAuditSummary` returns decision counts, `latest_reviewed_at`, and `evidence_with_history_count`. Review history is append-only and stores human review decisions only; it is not official platform verification and does not imply AI verified authenticity.
 
 ### CSV / Excel Evidence Import Schemas
 

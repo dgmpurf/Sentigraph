@@ -8,6 +8,33 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Evidence Review History / Audit Timeline MVP
+
+Status: implemented and browser-smoked on 2026-05-26.
+
+Completed:
+
+- Extended `EvidenceItem` with append-only `review_history` entries.
+- Added `EvidenceReviewHistoryEntry`, `EvidenceReviewTimeline`, and `EvidenceReviewAuditSummary`.
+- Review decisions now record previous/new review status, decision, reason code, reviewer label, reviewed time, redacted note, trust/verification before-after fields, and analysis effect.
+- Added `GET /api/v1/cases/{case_id}/evidence/{evidence_id}/review-history`, `GET /api/v1/cases/{case_id}/evidence/review-timeline`, and `GET /api/v1/cases/{case_id}/evidence/review-audit-summary`.
+- Cases now shows an optional review note field, audit summary counts, and a latest-first review history table.
+- History safe-mode flags explicitly state no AI verification, no URL fetch, and no secret exposure.
+- Browser smoke opened the Cases review panel, selected an audit-timeline evidence case, verified the audit summary and review history table rendered, and found no browser console errors or raw `[object Object]` rendering.
+- Validation passed with `python -m pytest` (`600 passed in 6.81s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 7.99s`; existing non-blocking large chunk warning remains).
+
+Acceptance:
+
+- Review history is append-only and does not delete normalized evidence text.
+- Rejected evidence remains excluded from default analysis; weak evidence remains usable with warnings; duplicate decisions preserve collapsed-count behavior.
+- Reviewer notes are stored as plain text and secret-like values are redacted.
+- This is human review only; no real AI review, real APIs, URL fetching, scraping, MediaCrawler, cookies, or secret exposure are introduced.
+
+Future tasks:
+
+- Large-scale evidence ingestion remains next/future work after audit controls are stable.
+- AI-assisted review remains future-only and must not claim authenticity verification.
+
 ### Evidence Review Queue MVP
 
 Status: implemented on 2026-05-25; browser-smoke QA complete on 2026-05-26.
@@ -39,7 +66,6 @@ Acceptance:
 
 Future tasks:
 
-- Add optional review history/audit timeline only if demos need it.
 - Large-scale evidence ingestion remains future work after review controls are stable.
 - AI-assisted review remains future work behind explicit safety gates and must not claim authenticity verification.
 - Search Discovery candidate-review UI remains future work.

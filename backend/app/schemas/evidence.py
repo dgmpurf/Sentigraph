@@ -91,6 +91,82 @@ EvidenceReviewDecision = Literal[
     "reset_review",
 ]
 
+EvidenceReviewAnalysisEffect = Literal[
+    "included_in_analysis",
+    "excluded_from_analysis",
+    "weak_evidence",
+    "duplicate_collapsed",
+]
+
+
+class EvidenceReviewHistoryEntry(BaseModel):
+    review_event_id: str
+    evidence_id: str
+    case_id: str | None = None
+    previous_review_status: EvidenceReviewStatus = "not_reviewed"
+    new_review_status: EvidenceReviewStatus = "not_reviewed"
+    decision: EvidenceReviewDecision
+    reason_code: str | None = None
+    reviewer_label: str | None = None
+    reviewed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    note: str | None = None
+    trust_label_before: EvidenceTrustLabel = "unverified"
+    trust_label_after: EvidenceTrustLabel = "unverified"
+    verification_status_before: EvidenceVerificationStatus = "needs_review"
+    verification_status_after: EvidenceVerificationStatus = "needs_review"
+    analysis_effect: EvidenceReviewAnalysisEffect = "included_in_analysis"
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "no_ai_verification": True,
+            "no_url_fetch": True,
+            "no_secret_exposed": True,
+        }
+    )
+
+
+class EvidenceReviewTimeline(BaseModel):
+    case_id: str
+    evidence_id: str | None = None
+    entries: list[EvidenceReviewHistoryEntry] = Field(default_factory=list)
+    total_review_events: int = 0
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "human_review_only": True,
+            "no_ai_verification": True,
+            "no_url_fetch": True,
+            "no_secret_exposed": True,
+            "real_ai_review": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
+class EvidenceReviewAuditSummary(BaseModel):
+    case_id: str
+    total_review_events: int = 0
+    approved_count: int = 0
+    rejected_count: int = 0
+    marked_weak_count: int = 0
+    needs_more_source_count: int = 0
+    duplicate_merged_count: int = 0
+    reset_count: int = 0
+    latest_reviewed_at: datetime | None = None
+    evidence_with_history_count: int = 0
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "human_review_only": True,
+            "no_ai_verification": True,
+            "no_url_fetch": True,
+            "no_secret_exposed": True,
+            "real_ai_review": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
 
 class EvidenceNormalizationMetadata(BaseModel):
     normalized_from: str = "manual_payload"
@@ -222,6 +298,7 @@ class EvidenceReviewDecisionResult(BaseModel):
     review_status: EvidenceReviewStatus
     evidence_item: "EvidenceItem"
     summary: EvidenceReviewSummary
+    history_entry: EvidenceReviewHistoryEntry | None = None
     safe_mode: dict[str, bool] = Field(
         default_factory=lambda: {
             "human_review_only": True,
@@ -290,6 +367,7 @@ class EvidenceItem(BaseModel):
     reviewed_at: datetime | None = None
     reviewer_label: str | None = None
     review_notes: list[str] = Field(default_factory=list)
+    review_history: list[EvidenceReviewHistoryEntry] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
