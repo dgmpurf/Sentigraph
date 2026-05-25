@@ -7,6 +7,7 @@ import {
   getPlatformReadiness,
   getPlatformStatus,
   getPublicParserStatus,
+  getSourceCatalog,
   previewPublicParser,
 } from '../api/sentigraphApi.js'
 
@@ -39,6 +40,12 @@ const statusTone = {
   item_comment_not_verified: 'purple',
   company_age_requirement_pending: 'orange',
   comment_api_unknown_or_not_confirmed: 'orange',
+}
+
+const feasibilityTone = {
+  green: 'green',
+  yellow: 'gold',
+  red: 'red',
 }
 
 function safeText(value, fallback = '-') {
@@ -464,6 +471,76 @@ function ExplanationCards() {
   )
 }
 
+function SourceCatalogPanel({ catalog }) {
+  const categories = Array.isArray(catalog?.categories) ? catalog.categories : []
+  const safeMode = catalog?.safe_mode || {}
+  const thirdPartyCrawlerName = ['Media', 'Crawler'].join('')
+
+  return (
+    <Card className="panel-card integration-section-card">
+      <div className="panel-heading">
+        <Space>
+          <FileSearch size={18} />
+          <Title level={4}>Source Catalog / Evidence Sources</Title>
+        </Space>
+        <Space wrap>
+          <Tag color="cyan">{formatNumber(catalog?.total_categories || categories.length)} categories</Tag>
+          <Tag color="geekblue">{formatNumber(catalog?.total_sources || 0)} sources</Tag>
+          <Tag color={safeMode.static_metadata_only ? 'green' : 'red'}>static metadata only</Tag>
+          <Tag color={safeMode.real_api_calls ? 'red' : 'green'}>no real API calls</Tag>
+          <Tag color={safeMode.secrets_exposed ? 'red' : 'green'}>no secrets</Tag>
+          <Tag color={safeMode.third_party_crawler_integrated ? 'red' : 'green'}>
+            {thirdPartyCrawlerName} not integrated
+          </Tag>
+        </Space>
+      </div>
+      <Paragraph type="secondary" className="integration-table-note">
+        Source Catalog is a planning layer for event-centered evidence. It shows what can become normalized
+        EvidenceItem records; it does not crawl, use cookies, bypass captcha or anti-bot systems, fetch URLs,
+        read credentials, or call real LLMs.
+      </Paragraph>
+      {categories.length ? (
+        <div className="integration-tile-grid">
+          {categories.map((category) => (
+            <div className="integration-tile" key={category.category_id}>
+              <Space direction="vertical" size={8} className="full-width">
+                <div className="integration-tile-header">
+                  <Space direction="vertical" size={2}>
+                    <Text strong>{category.display_name}</Text>
+                    <Text type="secondary">{category.category_id}</Text>
+                  </Space>
+                  <Tag>{category.sources.length}</Tag>
+                </div>
+                <Paragraph className="integration-note" ellipsis={{ rows: 2 }}>
+                  {category.description}
+                </Paragraph>
+                <Space wrap size={[4, 4]}>
+                  {category.sources.map((source) => (
+                    <Tag color={feasibilityTone[source.feasibility_status] || 'default'} key={source.source_id}>
+                      {source.display_name}: {source.feasibility_status} / {source.current_status}
+                    </Tag>
+                  ))}
+                </Space>
+                <Space wrap size={[4, 4]}>
+                  {[...new Set(category.sources.flatMap((source) => source.acquisition_modes || []))]
+                    .slice(0, 5)
+                    .map((mode) => (
+                      <Tag color="blue" key={mode}>
+                        {mode}
+                      </Tag>
+                    ))}
+                </Space>
+              </Space>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <Empty description="Source Catalog metadata is unavailable." image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      )}
+    </Card>
+  )
+}
+
 function PlatformTileList({ platforms, emptyText }) {
   if (!platforms.length) {
     return <Empty description={emptyText} image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -535,6 +612,7 @@ export function PlatformIntegrationOverview() {
   const [platformStatus, setPlatformStatus] = useState(null)
   const [platformRegistry, setPlatformRegistry] = useState(null)
   const [parserStatus, setParserStatus] = useState(null)
+  const [sourceCatalog, setSourceCatalog] = useState(null)
   const [previewByPlatform, setPreviewByPlatform] = useState({})
   const [selectedPlatform, setSelectedPlatform] = useState('')
   const [loading, setLoading] = useState(true)
@@ -550,19 +628,22 @@ export function PlatformIntegrationOverview() {
       const fallback = await getPlatformStatus()
       return { ...fallback, readiness_fallback_used: true }
     })
-    const [platformsResult, statusResult, parsersResult] = await Promise.allSettled([
+    const [platformsResult, statusResult, parsersResult, catalogResult] = await Promise.allSettled([
       getPlatforms(),
       readinessRequest,
       getPublicParserStatus(),
+      getSourceCatalog(),
     ])
 
     const nextPlatformRegistry = platformsResult.status === 'fulfilled' ? platformsResult.value : null
     const nextPlatformStatus = statusResult.status === 'fulfilled' ? statusResult.value : null
     const nextParserStatus = parsersResult.status === 'fulfilled' ? parsersResult.value : null
+    const nextSourceCatalog = catalogResult.status === 'fulfilled' ? catalogResult.value : null
 
     setPlatformRegistry(nextPlatformRegistry)
     setPlatformStatus(nextPlatformStatus)
     setParserStatus(nextParserStatus)
+    setSourceCatalog(nextSourceCatalog)
 
     const partialWarnings = []
     if (platformsResult.status === 'rejected') partialWarnings.push('GET /api/v1/platforms 加载失败')
@@ -880,6 +961,7 @@ export function PlatformIntegrationOverview() {
         <>
           <MetricCards platforms={platforms} publicParsers={publicParsers} summary={platformStatus?.summary} />
           <ExplanationCards />
+          <SourceCatalogPanel catalog={sourceCatalog} />
 
           <Row gutter={[16, 16]}>
             <Col span={12}>

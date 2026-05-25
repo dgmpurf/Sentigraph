@@ -15,9 +15,22 @@ const platformColor = {
   zhihu: '#60a5fa',
 }
 
+function uniqueGraphNodes(nodes = []) {
+  const seen = new Set()
+  const uniqueNodes = []
+  for (const node of nodes) {
+    const nodeId = String(node?.node_id || '').trim()
+    if (!nodeId || seen.has(nodeId)) continue
+    seen.add(nodeId)
+    uniqueNodes.push({ ...node, node_id: nodeId })
+  }
+  return uniqueNodes
+}
+
 export function PropagationGraphChart({ graph }) {
-  const nodes = graph?.nodes || []
-  const edges = graph?.edges || []
+  const nodes = uniqueGraphNodes(graph?.nodes || [])
+  const nodeIds = new Set(nodes.map((node) => node.node_id))
+  const edges = (graph?.edges || []).filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
   const platforms = [...new Set(nodes.map((node) => node.platform || 'unknown'))]
   const categories = platforms.map((platform) => ({
     name: platform,

@@ -10,7 +10,7 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### Source Catalog
 
-Status: implemented and QA-stabilized as a static metadata and planning endpoint on 2026-05-25.
+Status: implemented, QA-stabilized, and browser-smoke validated as a static metadata and planning endpoint on 2026-05-25.
 
 Completed:
 
@@ -20,6 +20,7 @@ Completed:
 - Added frontend API helper `getSourceCatalog()` and normalizers for future UI reuse.
 - Added tests for category coverage, YouTube green/real-capable status, Douyin OAuth/permission pending status, Bilibili official-permission pending status, safe secret exposure, and no MediaCrawler integration in product code.
 - QA-stabilized the endpoint shape so search discovery, RSS, user-uploaded datasets, manual URL evidence, and data-vendor future integration are separate categories rather than one compressed bucket.
+- Browser-smoked the Platform Integration Overview page and added a visible Source Catalog panel showing category/source counts, green/yellow/red feasibility labels, acquisition modes, static-metadata boundaries, and the MediaCrawler/no-cookie/no-captcha/no-anti-bot safety note.
 
 Acceptance:
 
@@ -29,10 +30,10 @@ Acceptance:
 - `python -m pytest` passed with `573 passed in 5.91s`.
 - `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
 - `npm run build` from `frontend/` passed in 7.79s with the existing non-blocking vendor chunk warning.
+- Browser-smoke validation passed on 2026-05-25. Final validation after UI polish passed with `python -m pytest` (`573 passed in 5.66s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.71s`).
 
 Next options:
 
-- Browser-smoke `GET /api/v1/sources/catalog` and the Evidence attach flow in local pages.
 - Add CSV/Excel upload only after manual evidence demos prove the schema is stable.
 - Use the catalog/matrix to evaluate Douyin or Bilibili once official API gates are confirmed.
 
@@ -63,7 +64,7 @@ Next options:
 
 ### Universal Evidence Ingestion Layer
 
-Status: implemented and QA-stabilized as a thin, source-neutral normalization layer on 2026-05-25.
+Status: implemented, QA-stabilized, and browser-smoke validated as a thin, source-neutral normalization layer on 2026-05-25.
 
 Completed:
 
@@ -74,6 +75,8 @@ Completed:
 - Added deterministic analysis support for attached normalized evidence when no raw comments exist, reported as `analysis_input_source=case_evidence_items`.
 - Added compact Evidence summaries to Cases and Analysis Result: source distribution, evidence type counts, top titles, and representative public text.
 - Added docs in `docs/evidence_ingestion_design.md`, API contract updates, data-schema updates, and platform-source notes.
+- Browser-smoked a manual evidence case through local backend/frontend: article/body evidence, video metadata, comment, reply, and `interaction_metric` records attached successfully; the case ran with `analysis_input_source=case_evidence_items`; Cases, Summary Report, and Analysis Result showed evidence count, source/type distribution, acquisition modes, top titles, representative public text, and safety notes without raw object rendering or secret leakage.
+- Stabilized Propagation Graph rendering for evidence-backed/small graph data by deduplicating visual graph nodes before handing them to ECharts.
 
 Acceptance:
 
@@ -84,13 +87,21 @@ Acceptance:
 - Backend tests passed with `python -m pytest` (`565 passed in 5.59s`).
 - Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`).
 - Frontend build passed with `npm run build` from `frontend/` (`built in 8.38s`; existing non-blocking vendor chunk warning remains).
+- Browser-smoke validation passed on 2026-05-25. Final validation after UI polish passed with `python -m pytest` (`573 passed in 5.66s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.71s`).
 
 Next options:
 
-- Browser-smoke a manual evidence attachment case in the local UI.
 - Add CSV/Excel upload/import only after the manual evidence shape is stable.
 - Add vendor/search-discovery adapters later behind mocked fixtures and safety reviews.
 - Keep other real platform APIs pending official permission and mocked regression coverage.
+
+Browser-smoke follow-up:
+
+- Evidence browser smoke is complete.
+- CSV/Excel Evidence Import remains the next optional ingestion task.
+- Douyin/Bilibili official APIs remain pending.
+- MediaCrawler remains not integrated.
+- GitHub Actions CI remains intentionally disabled.
 
 ### README and Project Status Consolidation
 
