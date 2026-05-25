@@ -23,6 +23,11 @@ export async function getPlatformReadiness() {
   return data
 }
 
+export async function getSourceCatalog() {
+  const { data } = await apiClient.get(`${API_PREFIX}/sources/catalog`)
+  return normalizeSourceCatalog(data)
+}
+
 export async function getPublicParserStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/public-parsers/status`)
   return normalizePublicParserStatus(data)
@@ -150,6 +155,16 @@ export async function runCase(caseId) {
 export async function crawlCaseRawData(caseId, payload = {}) {
   const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/crawl/start`, payload)
   return normalizeCaseDetail(data)
+}
+
+export async function getCaseEvidence(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence`)
+  return normalizeEvidenceIngestionResult(data)
+}
+
+export async function attachCaseEvidence(caseId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/evidence/attach`, payload)
+  return normalizeEvidenceIngestionResult(data)
 }
 
 export async function getCaseMarkdownReport(caseId) {
@@ -315,6 +330,9 @@ function normalizeRiskExtension(data) {
     real_crisis_risk: normalizeOptionalScore(data.real_crisis_risk),
     manipulation_risk: normalizeOptionalScore(data.manipulation_risk),
     risk_explanation: typeof data.risk_explanation === 'string' ? data.risk_explanation : '',
+    evidence_item_count: Number(data.evidence_item_count || 0),
+    evidence_source_distribution: normalizeNumberMap(data.evidence_source_distribution),
+    evidence_type_counts: normalizeNumberMap(data.evidence_type_counts),
   }
 }
 
@@ -325,7 +343,123 @@ function normalizeCaseDetail(data) {
     analysis_result: normalizeRiskExtension(data.analysis_result),
     visualization_data: normalizeRiskExtension(data.visualization_data),
     report: normalizeRiskExtension(data.report),
+    evidence_items: Array.isArray(data.evidence_items) ? data.evidence_items.map(normalizeEvidenceItem).filter(Boolean) : [],
+    evidence_item_count: Number(data.evidence_item_count || 0),
     monitoring_config: normalizeMonitoringConfig(data.monitoring_config),
+  }
+}
+
+function normalizeEvidenceIngestionResult(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      status: 'empty',
+      evidence_items: [],
+      evidence_item_count: 0,
+      source_distribution: {},
+      evidence_type_counts: {},
+      top_titles: [],
+      representative_comments: [],
+      warnings: [],
+      safe_mode: {},
+    }
+  }
+  return {
+    ...data,
+    case_id: String(data.case_id || ''),
+    status: String(data.status || 'empty'),
+    evidence_items: Array.isArray(data.evidence_items) ? data.evidence_items.map(normalizeEvidenceItem).filter(Boolean) : [],
+    evidence_item_count: Number(data.evidence_item_count || 0),
+    source_distribution: normalizeNumberMap(data.source_distribution),
+    evidence_type_counts: normalizeNumberMap(data.evidence_type_counts),
+    top_titles: Array.isArray(data.top_titles) ? data.top_titles.map((item) => String(item)) : [],
+    representative_comments: Array.isArray(data.representative_comments)
+      ? data.representative_comments.map((item) => String(item))
+      : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceItem(item) {
+  if (!item || typeof item !== 'object') return null
+  return {
+    evidence_id: String(item.evidence_id || ''),
+    case_id: item.case_id ? String(item.case_id) : '',
+    platform: String(item.platform || ''),
+    source_type: String(item.source_type || ''),
+    acquisition_mode: String(item.acquisition_mode || ''),
+    evidence_type: String(item.evidence_type || ''),
+    title: item.title ? String(item.title) : '',
+    body_text: item.body_text ? String(item.body_text) : '',
+    comment_text: item.comment_text ? String(item.comment_text) : '',
+    parent_id: item.parent_id ? String(item.parent_id) : '',
+    root_id: item.root_id ? String(item.root_id) : '',
+    author_name: item.author_name ? String(item.author_name) : '',
+    url: item.url ? String(item.url) : '',
+    created_at: item.created_at ? String(item.created_at) : '',
+    like_count: Number(item.like_count || 0),
+    reply_count: Number(item.reply_count || 0),
+    share_count: Number(item.share_count || 0),
+    view_count: Number(item.view_count || 0),
+    language: String(item.language || 'unknown'),
+    confidence: normalizeRatio(item.confidence, 0),
+    content_visibility: String(item.content_visibility || ''),
+    access_scope: String(item.access_scope || ''),
+  }
+}
+
+function normalizeSourceCatalog(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      categories: [],
+      total_categories: 0,
+      total_sources: 0,
+      safe_mode: {},
+    }
+  }
+  return {
+    categories: Array.isArray(data.categories)
+      ? data.categories.map(normalizeSourceCatalogCategory).filter(Boolean)
+      : [],
+    total_categories: Number(data.total_categories || 0),
+    total_sources: Number(data.total_sources || 0),
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeSourceCatalogCategory(category) {
+  if (!category || typeof category !== 'object') return null
+  return {
+    category_id: String(category.category_id || ''),
+    display_name: String(category.display_name || ''),
+    description: String(category.description || ''),
+    sources: Array.isArray(category.sources)
+      ? category.sources.map(normalizeSourceCatalogEntry).filter(Boolean)
+      : [],
+  }
+}
+
+function normalizeSourceCatalogEntry(source) {
+  if (!source || typeof source !== 'object') return null
+  return {
+    source_id: String(source.source_id || ''),
+    display_name: String(source.display_name || ''),
+    category: String(source.category || ''),
+    feasibility_status: String(source.feasibility_status || ''),
+    acquisition_modes: Array.isArray(source.acquisition_modes)
+      ? source.acquisition_modes.map((item) => String(item))
+      : [],
+    allowed_data_types: Array.isArray(source.allowed_data_types)
+      ? source.allowed_data_types.map((item) => String(item))
+      : [],
+    forbidden_data_types: Array.isArray(source.forbidden_data_types)
+      ? source.forbidden_data_types.map((item) => String(item))
+      : [],
+    current_status: String(source.current_status || ''),
+    compliance_notes: String(source.compliance_notes || ''),
+    next_action: String(source.next_action || ''),
+    priority: String(source.priority || ''),
   }
 }
 

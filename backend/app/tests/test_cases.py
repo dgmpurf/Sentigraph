@@ -88,10 +88,12 @@ def test_case_detail_defaults_keep_old_case_documents_loadable() -> None:
 
     assert old_case.raw_posts == []
     assert old_case.raw_comments == []
+    assert old_case.evidence_items == []
     assert old_case.crawl_metadata == []
     assert old_case.raw_data_status == "missing"
     assert old_case.raw_post_count == 0
     assert old_case.raw_comment_count == 0
+    assert old_case.evidence_item_count == 0
 
 
 def test_case_specific_crawl_start_stores_youtube_raw_data(monkeypatch) -> None:

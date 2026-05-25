@@ -1532,6 +1532,134 @@ Rules:
 - Automated tests must mock adapter/client output and must not call the real YouTube API.
 - Case creation and case run do not automatically crawl.
 
+### Universal Evidence Ingestion
+
+```http
+GET /api/v1/cases/{case_id}/evidence
+POST /api/v1/cases/{case_id}/evidence/attach
+```
+
+`GET /cases/{case_id}/evidence` returns a normalized case-level evidence view. If a case has `evidence_items`, the endpoint returns them directly. If the case only has `raw_posts` / `raw_comments`, it derives evidence items from those raw records. If neither exists, it returns `status="empty"`.
+
+`POST /cases/{case_id}/evidence/attach` accepts safe manual/user-provided evidence such as article title/body, video title/description, comments, replies, public URLs, public author labels, and interaction metrics. It does not fetch external URLs and does not call platform APIs.
+
+Request:
+
+```json
+{
+  "source": {
+    "platform": "uploaded_dataset",
+    "source_type": "uploaded_dataset",
+    "acquisition_mode": "user_upload",
+    "source_name": "Manual evidence sheet",
+    "credential_present": false
+  },
+  "evidence_items": [
+    {
+      "evidence_type": "article",
+      "title": "Public article title",
+      "body_text": "Public article body.",
+      "url": "https://example.test/article"
+    },
+    {
+      "evidence_type": "comment",
+      "comment_text": "Public or user-provided comment text.",
+      "root_id": "article_or_video_id"
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "case_id": "case_001",
+  "status": "attached",
+  "evidence_item_count": 2,
+  "source_distribution": {
+    "uploaded_dataset": 2
+  },
+  "evidence_type_counts": {
+    "article": 1,
+    "comment": 1
+  },
+  "top_titles": ["Public article title"],
+  "representative_comments": ["Public or user-provided comment text."],
+  "safe_mode": {
+    "secrets_exposed": false,
+    "real_api_calls": false,
+    "real_llm_calls": false,
+    "scraping_bypass": false
+  }
+}
+```
+
+Rules:
+
+- Evidence attachment is normalization only; it does not call real APIs, crawlers, external LLMs, or live public fetch.
+- `raw_data_safe` is sanitized; API keys, tokens, cookies, authorization headers, client secrets, passwords, credentials, and `.env` values are removed.
+- `evidence_type="interaction_metric"` is accepted for standalone metric evidence; `interaction_metrics` is kept as a backward-compatible alias.
+- `analysis_input_source="case_evidence_items"` is used when case analysis consumes attached evidence items and no raw comments are present.
+- Existing YouTube case raw-data analysis remains `analysis_input_source="case_raw_data"` when attached `raw_comments` are available.
+- Output remains aggregate/case-level and must not expose individual targeting recommendations or account-level influenceability scores.
+
+### Source Catalog
+
+```http
+GET /api/v1/sources/catalog
+```
+
+Returns static source readiness/planning metadata for all-web public-opinion evidence ingestion. This endpoint does not call real APIs, read credentials, fetch URLs, run crawlers, use cookies, call LLMs, or enable live public fetching.
+
+Response:
+
+```json
+{
+  "categories": [
+    {
+      "category_id": "video_platforms",
+      "display_name": "Video Platforms",
+      "description": "Public video/post metadata and comments through official APIs, OAuth, user upload, or mock fixtures.",
+      "sources": [
+        {
+          "source_id": "youtube",
+          "display_name": "YouTube",
+          "category": "video_platforms",
+          "feasibility_status": "green",
+          "acquisition_modes": ["official_api_public", "user_upload", "mock_fixture"],
+          "allowed_data_types": ["video", "comment", "reply", "title", "body_text", "interaction_metric"],
+          "forbidden_data_types": ["private_messages", "oauth_private_data", "cookie_session_data"],
+          "current_status": "real_capable_when_configured",
+          "compliance_notes": "Official YouTube Data API v3 only; default mock mode; cache and tiny-limit guardrails.",
+          "next_action": "Keep local key in ignored environment files and use cached tiny demos.",
+          "priority": "high"
+        }
+      ]
+    }
+  ],
+  "total_categories": 8,
+  "total_sources": 22,
+  "safe_mode": {
+    "static_metadata_only": true,
+    "real_api_calls": false,
+    "real_llm_calls": false,
+    "live_fetch_enabled": false,
+    "cookies_used": false,
+    "scraping_bypass": false,
+    "secrets_exposed": false,
+    "third_party_crawler_integrated": false
+  }
+}
+```
+
+Important:
+
+- The catalog is a planning/status endpoint, not a crawler.
+- It returns source categories such as video platforms, news/media sites, forums, Q&A, complaints/reviews, finance/investor forums, social platforms, search/RSS/upload/vendor sources.
+- It must not expose API keys, client secrets, OAuth tokens, cookies, `.env` values, or local secret paths.
+- MediaCrawler is not integrated as a core source. Third-party crawler exports may only enter as user-provided datasets with lawful-source attestation.
+
 ### Run Case
 
 ```http

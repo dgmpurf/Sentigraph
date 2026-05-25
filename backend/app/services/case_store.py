@@ -12,8 +12,18 @@ from app.schemas.case import (
     MarkdownExportResponse,
 )
 from app.schemas.crawl import CrawlStartRequest
+from app.schemas.evidence import EvidenceIngestionBatch, EvidenceIngestionResult
 from app.services.crawling.crawl_service import start_crawl_with_adapters
-from app.services.mock_pipeline import build_mock_pipeline, build_pipeline_from_raw_data
+from app.services.evidence_ingestion import (
+    build_evidence_ingestion_result,
+    build_evidence_items_from_raw_data,
+    normalize_manual_evidence_batch,
+)
+from app.services.mock_pipeline import (
+    build_mock_pipeline,
+    build_pipeline_from_evidence_items,
+    build_pipeline_from_raw_data,
+)
 from app.services.mock_service import _pipeline_representative_comments
 from app.services.monitoring.alert_evaluator import evaluate_alerts
 from app.services.monitoring.snapshot_builder import build_analysis_snapshot
@@ -78,6 +88,13 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
             raw_posts=running_case.raw_posts,
             raw_comments=running_case.raw_comments,
             platforms=running_case.platforms,
+            evidence_items=running_case.evidence_items,
+        )
+    elif running_case.evidence_items:
+        pipeline = build_pipeline_from_evidence_items(
+            running_case.project_id,
+            evidence_items=running_case.evidence_items,
+            platforms=running_case.platforms,
         )
     else:
         pipeline = build_mock_pipeline(running_case.project_id, platforms=running_case.platforms)
@@ -96,10 +113,10 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
         propagation=pipeline.propagation,
         risk_factors=pipeline.risk_result.factors,
         topic_risk_result=pipeline.topic_risk_result,
-        representative_comments=_pipeline_representative_comments(pipeline),
+        representative_comments=_case_representative_comments(running_case, pipeline),
         include_representative_comments=True,
         report_language=running_case.report_language,
-        generated_from_mock_pipeline=pipeline.analysis_input_source != "case_raw_data",
+        generated_from_mock_pipeline=pipeline.analysis_input_source == "mock_data_fallback",
     )
 
     completed_case = running_case.model_copy(
@@ -116,6 +133,7 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
             "analysis_input_source": pipeline.analysis_input_source,
             "raw_post_count": len(running_case.raw_posts),
             "raw_comment_count": len(running_case.raw_comments),
+            "evidence_item_count": len(running_case.evidence_items),
         },
         deep=True,
     )
@@ -152,6 +170,12 @@ def run_case_crawl(case_id: str, payload: CaseCrawlStartRequest | None = None) -
     crawl_result = start_crawl_with_adapters(crawl_request)
     attached_at = repository.next_timestamp()
     raw_data_status = "attached" if crawl_result.raw_posts or crawl_result.raw_comments else "empty"
+    evidence_items = build_evidence_items_from_raw_data(
+        case_id=case.case_id,
+        raw_posts=crawl_result.raw_posts,
+        raw_comments=crawl_result.raw_comments,
+        crawl_metadata=crawl_result.platform_metadata,
+    )
     return repository.save_case_raw_data(
         case.case_id,
         raw_posts=crawl_result.raw_posts,
@@ -159,8 +183,43 @@ def run_case_crawl(case_id: str, payload: CaseCrawlStartRequest | None = None) -
         crawl_metadata=crawl_result.platform_metadata,
         crawl_source_mode="case_crawl_start",
         raw_data_status=raw_data_status,
+        evidence_items=evidence_items,
         attached_at=attached_at,
     )
+
+
+def list_case_evidence(case_id: str) -> EvidenceIngestionResult | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    if case.evidence_items:
+        return build_evidence_ingestion_result(case_id, case.evidence_items)
+    if case.raw_posts or case.raw_comments:
+        evidence_items = build_evidence_items_from_raw_data(
+            case_id=case_id,
+            raw_posts=case.raw_posts,
+            raw_comments=case.raw_comments,
+            crawl_metadata=case.crawl_metadata,
+        )
+        return build_evidence_ingestion_result(case_id, evidence_items)
+    return build_evidence_ingestion_result(case_id, [], status="empty")
+
+
+def attach_case_evidence(case_id: str, payload: EvidenceIngestionBatch) -> EvidenceIngestionResult | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    evidence_items = normalize_manual_evidence_batch(case_id, payload)
+    saved_case = repository.save_case_evidence(
+        case_id,
+        evidence_items=evidence_items,
+        updated_at=repository.next_timestamp(),
+    )
+    if not saved_case:
+        return None
+    return build_evidence_ingestion_result(case_id, saved_case.evidence_items)
 
 
 def list_case_snapshots(case_id: str) -> list[AnalysisSnapshot] | None:
@@ -294,6 +353,15 @@ def _build_monitoring_status(
     )
 
 
+def _case_representative_comments(case: AnalysisCaseDetail, pipeline) -> list[str]:
+    comments = _pipeline_representative_comments(pipeline)
+    for item in case.evidence_items:
+        text = (item.comment_text or item.body_text or "").strip()
+        if text and text not in comments:
+            comments.append(text)
+    return comments
+
+
 def _build_markdown(case: AnalysisCaseDetail) -> str:
     report = case.report
     if not report:
@@ -306,6 +374,8 @@ def _build_markdown(case: AnalysisCaseDetail) -> str:
         if report.generated_from_mock_pipeline
         else "attached case raw data offline deterministic analysis"
     )
+    evidence_source_summary = _format_distribution(report.evidence_source_distribution)
+    evidence_type_summary = _format_distribution(report.evidence_type_counts)
     lines = [
         f"# {case.title}",
         "",
@@ -319,6 +389,9 @@ def _build_markdown(case: AnalysisCaseDetail) -> str:
         f"- 风险模型版本: {report.risk_model_version}",
         f"- 生成方式: {generation_label}",
         "- LLM: Mock / no real LLM call",
+        f"- Evidence items: {report.evidence_item_count}",
+        f"- Evidence source distribution: {evidence_source_summary}",
+        f"- Evidence type counts: {evidence_type_summary}",
         "",
         "## 舆情总览",
         "",
@@ -361,6 +434,12 @@ def _markdown_bullets(items: Iterable[str], empty_text: str) -> list[str]:
     if not values:
         return [f"- {empty_text}"]
     return [f"- {item}" for item in values]
+
+
+def _format_distribution(values: dict[str, int]) -> str:
+    if not values:
+        return "none"
+    return ", ".join(f"{key}={value}" for key, value in sorted(values.items()))
 
 
 def _markdown_quotes(items: Iterable[str], empty_text: str) -> list[str]:

@@ -8,6 +8,7 @@ from app.schemas.case import (
     CaseCrawlStartRequest,
     MarkdownExportResponse,
 )
+from app.schemas.evidence import EvidenceIngestionBatch, EvidenceIngestionResult
 from app.schemas.forecast import ForecastResult
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.scheduler import MonitoringScheduleConfig
@@ -17,9 +18,11 @@ from app.services.simulation.case_initializer import (
 )
 from app.services.simulation.schemas import CaseSimulationInitializationResult
 from app.services.case_store import (
+    attach_case_evidence,
     create_case,
     export_case_markdown,
     get_case,
+    list_case_evidence,
     list_case_alerts,
     list_case_snapshots,
     list_cases,
@@ -71,6 +74,22 @@ def start_case_crawl(case_id: str, payload: CaseCrawlStartRequest | None = None)
     if not case:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return case
+
+
+@router.get("/{case_id}/evidence", response_model=EvidenceIngestionResult)
+def get_case_evidence(case_id: str) -> EvidenceIngestionResult:
+    result = list_case_evidence(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.post("/{case_id}/evidence/attach", response_model=EvidenceIngestionResult)
+def attach_evidence_to_case(case_id: str, payload: EvidenceIngestionBatch) -> EvidenceIngestionResult:
+    result = attach_case_evidence(case_id, payload)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
 
 
 @router.get("/{case_id}/snapshots", response_model=list[AnalysisSnapshot])

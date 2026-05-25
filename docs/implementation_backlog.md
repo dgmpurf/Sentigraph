@@ -8,6 +8,88 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Source Catalog
+
+Status: implemented as a static metadata and planning endpoint on 2026-05-25.
+
+Completed:
+
+- Added `docs/source_catalog.md` covering video platforms, news/media sites, forums/communities, Q&A sites, complaint/review sites, finance/investor forums, social platforms, search discovery, RSS, user-uploaded datasets, manual URL evidence, and future data-vendor integrations.
+- Added static backend schemas for `SourceCatalogEntry`, `SourceCatalogCategory`, and `SourceCatalogResponse`.
+- Added `GET /api/v1/sources/catalog` and a thin service returning source metadata only.
+- Added frontend API helper `getSourceCatalog()` and normalizers for future UI reuse.
+- Added tests for category coverage, YouTube green/real-capable status, Douyin OAuth/permission pending status, Bilibili official-permission pending status, safe secret exposure, and no MediaCrawler integration in product code.
+
+Acceptance:
+
+- The endpoint is static metadata only. It does not call real APIs, real Douyin/Bilibili APIs, real LLM APIs, crawlers, live fetch, cookies, or `.env` readers.
+- No secret values are exposed; the response contains no API keys, client secrets, access tokens, refresh tokens, cookies, authorization headers, or `.env` values.
+- MediaCrawler is not integrated as a core source.
+- `python -m pytest` passed with `571 passed in 5.88s`.
+- `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
+- `npm run build` from `frontend/` passed in 8.27s with the existing non-blocking vendor chunk warning.
+
+Next options:
+
+- Browser-smoke `GET /api/v1/sources/catalog` and the Evidence attach flow.
+- Add CSV/Excel upload only after manual evidence demos prove the schema is stable.
+- Use the catalog/matrix to evaluate Douyin or Bilibili once official API gates are confirmed.
+
+### Source Feasibility Matrix
+
+Status: implemented as a documentation and safety-boundary checkpoint on 2026-05-25.
+
+Completed:
+
+- Added `docs/source_feasibility_matrix.md` with green/yellow/red source classifications for YouTube, Douyin, Bilibili, Xiaohongshu, Weibo, Reddit, Kuaishou, Zhihu, Douban, Toutiao, The Paper, Jiemian, Hupu, Tieba, NGA, Maimai, user-uploaded CSV/Excel, manual URL import, and search discovery.
+- Recorded allowed acquisition modes, forbidden acquisition modes, currently collectable data, unavailable data, current Sentigraph status, and next action for each source.
+- Explicitly kept MediaCrawler out of the core product. Third-party crawler exports may only be considered as user-provided datasets with lawful-source attestation.
+- Reconfirmed the no-cookie, no-login-bypass, no-captcha-bypass, no-anti-bot-bypass, no-private-data, and no-unapproved-real-API boundary.
+
+Acceptance:
+
+- The matrix supports the Universal Evidence Ingestion Layer without adding any crawler integration or real API call path.
+- Tests now assert that MediaCrawler is not referenced by product source code.
+- `python -m pytest` passed with `567 passed in 5.28s`.
+- `python scripts/run_offline_benchmarks.py` passed with `522 passed, 0 failed, 0 warnings` and `no_regression`.
+- `npm run build` from `frontend/` passed in 7.61s with the existing non-blocking vendor chunk warning.
+- GitHub Actions CI remains intentionally disabled.
+
+Next options:
+
+- Use the matrix when deciding whether Douyin, Bilibili, Xiaohongshu, or public-parser sources are green/yellow/red for a specific demo.
+- Add CSV/Excel evidence import only after the manual evidence attach UX has been smoke-tested.
+
+### Universal Evidence Ingestion Layer
+
+Status: implemented as a thin, source-neutral normalization layer on 2026-05-25.
+
+Completed:
+
+- Added evidence schemas for `EvidenceItem`, `EvidenceSource`, `EvidenceType`, `EvidenceIngestionBatch`, `EvidenceIngestionResult`, and `EvidenceNormalizationMetadata`.
+- Added converters from YouTube `RawPost` / `RawComment`, public-parser article/forum outputs, and manual/user-provided evidence payloads into normalized `EvidenceItem` records.
+- Added safe manual evidence APIs: `GET /api/v1/cases/{case_id}/evidence` and `POST /api/v1/cases/{case_id}/evidence/attach`.
+- Preserved existing `raw_posts` / `raw_comments` storage and YouTube `analysis_input_source=case_raw_data` behavior while also exposing normalized `evidence_items`.
+- Added deterministic analysis support for attached normalized evidence when no raw comments exist, reported as `analysis_input_source=case_evidence_items`.
+- Added compact Evidence summaries to Cases and Analysis Result: source distribution, evidence type counts, top titles, and representative public text.
+- Added docs in `docs/evidence_ingestion_design.md`, API contract updates, data-schema updates, and platform-source notes.
+
+Acceptance:
+
+- Evidence attachment is normalization only; it does not call real APIs, real Douyin/Bilibili APIs, real LLM APIs, crawlers, live public fetch, or scraping bypasses.
+- Secret-like fields are removed from `raw_data_safe`; API keys, tokens, cookies, authorization headers, passwords, client secrets, credential values, and `.env` values are not returned.
+- Existing mock flow and YouTube raw-data flow remain backward compatible.
+- Backend tests passed with `python -m pytest` (`565 passed in 5.59s`).
+- Offline benchmarks passed with `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`).
+- Frontend build passed with `npm run build` from `frontend/` (`built in 8.38s`; existing non-blocking vendor chunk warning remains).
+
+Next options:
+
+- Browser-smoke a manual evidence attachment case in the local UI.
+- Add CSV/Excel upload/import only after the manual evidence shape is stable.
+- Add vendor/search-discovery adapters later behind mocked fixtures and safety reviews.
+- Keep other real platform APIs pending official permission and mocked regression coverage.
+
 ### README and Project Status Consolidation
 
 Status: complete as a documentation/status cleanup checkpoint on 2026-05-21.

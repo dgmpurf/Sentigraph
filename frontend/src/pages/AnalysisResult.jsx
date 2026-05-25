@@ -141,6 +141,48 @@ function TopicRiskCards({ items }) {
   )
 }
 
+function buildEvidenceSummary({ analysis, currentCase }) {
+  const items = Array.isArray(currentCase?.evidence_items) ? currentCase.evidence_items : []
+  const analysisSources = analysis?.evidence_source_distribution || {}
+  const analysisTypes = analysis?.evidence_type_counts || {}
+  const acquisitionModes = {}
+  const itemSources = {}
+  const itemTypes = {}
+  const titles = []
+  const comments = []
+  for (const item of items) {
+    if (item.title && !titles.includes(item.title)) titles.push(item.title)
+    const comment = item.comment_text || item.body_text
+    if (comment && !comments.includes(comment)) comments.push(comment)
+    const acquisitionMode = item.acquisition_mode || 'unknown'
+    acquisitionModes[acquisitionMode] = (acquisitionModes[acquisitionMode] || 0) + 1
+    if (item.source_type) itemSources[item.source_type] = (itemSources[item.source_type] || 0) + 1
+    if (item.evidence_type) itemTypes[item.evidence_type] = (itemTypes[item.evidence_type] || 0) + 1
+  }
+  return {
+    acquisitionModes,
+    count: Number(analysis?.evidence_item_count || currentCase?.evidence_item_count || items.length || 0),
+    comments: comments.slice(0, 3),
+    sourceDistribution: Object.keys(analysisSources).length ? analysisSources : itemSources,
+    titles: titles.slice(0, 4),
+    typeCounts: Object.keys(analysisTypes).length ? analysisTypes : itemTypes,
+  }
+}
+
+function DistributionTags({ color = 'blue', values = {} }) {
+  const entries = Object.entries(values)
+  if (!entries.length) return <Text type="secondary">none</Text>
+  return (
+    <Space size={[4, 4]} wrap>
+      {entries.map(([key, value]) => (
+        <Tag color={color} key={key}>
+          {key}: {value}
+        </Tag>
+      ))}
+    </Space>
+  )
+}
+
 export function AnalysisResult({ analysis, currentCase, error, loading, recommendation, summary, visualization }) {
   const { message } = AntApp.useApp()
   const report = useMemo(
@@ -155,6 +197,10 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
   const conflicts = analysis?.conflicts || []
   const hasReport = hasReportContent(report)
   const sourceStatus = getAnalysisSourceStatus({ analysis, currentCase })
+  const evidenceSummary = useMemo(
+    () => buildEvidenceSummary({ analysis, currentCase }),
+    [analysis, currentCase],
+  )
 
   const copyResponse = async () => {
     try {
@@ -204,6 +250,33 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
       </div>
 
       <Row gutter={[16, 16]}>
+        {evidenceSummary.count ? (
+          <Col span={24}>
+            <Card className="panel-card">
+              <Space direction="vertical" className="full-width" size={10}>
+                <Space className="report-section-title">
+                  <MessageSquareText size={17} />
+                  <Title level={4}>Evidence Ingestion</Title>
+                </Space>
+                <Text type="secondary">
+                  Normalized event evidence provides source distribution, evidence type counts, acquisition mode labels, and representative public text for offline analysis. Attachment does not fetch external sources or expose credentials.
+                </Text>
+                <Space size={[8, 8]} wrap>
+                  <Tag color="cyan">evidence_items: {evidenceSummary.count}</Tag>
+                  <DistributionTags color="geekblue" values={evidenceSummary.sourceDistribution} />
+                  <DistributionTags color="purple" values={evidenceSummary.typeCounts} />
+                  <DistributionTags color="gold" values={evidenceSummary.acquisitionModes} />
+                </Space>
+                {evidenceSummary.titles.length ? (
+                  <Text>Top titles: {evidenceSummary.titles.join(' / ')}</Text>
+                ) : null}
+                {evidenceSummary.comments.length ? (
+                  <Text type="secondary">Representative evidence: {evidenceSummary.comments[0]}</Text>
+                ) : null}
+              </Space>
+            </Card>
+          </Col>
+        ) : null}
         <Col span={8}>
           <Card className="panel-card risk-readout-card">
             <Space className="metric-heading">

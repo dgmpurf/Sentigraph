@@ -91,6 +91,9 @@ def build_public_opinion_report(
         language=language,
     )
     key_findings = _key_findings(main_risk_factors, top_negative_topics, bot_signals, language)
+    evidence_line = _evidence_finding(effective_analysis, language)
+    if evidence_line:
+        key_findings.insert(0, evidence_line)
     key_findings = _dedupe_preserve_order(top_risk_topic_lines + key_findings)[:8]
 
     return PublicOpinionReport(
@@ -114,7 +117,7 @@ def build_public_opinion_report(
             language=language,
         ),
         generated_from_mock_pipeline=generated_from_mock_pipeline,
-    topic_risks=topic_risk_result.topic_risks if topic_risk_result else [],
+        topic_risks=topic_risk_result.topic_risks if topic_risk_result else [],
         top_risk_topics=topic_risk_result.top_risk_topics if topic_risk_result else [],
         max_topic_risk=topic_risk_result.max_topic_risk if topic_risk_result else None,
         average_topic_risk=topic_risk_result.average_topic_risk if topic_risk_result else None,
@@ -122,6 +125,9 @@ def build_public_opinion_report(
         real_crisis_risk=topic_risk_result.real_crisis_risk if topic_risk_result else None,
         manipulation_risk=topic_risk_result.manipulation_risk if topic_risk_result else None,
         risk_explanation=topic_risk_result.risk_explanation if topic_risk_result else None,
+        evidence_item_count=effective_analysis.evidence_item_count,
+        evidence_source_distribution=effective_analysis.evidence_source_distribution,
+        evidence_type_counts=effective_analysis.evidence_type_counts,
     )
 
 
@@ -162,11 +168,12 @@ def _overall_summary(
             f"主要风险压力来自{_dominant_factor_label(factor_values, language)}。"
         )
 
-    pipeline_label = (
-        "offline deterministic raw-data pipeline"
-        if analysis.analysis_input_source == "case_raw_data"
-        else "offline mock pipeline"
-    )
+    if analysis.analysis_input_source == "case_evidence_items":
+        pipeline_label = "offline deterministic evidence-ingestion pipeline"
+    elif analysis.analysis_input_source == "case_raw_data":
+        pipeline_label = "offline deterministic raw-data pipeline"
+    else:
+        pipeline_label = "offline mock pipeline"
     return (
         f"Public opinion risk is {analysis.risk.risk_level} at {analysis.risk.risk_score}/100. "
         f"Negative sentiment is {_format_percent(analysis.sentiment.negative_ratio)}, "
@@ -654,6 +661,26 @@ def _key_findings(
         + [f"{topic_prefix}{topic}" for topic in top_negative_topics]
         + bot_signals
     )[:8]
+
+
+def _evidence_finding(analysis: AnalysisResultResponse, language: ReportLanguage) -> str | None:
+    if analysis.evidence_item_count <= 0:
+        return None
+    source_summary = ", ".join(
+        f"{source}={count}" for source, count in sorted(analysis.evidence_source_distribution.items())
+    ) or "unspecified"
+    type_summary = ", ".join(
+        f"{kind}={count}" for kind, count in sorted(analysis.evidence_type_counts.items())
+    ) or "unspecified"
+    if language == "zh-CN":
+        return (
+            f"Evidence layer normalized {analysis.evidence_item_count} item(s): "
+            f"sources {source_summary}; types {type_summary}."
+        )
+    return (
+        f"Evidence layer normalized {analysis.evidence_item_count} item(s): "
+        f"sources {source_summary}; types {type_summary}."
+    )
 
 
 def _risk_factor_values(

@@ -9,6 +9,7 @@ from typing import Any
 
 from app.schemas.analysis import AnalysisResultResponse, ConflictResult, SentimentResult
 from app.schemas.comment import CleanComment, RawComment, RawPost
+from app.schemas.evidence import EvidenceItem
 from app.schemas.propagation import PropagationEdge, PropagationMetrics, PropagationNode, PropagationResponse
 from app.schemas.risk import TopicRiskScoreResult
 from app.schemas.visualization import VisualizationResponse
@@ -19,6 +20,11 @@ from app.services.preprocessing.duplicate_detector import detect_duplicate_group
 from app.services.preprocessing.user_aggregator import aggregate_users
 from app.services.scoring.risk_score import RiskScoreResult, calculate_risk_score
 from app.services.scoring.topic_risk_score import calculate_topic_risk_score
+from app.services.evidence_ingestion import (
+    evidence_items_to_raw_data,
+    evidence_source_distribution,
+    evidence_type_distribution,
+)
 from app.services.visualization.chart_data_builder import build_visualization_response
 
 
@@ -37,6 +43,9 @@ class MockPipelineResult:
     topic_risk_result: TopicRiskScoreResult
     raw_posts: list[RawPost] = field(default_factory=list)
     analysis_input_source: str = "mock_data_fallback"
+    evidence_items: list[EvidenceItem] = field(default_factory=list)
+    evidence_source_distribution: dict[str, int] = field(default_factory=dict)
+    evidence_type_counts: dict[str, int] = field(default_factory=dict)
 
 
 def build_mock_pipeline(
@@ -59,6 +68,7 @@ def build_pipeline_from_raw_data(
     raw_posts: list[RawPost] | None = None,
     raw_comments: list[RawComment],
     platforms: list[str] | None = None,
+    evidence_items: list[EvidenceItem] | None = None,
 ) -> MockPipelineResult:
     selected_platforms = {platform.lower() for platform in platforms or []}
     normalized_comments = [RawComment.model_validate(comment) for comment in raw_comments]
@@ -77,6 +87,30 @@ def build_pipeline_from_raw_data(
         raw_comments=normalized_comments,
         raw_posts=normalized_posts,
         analysis_input_source="case_raw_data",
+        evidence_items=evidence_items or [],
+    )
+
+
+def build_pipeline_from_evidence_items(
+    project_id: str,
+    *,
+    evidence_items: list[EvidenceItem],
+    platforms: list[str] | None = None,
+) -> MockPipelineResult:
+    selected_platforms = {platform.lower() for platform in platforms or []}
+    normalized_evidence = [EvidenceItem.model_validate(item) for item in evidence_items]
+    if selected_platforms:
+        filtered_evidence = [
+            item for item in normalized_evidence if item.platform.lower() in selected_platforms
+        ]
+        normalized_evidence = filtered_evidence or normalized_evidence
+    raw_posts, raw_comments = evidence_items_to_raw_data(normalized_evidence)
+    return _build_pipeline(
+        project_id,
+        raw_comments=raw_comments,
+        raw_posts=raw_posts,
+        analysis_input_source="case_evidence_items",
+        evidence_items=normalized_evidence,
     )
 
 
@@ -86,7 +120,11 @@ def _build_pipeline(
     raw_comments: list[RawComment],
     raw_posts: list[RawPost],
     analysis_input_source: str,
+    evidence_items: list[EvidenceItem] | None = None,
 ) -> MockPipelineResult:
+    evidence_items = evidence_items or []
+    evidence_sources = evidence_source_distribution(evidence_items)
+    evidence_types = evidence_type_distribution(evidence_items)
     clean_comments = detect_duplicate_groups(raw_comments)
 
     sentiment_analyzer = SentimentAnalyzer()
@@ -150,6 +188,9 @@ def _build_pipeline(
         analysis_input_source=analysis_input_source,
         raw_post_count=len(raw_posts),
         raw_comment_count=len(raw_comments),
+        evidence_item_count=len(evidence_items),
+        evidence_source_distribution=evidence_sources,
+        evidence_type_counts=evidence_types,
     )
 
     return MockPipelineResult(
@@ -163,6 +204,9 @@ def _build_pipeline(
         risk_result=risk_result,
         topic_risk_result=topic_risk_result,
         analysis_input_source=analysis_input_source,
+        evidence_items=evidence_items,
+        evidence_source_distribution=evidence_sources,
+        evidence_type_counts=evidence_types,
     )
 
 
@@ -332,6 +376,11 @@ def _build_analysis_summary(risk_level: str, topics: list, analysis_input_source
     if analysis_input_source == "case_raw_data":
         return (
             f"Offline deterministic analysis from attached case raw data rates the current project "
+            f"as {risk_level} risk, with conversation concentrated around {leading_topic}."
+        )
+    if analysis_input_source == "case_evidence_items":
+        return (
+            f"Offline deterministic analysis from normalized case evidence rates the current project "
             f"as {risk_level} risk, with conversation concentrated around {leading_topic}."
         )
     return (

@@ -357,13 +357,15 @@ failed
   "markdown_available": true,
   "raw_posts": [],
   "raw_comments": [],
+  "evidence_items": [],
   "crawl_metadata": [],
   "crawl_source_mode": null,
   "crawl_attached_at": null,
   "raw_data_status": "missing",
   "analysis_input_source": "mock_data_fallback",
   "raw_post_count": 0,
-  "raw_comment_count": 0
+  "raw_comment_count": 0,
+  "evidence_item_count": 0
 }
 ```
 
@@ -373,13 +375,161 @@ Rules:
 - `visualization_data` uses the existing `VisualizationResponse` schema.
 - `report` uses the normalized `PublicOpinionReport` schema.
 - `raw_posts` and `raw_comments` use the shared `RawPost` / `RawComment` schemas returned by platform adapters and public-parser fixtures.
+- `evidence_items` uses the shared `EvidenceItem` schema. Case-specific crawl output may be normalized into this field while preserving the original `raw_posts` and `raw_comments`.
 - `crawl_metadata` uses `PlatformCrawlMetadata` and may include safe booleans such as `credential_present`; it must never include credential values.
 - `raw_data_status` is `missing`, `attached`, or `empty`.
-- `analysis_input_source` is `case_raw_data` when attached case raw comments are used for the run and `mock_data_fallback` otherwise.
+- `analysis_input_source` is `case_raw_data` when attached case raw comments are used, `case_evidence_items` when attached normalized evidence items are used without raw comments, and `mock_data_fallback` otherwise.
 - The MVP case store is deterministic and does not require a database.
 - Case data survives backend restart when using the default local JSON store.
 - Tests must use temporary case-store paths instead of `backend/data/cases.json`.
 - Case creation and case run must not call real platform APIs or crawlers automatically. Case-specific raw-data ingestion is explicit through `POST /api/v1/cases/{case_id}/crawl/start`.
+
+### Universal Evidence Ingestion Schemas
+
+`EvidenceItem`:
+
+```json
+{
+  "evidence_id": "evidence_youtube_comment_yt_comment_001",
+  "case_id": "case_001",
+  "platform": "youtube",
+  "source_type": "youtube",
+  "acquisition_mode": "official_api_public",
+  "evidence_type": "comment",
+  "title": null,
+  "body_text": null,
+  "comment_text": "Public comment text.",
+  "parent_id": null,
+  "root_id": "yt_video_001",
+  "author_id": "public_author_id",
+  "author_name": "Public author label",
+  "url": "https://www.youtube.com/watch?v=yt_video_001&lc=yt_comment_001",
+  "created_at": "2026-05-21T12:05:00Z",
+  "like_count": 4,
+  "reply_count": 0,
+  "share_count": 0,
+  "view_count": 0,
+  "raw_data_safe": {
+    "source_type": "youtube_data_api_v3"
+  },
+  "language": "en-US",
+  "confidence": 1.0,
+  "content_visibility": "public",
+  "access_scope": "public",
+  "ingestion_metadata": {}
+}
+```
+
+Allowed `acquisition_mode` values:
+
+```text
+official_api_public
+official_api_oauth
+public_parser
+search_discovery
+user_upload
+manual_url
+data_vendor
+mock_fixture
+```
+
+Allowed `source_type` values:
+
+```text
+youtube
+douyin
+bilibili
+weibo
+xiaohongshu
+reddit
+news_site
+forum
+public_web
+uploaded_dataset
+mock
+```
+
+Allowed `evidence_type` values:
+
+```text
+video
+article
+post
+comment
+reply
+title
+body_text
+metadata
+interaction_metric
+interaction_metrics
+search_result
+uploaded_record
+```
+
+`EvidenceIngestionBatch` contains an optional `EvidenceSource` plus `evidence_items`. `EvidenceIngestionResult` returns normalized evidence items, `source_distribution`, `evidence_type_counts`, `top_titles`, `representative_comments`, warnings, and safe-mode flags.
+
+Rules:
+
+- Evidence normalization does not fetch data and does not call real APIs or real LLM APIs.
+- `interaction_metric` is the preferred standalone metric evidence type. `interaction_metrics` remains accepted as a backward-compatible alias for older local payloads.
+- `search_result` and `uploaded_record` are planning-compatible evidence types for future discovery/vendor/upload flows.
+- `raw_data_safe` must remove API keys, tokens, cookies, authorization headers, client secrets, passwords, credential values, and `.env` values.
+- Evidence is case-level public/user-provided material. It must not create individual persuasion profiles, named-user targeting outputs, or account-level influenceability scores.
+
+## 0.4 Source Catalog Schemas
+
+The source catalog is static readiness/planning metadata exposed by
+`GET /api/v1/sources/catalog`. It does not call real APIs, fetch URLs, use
+cookies, inspect `.env`, or start crawlers.
+
+`SourceCatalogEntry`:
+
+```json
+{
+  "source_id": "youtube",
+  "display_name": "YouTube",
+  "category": "video_platforms",
+  "feasibility_status": "green",
+  "acquisition_modes": ["official_api_public", "user_upload", "mock_fixture"],
+  "allowed_data_types": ["video", "comment", "reply", "title", "body_text", "interaction_metric"],
+  "forbidden_data_types": ["private_messages", "oauth_private_data", "cookie_session_data"],
+  "current_status": "real_capable_when_configured",
+  "compliance_notes": "Official YouTube Data API v3 only; default mock mode; cache and tiny-limit guardrails.",
+  "next_action": "Keep local key in ignored environment files and use cached tiny demos.",
+  "priority": "high"
+}
+```
+
+`SourceCatalogCategory`:
+
+```json
+{
+  "category_id": "video_platforms",
+  "display_name": "Video Platforms",
+  "description": "Public video/post metadata and comments through official APIs, OAuth, user upload, or mock fixtures.",
+  "sources": []
+}
+```
+
+`SourceCatalogResponse`:
+
+```json
+{
+  "categories": [],
+  "total_categories": 8,
+  "total_sources": 22,
+  "safe_mode": {
+    "static_metadata_only": true,
+    "real_api_calls": false,
+    "real_llm_calls": false,
+    "live_fetch_enabled": false,
+    "cookies_used": false,
+    "scraping_bypass": false,
+    "secrets_exposed": false,
+    "third_party_crawler_integrated": false
+  }
+}
+```
 
 ### Case Raw Data Ingestion
 

@@ -39,6 +39,46 @@ function formatDate(value) {
   return date.toLocaleString()
 }
 
+function buildEvidenceSummary(items = []) {
+  const sourceDistribution = {}
+  const typeCounts = {}
+  const acquisitionModes = {}
+  const titles = []
+  const comments = []
+  for (const item of Array.isArray(items) ? items : []) {
+    const source = item.source_type || 'unknown'
+    const type = item.evidence_type || 'unknown'
+    const acquisitionMode = item.acquisition_mode || 'unknown'
+    sourceDistribution[source] = (sourceDistribution[source] || 0) + 1
+    typeCounts[type] = (typeCounts[type] || 0) + 1
+    acquisitionModes[acquisitionMode] = (acquisitionModes[acquisitionMode] || 0) + 1
+    if (item.title && !titles.includes(item.title)) titles.push(item.title)
+    const comment = item.comment_text || item.body_text
+    if (comment && !comments.includes(comment)) comments.push(comment)
+  }
+  return {
+    acquisitionModes,
+    comments: comments.slice(0, 3),
+    sourceDistribution,
+    titles: titles.slice(0, 3),
+    typeCounts,
+  }
+}
+
+function DistributionTags({ color = 'blue', values = {} }) {
+  const entries = Object.entries(values)
+  if (!entries.length) return <Text type="secondary">none</Text>
+  return (
+    <Space size={[4, 4]} wrap>
+      {entries.map(([key, value]) => (
+        <Tag color={color} key={key}>
+          {key}: {value}
+        </Tag>
+      ))}
+    </Space>
+  )
+}
+
 export function Cases({
   cases = [],
   currentCase,
@@ -53,6 +93,7 @@ export function Cases({
     analysis: currentCase?.analysis_result,
     currentCase,
   })
+  const evidenceSummary = buildEvidenceSummary(currentCase?.evidence_items || [])
 
   const columns = [
     {
@@ -177,6 +218,26 @@ export function Cases({
               <Tag color="red">YouTube public video/comment data</Tag>
             ) : null}
           </Space>
+          {currentCase.evidence_item_count ? (
+            <Space direction="vertical" className="full-width" size={8} style={{ marginTop: 14 }}>
+              <Text strong>Evidence summary</Text>
+              <Space size={[8, 8]} wrap>
+                <Tag color="cyan">evidence_items: {currentCase.evidence_item_count}</Tag>
+                <DistributionTags color="geekblue" values={evidenceSummary.sourceDistribution} />
+                <DistributionTags color="purple" values={evidenceSummary.typeCounts} />
+                <DistributionTags color="gold" values={evidenceSummary.acquisitionModes} />
+              </Space>
+              <Text type="secondary">
+                Evidence attachment normalizes already available public or user-provided material; it does not fetch external sources or expose credentials.
+              </Text>
+              {evidenceSummary.titles.length ? (
+                <Text type="secondary">Top titles: {evidenceSummary.titles.join(' / ')}</Text>
+              ) : null}
+              {evidenceSummary.comments.length ? (
+                <Text type="secondary">Representative evidence: {evidenceSummary.comments[0]}</Text>
+              ) : null}
+            </Space>
+          ) : null}
         </Card>
       ) : null}
 

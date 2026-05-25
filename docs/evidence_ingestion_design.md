@@ -1,0 +1,125 @@
+# Universal Evidence Ingestion Layer
+
+Status: implemented as a thin normalization layer for local/offline analysis.
+
+The Universal Evidence Ingestion Layer generalizes Sentigraph from platform-specific crawl outputs into event-centered evidence records. It does not fetch data by itself. It normalizes already available public or user-provided inputs so the case pipeline can support all-web public-opinion monitoring over official APIs, authorized OAuth sources, public-parser fixtures, search-discovery outputs, user uploads, data vendors, and mock fixtures.
+
+## Safety Boundary
+
+- No real platform API call is made by evidence attachment.
+- No real Douyin or Bilibili API call is made.
+- No scraping bypass, login bypass, captcha bypass, anti-bot evasion, browser-cookie use, or private-data access is implemented.
+- No real LLM API call is made.
+- Secrets are removed from `raw_data_safe`; API keys, tokens, cookies, authorization headers, passwords, client secrets, and `.env` values must not be stored or returned.
+- Evidence remains case-level and aggregate-analysis-oriented. It must not create named-user targeting, account-level influenceability scores, or manipulation guidance.
+
+## Core Schemas
+
+Implemented in `backend/app/schemas/evidence.py`:
+
+- `EvidenceItem`
+- `EvidenceSource`
+- `EvidenceType`
+- `EvidenceIngestionBatch`
+- `EvidenceIngestionResult`
+- `EvidenceNormalizationMetadata`
+
+`EvidenceItem` supports:
+
+- identifiers: `evidence_id`, `case_id`, `parent_id`, `root_id`
+- source metadata: `platform`, `source_type`, `acquisition_mode`, `access_scope`, `content_visibility`
+- content: `title`, `body_text`, `comment_text`
+- public author/source labels: `author_id`, `author_name`, `url`, `created_at`
+- interaction metrics: `like_count`, `reply_count`, `share_count`, `view_count`
+- safe raw metadata: `raw_data_safe`
+- normalization metadata: `language`, `confidence`, `ingestion_metadata`
+
+## Enumerations
+
+`acquisition_mode`:
+
+- `official_api_public`
+- `official_api_oauth`
+- `public_parser`
+- `search_discovery`
+- `user_upload`
+- `manual_url`
+- `data_vendor`
+- `mock_fixture`
+
+`source_type`:
+
+- `youtube`
+- `douyin`
+- `bilibili`
+- `weibo`
+- `xiaohongshu`
+- `reddit`
+- `news_site`
+- `forum`
+- `public_web`
+- `uploaded_dataset`
+- `mock`
+
+`evidence_type`:
+
+- `video`
+- `article`
+- `post`
+- `comment`
+- `reply`
+- `title`
+- `body_text`
+- `metadata`
+- `interaction_metric`
+- `interaction_metrics` (legacy alias kept for backward compatibility)
+- `search_result`
+- `uploaded_record`
+
+## Converters
+
+Implemented in `backend/app/services/evidence_ingestion.py`:
+
+- YouTube `RawPost` / `RawComment` to `EvidenceItem`
+- Public parser article/forum `RawPost` / `RawComment` to `EvidenceItem`
+- Manual/user-upload payload to sanitized `EvidenceItem`
+- `EvidenceItem` back to analysis-compatible `RawPost` / `RawComment`
+
+Planned evidence sources include manual URL evidence, uploaded CSV/Excel/JSON records, RSS/search-discovery records, and future data-vendor payloads. These should normalize to the same `EvidenceItem` shape before any downstream analysis.
+
+The case-specific crawl endpoint still preserves `raw_posts` and `raw_comments` for backward compatibility. It also stores normalized `evidence_items` so future source types can share one evidence surface.
+
+## Case Pipeline Priority
+
+`POST /api/v1/cases/{case_id}/run` uses:
+
+1. Attached `raw_comments` when present, preserving the existing YouTube `analysis_input_source=case_raw_data` flow.
+2. Attached `evidence_items` when no raw comments exist, using `analysis_input_source=case_evidence_items`.
+3. The existing mock dataset when neither raw comments nor evidence items exist, using `analysis_input_source=mock_data_fallback`.
+
+This preserves the current YouTube real-data demo while enabling manual article/video/comment evidence to feed the deterministic offline analysis path.
+
+## API Surface
+
+- `GET /api/v1/cases/{case_id}/evidence`
+- `POST /api/v1/cases/{case_id}/evidence/attach`
+
+The attach endpoint accepts safe manual evidence payloads such as article title/body, video title/description, comments, and replies. It does not accept or expose credentials.
+
+## Frontend Surface
+
+The Cases and Analysis Result pages now display a small Evidence summary:
+
+- source distribution
+- evidence type counts
+- top titles
+- representative public text
+- acquisition mode/source labels through normalized evidence records
+
+The UI avoids rendering raw objects and does not expose secrets or `.env` values.
+
+## All-Web Monitoring Implication
+
+The evidence layer gives Sentigraph a source-neutral ingestion contract. Future official APIs, OAuth-authorized account data, public parser outputs, CSV/Excel uploads, search-discovery records, and vendor data can all be normalized into the same event evidence model before analysis. This keeps platform-specific collection logic separate from the downstream sentiment, risk, report, monitoring, forecast, and Simulation Lab systems.
+
+See `docs/source_feasibility_matrix.md` for the green/yellow/red acquisition matrix. That matrix explicitly keeps MediaCrawler out of the core product and treats third-party crawler exports only as user-provided datasets with lawful-source attestation.

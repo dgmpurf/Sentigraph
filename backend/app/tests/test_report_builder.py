@@ -45,6 +45,9 @@ NORMALIZED_REPORT_FIELDS = {
     "real_crisis_risk",
     "manipulation_risk",
     "risk_explanation",
+    "evidence_item_count",
+    "evidence_source_distribution",
+    "evidence_type_counts",
 }
 
 

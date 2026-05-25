@@ -33,3 +33,6 @@ class PublicOpinionReport(BaseModel):
     real_crisis_risk: float | None = None
     manipulation_risk: float | None = None
     risk_explanation: str | None = None
+    evidence_item_count: int = 0
+    evidence_source_distribution: dict[str, int] = Field(default_factory=dict)
+    evidence_type_counts: dict[str, int] = Field(default_factory=dict)

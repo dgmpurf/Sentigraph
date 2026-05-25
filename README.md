@@ -9,6 +9,8 @@ GitHub Actions CI is intentionally disabled. Do not recreate `.github/workflows/
 ## Current Demo-Ready Status
 
 - Real data source: YouTube public video/comment data can be manually fetched through the official YouTube Data API v3, attached to a case, and analyzed as `analysis_input_source=case_raw_data`.
+- Universal evidence layer: case-level evidence can now normalize official API output, public-parser fixtures, manual/user-provided article/video/comment payloads, and future vendor/search-discovery data into `EvidenceItem` records without calling external services.
+- Source catalog: `GET /api/v1/sources/catalog` exposes static all-web source planning metadata for video platforms, media sites, forums, Q&A, complaint/review sites, finance forums, social platforms, search/RSS, user uploads, manual URLs, and future vendors.
 - Case flow: attached YouTube raw comments can feed Analysis Result, Summary Report, Markdown report export, Risk Monitor / Forecast, and Simulation Lab initialization.
 - Offline deterministic systems: analysis, V1.5 topic risk, Chinese report generation, monitoring, forecasting, Simulation Lab, and Simulation Lab strategy report export.
 - Mock system: LLM provider and any LLM-assisted behavior. No real OpenAI, DeepSeek, Qwen, or other external LLM API is called.
@@ -19,6 +21,7 @@ GitHub Actions CI is intentionally disabled. Do not recreate `.github/workflows/
 | Area | Current status | What is real | What is mock/offline | What is pending |
 | --- | --- | --- | --- | --- |
 | YouTube data | Optional real-data demo works when local `.env` is configured. | Public video/comment data via official YouTube Data API v3 with tiny limits and cache guardrails. | Default YouTube adapter mode is mock; automated tests use mocked responses. | Broader quota strategy, deeper reply crawling, and production credential handling. |
+| Evidence ingestion | Working as a source-neutral normalization layer. | Already attached public/authorized/manual evidence can be represented as `EvidenceItem` records. | Evidence attachment itself is offline normalization and never fetches external sources. | CSV/Excel UX, vendor/search-discovery connectors, and production review workflows. |
 | Analysis pipeline | Working for mock cases and attached raw-data cases. | Attached YouTube comments can become case raw data. | Sentiment/topic/risk/report logic is deterministic offline code. | Empirical calibration and production data-quality review. |
 | V1.5 risk model | Working offline. | No external service dependency. | Deterministic local scoring. | Future V2 dynamic model and validation. |
 | Chinese report | Working offline with Markdown export. | Can include YouTube-derived representative comments when raw data is attached. | Template/rule-based deterministic report builder. | PDF export and review workflow. |
@@ -65,6 +68,8 @@ http://127.0.0.1:5173
 - `docs/demo_screenshot_checklist.md` - canonical 14-screen screenshot checklist.
 - `docs/youtube_real_data_demo.md` - manual YouTube real-data walkthrough and PowerShell commands.
 - `docs/demo_story.md` and `docs/demo_checklist.md` - expanded demo story and local checklist.
+- `docs/source_catalog.md` - source categories and static catalog strategy for all-web evidence planning.
+- `docs/source_feasibility_matrix.md` - green/yellow/red matrix for compliant source acquisition and evidence ingestion boundaries.
 
 ## Historical MVP Notes
 

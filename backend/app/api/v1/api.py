@@ -16,6 +16,7 @@ from app.api.v1.routes import (
     recommendation,
     scheduler,
     simulation,
+    sources,
     summary,
     visualization,
 )
@@ -28,6 +29,7 @@ api_router.include_router(public_parsers.router, prefix="/public-parsers", tags=
 api_router.include_router(llm.router, prefix="/llm", tags=["llm"])
 api_router.include_router(benchmarks.router, prefix="/benchmarks", tags=["benchmarks"])
 api_router.include_router(simulation.router, prefix="/simulation", tags=["simulation"])
+api_router.include_router(sources.router, prefix="/sources", tags=["sources"])
 api_router.include_router(cases.router, prefix="/cases", tags=["cases"])
 api_router.include_router(crawl.router, prefix="/crawl", tags=["crawl"])
 api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])

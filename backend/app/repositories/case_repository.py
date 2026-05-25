@@ -14,6 +14,7 @@ from app.schemas.case import (
 from app.schemas.comment import RawComment, RawPost
 from app.schemas.common import RiskLevel
 from app.schemas.crawl import PlatformCrawlMetadata
+from app.schemas.evidence import EvidenceItem
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.report import PublicOpinionReport
 from app.schemas.scheduler import MonitoringScheduleConfig
@@ -70,6 +71,7 @@ class CaseRepository:
         crawl_metadata: list[PlatformCrawlMetadata],
         crawl_source_mode: str,
         raw_data_status: str,
+        evidence_items: list[EvidenceItem] | None = None,
         attached_at: datetime | None = None,
     ) -> AnalysisCaseDetail | None:
         case = self.get_case(case_id)
@@ -86,6 +88,29 @@ class CaseRepository:
                 "raw_data_status": raw_data_status,
                 "raw_post_count": len(raw_posts),
                 "raw_comment_count": len(raw_comments),
+                "evidence_items": evidence_items if evidence_items is not None else case.evidence_items,
+                "evidence_item_count": len(evidence_items) if evidence_items is not None else case.evidence_item_count,
+                "updated_at": timestamp,
+            },
+            deep=True,
+        )
+        return self.update_case(updated_case)
+
+    def save_case_evidence(
+        self,
+        case_id: str,
+        *,
+        evidence_items: list[EvidenceItem],
+        updated_at: datetime | None = None,
+    ) -> AnalysisCaseDetail | None:
+        case = self.get_case(case_id)
+        if not case:
+            return None
+        timestamp = updated_at or self.next_timestamp()
+        updated_case = case.model_copy(
+            update={
+                "evidence_items": evidence_items,
+                "evidence_item_count": len(evidence_items),
                 "updated_at": timestamp,
             },
             deep=True,

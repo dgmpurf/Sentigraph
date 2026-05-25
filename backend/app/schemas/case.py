@@ -7,6 +7,7 @@ from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.comment import RawComment, RawPost
 from app.schemas.common import DateRange, RiskLevel
 from app.schemas.crawl import PlatformCrawlMetadata
+from app.schemas.evidence import EvidenceItem
 from app.schemas.report import PublicOpinionReport, ReportLanguage
 from app.schemas.scheduler import MonitoringScheduleConfig
 from app.schemas.visualization import VisualizationResponse
@@ -57,13 +58,15 @@ class AnalysisCaseDetail(AnalysisCase):
     markdown_available: bool = False
     raw_posts: list[RawPost] = Field(default_factory=list)
     raw_comments: list[RawComment] = Field(default_factory=list)
+    evidence_items: list[EvidenceItem] = Field(default_factory=list)
     crawl_metadata: list[PlatformCrawlMetadata] = Field(default_factory=list)
     crawl_source_mode: str | None = None
     crawl_attached_at: datetime | None = None
     raw_data_status: RawDataStatus = "missing"
-    analysis_input_source: Literal["case_raw_data", "mock_data_fallback"] | None = None
+    analysis_input_source: Literal["case_evidence_items", "case_raw_data", "mock_data_fallback"] | None = None
     raw_post_count: int = 0
     raw_comment_count: int = 0
+    evidence_item_count: int = 0
 
 
 class MarkdownExportResponse(BaseModel):
