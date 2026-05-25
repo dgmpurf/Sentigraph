@@ -19,6 +19,10 @@ collection method were lawful. Sentigraph itself must not perform login-cookie
 crawling, captcha bypass, proxy evasion, anti-bot bypass, hidden API access, or
 private data collection.
 
+Manual/user-uploaded/screenshot evidence is not automatically verified. Source
+URLs, capture method, user attestation, trust label, verification status, and
+duplicate counts must be carried as evidence provenance metadata.
+
 ## Status Legend
 
 | Color | Meaning |

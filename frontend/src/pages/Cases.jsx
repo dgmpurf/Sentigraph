@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Empty, Form, Input, InputNumber, Select, Space, Table, Tag, Typography, Upload } from 'antd'
+import { Alert, Button, Card, Checkbox, Empty, Form, Input, InputNumber, Select, Space, Table, Tag, Typography, Upload } from 'antd'
 import { CheckCircle2, Download, FileText, Link2, PlayCircle, PlusCircle, RefreshCw, UploadCloud } from 'lucide-react'
 
 import { riskTone } from '../utils/formatters.js'
@@ -53,6 +53,12 @@ function buildEvidenceSummary(items = []) {
   const sourceDistribution = {}
   const typeCounts = {}
   const acquisitionModes = {}
+  const provenanceTypes = {}
+  const trustLabels = {}
+  const verificationStatuses = {}
+  const riskFlags = {}
+  let reviewNeeded = 0
+  let duplicateItems = 0
   const titles = []
   const comments = []
   for (const item of Array.isArray(items) ? items : []) {
@@ -62,6 +68,18 @@ function buildEvidenceSummary(items = []) {
     sourceDistribution[source] = (sourceDistribution[source] || 0) + 1
     typeCounts[type] = (typeCounts[type] || 0) + 1
     acquisitionModes[acquisitionMode] = (acquisitionModes[acquisitionMode] || 0) + 1
+    const provenanceType = item.provenance_type || 'unknown'
+    const trustLabel = item.trust_label || 'unknown'
+    const verificationStatus = item.verification_status || 'unknown'
+    provenanceTypes[provenanceType] = (provenanceTypes[provenanceType] || 0) + 1
+    trustLabels[trustLabel] = (trustLabels[trustLabel] || 0) + 1
+    verificationStatuses[verificationStatus] = (verificationStatuses[verificationStatus] || 0) + 1
+    if (['low', 'unverified', 'rejected'].includes(trustLabel) || verificationStatus === 'needs_review') reviewNeeded += 1
+    const duplicateCount = Number(item.duplicate_count || 1)
+    if (duplicateCount > 1) duplicateItems += duplicateCount - 1
+    for (const flag of Array.isArray(item.risk_flags) ? item.risk_flags : []) {
+      riskFlags[flag] = (riskFlags[flag] || 0) + 1
+    }
     if (item.title && !titles.includes(item.title)) titles.push(item.title)
     const comment = item.comment_text || item.body_text
     if (comment && !comments.includes(comment)) comments.push(comment)
@@ -69,9 +87,15 @@ function buildEvidenceSummary(items = []) {
   return {
     acquisitionModes,
     comments: comments.slice(0, 3),
+    duplicateItems,
+    provenanceTypes,
+    reviewNeeded,
+    riskFlags,
     sourceDistribution,
     titles: titles.slice(0, 3),
+    trustLabels,
     typeCounts,
+    verificationStatuses,
   }
 }
 
@@ -106,6 +130,10 @@ const importMappingFields = [
   ['share_count', 'share_count'],
   ['view_count', 'view_count'],
   ['language', 'language'],
+  ['provenance_type', 'provenance_type'],
+  ['verification_status', 'verification_status'],
+  ['source_capture_method', 'source_capture_method'],
+  ['user_attestation', 'user_attestation'],
 ]
 
 const manualEvidenceTypes = [
@@ -178,6 +206,8 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
 
     const platform = trimValue(values.platform) || 'manual_url'
     const sourceType = values.source_type || 'public_web'
+    const userAttested = Boolean(values.user_attestation)
+    const sourceCaptureMethod = trimValue(values.source_capture_method) || 'manual_entry'
     const evidenceItem = {
       platform,
       source_type: sourceType,
@@ -199,11 +229,21 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
       language: trimValue(values.language) || 'unknown',
       content_visibility: 'public_or_user_provided',
       access_scope: 'manual_url_user_provided',
+      provenance_type: sourceCaptureMethod === 'screenshot_transcription' ? 'screenshot_transcription' : 'manual_url',
+      verification_status: 'needs_review',
+      source_url: trimValue(values.url) || null,
+      source_url_present: Boolean(trimValue(values.url)),
+      source_platform_claim: platform,
+      source_capture_method: sourceCaptureMethod,
+      user_attestation_required: true,
+      user_attestation_text: userAttested
+        ? 'User confirmed lawful source/right to submit this public-opinion evidence.'
+        : null,
       raw_data_safe: {
         manual_entry: true,
         no_url_fetch: true,
         no_scraping: true,
-        user_attested_public_or_lawful_source: true,
+        user_attested_public_or_lawful_source: userAttested,
       },
     }
 
@@ -264,10 +304,12 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
           form={form}
           initialValues={{
             acquisition_mode: 'manual_url',
-            evidence_type: 'comment',
-            platform: 'manual_url',
-            source_type: 'public_web',
-          }}
+          evidence_type: 'comment',
+          platform: 'manual_url',
+          source_type: 'public_web',
+          source_capture_method: 'manual_entry',
+          user_attestation: false,
+        }}
           layout="vertical"
           onFinish={handleAttach}
         >
@@ -283,6 +325,15 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
             </Form.Item>
             <Form.Item label="证据类型" name="evidence_type">
               <Select options={manualEvidenceTypes} />
+            </Form.Item>
+            <Form.Item label="来源捕获方式" name="source_capture_method">
+              <Select
+                options={[
+                  { label: 'manual_entry', value: 'manual_entry' },
+                  { label: 'screenshot_transcription', value: 'screenshot_transcription' },
+                  { label: 'manual_copy_from_public_page', value: 'manual_copy_from_public_page' },
+                ]}
+              />
             </Form.Item>
             <Form.Item label="标题" name="title">
               <Input placeholder="公开文章、视频或帖子标题" />
@@ -324,6 +375,12 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
               <Input placeholder="zh-CN / en-US，可留空自动推断" />
             </Form.Item>
           </div>
+          <Form.Item name="user_attestation" valuePropName="checked">
+            <Checkbox>我确认该证据来源合法，且有权提交用于分析</Checkbox>
+          </Form.Item>
+          <Text type="secondary">
+            未勾选时仍可保存，但会标记为 needs_review / user_attestation_missing；截图转录不会被自动视为已验证。
+          </Text>
           <Space wrap>
             <Button htmlType="submit" icon={<PlusCircle size={15} />} loading={manualLoading} type="primary">
               添加到案例
@@ -346,6 +403,13 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
                   <Tag color="green">evidence_count: {manualResult.evidence_item_count}</Tag>
                   <DistributionTags color="purple" values={manualResult.evidence_type_counts} />
                   <DistributionTags color="geekblue" values={manualResult.source_distribution} />
+                  <DistributionTags color="magenta" values={manualResult.trust_summary?.trust_label_distribution} />
+                  <Tag color={manualResult.trust_summary?.review_needed_count ? 'orange' : 'green'}>
+                    review_needed: {manualResult.trust_summary?.review_needed_count || 0}
+                  </Tag>
+                  <Tag color={manualResult.deduplication_summary?.duplicate_items ? 'orange' : 'default'}>
+                    duplicates: {manualResult.deduplication_summary?.duplicate_items || 0}
+                  </Tag>
                   <Tag color="gold">acquisition_mode=manual_url</Tag>
                 </Space>
                 {latestEvidence ? (
@@ -392,6 +456,7 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
         <Space direction="vertical" size={2}>
           <Tag color="purple">{record.evidence_type}</Tag>
           <Tag color="gold">{record.acquisition_mode}</Tag>
+          {record.trust_label ? <Tag color={record.trust_label === 'high' ? 'green' : record.trust_label === 'medium' ? 'blue' : 'orange'}>{record.trust_label}</Tag> : null}
         </Space>
       ),
     },
@@ -597,6 +662,7 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
                   <Tag color="cyan">total evidence: {commitResult.total_evidence_item_count}</Tag>
                   <DistributionTags color="geekblue" values={commitResult.source_distribution} />
                   <DistributionTags color="purple" values={commitResult.evidence_type_counts} />
+                  <DistributionTags color="magenta" values={buildEvidenceSummary(commitResult.evidence_items).trustLabels} />
                 </Space>
                 <Text type="secondary">导入数据会在没有 case_raw_data 时作为 case_evidence_items 进入离线确定性分析。</Text>
               </Space>
@@ -768,10 +834,20 @@ export function Cases({
                 <DistributionTags color="geekblue" values={evidenceSummary.sourceDistribution} />
                 <DistributionTags color="purple" values={evidenceSummary.typeCounts} />
                 <DistributionTags color="gold" values={evidenceSummary.acquisitionModes} />
+                <DistributionTags color="magenta" values={evidenceSummary.provenanceTypes} />
+                <DistributionTags color="lime" values={evidenceSummary.trustLabels} />
+                <Tag color={evidenceSummary.reviewNeeded ? 'orange' : 'green'}>review_needed: {evidenceSummary.reviewNeeded}</Tag>
+                <Tag color={evidenceSummary.duplicateItems ? 'orange' : 'default'}>duplicates collapsed: {evidenceSummary.duplicateItems}</Tag>
               </Space>
               <Text type="secondary">
-                Evidence attachment normalizes already available public or user-provided material; it does not fetch external sources or expose credentials.
+                Evidence attachment normalizes already available public or user-provided material; it does not fetch external sources or expose credentials. Low-trust or unverified evidence requires human review.
               </Text>
+              {Object.keys(evidenceSummary.riskFlags).length ? (
+                <Space size={[4, 4]} wrap>
+                  <Text type="secondary">Review flags:</Text>
+                  <DistributionTags color="orange" values={evidenceSummary.riskFlags} />
+                </Space>
+              ) : null}
               {evidenceSummary.titles.length ? (
                 <Text type="secondary">Top titles: {evidenceSummary.titles.join(' / ')}</Text>
               ) : null}

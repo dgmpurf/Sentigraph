@@ -36,3 +36,9 @@ class PublicOpinionReport(BaseModel):
     evidence_item_count: int = 0
     evidence_source_distribution: dict[str, int] = Field(default_factory=dict)
     evidence_type_counts: dict[str, int] = Field(default_factory=dict)
+    evidence_trust_label_distribution: dict[str, int] = Field(default_factory=dict)
+    evidence_verification_status_distribution: dict[str, int] = Field(default_factory=dict)
+    evidence_provenance_type_distribution: dict[str, int] = Field(default_factory=dict)
+    evidence_review_needed_count: int = 0
+    evidence_unique_item_count: int = 0
+    evidence_duplicate_item_count: int = 0

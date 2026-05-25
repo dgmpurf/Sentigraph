@@ -26,6 +26,7 @@ from app.schemas.evidence import (
     EvidenceType,
 )
 from app.services.evidence_ingestion import (
+    enrich_and_deduplicate_evidence_items,
     evidence_source_distribution,
     evidence_type_distribution,
     sanitize_raw_data,
@@ -102,6 +103,10 @@ FIELD_SYNONYMS = {
     "share_count": ["share_count", "shares", "分享数", "转发数"],
     "view_count": ["view_count", "views", "播放量", "浏览量"],
     "language": ["language", "lang", "语言"],
+    "provenance_type": ["provenance_type", "provenance", "source_provenance"],
+    "verification_status": ["verification_status", "verification", "source_verification"],
+    "source_capture_method": ["source_capture_method", "capture_method", "capture"],
+    "user_attestation": ["user_attestation", "attestation", "lawful_source_attestation"],
 }
 
 EVIDENCE_IMPORT_TEMPLATE_FILENAME = "sentigraph_evidence_import_template.csv"
@@ -234,7 +239,7 @@ def build_imported_evidence_items(
         "skipped_count": normalized["skipped_count"],
         "warnings": parsed["warnings"] + normalized["warnings"],
     }
-    return normalized["items"], metadata
+    return enrich_and_deduplicate_evidence_items(normalized["items"]), metadata
 
 
 def build_import_commit_result(
@@ -455,6 +460,7 @@ def _normalize_import_rows(
             continue
         seen_hashes.add(content_hash)
         item = item.model_copy(update={"evidence_id": f"evidence_import_{content_hash[:16]}"}, deep=True)
+        item = enrich_and_deduplicate_evidence_items([item])[0]
         items.append(item)
         items_with_warnings.append((item, row_warnings))
 
@@ -503,6 +509,10 @@ def _row_to_evidence_item(
     platform = get("platform") or "uploaded_dataset"
     source_type = _safe_source_type(get("source_type"))
     acquisition_mode = _safe_acquisition_mode(get("acquisition_mode"))
+    provenance_type = _safe_provenance_type(get("provenance_type") or ("manual_url" if acquisition_mode == "manual_url" else "user_upload"))
+    verification_status = _safe_verification_status(get("verification_status") or "needs_review")
+    source_capture_method = get("source_capture_method") or ("csv_excel_upload" if acquisition_mode == "user_upload" else acquisition_mode)
+    user_attestation_text = _attestation_text(get("user_attestation"))
     title = get("title")
     body_text = get("body_text")
     comment_text = get("comment_text")
@@ -551,6 +561,14 @@ def _row_to_evidence_item(
             language=get("language") or _infer_language(title, body_text, comment_text),
             content_visibility="public_or_user_provided",
             access_scope="user_provided_lawful_source",
+            provenance_type=provenance_type,
+            verification_status=verification_status,
+            source_url=get("url") or None,
+            source_url_present=bool(get("url")),
+            source_platform_claim=platform,
+            source_capture_method=source_capture_method,
+            user_attestation_required=True,
+            user_attestation_text=user_attestation_text,
             ingestion_metadata=EvidenceNormalizationMetadata(
                 normalized_from="user_upload_import",
                 source_record_id=f"row_{row_number}",
@@ -633,6 +651,45 @@ def _safe_evidence_type(value: str) -> EvidenceType:
     return normalized if normalized in VALID_EVIDENCE_TYPES else "comment"  # type: ignore[return-value]
 
 
+def _safe_provenance_type(value: str) -> str:
+    normalized = _safe_token(value or "user_upload")
+    valid = {
+        "official_api",
+        "public_parser",
+        "search_discovery_candidate",
+        "user_upload",
+        "manual_url",
+        "manual_text",
+        "screenshot_transcription",
+        "data_vendor",
+        "mock_fixture",
+    }
+    return normalized if normalized in valid else "user_upload"
+
+
+def _safe_verification_status(value: str) -> str:
+    normalized = _safe_token(value or "needs_review")
+    valid = {
+        "verified_by_official_api",
+        "verified_by_public_parser",
+        "source_url_provided_unverified",
+        "user_attested_unverified",
+        "screenshot_unverified",
+        "vendor_attested",
+        "mock_fixture",
+        "rejected",
+        "needs_review",
+    }
+    return normalized if normalized in valid else "needs_review"
+
+
+def _attestation_text(value: str) -> str | None:
+    normalized = _safe_token(value)
+    if normalized in {"true", "yes", "y", "1", "confirmed", "confirm"}:
+        return "User attested lawful source/right to submit this public-opinion evidence."
+    return None
+
+
 def _safe_int(value: str, row_number: int, field: str, warnings: list[EvidenceImportValidationWarning]) -> int:
     if value == "":
         return 0
@@ -678,6 +735,10 @@ def _to_preview_row(
         reply_count=item.reply_count,
         share_count=item.share_count,
         view_count=item.view_count,
+        provenance_type=item.provenance_type,
+        verification_status=item.verification_status,
+        trust_label=item.trust_label,
+        risk_flags=item.risk_flags,
         warnings=warnings,
     )
 

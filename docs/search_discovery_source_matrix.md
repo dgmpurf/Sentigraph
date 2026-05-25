@@ -4,6 +4,8 @@ Status: planning and static mock metadata only.
 
 This matrix classifies discovery providers that could later help users find candidate public-opinion evidence URLs. It does not authorize crawling or content extraction. Candidate discovery returns URL/title/snippet metadata first; evidence use requires human review and a compliant attach/import/parser path.
 
+When a candidate is later attached as evidence, Sentigraph keeps conservative trust/provenance metadata. URL/title/snippet discovery is not verification; user attestation, reviewed parser rules, official APIs, or vendor contracts are still needed before evidence can be treated as higher trust.
+
 | Provider class | Allowed use | Forbidden use | Data returned | Full content? | API key? | User review? | Current Sentigraph status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Search engine APIs | Approved API use after terms/quota review. | SERP scraping, captcha bypass, proxy evasion, hidden endpoints. | URL, title, snippet, source name, optional published time. | No, metadata/snippet only. | Usually yes. | Required. | Planned only; not configured. | Pick provider and add mocked fixtures before real calls. |

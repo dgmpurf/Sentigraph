@@ -416,7 +416,28 @@ Rules:
   "confidence": 1.0,
   "content_visibility": "public",
   "access_scope": "public",
-  "ingestion_metadata": {}
+  "ingestion_metadata": {},
+  "provenance_type": "official_api",
+  "verification_status": "verified_by_official_api",
+  "trust_score": 0.92,
+  "trust_label": "high",
+  "source_url_present": true,
+  "source_url": "https://www.youtube.com/watch?v=yt_video_001&lc=yt_comment_001",
+  "source_platform_claim": "youtube",
+  "source_capture_method": "official_api",
+  "submitted_by_label": null,
+  "submitter_hash": null,
+  "submitted_at": null,
+  "user_attestation_required": false,
+  "user_attestation_text": null,
+  "verification_notes": ["Official API metadata is treated as high-trust source evidence, not a truth guarantee."],
+  "duplicate_group_id": "dup_abc123",
+  "content_hash": "sha256...",
+  "normalized_content_hash": "sha256...",
+  "canonical_url_hash": "sha256...",
+  "duplicate_count": 1,
+  "duplicate_group_size": 1,
+  "risk_flags": []
 }
 ```
 
@@ -466,9 +487,72 @@ search_result
 uploaded_record
 ```
 
-`EvidenceIngestionBatch` contains an optional `EvidenceSource` plus `evidence_items`. `EvidenceIngestionResult` returns normalized evidence items, `source_distribution`, `evidence_type_counts`, `top_titles`, `representative_comments`, warnings, and safe-mode flags.
+Allowed `provenance_type` values:
+
+```text
+official_api
+public_parser
+search_discovery_candidate
+user_upload
+manual_url
+manual_text
+screenshot_transcription
+data_vendor
+mock_fixture
+```
+
+Allowed `verification_status` values:
+
+```text
+verified_by_official_api
+verified_by_public_parser
+source_url_provided_unverified
+user_attested_unverified
+screenshot_unverified
+vendor_attested
+mock_fixture
+rejected
+needs_review
+```
+
+Allowed `trust_label` values:
+
+```text
+high
+medium
+low
+unverified
+rejected
+```
+
+`EvidenceIngestionBatch` contains an optional `EvidenceSource` plus `evidence_items`. `EvidenceIngestionResult` returns normalized evidence items, `source_distribution`, `evidence_type_counts`, `top_titles`, `representative_comments`, `trust_summary`, `deduplication_summary`, warnings, and safe-mode flags.
 
 Manual URL evidence uses `acquisition_mode="manual_url"` and usually `source_type="public_web"`. It is for user-entered public evidence only: URLs are stored as plain text review context and are never fetched, followed, scraped, or parsed automatically. Every manual URL evidence item must include at least one of `title`, `body_text`, or `comment_text`. Invalid numeric metric inputs are coerced to `0` with `invalid_numeric_metric:<field>` warnings. Secret-like pasted values in text fields are redacted and surfaced with `secret_like_text_redacted:<field>` warnings. The backend must never persist cookies, tokens, API keys, `.env` values, or raw credential data in manual evidence.
+
+Trust and dedup summaries:
+
+```json
+{
+  "trust_summary": {
+    "trust_label_distribution": {"high": 1, "medium": 1, "unverified": 1},
+    "verification_status_distribution": {"verified_by_official_api": 1, "needs_review": 1},
+    "provenance_type_distribution": {"official_api": 1, "manual_url": 1},
+    "warning_counts": {"user_attestation_missing": 1},
+    "review_needed_count": 1,
+    "low_trust_count": 0,
+    "unverified_count": 1
+  },
+  "deduplication_summary": {
+    "total_items": 3,
+    "unique_items": 2,
+    "duplicate_items": 1,
+    "duplicate_group_count": 1,
+    "top_duplicate_groups": []
+  }
+}
+```
+
+Analysis uses unique evidence items by default. Duplicate submissions are preserved as `duplicate_count` / `duplicate_group_size` repetition signals but must not directly inflate sentiment, topic, or risk counts.
 
 ### CSV / Excel Evidence Import Schemas
 
@@ -495,7 +579,11 @@ Manual URL evidence uses `acquisition_mode="manual_url"` and usually `source_typ
   "reply_count": "reply_count",
   "share_count": "share_count",
   "view_count": "view_count",
-  "language": "language"
+  "language": "language",
+  "provenance_type": "provenance_type",
+  "verification_status": "verification_status",
+  "source_capture_method": "source_capture_method",
+  "user_attestation": "user_attestation"
 }
 ```
 

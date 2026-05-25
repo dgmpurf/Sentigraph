@@ -2,18 +2,24 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
+import hashlib
+import json
 import re
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.schemas.comment import RawComment, RawPost
 from app.schemas.crawl import PlatformCrawlMetadata
 from app.schemas.evidence import (
+    EvidenceDeduplicationSummary,
+    EvidenceDuplicateGroup,
     EvidenceAcquisitionMode,
     EvidenceIngestionBatch,
     EvidenceIngestionResult,
     EvidenceItem,
     EvidenceNormalizationMetadata,
     EvidenceSourceType,
+    EvidenceTrustSummary,
 )
 
 
@@ -54,6 +60,28 @@ VIDEO_PLATFORMS = {"youtube", "douyin", "bilibili", "kuaishou"}
 NEWS_PLATFORMS = {"the_paper", "jiemian", "toutiao"}
 FORUM_PLATFORMS = {"hupu", "tieba", "nga", "maimai", "douban", "zhihu"}
 DIRECT_SOURCE_TYPES = {"youtube", "douyin", "bilibili", "weibo", "xiaohongshu", "reddit"}
+SUPPORTED_PLATFORM_CLAIMS = {
+    "youtube",
+    "douyin",
+    "bilibili",
+    "weibo",
+    "xiaohongshu",
+    "reddit",
+    "news_site",
+    "forum",
+    "public_web",
+    "uploaded_dataset",
+    "mock",
+    "manual_url",
+    "user_upload",
+}
+TRACKING_QUERY_KEYS = {
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+    "spm",
+}
 
 
 class EvidenceValidationError(ValueError):
@@ -85,7 +113,7 @@ def build_evidence_items_from_raw_data(
                 metadata=metadata_by_platform.get(comment.platform.lower()),
             )
         )
-    return items
+    return enrich_and_deduplicate_evidence_items(items)
 
 
 def raw_post_to_evidence_item(
@@ -99,7 +127,7 @@ def raw_post_to_evidence_item(
     acquisition_mode = _acquisition_mode(normalized.platform, normalized.raw_data, metadata)
     evidence_type = "video" if normalized.platform.lower() in VIDEO_PLATFORMS else "article" if source_type == "news_site" else "post"
     record_id = str(normalized.post_id)
-    return EvidenceItem(
+    return enrich_evidence_item(EvidenceItem(
         evidence_id=_evidence_id(normalized.platform, evidence_type, record_id),
         case_id=case_id,
         platform=normalized.platform,
@@ -120,13 +148,20 @@ def raw_post_to_evidence_item(
         language=_infer_language(normalized.title, normalized.content),
         content_visibility="public",
         access_scope="public",
+        provenance_type=_provenance_for_acquisition(acquisition_mode),
+        verification_status="needs_review",
+        source_url=normalized.url,
+        source_url_present=bool(normalized.url),
+        source_platform_claim=normalized.platform,
+        source_capture_method="official_api" if acquisition_mode == "official_api_public" else acquisition_mode,
+        user_attestation_required=False,
         ingestion_metadata=_metadata(
             normalized_from="raw_post",
             source_record_id=record_id,
             source_type=source_type,
             acquisition_mode=acquisition_mode,
         ),
-    )
+    ))
 
 
 def raw_comment_to_evidence_item(
@@ -140,7 +175,7 @@ def raw_comment_to_evidence_item(
     acquisition_mode = _acquisition_mode(normalized.platform, normalized.raw_data, metadata)
     evidence_type = "reply" if normalized.parent_id else "comment"
     record_id = str(normalized.comment_id)
-    return EvidenceItem(
+    return enrich_evidence_item(EvidenceItem(
         evidence_id=_evidence_id(normalized.platform, evidence_type, record_id),
         case_id=case_id,
         platform=normalized.platform,
@@ -161,13 +196,20 @@ def raw_comment_to_evidence_item(
         language=_infer_language(normalized.content),
         content_visibility="public",
         access_scope="public",
+        provenance_type=_provenance_for_acquisition(acquisition_mode),
+        verification_status="needs_review",
+        source_url=normalized.url,
+        source_url_present=bool(normalized.url),
+        source_platform_claim=normalized.platform,
+        source_capture_method="official_api" if acquisition_mode == "official_api_public" else acquisition_mode,
+        user_attestation_required=False,
         ingestion_metadata=_metadata(
             normalized_from="raw_comment",
             source_record_id=record_id,
             source_type=source_type,
             acquisition_mode=acquisition_mode,
         ),
-    )
+    ))
 
 
 def normalize_manual_evidence_batch(case_id: str, batch: EvidenceIngestionBatch) -> list[EvidenceItem]:
@@ -210,12 +252,17 @@ def normalize_manual_evidence_batch(case_id: str, batch: EvidenceIngestionBatch)
                     "evidence_type": evidence_type,
                     "raw_data_safe": sanitize_raw_data(redacted_item.raw_data_safe),
                     "language": redacted_item.language if redacted_item.language != "unknown" else _infer_language(redacted_item.title, redacted_item.body_text, redacted_item.comment_text),
+                    "provenance_type": redacted_item.provenance_type if redacted_item.provenance_type != "user_upload" or acquisition_mode != "manual_url" else "manual_url",
+                    "source_url": redacted_item.source_url or redacted_item.url,
+                    "source_url_present": bool(redacted_item.source_url or redacted_item.url),
+                    "source_platform_claim": redacted_item.source_platform_claim or platform,
+                    "user_attestation_required": acquisition_mode in {"manual_url", "user_upload"},
                     "ingestion_metadata": normalized_metadata,
                 },
                 deep=True,
             )
         )
-    return items
+    return enrich_and_deduplicate_evidence_items(items)
 
 
 def evidence_items_to_raw_data(evidence_items: list[EvidenceItem]) -> tuple[list[RawPost], list[RawComment]]:
@@ -224,7 +271,7 @@ def evidence_items_to_raw_data(evidence_items: list[EvidenceItem]) -> tuple[list
     post_ids: set[str] = set()
     now = datetime.now(timezone.utc).isoformat()
 
-    for item in evidence_items:
+    for item in enrich_and_deduplicate_evidence_items(evidence_items):
         platform = item.platform or "uploaded_dataset"
         root_id = item.root_id or item.evidence_id or f"evidence_{len(posts) + 1}"
         raw_data = {
@@ -232,6 +279,9 @@ def evidence_items_to_raw_data(evidence_items: list[EvidenceItem]) -> tuple[list
             "acquisition_mode": item.acquisition_mode,
             "evidence_id": item.evidence_id,
             "normalized_evidence": True,
+            "trust_label": item.trust_label,
+            "verification_status": item.verification_status,
+            "duplicate_count": item.duplicate_count,
         }
         if item.evidence_type in {"video", "article", "post", "title", "body_text", "metadata"} and root_id not in post_ids:
             posts.append(
@@ -284,10 +334,13 @@ def build_evidence_ingestion_result(
     status: str | None = None,
     warnings: list[str] | None = None,
 ) -> EvidenceIngestionResult:
+    evidence_items = enrich_and_deduplicate_evidence_items(evidence_items)
     source_distribution = evidence_source_distribution(evidence_items)
     evidence_type_counts = evidence_type_distribution(evidence_items)
     top_titles = _top_titles(evidence_items)
     representative_comments = _representative_comments(evidence_items)
+    dedup_summary = build_deduplication_summary(evidence_items)
+    trust_summary = build_trust_summary(evidence_items, dedup_summary=dedup_summary)
     result_warnings = _dedupe_warnings(
         [
             *(warnings or []),
@@ -307,6 +360,8 @@ def build_evidence_ingestion_result(
         evidence_type_counts=evidence_type_counts,
         top_titles=top_titles,
         representative_comments=representative_comments,
+        trust_summary=trust_summary,
+        deduplication_summary=dedup_summary,
         ingestion_metadata=_metadata(
             normalized_from="evidence_batch",
             source_record_id=case_id,
@@ -317,12 +372,175 @@ def build_evidence_ingestion_result(
     )
 
 
+def enrich_evidence_item(item: EvidenceItem) -> EvidenceItem:
+    normalized = EvidenceItem.model_validate(item)
+    provenance_type = _resolve_provenance_type(normalized)
+    url = normalized.source_url or normalized.url
+    canonical_url = _canonicalize_url(url)
+    source_url_present = bool(canonical_url)
+    text = _evidence_text(normalized)
+    content_hash = _content_hash(normalized, canonical_url=canonical_url)
+    normalized_content_hash = _normalized_content_hash(normalized, canonical_url=canonical_url)
+    canonical_url_hash = _hash_text(canonical_url) if canonical_url else None
+    risk_flags = _risk_flags(normalized, provenance_type=provenance_type, source_url_present=source_url_present)
+    verification_status, trust_score, trust_label, verification_notes = _trust_assessment(
+        normalized,
+        provenance_type=provenance_type,
+        source_url_present=source_url_present,
+        risk_flags=risk_flags,
+    )
+    duplicate_group_id = normalized.duplicate_group_id or f"dup_{normalized_content_hash[:16]}"
+    source_capture_method = normalized.source_capture_method or _capture_method_for_provenance(provenance_type)
+    user_attestation_required = provenance_type in {"manual_url", "manual_text", "screenshot_transcription", "user_upload"}
+    submitted_at = normalized.submitted_at
+    if user_attestation_required and submitted_at is None:
+        submitted_at = datetime.now(timezone.utc)
+    return normalized.model_copy(
+        update={
+            "provenance_type": provenance_type,
+            "verification_status": verification_status,
+            "trust_score": trust_score,
+            "trust_label": trust_label,
+            "source_url_present": source_url_present,
+            "source_url": canonical_url or url,
+            "source_platform_claim": normalized.source_platform_claim or normalized.platform,
+            "source_capture_method": source_capture_method,
+            "submitted_at": submitted_at,
+            "user_attestation_required": user_attestation_required,
+            "verification_notes": _dedupe_warnings([*normalized.verification_notes, *verification_notes]),
+            "duplicate_group_id": duplicate_group_id,
+            "content_hash": content_hash,
+            "normalized_content_hash": normalized_content_hash,
+            "canonical_url_hash": canonical_url_hash,
+            "duplicate_count": max(1, int(normalized.duplicate_count or 1)),
+            "duplicate_group_size": max(1, int(normalized.duplicate_group_size or 1)),
+            "risk_flags": _dedupe_warnings([*normalized.risk_flags, *risk_flags]),
+        },
+        deep=True,
+    )
+
+
+def enrich_and_deduplicate_evidence_items(evidence_items: list[EvidenceItem]) -> list[EvidenceItem]:
+    grouped: dict[str, EvidenceItem] = {}
+    counts: Counter[str] = Counter()
+    for item in evidence_items:
+        enriched = enrich_evidence_item(item)
+        group_key = enriched.normalized_content_hash or enriched.content_hash or enriched.evidence_id
+        counts[group_key] += max(1, int(enriched.duplicate_count or 1))
+        if group_key not in grouped:
+            grouped[group_key] = enriched
+            continue
+        existing = grouped[group_key]
+        merged_flags = _dedupe_warnings([*existing.risk_flags, *enriched.risk_flags, "duplicate_submission"])
+        merged_notes = _dedupe_warnings([*existing.verification_notes, *enriched.verification_notes, "Repeated evidence collapsed into one duplicate group."])
+        grouped[group_key] = existing.model_copy(
+            update={
+                "risk_flags": merged_flags,
+                "verification_notes": merged_notes,
+            },
+            deep=True,
+        )
+
+    unique_items: list[EvidenceItem] = []
+    used_ids: set[str] = set()
+    for group_key, item in grouped.items():
+        group_size = max(1, counts[group_key])
+        flags = list(item.risk_flags)
+        notes = list(item.verification_notes)
+        trust_score = item.trust_score
+        trust_label = item.trust_label
+        verification_status = item.verification_status
+        if group_size > 1:
+            flags = _dedupe_warnings([*flags, "duplicate_submission"])
+            notes = _dedupe_warnings([*notes, f"duplicate_group_size:{group_size}"])
+        if group_size >= 4:
+            flags = _dedupe_warnings([*flags, "high_duplicate_count"])
+            trust_score = min(trust_score, 0.5)
+            trust_label = _trust_label_for_score(trust_score, verification_status, flags)
+        evidence_id = _unique_evidence_id(item.evidence_id, used_ids)
+        used_ids.add(evidence_id)
+        unique_items.append(
+            item.model_copy(
+                update={
+                    "evidence_id": evidence_id,
+                    "duplicate_count": group_size,
+                    "duplicate_group_size": group_size,
+                    "risk_flags": flags,
+                    "verification_notes": notes,
+                    "trust_score": trust_score,
+                    "trust_label": trust_label,
+                },
+                deep=True,
+            )
+        )
+    return unique_items
+
+
+def merge_evidence_items(existing_items: list[EvidenceItem], incoming_items: list[EvidenceItem]) -> list[EvidenceItem]:
+    return enrich_and_deduplicate_evidence_items([*existing_items, *incoming_items])
+
+
+def build_deduplication_summary(evidence_items: list[EvidenceItem]) -> EvidenceDeduplicationSummary:
+    unique_items = enrich_and_deduplicate_evidence_items(evidence_items)
+    total_items = sum(max(1, int(item.duplicate_count or 1)) for item in unique_items)
+    duplicate_items = max(0, total_items - len(unique_items))
+    duplicate_groups = [
+        EvidenceDuplicateGroup(
+            duplicate_group_id=item.duplicate_group_id or f"dup_{item.normalized_content_hash[:16]}",
+            duplicate_group_size=max(1, int(item.duplicate_count or 1)),
+            representative_evidence_id=item.evidence_id,
+            normalized_content_hash=item.normalized_content_hash,
+            canonical_url_hash=item.canonical_url_hash,
+            sample_text=_trim_text(_evidence_text(item), 160) or None,
+        )
+        for item in unique_items
+        if max(1, int(item.duplicate_count or 1)) > 1
+    ]
+    duplicate_groups.sort(key=lambda group: group.duplicate_group_size, reverse=True)
+    return EvidenceDeduplicationSummary(
+        total_items=total_items,
+        unique_items=len(unique_items),
+        duplicate_items=duplicate_items,
+        duplicate_group_count=len(duplicate_groups),
+        top_duplicate_groups=duplicate_groups[:5],
+    )
+
+
+def build_trust_summary(
+    evidence_items: list[EvidenceItem],
+    *,
+    dedup_summary: EvidenceDeduplicationSummary | None = None,
+) -> EvidenceTrustSummary:
+    unique_items = enrich_and_deduplicate_evidence_items(evidence_items)
+    trust_distribution = Counter(item.trust_label for item in unique_items)
+    verification_distribution = Counter(item.verification_status for item in unique_items)
+    provenance_distribution = Counter(item.provenance_type for item in unique_items)
+    warning_counts = Counter(flag for item in unique_items for flag in item.risk_flags)
+    review_needed_count = sum(
+        1
+        for item in unique_items
+        if item.verification_status in {"needs_review", "rejected"}
+        or item.trust_label in {"low", "unverified", "rejected"}
+        or "user_attestation_missing" in item.risk_flags
+    )
+    return EvidenceTrustSummary(
+        trust_label_distribution=dict(trust_distribution),
+        verification_status_distribution=dict(verification_distribution),
+        provenance_type_distribution=dict(provenance_distribution),
+        warning_counts=dict(warning_counts),
+        review_needed_count=review_needed_count,
+        low_trust_count=int(trust_distribution.get("low", 0)),
+        unverified_count=int(trust_distribution.get("unverified", 0)),
+        duplicate_summary=dedup_summary or build_deduplication_summary(unique_items),
+    )
+
+
 def evidence_source_distribution(evidence_items: list[EvidenceItem]) -> dict[str, int]:
-    return dict(Counter(item.source_type for item in evidence_items))
+    return dict(Counter(item.source_type for item in enrich_and_deduplicate_evidence_items(evidence_items)))
 
 
 def evidence_type_distribution(evidence_items: list[EvidenceItem]) -> dict[str, int]:
-    return dict(Counter(item.evidence_type for item in evidence_items))
+    return dict(Counter(item.evidence_type for item in enrich_and_deduplicate_evidence_items(evidence_items)))
 
 
 def sanitize_raw_data(value: Any) -> Any:
@@ -404,6 +622,247 @@ def _acquisition_mode(
     return "mock_fixture"
 
 
+def _provenance_for_acquisition(acquisition_mode: EvidenceAcquisitionMode) -> str:
+    if acquisition_mode in {"official_api_public", "official_api_oauth"}:
+        return "official_api"
+    if acquisition_mode == "public_parser":
+        return "public_parser"
+    if acquisition_mode == "search_discovery":
+        return "search_discovery_candidate"
+    if acquisition_mode == "manual_url":
+        return "manual_url"
+    if acquisition_mode == "data_vendor":
+        return "data_vendor"
+    if acquisition_mode == "mock_fixture":
+        return "mock_fixture"
+    return "user_upload"
+
+
+def _resolve_provenance_type(item: EvidenceItem) -> str:
+    inferred = _provenance_for_acquisition(item.acquisition_mode)
+    if item.provenance_type == "user_upload" and inferred != "user_upload":
+        return inferred
+    capture_method = (item.source_capture_method or "").strip().lower()
+    if capture_method in {"screenshot", "screenshot_transcription", "screen_capture"}:
+        return "screenshot_transcription"
+    return item.provenance_type or inferred
+
+
+def _capture_method_for_provenance(provenance_type: str) -> str:
+    if provenance_type == "official_api":
+        return "official_api"
+    if provenance_type == "public_parser":
+        return "public_parser_fixture_or_reviewed_parser"
+    if provenance_type == "manual_url":
+        return "manual_entry_with_source_url"
+    if provenance_type == "manual_text":
+        return "manual_text_entry"
+    if provenance_type == "screenshot_transcription":
+        return "screenshot_transcription"
+    if provenance_type == "search_discovery_candidate":
+        return "search_result_metadata"
+    if provenance_type == "data_vendor":
+        return "vendor_dataset"
+    if provenance_type == "mock_fixture":
+        return "mock_fixture"
+    return "user_upload"
+
+
+def _trust_assessment(
+    item: EvidenceItem,
+    *,
+    provenance_type: str,
+    source_url_present: bool,
+    risk_flags: list[str],
+) -> tuple[str, float, str, list[str]]:
+    notes: list[str] = []
+    verification_status = item.verification_status
+    trust_score = float(item.trust_score or 0)
+
+    has_attestation = bool((item.user_attestation_text or "").strip())
+    if provenance_type == "official_api":
+        verification_status = "verified_by_official_api"
+        trust_score = 0.92
+        notes.append("Official API metadata is treated as high-trust source evidence, not a truth guarantee.")
+    elif provenance_type == "public_parser":
+        verification_status = "verified_by_public_parser"
+        trust_score = 0.78
+        notes.append("Reviewed public parser output is medium/high trust and still human-reviewable.")
+    elif provenance_type == "data_vendor":
+        verification_status = "vendor_attested"
+        trust_score = 0.72
+        notes.append("Vendor-provided evidence is vendor-attested and requires vendor contract review.")
+    elif provenance_type == "mock_fixture":
+        verification_status = "mock_fixture"
+        trust_score = 0.5
+        notes.append("Mock fixture evidence is deterministic demo data.")
+    elif provenance_type == "screenshot_transcription":
+        verification_status = "screenshot_unverified"
+        trust_score = 0.2
+        notes.append("Screenshot/transcribed evidence is never automatically verified.")
+    elif provenance_type == "search_discovery_candidate":
+        verification_status = "needs_review"
+        trust_score = 0.18
+        notes.append("Search discovery candidates are URL/title/snippet leads only until reviewed.")
+    elif provenance_type == "manual_url":
+        if source_url_present and has_attestation:
+            verification_status = "source_url_provided_unverified"
+            trust_score = 0.62
+        elif source_url_present:
+            verification_status = "source_url_provided_unverified"
+            trust_score = 0.48
+        elif has_attestation:
+            verification_status = "user_attested_unverified"
+            trust_score = 0.42
+        else:
+            verification_status = "needs_review"
+            trust_score = 0.25
+        notes.append("Manual URL evidence is user-provided and must remain reviewable.")
+    else:
+        if source_url_present and has_attestation:
+            verification_status = "user_attested_unverified"
+            trust_score = 0.55
+        elif has_attestation:
+            verification_status = "user_attested_unverified"
+            trust_score = 0.42
+        else:
+            verification_status = "needs_review"
+            trust_score = 0.25
+        notes.append("User-uploaded evidence is not independently verified by Sentigraph.")
+
+    if "possible_secret_redacted" in risk_flags:
+        notes.append("Secret-like content was redacted before storage/output.")
+    if "raw_html_script_like_input" in risk_flags:
+        notes.append("HTML/script-like input is stored as plain text only and is not executed.")
+    if "user_attestation_missing" in risk_flags:
+        trust_score = min(trust_score, 0.35)
+    if "suspiciously_short_content" in risk_flags:
+        trust_score = min(trust_score, 0.4)
+    if "unsupported_platform_claim" in risk_flags:
+        trust_score = min(trust_score, 0.35)
+
+    trust_label = _trust_label_for_score(trust_score, verification_status, risk_flags)
+    return verification_status, round(trust_score, 3), trust_label, notes
+
+
+def _trust_label_for_score(trust_score: float, verification_status: str, risk_flags: list[str]) -> str:
+    if verification_status == "rejected":
+        return "rejected"
+    if verification_status in {"needs_review", "screenshot_unverified"}:
+        return "unverified"
+    if "user_attestation_missing" in risk_flags and trust_score < 0.5:
+        return "unverified"
+    if trust_score >= 0.8:
+        return "high"
+    if trust_score >= 0.55:
+        return "medium"
+    if trust_score >= 0.35:
+        return "low"
+    return "unverified"
+
+
+def _risk_flags(item: EvidenceItem, *, provenance_type: str, source_url_present: bool) -> list[str]:
+    flags = list(item.risk_flags)
+    text = _evidence_text(item)
+    lowered_text = text.lower()
+    metadata_warnings = item.ingestion_metadata.warnings
+    if not source_url_present and provenance_type in {"manual_url", "manual_text", "screenshot_transcription", "user_upload"}:
+        flags.append("source_url_missing")
+    if provenance_type == "screenshot_transcription":
+        flags.append("screenshot_unverified")
+    if item.created_at in {None, ""}:
+        flags.append("missing_timestamp")
+    if any("secret_like_text_redacted" in warning for warning in metadata_warnings):
+        flags.append("possible_secret_redacted")
+    if "<script" in lowered_text or "</script" in lowered_text or re.search(r"<[a-z][^>]*>", lowered_text):
+        flags.append("raw_html_script_like_input")
+    if _is_short_content(item, text):
+        flags.append("suspiciously_short_content")
+    platform_claim = (item.source_platform_claim or item.platform or "").strip().lower()
+    if platform_claim and platform_claim not in SUPPORTED_PLATFORM_CLAIMS:
+        flags.append("unsupported_platform_claim")
+    if provenance_type in {"manual_url", "manual_text", "screenshot_transcription", "user_upload"} and not (item.user_attestation_text or "").strip():
+        flags.append("user_attestation_missing")
+    return _dedupe_warnings(flags)
+
+
+def _is_short_content(item: EvidenceItem, text: str) -> bool:
+    if item.evidence_type == "interaction_metric":
+        return False
+    normalized = _normalize_content_text(text)
+    return bool(normalized) and len(normalized) < 8
+
+
+def _content_hash(item: EvidenceItem, *, canonical_url: str) -> str:
+    payload = {
+        "platform": item.platform,
+        "source_type": item.source_type,
+        "evidence_type": item.evidence_type,
+        "title": item.title or "",
+        "body_text": item.body_text or "",
+        "comment_text": item.comment_text or "",
+        "parent_id": item.parent_id or "",
+        "root_id": item.root_id or "",
+        "url": canonical_url,
+        "created_at": item.created_at or "",
+    }
+    return _hash_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def _normalized_content_hash(item: EvidenceItem, *, canonical_url: str) -> str:
+    payload = {
+        "platform": (item.platform or "").strip().lower(),
+        "source_type": item.source_type,
+        "evidence_type": item.evidence_type,
+        "text": _normalize_content_text(_evidence_text(item)),
+        "url": canonical_url,
+    }
+    return _hash_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def _canonicalize_url(value: str | None) -> str:
+    if not value:
+        return ""
+    text = SECRET_TEXT_PATTERN.sub(lambda match: f"{match.group(1)}=[REDACTED]", str(value).strip())
+    if not text:
+        return ""
+    parsed = urlsplit(text)
+    if not parsed.scheme or not parsed.netloc:
+        return text
+    query_pairs = []
+    for key, item_value in parse_qsl(parsed.query, keep_blank_values=True):
+        lowered_key = key.lower()
+        if lowered_key.startswith("utm_") or lowered_key in TRACKING_QUERY_KEYS:
+            continue
+        query_pairs.append((key, item_value))
+    query = urlencode(query_pairs, doseq=True)
+    return urlunsplit(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            parsed.path.rstrip("/") or parsed.path,
+            query,
+            "",
+        )
+    )
+
+
+def _hash_text(value: str) -> str:
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
+
+def _evidence_text(item: EvidenceItem) -> str:
+    return " ".join(
+        value
+        for value in (item.title, item.body_text, item.comment_text, item.url)
+        if isinstance(value, str) and value.strip()
+    )
+
+
+def _normalize_content_text(value: str) -> str:
+    return " ".join(str(value or "").casefold().split())
+
+
 def _metadata(
     *,
     normalized_from: str,
@@ -470,6 +929,16 @@ def _evidence_id(platform: str, evidence_type: str, record_id: str) -> str:
     safe_type = _safe_token(evidence_type or "evidence")
     safe_record = _safe_token(record_id or "item")
     return f"evidence_{safe_platform}_{safe_type}_{safe_record}"
+
+
+def _unique_evidence_id(evidence_id: str, used_ids: set[str]) -> str:
+    base_id = evidence_id or "evidence_item"
+    if base_id not in used_ids:
+        return base_id
+    suffix = 2
+    while f"{base_id}_{suffix}" in used_ids:
+        suffix += 1
+    return f"{base_id}_{suffix}"
 
 
 def _safe_token(value: str) -> str:

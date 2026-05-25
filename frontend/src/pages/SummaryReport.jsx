@@ -37,6 +37,8 @@ export function SummaryReport({
     0
   const overallRisk = report.overallRisk ?? report.riskScore ?? 0
   const sourceStatus = getAnalysisSourceStatus({ analysis, currentCase })
+  const evidenceReviewNeeded = Number(analysis?.evidence_review_needed_count || 0)
+  const evidenceDuplicateItems = Number(analysis?.evidence_duplicate_item_count || 0)
 
   const copyMarkdown = async () => {
     try {
@@ -124,6 +126,22 @@ export function SummaryReport({
       </div>
 
       {error ? <Alert message="报告数据加载失败" description={error} type="error" showIcon /> : null}
+      {evidenceReviewNeeded ? (
+        <Alert
+          message="证据可信度提示"
+          description="部分证据来自用户上传或手动录入，需结合来源和人工复核判断；系统不会把截图或用户提交文本自动视为已验证事实。"
+          showIcon
+          type="warning"
+        />
+      ) : null}
+      {evidenceDuplicateItems ? (
+        <Alert
+          message="重复证据已折叠"
+          description={`检测到 ${evidenceDuplicateItems} 条重复提交已作为重复信号保留，不会直接放大情绪/风险计数。`}
+          showIcon
+          type="info"
+        />
+      ) : null}
 
       <Row gutter={[16, 16]}>
         <Col span={6}>

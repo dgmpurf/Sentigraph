@@ -13,12 +13,14 @@ from app.schemas.case import (
 )
 from app.schemas.crawl import CrawlStartRequest
 from app.schemas.evidence import (
+    EvidenceDeduplicationSummary,
     EvidenceImportCommitRequest,
     EvidenceImportCommitResult,
     EvidenceImportPreviewRequest,
     EvidenceImportPreviewResult,
     EvidenceIngestionBatch,
     EvidenceIngestionResult,
+    EvidenceTrustSummary,
 )
 from app.services.evidence_import import (
     build_import_commit_result,
@@ -27,8 +29,12 @@ from app.services.evidence_import import (
 )
 from app.services.crawling.crawl_service import start_crawl_with_adapters
 from app.services.evidence_ingestion import (
+    build_deduplication_summary,
     build_evidence_ingestion_result,
     build_evidence_items_from_raw_data,
+    build_trust_summary,
+    enrich_and_deduplicate_evidence_items,
+    merge_evidence_items,
     normalize_manual_evidence_batch,
 )
 from app.services.mock_pipeline import (
@@ -105,7 +111,7 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
     elif running_case.evidence_items:
         pipeline = build_pipeline_from_evidence_items(
             running_case.project_id,
-            evidence_items=running_case.evidence_items,
+            evidence_items=enrich_and_deduplicate_evidence_items(running_case.evidence_items),
             platforms=running_case.platforms,
         )
     else:
@@ -218,28 +224,48 @@ def list_case_evidence(case_id: str) -> EvidenceIngestionResult | None:
     return build_evidence_ingestion_result(case_id, [], status="empty")
 
 
+def get_case_evidence_trust_summary(case_id: str) -> EvidenceTrustSummary | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    evidence_items = case.evidence_items
+    if not evidence_items and (case.raw_posts or case.raw_comments):
+        evidence_items = build_evidence_items_from_raw_data(
+            case_id=case_id,
+            raw_posts=case.raw_posts,
+            raw_comments=case.raw_comments,
+            crawl_metadata=case.crawl_metadata,
+        )
+    return build_trust_summary(evidence_items)
+
+
+def get_case_evidence_dedup_summary(case_id: str) -> EvidenceDeduplicationSummary | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    evidence_items = case.evidence_items
+    if not evidence_items and (case.raw_posts or case.raw_comments):
+        evidence_items = build_evidence_items_from_raw_data(
+            case_id=case_id,
+            raw_posts=case.raw_posts,
+            raw_comments=case.raw_comments,
+            crawl_metadata=case.crawl_metadata,
+        )
+    return build_deduplication_summary(evidence_items)
+
+
 def attach_case_evidence(case_id: str, payload: EvidenceIngestionBatch) -> EvidenceIngestionResult | None:
     repository = get_case_repository()
     case = repository.get_case(case_id)
     if not case:
         return None
     evidence_items = normalize_manual_evidence_batch(case_id, payload)
-    used_ids = {item.evidence_id for item in case.evidence_items if item.evidence_id}
-    appended_items = []
-    for item in evidence_items:
-        evidence_id = item.evidence_id
-        if evidence_id in used_ids:
-            base_id = evidence_id
-            suffix = 2
-            while f"{base_id}_{suffix}" in used_ids:
-                suffix += 1
-            evidence_id = f"{base_id}_{suffix}"
-            item = item.model_copy(update={"evidence_id": evidence_id}, deep=True)
-        used_ids.add(evidence_id)
-        appended_items.append(item)
+    total_items = merge_evidence_items(case.evidence_items, evidence_items)
     saved_case = repository.save_case_evidence(
         case_id,
-        evidence_items=[*case.evidence_items, *appended_items],
+        evidence_items=total_items,
         updated_at=repository.next_timestamp(),
     )
     if not saved_case:
@@ -260,9 +286,9 @@ def commit_case_evidence_import(case_id: str, payload: EvidenceImportCommitReque
     if not case:
         return None
     imported_items, import_metadata = build_imported_evidence_items(case_id, payload)
-    existing_by_id = {item.evidence_id: item for item in case.evidence_items}
-    new_items = [item for item in imported_items if item.evidence_id not in existing_by_id]
-    total_items = [*case.evidence_items, *new_items]
+    total_items = merge_evidence_items(case.evidence_items, imported_items)
+    existing_hashes = {item.normalized_content_hash for item in enrich_and_deduplicate_evidence_items(case.evidence_items)}
+    new_items = [item for item in enrich_and_deduplicate_evidence_items(imported_items) if item.normalized_content_hash not in existing_hashes]
     saved_case = repository.save_case_evidence(
         case_id,
         evidence_items=total_items,
@@ -437,6 +463,7 @@ def _build_markdown(case: AnalysisCaseDetail) -> str:
         generation_label = "attached case raw data offline deterministic analysis"
     evidence_source_summary = _format_distribution(report.evidence_source_distribution)
     evidence_type_summary = _format_distribution(report.evidence_type_counts)
+    evidence_trust_summary = _format_distribution(report.evidence_trust_label_distribution)
     lines = [
         f"# {case.title}",
         "",
@@ -453,6 +480,9 @@ def _build_markdown(case: AnalysisCaseDetail) -> str:
         f"- Evidence items: {report.evidence_item_count}",
         f"- Evidence source distribution: {evidence_source_summary}",
         f"- Evidence type counts: {evidence_type_summary}",
+        f"- Evidence trust labels: {evidence_trust_summary}",
+        f"- Evidence review needed: {report.evidence_review_needed_count}",
+        f"- Duplicate evidence collapsed: {report.evidence_duplicate_item_count}",
         "",
         "## 舆情总览",
         "",

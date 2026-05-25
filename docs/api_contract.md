@@ -1537,6 +1537,8 @@ Rules:
 ```http
 GET /api/v1/cases/{case_id}/evidence
 POST /api/v1/cases/{case_id}/evidence/attach
+GET /api/v1/cases/{case_id}/evidence/trust-summary
+GET /api/v1/cases/{case_id}/evidence/dedup-summary
 ```
 
 `GET /cases/{case_id}/evidence` returns a normalized case-level evidence view. If a case has `evidence_items`, the endpoint returns them directly. If the case only has `raw_posts` / `raw_comments`, it derives evidence items from those raw records. If neither exists, it returns `status="empty"`.
@@ -1544,6 +1546,8 @@ POST /api/v1/cases/{case_id}/evidence/attach
 `POST /cases/{case_id}/evidence/attach` accepts safe manual/user-provided evidence such as article title/body, video title/description, comments, replies, public URLs, public author labels, and interaction metrics. It does not fetch external URLs and does not call platform APIs.
 
 Manual URL evidence is a first-class safe attach mode. It uses the same attach endpoint with `acquisition_mode="manual_url"` and stores the URL as plain text review context only. The backend does not fetch the URL, follow links, run a parser, use cookies, scrape, call real APIs, or call real LLM APIs. At least one of `title`, `body_text`, or `comment_text` is required for every manual URL evidence item. Secret-like pasted values in manual text fields are redacted before storage/output; invalid numeric metrics are coerced to `0` and returned with warnings.
+
+Trust and dedup endpoints are read-only summaries over normalized case evidence. They expose only aggregate distributions and hash/group identifiers; they do not expose credentials, fetch sources, or verify screenshots.
 
 Manual URL request:
 
@@ -1566,6 +1570,10 @@ Manual URL request:
       "url": "https://example.test/public-thread",
       "like_count": 12,
       "reply_count": 3,
+      "provenance_type": "manual_url",
+      "verification_status": "needs_review",
+      "source_capture_method": "manual_copy_from_public_page",
+      "user_attestation_text": "I confirm I have the right to submit this public-opinion evidence.",
       "raw_data_safe": {
         "manual_entry": true,
         "no_url_fetch": true
@@ -1624,6 +1632,8 @@ Request:
 
 Preview response includes `detected_format`, `detected_columns`, confirmed `column_mapping`, `valid_row_count`, `duplicate_row_count`, `skipped_row_count`, `preview_rows`, warnings, and safe-mode flags. Commit response includes `imported_count`, `total_evidence_item_count`, imported `evidence_items`, source/type distributions, warnings, and the same safe-mode flags.
 
+Optional CSV/Excel mapping fields now include `provenance_type`, `verification_status`, `source_capture_method`, and `user_attestation`. Missing attestation is allowed but records `user_attestation_missing` and lowers trust/review status for user-uploaded evidence.
+
 Import rules:
 
 - Supported formats: CSV, UTF-8 / UTF-8-BOM CSV, GB18030 / GBK CSV fallback, and macro-free `.xlsx`.
@@ -1677,6 +1687,22 @@ Response:
   },
   "top_titles": ["Public article title"],
   "representative_comments": ["Public or user-provided comment text."],
+  "trust_summary": {
+    "trust_label_distribution": {"unverified": 1, "medium": 1},
+    "verification_status_distribution": {"needs_review": 1, "source_url_provided_unverified": 1},
+    "provenance_type_distribution": {"manual_url": 2},
+    "warning_counts": {"user_attestation_missing": 1},
+    "review_needed_count": 1,
+    "low_trust_count": 0,
+    "unverified_count": 1
+  },
+  "deduplication_summary": {
+    "total_items": 3,
+    "unique_items": 2,
+    "duplicate_items": 1,
+    "duplicate_group_count": 1,
+    "top_duplicate_groups": []
+  },
   "safe_mode": {
     "secrets_exposed": false,
     "real_api_calls": false,
@@ -1689,6 +1715,8 @@ Response:
 Rules:
 
 - Evidence attachment is normalization only; it does not call real APIs, crawlers, external LLMs, or live public fetch.
+- Trust labels are deterministic provenance labels, not truth guarantees. Screenshots/transcriptions are never automatically verified.
+- Exact duplicate text/URL submissions are collapsed within a case. `duplicate_count` / `duplicate_group_size` remain available as repetition signals, but unique evidence is used for default analysis counts.
 - `raw_data_safe` is sanitized; API keys, tokens, cookies, authorization headers, client secrets, passwords, credentials, and `.env` values are removed.
 - `evidence_type="interaction_metric"` is accepted for standalone metric evidence; `interaction_metrics` is kept as a backward-compatible alias.
 - `analysis_input_source="case_evidence_items"` is used when case analysis consumes attached evidence items and no raw comments are present.

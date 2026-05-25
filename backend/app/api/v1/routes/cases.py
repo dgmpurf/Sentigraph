@@ -9,12 +9,14 @@ from app.schemas.case import (
     MarkdownExportResponse,
 )
 from app.schemas.evidence import (
+    EvidenceDeduplicationSummary,
     EvidenceImportCommitRequest,
     EvidenceImportCommitResult,
     EvidenceImportPreviewRequest,
     EvidenceImportPreviewResult,
     EvidenceIngestionBatch,
     EvidenceIngestionResult,
+    EvidenceTrustSummary,
 )
 from app.services.evidence_import import EvidenceImportError
 from app.services.evidence_ingestion import EvidenceValidationError
@@ -32,6 +34,8 @@ from app.services.case_store import (
     create_case,
     export_case_markdown,
     get_case,
+    get_case_evidence_dedup_summary,
+    get_case_evidence_trust_summary,
     list_case_evidence,
     list_case_alerts,
     list_case_snapshots,
@@ -90,6 +94,22 @@ def start_case_crawl(case_id: str, payload: CaseCrawlStartRequest | None = None)
 @router.get("/{case_id}/evidence", response_model=EvidenceIngestionResult)
 def get_case_evidence(case_id: str) -> EvidenceIngestionResult:
     result = list_case_evidence(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.get("/{case_id}/evidence/trust-summary", response_model=EvidenceTrustSummary)
+def get_case_evidence_trust(case_id: str) -> EvidenceTrustSummary:
+    result = get_case_evidence_trust_summary(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.get("/{case_id}/evidence/dedup-summary", response_model=EvidenceDeduplicationSummary)
+def get_case_evidence_dedup(case_id: str) -> EvidenceDeduplicationSummary:
+    result = get_case_evidence_dedup_summary(case_id)
     if not result:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return result

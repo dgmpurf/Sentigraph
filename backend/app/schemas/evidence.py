@@ -46,6 +46,32 @@ EvidenceSourceType = Literal[
     "mock",
 ]
 
+EvidenceProvenanceType = Literal[
+    "official_api",
+    "public_parser",
+    "search_discovery_candidate",
+    "user_upload",
+    "manual_url",
+    "manual_text",
+    "screenshot_transcription",
+    "data_vendor",
+    "mock_fixture",
+]
+
+EvidenceVerificationStatus = Literal[
+    "verified_by_official_api",
+    "verified_by_public_parser",
+    "source_url_provided_unverified",
+    "user_attested_unverified",
+    "screenshot_unverified",
+    "vendor_attested",
+    "mock_fixture",
+    "rejected",
+    "needs_review",
+]
+
+EvidenceTrustLabel = Literal["high", "medium", "low", "unverified", "rejected"]
+
 
 class EvidenceNormalizationMetadata(BaseModel):
     normalized_from: str = "manual_payload"
@@ -73,6 +99,44 @@ class EvidenceSource(BaseModel):
     access_scope: str = "public_or_user_provided"
     credential_present: bool = False
     notes: str | None = None
+
+
+class EvidenceDuplicateGroup(BaseModel):
+    duplicate_group_id: str
+    duplicate_group_size: int = 1
+    representative_evidence_id: str | None = None
+    normalized_content_hash: str | None = None
+    canonical_url_hash: str | None = None
+    sample_text: str | None = None
+
+
+class EvidenceDeduplicationSummary(BaseModel):
+    total_items: int = 0
+    unique_items: int = 0
+    duplicate_items: int = 0
+    duplicate_group_count: int = 0
+    top_duplicate_groups: list[EvidenceDuplicateGroup] = Field(default_factory=list)
+
+
+class EvidenceTrustSummary(BaseModel):
+    trust_label_distribution: dict[str, int] = Field(default_factory=dict)
+    verification_status_distribution: dict[str, int] = Field(default_factory=dict)
+    provenance_type_distribution: dict[str, int] = Field(default_factory=dict)
+    warning_counts: dict[str, int] = Field(default_factory=dict)
+    review_needed_count: int = 0
+    low_trust_count: int = 0
+    unverified_count: int = 0
+    duplicate_summary: EvidenceDeduplicationSummary = Field(default_factory=EvidenceDeduplicationSummary)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "secrets_exposed": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "individual_targeting": False,
+        }
+    )
 
 
 _EVIDENCE_NUMERIC_FIELDS = ("like_count", "reply_count", "share_count", "view_count")
@@ -104,6 +168,27 @@ class EvidenceItem(BaseModel):
     content_visibility: str = "public_or_user_provided"
     access_scope: str = "public_or_user_provided"
     ingestion_metadata: EvidenceNormalizationMetadata = Field(default_factory=EvidenceNormalizationMetadata)
+    provenance_type: EvidenceProvenanceType = "user_upload"
+    verification_status: EvidenceVerificationStatus = "needs_review"
+    trust_score: float = Field(default=0.35, ge=0.0, le=1.0)
+    trust_label: EvidenceTrustLabel = "unverified"
+    source_url_present: bool = False
+    source_url: str | None = None
+    source_platform_claim: str | None = None
+    source_capture_method: str | None = None
+    submitted_by_label: str | None = None
+    submitter_hash: str | None = None
+    submitted_at: datetime | None = None
+    user_attestation_required: bool = True
+    user_attestation_text: str | None = None
+    verification_notes: list[str] = Field(default_factory=list)
+    duplicate_group_id: str | None = None
+    content_hash: str = ""
+    normalized_content_hash: str = ""
+    canonical_url_hash: str | None = None
+    duplicate_count: int = Field(default=1, ge=1)
+    duplicate_group_size: int = Field(default=1, ge=1)
+    risk_flags: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -155,6 +240,8 @@ class EvidenceIngestionResult(BaseModel):
     evidence_type_counts: dict[str, int] = Field(default_factory=dict)
     top_titles: list[str] = Field(default_factory=list)
     representative_comments: list[str] = Field(default_factory=list)
+    trust_summary: EvidenceTrustSummary = Field(default_factory=EvidenceTrustSummary)
+    deduplication_summary: EvidenceDeduplicationSummary = Field(default_factory=EvidenceDeduplicationSummary)
     ingestion_metadata: EvidenceNormalizationMetadata = Field(default_factory=EvidenceNormalizationMetadata)
     warnings: list[str] = Field(default_factory=list)
     safe_mode: dict[str, bool] = Field(
@@ -186,6 +273,10 @@ class EvidenceImportColumnMapping(BaseModel):
     share_count: str | None = None
     view_count: str | None = None
     language: str | None = None
+    provenance_type: str | None = None
+    verification_status: str | None = None
+    source_capture_method: str | None = None
+    user_attestation: str | None = None
 
 
 class EvidenceImportValidationWarning(BaseModel):
@@ -213,6 +304,10 @@ class EvidenceImportRowPreview(BaseModel):
     reply_count: int = 0
     share_count: int = 0
     view_count: int = 0
+    provenance_type: EvidenceProvenanceType = "user_upload"
+    verification_status: EvidenceVerificationStatus = "needs_review"
+    trust_label: EvidenceTrustLabel = "unverified"
+    risk_flags: list[str] = Field(default_factory=list)
     warnings: list[EvidenceImportValidationWarning] = Field(default_factory=list)
 
 

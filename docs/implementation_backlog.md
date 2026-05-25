@@ -8,6 +8,36 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Evidence Trust, Provenance, and Deduplication
+
+Status: implemented on 2026-05-25.
+
+Completed:
+
+- Extended `EvidenceItem` with provenance, verification, trust, source URL/capture, user attestation, hash, duplicate group, and risk flag fields.
+- Added deterministic trust rules for official API, public parser, manual URL, user upload, screenshot transcription, data vendor, mock fixture, and search-discovery candidate provenance.
+- Added deterministic content/URL hashing and case-level duplicate collapse with `duplicate_count` / `duplicate_group_size`.
+- Added `GET /api/v1/cases/{case_id}/evidence/trust-summary` and `GET /api/v1/cases/{case_id}/evidence/dedup-summary`.
+- Updated manual evidence UI with source capture method and lawful-source attestation checkbox.
+- Updated CSV/Excel import mapping to support optional provenance/trust columns.
+- Added UI trust/provenance/dedup/review indicators in Cases, Analysis Result, and Summary Report.
+- Added `docs/evidence_trust_and_deduplication.md`.
+
+Acceptance:
+
+- Screenshots and user-submitted text are never automatically verified.
+- Missing attestation, missing source URL, screenshot transcription, missing timestamp, secret-like text, raw HTML/script-like text, unsupported platform claims, suspiciously short content, and high duplicate count are review flags.
+- Duplicate text/URL submissions are collapsed so repeated uploads do not directly inflate sentiment, topic, or risk counts.
+- Secret-like pasted text is redacted; HTML/script-like text is stored as plain text only.
+- No real APIs, real search APIs, real YouTube/Douyin/Bilibili APIs, real LLM APIs, URL fetching, scraping, cookies, login/captcha/anti-bot bypasses, MediaCrawler, or secret exposure are introduced.
+- Latest validation passed with `python -m pytest` (`595 passed in 6.38s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.83s`; existing non-blocking vendor chunk warning remains).
+
+Future tasks:
+
+- Browser-smoke trust/dedup UI with manual URL and CSV/Excel examples.
+- Add a richer evidence review queue only after the compact case-level summary is stable.
+- Keep Search Discovery candidate review mock-only unless an approved provider path is configured.
+
 ### Search Discovery Planning and Static Status
 
 Status: planning and static mock status implemented on 2026-05-25.

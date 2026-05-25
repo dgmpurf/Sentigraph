@@ -33,6 +33,8 @@ Implemented in `backend/app/schemas/evidence.py`:
 - interaction metrics: `like_count`, `reply_count`, `share_count`, `view_count`
 - safe raw metadata: `raw_data_safe`
 - normalization metadata: `language`, `confidence`, `ingestion_metadata`
+- trust/provenance metadata: `provenance_type`, `verification_status`, `trust_score`, `trust_label`, `source_url_present`, `source_url`, `source_platform_claim`, `source_capture_method`, `submitted_at`, `user_attestation_required`, `user_attestation_text`, `verification_notes`, and `risk_flags`
+- deduplication metadata: `content_hash`, `normalized_content_hash`, `canonical_url_hash`, `duplicate_group_id`, `duplicate_count`, and `duplicate_group_size`
 
 ## Enumerations
 
@@ -97,6 +99,19 @@ Search Discovery is a lead-generation layer, not an evidence collector. `SearchD
 
 The current Search Discovery endpoints are static/mock only and do not fetch URLs.
 
+## Trust, Provenance, And Deduplication
+
+Evidence is conservatively labeled before it enters analysis:
+
+- Official API evidence is high trust for source provenance and `verified_by_official_api`.
+- Public-parser evidence is medium/high trust when a parser path is reviewed.
+- Manual URL evidence is `source_url_provided_unverified` when a source URL exists, and still requires human review.
+- CSV/Excel evidence is user-uploaded and needs source/attestation review.
+- Screenshot/transcribed evidence is always `screenshot_unverified`.
+- Search Discovery candidates stay pending-review leads until accepted through a safe evidence path.
+
+Within each case, Sentigraph computes deterministic content and URL hashes, removes common tracking URL parameters, collapses exact duplicate text/URL submissions, and preserves `duplicate_count` as a repetition signal. Analysis uses unique evidence by default so repeated malicious or accidental uploads do not directly inflate sentiment, topic, or risk counts.
+
 ## Case Pipeline Priority
 
 `POST /api/v1/cases/{case_id}/run` uses:
@@ -111,6 +126,8 @@ This preserves the current YouTube real-data demo while enabling manual article/
 
 - `GET /api/v1/cases/{case_id}/evidence`
 - `POST /api/v1/cases/{case_id}/evidence/attach`
+- `GET /api/v1/cases/{case_id}/evidence/trust-summary`
+- `GET /api/v1/cases/{case_id}/evidence/dedup-summary`
 - `POST /api/v1/cases/{case_id}/evidence/import/preview`
 - `POST /api/v1/cases/{case_id}/evidence/import/commit`
 

@@ -48,6 +48,12 @@ NORMALIZED_REPORT_FIELDS = {
     "evidence_item_count",
     "evidence_source_distribution",
     "evidence_type_counts",
+    "evidence_trust_label_distribution",
+    "evidence_verification_status_distribution",
+    "evidence_provenance_type_distribution",
+    "evidence_review_needed_count",
+    "evidence_unique_item_count",
+    "evidence_duplicate_item_count",
 }
 
 

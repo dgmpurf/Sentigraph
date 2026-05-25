@@ -21,6 +21,9 @@ from app.services.preprocessing.user_aggregator import aggregate_users
 from app.services.scoring.risk_score import RiskScoreResult, calculate_risk_score
 from app.services.scoring.topic_risk_score import calculate_topic_risk_score
 from app.services.evidence_ingestion import (
+    build_deduplication_summary,
+    build_trust_summary,
+    enrich_and_deduplicate_evidence_items,
     evidence_items_to_raw_data,
     evidence_source_distribution,
     evidence_type_distribution,
@@ -98,7 +101,7 @@ def build_pipeline_from_evidence_items(
     platforms: list[str] | None = None,
 ) -> MockPipelineResult:
     selected_platforms = {platform.lower() for platform in platforms or []}
-    normalized_evidence = [EvidenceItem.model_validate(item) for item in evidence_items]
+    normalized_evidence = enrich_and_deduplicate_evidence_items([EvidenceItem.model_validate(item) for item in evidence_items])
     if selected_platforms:
         filtered_evidence = [
             item for item in normalized_evidence if item.platform.lower() in selected_platforms
@@ -125,6 +128,8 @@ def _build_pipeline(
     evidence_items = evidence_items or []
     evidence_sources = evidence_source_distribution(evidence_items)
     evidence_types = evidence_type_distribution(evidence_items)
+    evidence_dedup = build_deduplication_summary(evidence_items)
+    evidence_trust = build_trust_summary(evidence_items, dedup_summary=evidence_dedup)
     clean_comments = detect_duplicate_groups(raw_comments)
 
     sentiment_analyzer = SentimentAnalyzer()
@@ -191,6 +196,12 @@ def _build_pipeline(
         evidence_item_count=len(evidence_items),
         evidence_source_distribution=evidence_sources,
         evidence_type_counts=evidence_types,
+        evidence_trust_label_distribution=evidence_trust.trust_label_distribution,
+        evidence_verification_status_distribution=evidence_trust.verification_status_distribution,
+        evidence_provenance_type_distribution=evidence_trust.provenance_type_distribution,
+        evidence_review_needed_count=evidence_trust.review_needed_count,
+        evidence_unique_item_count=evidence_dedup.unique_items,
+        evidence_duplicate_item_count=evidence_dedup.duplicate_items,
     )
 
     return MockPipelineResult(

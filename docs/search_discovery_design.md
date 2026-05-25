@@ -27,6 +27,12 @@ Search Discovery is not crawling. It must not automatically fetch candidate URLs
 
 Search Discovery emits `SearchDiscoveryCandidate` metadata. A candidate is not an `EvidenceItem` until a human reviews it and provides or authorizes usable text.
 
+Accepted candidates should retain conservative provenance until stronger source
+evidence exists. A candidate URL improves review context but is not verification.
+If a user manually attaches copied text from a candidate URL, trust remains
+conservative and duplicate text/URL submissions are collapsed by the Evidence
+Layer.
+
 Recommended flow:
 
 ```text

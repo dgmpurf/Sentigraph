@@ -128,6 +128,12 @@ def build_public_opinion_report(
         evidence_item_count=effective_analysis.evidence_item_count,
         evidence_source_distribution=effective_analysis.evidence_source_distribution,
         evidence_type_counts=effective_analysis.evidence_type_counts,
+        evidence_trust_label_distribution=effective_analysis.evidence_trust_label_distribution,
+        evidence_verification_status_distribution=effective_analysis.evidence_verification_status_distribution,
+        evidence_provenance_type_distribution=effective_analysis.evidence_provenance_type_distribution,
+        evidence_review_needed_count=effective_analysis.evidence_review_needed_count,
+        evidence_unique_item_count=effective_analysis.evidence_unique_item_count,
+        evidence_duplicate_item_count=effective_analysis.evidence_duplicate_item_count,
     )
 
 
@@ -672,14 +678,29 @@ def _evidence_finding(analysis: AnalysisResultResponse, language: ReportLanguage
     type_summary = ", ".join(
         f"{kind}={count}" for kind, count in sorted(analysis.evidence_type_counts.items())
     ) or "unspecified"
+    trust_summary = ", ".join(
+        f"{label}={count}" for label, count in sorted(analysis.evidence_trust_label_distribution.items())
+    ) or "unspecified"
+    review_note = (
+        f" Review needed for {analysis.evidence_review_needed_count} item(s)."
+        if analysis.evidence_review_needed_count
+        else ""
+    )
+    duplicate_note = (
+        f" Duplicate submissions collapsed: {analysis.evidence_duplicate_item_count}."
+        if analysis.evidence_duplicate_item_count
+        else ""
+    )
     if language == "zh-CN":
         return (
             f"Evidence layer normalized {analysis.evidence_item_count} item(s): "
-            f"sources {source_summary}; types {type_summary}."
+            f"sources {source_summary}; types {type_summary}; trust {trust_summary}."
+            f"{review_note}{duplicate_note}"
         )
     return (
         f"Evidence layer normalized {analysis.evidence_item_count} item(s): "
-        f"sources {source_summary}; types {type_summary}."
+        f"sources {source_summary}; types {type_summary}; trust {trust_summary}."
+        f"{review_note}{duplicate_note}"
     )
 
 

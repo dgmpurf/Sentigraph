@@ -146,16 +146,37 @@ function buildEvidenceSummary({ analysis, currentCase }) {
   const analysisSources = analysis?.evidence_source_distribution || {}
   const analysisTypes = analysis?.evidence_type_counts || {}
   const acquisitionModes = {}
+  const trustLabels = {}
+  const verificationStatuses = {}
+  const provenanceTypes = {}
+  const riskFlags = {}
   const itemSources = {}
   const itemTypes = {}
   const titles = []
   const comments = []
+  let reviewNeeded = Number(analysis?.evidence_review_needed_count || 0)
+  let duplicateItems = Number(analysis?.evidence_duplicate_item_count || 0)
   for (const item of items) {
     if (item.title && !titles.includes(item.title)) titles.push(item.title)
     const comment = item.comment_text || item.body_text
     if (comment && !comments.includes(comment)) comments.push(comment)
     const acquisitionMode = item.acquisition_mode || 'unknown'
     acquisitionModes[acquisitionMode] = (acquisitionModes[acquisitionMode] || 0) + 1
+    const trustLabel = item.trust_label || 'unknown'
+    const verificationStatus = item.verification_status || 'unknown'
+    const provenanceType = item.provenance_type || 'unknown'
+    trustLabels[trustLabel] = (trustLabels[trustLabel] || 0) + 1
+    verificationStatuses[verificationStatus] = (verificationStatuses[verificationStatus] || 0) + 1
+    provenanceTypes[provenanceType] = (provenanceTypes[provenanceType] || 0) + 1
+    if (!analysis?.evidence_review_needed_count && (['low', 'unverified', 'rejected'].includes(trustLabel) || verificationStatus === 'needs_review')) {
+      reviewNeeded += 1
+    }
+    if (!analysis?.evidence_duplicate_item_count && Number(item.duplicate_count || 1) > 1) {
+      duplicateItems += Number(item.duplicate_count || 1) - 1
+    }
+    for (const flag of Array.isArray(item.risk_flags) ? item.risk_flags : []) {
+      riskFlags[flag] = (riskFlags[flag] || 0) + 1
+    }
     if (item.source_type) itemSources[item.source_type] = (itemSources[item.source_type] || 0) + 1
     if (item.evidence_type) itemTypes[item.evidence_type] = (itemTypes[item.evidence_type] || 0) + 1
   }
@@ -163,9 +184,21 @@ function buildEvidenceSummary({ analysis, currentCase }) {
     acquisitionModes,
     count: Number(analysis?.evidence_item_count || currentCase?.evidence_item_count || items.length || 0),
     comments: comments.slice(0, 3),
+    duplicateItems,
+    provenanceTypes: Object.keys(analysis?.evidence_provenance_type_distribution || {}).length
+      ? analysis.evidence_provenance_type_distribution
+      : provenanceTypes,
+    reviewNeeded,
+    riskFlags,
     sourceDistribution: Object.keys(analysisSources).length ? analysisSources : itemSources,
     titles: titles.slice(0, 4),
+    trustLabels: Object.keys(analysis?.evidence_trust_label_distribution || {}).length
+      ? analysis.evidence_trust_label_distribution
+      : trustLabels,
     typeCounts: Object.keys(analysisTypes).length ? analysisTypes : itemTypes,
+    verificationStatuses: Object.keys(analysis?.evidence_verification_status_distribution || {}).length
+      ? analysis.evidence_verification_status_distribution
+      : verificationStatuses,
   }
 }
 
@@ -266,7 +299,18 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
                   <DistributionTags color="geekblue" values={evidenceSummary.sourceDistribution} />
                   <DistributionTags color="purple" values={evidenceSummary.typeCounts} />
                   <DistributionTags color="gold" values={evidenceSummary.acquisitionModes} />
+                  <DistributionTags color="magenta" values={evidenceSummary.provenanceTypes} />
+                  <DistributionTags color="lime" values={evidenceSummary.trustLabels} />
+                  <Tag color={evidenceSummary.reviewNeeded ? 'orange' : 'green'}>review_needed: {evidenceSummary.reviewNeeded}</Tag>
+                  <Tag color={evidenceSummary.duplicateItems ? 'orange' : 'default'}>duplicates collapsed: {evidenceSummary.duplicateItems}</Tag>
                 </Space>
+                {evidenceSummary.reviewNeeded ? (
+                  <Alert
+                    message="部分证据来自用户上传或手动录入，需结合来源和人工复核判断。"
+                    showIcon
+                    type="warning"
+                  />
+                ) : null}
                 {evidenceSummary.titles.length ? (
                   <Text>Top titles: {evidenceSummary.titles.join(' / ')}</Text>
                 ) : null}

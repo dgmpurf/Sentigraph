@@ -117,6 +117,25 @@ def test_csv_import_invalid_rows_warn_and_duplicates_are_deduped() -> None:
     assert any(warning["code"] == "duplicate_row" for warning in body["warnings"])
 
 
+def test_csv_import_supports_trust_and_attestation_columns() -> None:
+    case_id = _create_case()
+    csv_text = (
+        "platform,comment_text,url,provenance_type,verification_status,source_capture_method,user_attestation\n"
+        "uploaded_dataset,Uploaded public comment with attestation,https://example.test/public,user_upload,needs_review,csv_export,true\n"
+    )
+
+    response = client.post(f"/api/v1/cases/{case_id}/evidence/import/commit", json=_text_payload("trust_columns.csv", csv_text))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["imported_count"] == 1
+    item = body["evidence_items"][0]
+    assert item["provenance_type"] == "user_upload"
+    assert item["verification_status"] == "user_attested_unverified"
+    assert item["trust_label"] == "medium"
+    assert "user_attestation_missing" not in item["risk_flags"]
+
+
 def test_xlsx_import_preview_uses_standard_library_parser() -> None:
     case_id = _create_case()
     payload = {

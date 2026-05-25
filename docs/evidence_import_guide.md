@@ -24,8 +24,18 @@ Recommended manual fields:
 - `证据类型`: `article`, `video`, `post`, `comment`, `reply`, or `interaction_metric`.
 - `标题`, `正文 / 摘要`, `评论内容`: at least one of these text fields is required so the evidence is human-reviewable and analyzable.
 - `作者`, `发布时间`, and metric fields: optional public context.
+- `source_capture_method`: optional provenance context such as `manual_entry`, `manual_copy_from_public_page`, or `screenshot_transcription`.
+- user attestation checkbox: confirms the user has the right to submit the public-opinion evidence for analysis. If missing, the item is still stored when allowed but marked `needs_review` / `user_attestation_missing`.
 
 Manual URL evidence always uses `acquisition_mode=manual_url`. If a user accidentally pastes `api_key`, `access_token`, `refresh_token`, `client_secret`, `password`, or `cookie` style values into text fields, the backend redacts them before storage/output and returns a warning. Invalid numeric metrics are coerced to `0` with a warning instead of crashing.
+
+Manual URL trust behavior:
+
+- source URL + attestation: medium trust, `source_url_provided_unverified`
+- no source URL: lower trust and `source_url_missing`
+- screenshot transcription: always `screenshot_unverified`
+- raw HTML/script-like text: stored as plain text and flagged, never executed
+- duplicate text/URL: collapsed into a duplicate group with `duplicate_count`
 
 Example article entry:
 
@@ -114,6 +124,10 @@ Supported mapping fields:
 - `share_count`
 - `view_count`
 - `language`
+- `provenance_type`
+- `verification_status`
+- `source_capture_method`
+- `user_attestation`
 
 Column notes:
 
@@ -127,6 +141,10 @@ Column notes:
 - `url`: optional public source URL for review context; Sentigraph does not fetch it during import.
 - metric columns: optional non-negative counts parsed safely.
 - `language`: optional language hint such as `zh-CN` or `en-US`.
+- `provenance_type`: optional value such as `user_upload`, `manual_url`, `screenshot_transcription`, or `data_vendor`.
+- `verification_status`: optional initial status. Sentigraph may conservatively override it based on provenance and attestation.
+- `source_capture_method`: optional capture label such as `csv_export`, `manual_entry`, or `screenshot_transcription`.
+- `user_attestation`: optional boolean-like value (`true`, `yes`, `1`, `confirmed`) indicating lawful-source/right-to-submit attestation.
 
 Defaults:
 
@@ -144,6 +162,9 @@ Defaults:
 - The uploaded raw file is not persisted by default.
 - Only normalized `EvidenceItem` records and safe import metadata are stored.
 - Secret-like columns and values are redacted or omitted, including `api_key`, `access_token`, `refresh_token`, `client_secret`, `password`, and `cookie`.
+- Screenshots and transcriptions are never automatically verified.
+- Source URLs improve review context but do not guarantee truth.
+- Duplicate rows/submissions are collapsed so repeated uploads do not directly inflate sentiment or risk counts.
 - No crawler is started.
 - MediaCrawler is not integrated.
 - No login-cookie crawling, captcha bypass, proxy evasion, anti-bot bypass, or private-data collection is supported.
@@ -169,6 +190,8 @@ Expected success signs:
 - `acquisition_mode=user_upload`
 - `source_type=uploaded_dataset`
 - `evidence_item_count` increases on the case
+- trust/provenance tags appear for imported/manual evidence
+- duplicate submissions are shown as collapsed repetition signals
 - `analysis_input_source=case_evidence_items` when the case has no attached raw comments
 - `case_raw_data` still takes priority when raw comments exist
 

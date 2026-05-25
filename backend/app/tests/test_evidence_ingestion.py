@@ -49,6 +49,9 @@ def test_youtube_raw_data_converts_to_evidence_items() -> None:
     assert comment_item.evidence_type == "comment"
     assert comment_item.comment_text == comment.content
     assert "api_key" not in str(post_item.raw_data_safe).lower()
+    assert post_item.trust_label == "high"
+    assert post_item.verification_status == "verified_by_official_api"
+    assert post_item.provenance_type == "official_api"
 
 
 def test_public_parser_article_converts_to_evidence_item() -> None:
@@ -304,6 +307,160 @@ def test_manual_url_evidence_requires_reviewable_text() -> None:
     assert response.status_code == 400
     assert response.json()["detail"]["error"] == "evidence_attach_rejected"
     assert response.json()["detail"]["message"] == "manual_evidence_text_required"
+
+
+def test_manual_url_with_attestation_gets_medium_unverified_trust() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    payload = {
+        "source": {
+            "platform": "public_web",
+            "source_type": "public_web",
+            "acquisition_mode": "manual_url",
+        },
+        "evidence_items": [
+            {
+                "evidence_type": "comment",
+                "comment_text": "Manual public comment with a source URL and attestation.",
+                "url": "https://example.test/source?utm_source=newsletter",
+                "created_at": "2026-05-25T09:00:00Z",
+                "user_attestation_text": "I confirm I have the right to submit this public-opinion evidence.",
+            }
+        ],
+    }
+
+    response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=payload)
+
+    assert response.status_code == 200
+    item = response.json()["evidence_items"][0]
+    assert item["trust_label"] == "medium"
+    assert item["verification_status"] == "source_url_provided_unverified"
+    assert item["source_url"] == "https://example.test/source"
+    assert item["source_url_present"] is True
+
+
+def test_screenshot_transcription_is_unverified_and_needs_review() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    payload = {
+        "source": {
+            "platform": "public_web",
+            "source_type": "public_web",
+            "acquisition_mode": "manual_url",
+        },
+        "evidence_items": [
+            {
+                "evidence_type": "comment",
+                "comment_text": "Screenshot transcription says users are still waiting for evidence.",
+                "source_capture_method": "screenshot_transcription",
+                "provenance_type": "screenshot_transcription",
+                "user_attestation_text": "I confirm lawful source.",
+            }
+        ],
+    }
+
+    response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    item = body["evidence_items"][0]
+    assert item["trust_label"] == "unverified"
+    assert item["verification_status"] == "screenshot_unverified"
+    assert "screenshot_unverified" in item["risk_flags"]
+    assert body["trust_summary"]["review_needed_count"] == 1
+
+
+def test_duplicate_manual_evidence_is_collapsed_and_does_not_inflate_analysis() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    duplicate_item = {
+        "evidence_type": "comment",
+        "comment_text": "Repeated public comment should be counted once for analysis.",
+        "url": "https://example.test/thread?utm_campaign=tracking",
+        "created_at": "2026-05-25T09:00:00Z",
+        "user_attestation_text": "I confirm lawful source.",
+    }
+    payload = {
+        "source": {
+            "platform": "public_web",
+            "source_type": "public_web",
+            "acquisition_mode": "manual_url",
+        },
+        "evidence_items": [duplicate_item, duplicate_item],
+    }
+
+    attach_response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=payload)
+
+    assert attach_response.status_code == 200
+    attached = attach_response.json()
+    assert attached["evidence_item_count"] == 1
+    assert attached["evidence_items"][0]["duplicate_count"] == 2
+    assert attached["deduplication_summary"]["duplicate_items"] == 1
+
+    dedup_response = client.get(f"/api/v1/cases/{case_id}/evidence/dedup-summary")
+    assert dedup_response.status_code == 200
+    assert dedup_response.json()["unique_items"] == 1
+    assert dedup_response.json()["duplicate_items"] == 1
+
+    run_response = client.post(f"/api/v1/cases/{case_id}/run")
+    assert run_response.status_code == 200
+    body = run_response.json()
+    assert body["analysis_result"]["evidence_item_count"] == 1
+    assert body["analysis_result"]["evidence_duplicate_item_count"] == 1
+    assert body["report"]["evidence_item_count"] == 1
+    assert body["report"]["evidence_duplicate_item_count"] == 1
+
+
+def test_html_like_manual_input_is_plain_text_and_flagged() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    payload = {
+        "source": {
+            "platform": "public_web",
+            "source_type": "public_web",
+            "acquisition_mode": "manual_url",
+        },
+        "evidence_items": [
+            {
+                "evidence_type": "comment",
+                "comment_text": "<script>alert('x')</script> public concern remains unresolved.",
+                "user_attestation_text": "I confirm lawful source.",
+            }
+        ],
+    }
+
+    response = client.post(f"/api/v1/cases/{case_id}/evidence/attach", json=payload)
+
+    assert response.status_code == 200
+    item = response.json()["evidence_items"][0]
+    assert "<script>" in item["comment_text"]
+    assert "raw_html_script_like_input" in item["risk_flags"]
+
+
+def test_trust_summary_endpoint_reports_distributions() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    response = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={
+            "source": {
+                "platform": "public_web",
+                "source_type": "public_web",
+                "acquisition_mode": "manual_url",
+            },
+            "evidence_items": [
+                {
+                    "evidence_type": "comment",
+                    "comment_text": "Manual evidence without attestation needs review.",
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+
+    summary_response = client.get(f"/api/v1/cases/{case_id}/evidence/trust-summary")
+
+    assert summary_response.status_code == 200
+    body = summary_response.json()
+    assert body["trust_label_distribution"]["unverified"] == 1
+    assert body["verification_status_distribution"]["needs_review"] == 1
+    assert body["provenance_type_distribution"]["manual_url"] == 1
+    assert body["warning_counts"]["user_attestation_missing"] == 1
 
 
 def test_raw_comments_take_priority_over_evidence_items_when_both_exist(monkeypatch) -> None:

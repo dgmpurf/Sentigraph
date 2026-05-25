@@ -167,6 +167,16 @@ export async function getCaseEvidence(caseId) {
   return normalizeEvidenceIngestionResult(data)
 }
 
+export async function getCaseEvidenceTrustSummary(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence/trust-summary`)
+  return normalizeEvidenceTrustSummary(data)
+}
+
+export async function getCaseEvidenceDedupSummary(caseId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/evidence/dedup-summary`)
+  return normalizeEvidenceDeduplicationSummary(data)
+}
+
 export async function attachCaseEvidence(caseId, payload = {}) {
   const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/evidence/attach`, payload)
   return normalizeEvidenceIngestionResult(data)
@@ -353,6 +363,12 @@ function normalizeRiskExtension(data) {
     evidence_item_count: Number(data.evidence_item_count || 0),
     evidence_source_distribution: normalizeNumberMap(data.evidence_source_distribution),
     evidence_type_counts: normalizeNumberMap(data.evidence_type_counts),
+    evidence_trust_label_distribution: normalizeNumberMap(data.evidence_trust_label_distribution),
+    evidence_verification_status_distribution: normalizeNumberMap(data.evidence_verification_status_distribution),
+    evidence_provenance_type_distribution: normalizeNumberMap(data.evidence_provenance_type_distribution),
+    evidence_review_needed_count: Number(data.evidence_review_needed_count || 0),
+    evidence_unique_item_count: Number(data.evidence_unique_item_count || 0),
+    evidence_duplicate_item_count: Number(data.evidence_duplicate_item_count || 0),
   }
 }
 
@@ -380,6 +396,8 @@ function normalizeEvidenceIngestionResult(data) {
       evidence_type_counts: {},
       top_titles: [],
       representative_comments: [],
+      trust_summary: normalizeEvidenceTrustSummary(null),
+      deduplication_summary: normalizeEvidenceDeduplicationSummary(null),
       warnings: [],
       safe_mode: {},
     }
@@ -396,8 +414,70 @@ function normalizeEvidenceIngestionResult(data) {
     representative_comments: Array.isArray(data.representative_comments)
       ? data.representative_comments.map((item) => String(item))
       : [],
+    trust_summary: normalizeEvidenceTrustSummary(data.trust_summary),
+    deduplication_summary: normalizeEvidenceDeduplicationSummary(data.deduplication_summary),
     warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceTrustSummary(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      trust_label_distribution: {},
+      verification_status_distribution: {},
+      provenance_type_distribution: {},
+      warning_counts: {},
+      review_needed_count: 0,
+      low_trust_count: 0,
+      unverified_count: 0,
+      duplicate_summary: normalizeEvidenceDeduplicationSummary(null),
+      safe_mode: {},
+    }
+  }
+  return {
+    trust_label_distribution: normalizeNumberMap(data.trust_label_distribution),
+    verification_status_distribution: normalizeNumberMap(data.verification_status_distribution),
+    provenance_type_distribution: normalizeNumberMap(data.provenance_type_distribution),
+    warning_counts: normalizeNumberMap(data.warning_counts),
+    review_needed_count: Number(data.review_needed_count || 0),
+    low_trust_count: Number(data.low_trust_count || 0),
+    unverified_count: Number(data.unverified_count || 0),
+    duplicate_summary: normalizeEvidenceDeduplicationSummary(data.duplicate_summary),
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceDeduplicationSummary(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      total_items: 0,
+      unique_items: 0,
+      duplicate_items: 0,
+      duplicate_group_count: 0,
+      top_duplicate_groups: [],
+    }
+  }
+  return {
+    total_items: Number(data.total_items || 0),
+    unique_items: Number(data.unique_items || 0),
+    duplicate_items: Number(data.duplicate_items || 0),
+    duplicate_group_count: Number(data.duplicate_group_count || 0),
+    top_duplicate_groups: Array.isArray(data.top_duplicate_groups)
+      ? data.top_duplicate_groups.map(normalizeEvidenceDuplicateGroup).filter(Boolean)
+      : [],
+  }
+}
+
+function normalizeEvidenceDuplicateGroup(group) {
+  if (!group || typeof group !== 'object') return null
+  return {
+    duplicate_group_id: String(group.duplicate_group_id || ''),
+    duplicate_group_size: Number(group.duplicate_group_size || 0),
+    representative_evidence_id: group.representative_evidence_id ? String(group.representative_evidence_id) : '',
+    normalized_content_hash: group.normalized_content_hash ? String(group.normalized_content_hash) : '',
+    canonical_url_hash: group.canonical_url_hash ? String(group.canonical_url_hash) : '',
+    sample_text: group.sample_text ? String(group.sample_text) : '',
   }
 }
 
@@ -426,6 +506,23 @@ function normalizeEvidenceItem(item) {
     confidence: normalizeRatio(item.confidence, 0),
     content_visibility: String(item.content_visibility || ''),
     access_scope: String(item.access_scope || ''),
+    provenance_type: String(item.provenance_type || ''),
+    verification_status: String(item.verification_status || ''),
+    trust_score: normalizeRatio(item.trust_score, 0),
+    trust_label: String(item.trust_label || ''),
+    source_url_present: Boolean(item.source_url_present),
+    source_url: item.source_url ? String(item.source_url) : '',
+    source_platform_claim: item.source_platform_claim ? String(item.source_platform_claim) : '',
+    source_capture_method: item.source_capture_method ? String(item.source_capture_method) : '',
+    submitted_by_label: item.submitted_by_label ? String(item.submitted_by_label) : '',
+    submitted_at: item.submitted_at ? String(item.submitted_at) : '',
+    user_attestation_required: Boolean(item.user_attestation_required),
+    user_attestation_text: item.user_attestation_text ? String(item.user_attestation_text) : '',
+    verification_notes: Array.isArray(item.verification_notes) ? item.verification_notes.map((note) => String(note)) : [],
+    duplicate_group_id: item.duplicate_group_id ? String(item.duplicate_group_id) : '',
+    duplicate_count: Number(item.duplicate_count || 1),
+    duplicate_group_size: Number(item.duplicate_group_size || 1),
+    risk_flags: Array.isArray(item.risk_flags) ? item.risk_flags.map((flag) => String(flag)) : [],
   }
 }
 
@@ -519,6 +616,10 @@ function normalizeEvidenceImportRow(row) {
     reply_count: Number(row.reply_count || 0),
     share_count: Number(row.share_count || 0),
     view_count: Number(row.view_count || 0),
+    provenance_type: String(row.provenance_type || ''),
+    verification_status: String(row.verification_status || ''),
+    trust_label: String(row.trust_label || ''),
+    risk_flags: Array.isArray(row.risk_flags) ? row.risk_flags.map((flag) => String(flag)) : [],
     warnings: Array.isArray(row.warnings) ? row.warnings.map(normalizeEvidenceImportWarning).filter(Boolean) : [],
   }
 }

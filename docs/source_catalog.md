@@ -26,6 +26,11 @@ cookies, run crawlers, call LLMs, or read credentials.
 - MediaCrawler is not integrated as a core data source. Third-party crawler
   exports may only enter Sentigraph as user-provided uploaded datasets with
   lawful-source attestation and secret/private-data screening.
+- User-provided, manual URL, screenshot/transcribed, and uploaded evidence must
+  carry trust/provenance labels. Source URLs and user attestation improve review
+  context, but screenshots and pasted text are never automatically verified.
+- Duplicate submissions are collapsed within a case so repeated uploads do not
+  directly inflate sentiment, topic, or risk counts.
 
 ## API Surface
 
