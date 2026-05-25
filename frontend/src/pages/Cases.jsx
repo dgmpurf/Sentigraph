@@ -57,6 +57,8 @@ function buildEvidenceSummary(items = []) {
   const trustLabels = {}
   const verificationStatuses = {}
   const riskFlags = {}
+  let sourceUrlPresent = 0
+  let sourceUrlMissing = 0
   let reviewNeeded = 0
   let duplicateItems = 0
   const titles = []
@@ -74,6 +76,8 @@ function buildEvidenceSummary(items = []) {
     provenanceTypes[provenanceType] = (provenanceTypes[provenanceType] || 0) + 1
     trustLabels[trustLabel] = (trustLabels[trustLabel] || 0) + 1
     verificationStatuses[verificationStatus] = (verificationStatuses[verificationStatus] || 0) + 1
+    if (item.source_url_present || item.source_url || item.url) sourceUrlPresent += 1
+    else sourceUrlMissing += 1
     if (['low', 'unverified', 'rejected'].includes(trustLabel) || verificationStatus === 'needs_review') reviewNeeded += 1
     const duplicateCount = Number(item.duplicate_count || 1)
     if (duplicateCount > 1) duplicateItems += duplicateCount - 1
@@ -92,6 +96,8 @@ function buildEvidenceSummary(items = []) {
     reviewNeeded,
     riskFlags,
     sourceDistribution,
+    sourceUrlMissing,
+    sourceUrlPresent,
     titles: titles.slice(0, 3),
     trustLabels,
     typeCounts,
@@ -192,6 +198,7 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
   if (!currentCase?.case_id) return null
 
   const latestEvidence = manualResult?.evidence_items?.[manualResult.evidence_items.length - 1]
+  const manualSummary = buildEvidenceSummary(manualResult?.evidence_items || [])
 
   const handleAttach = async (values) => {
     setManualError('')
@@ -381,6 +388,9 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
           <Text type="secondary">
             未勾选时仍可保存，但会标记为 needs_review / user_attestation_missing；截图转录不会被自动视为已验证。
           </Text>
+          <Text type="secondary">
+            Screenshot/transcribed evidence is not automatically verified by Sentigraph.
+          </Text>
           <Space wrap>
             <Button htmlType="submit" icon={<PlusCircle size={15} />} loading={manualLoading} type="primary">
               添加到案例
@@ -403,9 +413,17 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
                   <Tag color="green">evidence_count: {manualResult.evidence_item_count}</Tag>
                   <DistributionTags color="purple" values={manualResult.evidence_type_counts} />
                   <DistributionTags color="geekblue" values={manualResult.source_distribution} />
+                  <DistributionTags color="magenta" values={manualSummary.provenanceTypes} />
                   <DistributionTags color="magenta" values={manualResult.trust_summary?.trust_label_distribution} />
+                  <DistributionTags color="blue" values={manualResult.trust_summary?.verification_status_distribution} />
+                  <Tag color={manualSummary.sourceUrlMissing ? 'orange' : 'green'}>
+                    source_url_present: {manualSummary.sourceUrlPresent}/{manualResult.evidence_item_count || 0}
+                  </Tag>
                   <Tag color={manualResult.trust_summary?.review_needed_count ? 'orange' : 'green'}>
                     review_needed: {manualResult.trust_summary?.review_needed_count || 0}
+                  </Tag>
+                  <Tag color={manualSummary.riskFlags?.user_attestation_missing ? 'orange' : 'green'}>
+                    attestation_missing: {manualSummary.riskFlags?.user_attestation_missing || 0}
                   </Tag>
                   <Tag color={manualResult.deduplication_summary?.duplicate_items ? 'orange' : 'default'}>
                     duplicates: {manualResult.deduplication_summary?.duplicate_items || 0}
@@ -836,7 +854,14 @@ export function Cases({
                 <DistributionTags color="gold" values={evidenceSummary.acquisitionModes} />
                 <DistributionTags color="magenta" values={evidenceSummary.provenanceTypes} />
                 <DistributionTags color="lime" values={evidenceSummary.trustLabels} />
+                <DistributionTags color="blue" values={evidenceSummary.verificationStatuses} />
+                <Tag color={evidenceSummary.sourceUrlMissing ? 'orange' : 'green'}>
+                  source_url_present: {evidenceSummary.sourceUrlPresent}/{currentCase.evidence_item_count}
+                </Tag>
                 <Tag color={evidenceSummary.reviewNeeded ? 'orange' : 'green'}>review_needed: {evidenceSummary.reviewNeeded}</Tag>
+                <Tag color={evidenceSummary.riskFlags?.user_attestation_missing ? 'orange' : 'green'}>
+                  attestation_missing: {evidenceSummary.riskFlags?.user_attestation_missing || 0}
+                </Tag>
                 <Tag color={evidenceSummary.duplicateItems ? 'orange' : 'default'}>duplicates collapsed: {evidenceSummary.duplicateItems}</Tag>
               </Space>
               <Text type="secondary">

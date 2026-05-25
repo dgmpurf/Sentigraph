@@ -10,7 +10,7 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### Evidence Trust, Provenance, and Deduplication
 
-Status: implemented on 2026-05-25.
+Status: implemented and browser-smoke QA complete on 2026-05-25.
 
 Completed:
 
@@ -21,6 +21,9 @@ Completed:
 - Updated manual evidence UI with source capture method and lawful-source attestation checkbox.
 - Updated CSV/Excel import mapping to support optional provenance/trust columns.
 - Added UI trust/provenance/dedup/review indicators in Cases, Analysis Result, and Summary Report.
+- Browser-smoked the trust/dedup UI with manual URL evidence, screenshot-transcription evidence, raw HTML/script-like plain text, duplicate URL/text evidence, and an evidence-driven analysis run.
+- Stabilized evidence summaries so Cases and Analysis Result show verification status distribution, source URL present/missing counts, attestation-missing counts, review flags, provenance/trust labels, and duplicate indicators.
+- Updated Summary Report labeling so `case_evidence_items` runs appear as `Normalized case evidence report` instead of an attached raw-data report.
 - Added `docs/evidence_trust_and_deduplication.md`.
 
 Acceptance:
@@ -30,13 +33,18 @@ Acceptance:
 - Duplicate text/URL submissions are collapsed so repeated uploads do not directly inflate sentiment, topic, or risk counts.
 - Secret-like pasted text is redacted; HTML/script-like text is stored as plain text only.
 - No real APIs, real search APIs, real YouTube/Douyin/Bilibili APIs, real LLM APIs, URL fetching, scraping, cookies, login/captcha/anti-bot bypasses, MediaCrawler, or secret exposure are introduced.
-- Latest validation passed with `python -m pytest` (`595 passed in 6.38s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 7.83s`; existing non-blocking vendor chunk warning remains).
+- Latest validation passed with `python -m pytest` (`595 passed in 7.21s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm run build` from `frontend/` (`built in 8.28s`; existing non-blocking vendor chunk warning remains).
+- Browser smoke covered Dashboard, Cases, Analysis Result, Summary Report, Propagation Graph, Risk Monitor, Simulation Lab, Benchmarks, LLM Safety, and Platform Integration Overview with no raw `[object Object]` rendering and no Sentigraph runtime errors.
 
 Future tasks:
 
-- Browser-smoke trust/dedup UI with manual URL and CSV/Excel examples.
-- Add a richer evidence review queue only after the compact case-level summary is stable.
+- Add an Evidence Review Queue MVP for `needs_review`, screenshot/unverified evidence, source-url-missing evidence, and duplicate groups.
+- Large-scale evidence ingestion remains a future task after review/queue controls are stable.
+- AI-assisted evidence review remains future work; no real LLM review is active.
+- Search Discovery candidate-review UI remains future work.
 - Keep Search Discovery candidate review mock-only unless an approved provider path is configured.
+- MediaCrawler remains not integrated.
+- GitHub Actions CI remains intentionally disabled.
 
 ### Search Discovery Planning and Static Status
 

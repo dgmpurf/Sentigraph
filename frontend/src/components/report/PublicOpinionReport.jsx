@@ -107,6 +107,13 @@ export function PublicOpinionReport({ report }) {
   }
 
   const overallRisk = report.overallRisk ?? report.riskScore ?? 0
+  const reportModeLabel = report.generatedFromMockPipeline
+    ? 'Mock fallback report'
+    : report.analysisInputSource === 'case_evidence_items'
+      ? 'Normalized case evidence report'
+      : report.analysisInputSource === 'case_raw_data'
+        ? 'Attached raw-data report'
+        : 'Offline deterministic report'
 
   return (
     <Card className="panel-card report-export-section">
@@ -121,7 +128,7 @@ export function PublicOpinionReport({ report }) {
             <Tag color={report.hasSummaryData ? 'cyan' : 'default'}>summary/generate</Tag>
             <Tag color={report.hasRecommendationData ? 'green' : 'default'}>recommendation/generate</Tag>
             <Tag color={report.generatedFromMockPipeline ? 'purple' : 'cyan'}>
-              {report.generatedFromMockPipeline ? 'Mock fallback report' : 'Attached raw-data report'}
+              {reportModeLabel}
             </Tag>
             <Tag color="geekblue">{report.reportLanguage}</Tag>
             {report.riskModelVersion ? <Tag color="blue">{report.riskModelVersion}</Tag> : null}

@@ -154,6 +154,8 @@ function buildEvidenceSummary({ analysis, currentCase }) {
   const itemTypes = {}
   const titles = []
   const comments = []
+  let sourceUrlPresent = 0
+  let sourceUrlMissing = 0
   let reviewNeeded = Number(analysis?.evidence_review_needed_count || 0)
   let duplicateItems = Number(analysis?.evidence_duplicate_item_count || 0)
   for (const item of items) {
@@ -168,6 +170,8 @@ function buildEvidenceSummary({ analysis, currentCase }) {
     trustLabels[trustLabel] = (trustLabels[trustLabel] || 0) + 1
     verificationStatuses[verificationStatus] = (verificationStatuses[verificationStatus] || 0) + 1
     provenanceTypes[provenanceType] = (provenanceTypes[provenanceType] || 0) + 1
+    if (item.source_url_present || item.source_url || item.url) sourceUrlPresent += 1
+    else sourceUrlMissing += 1
     if (!analysis?.evidence_review_needed_count && (['low', 'unverified', 'rejected'].includes(trustLabel) || verificationStatus === 'needs_review')) {
       reviewNeeded += 1
     }
@@ -191,6 +195,8 @@ function buildEvidenceSummary({ analysis, currentCase }) {
     reviewNeeded,
     riskFlags,
     sourceDistribution: Object.keys(analysisSources).length ? analysisSources : itemSources,
+    sourceUrlMissing,
+    sourceUrlPresent,
     titles: titles.slice(0, 4),
     trustLabels: Object.keys(analysis?.evidence_trust_label_distribution || {}).length
       ? analysis.evidence_trust_label_distribution
@@ -301,9 +307,22 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
                   <DistributionTags color="gold" values={evidenceSummary.acquisitionModes} />
                   <DistributionTags color="magenta" values={evidenceSummary.provenanceTypes} />
                   <DistributionTags color="lime" values={evidenceSummary.trustLabels} />
+                  <DistributionTags color="blue" values={evidenceSummary.verificationStatuses} />
+                  <Tag color={evidenceSummary.sourceUrlMissing ? 'orange' : 'green'}>
+                    source_url_present: {evidenceSummary.sourceUrlPresent}/{evidenceSummary.count}
+                  </Tag>
                   <Tag color={evidenceSummary.reviewNeeded ? 'orange' : 'green'}>review_needed: {evidenceSummary.reviewNeeded}</Tag>
+                  <Tag color={evidenceSummary.riskFlags?.user_attestation_missing ? 'orange' : 'green'}>
+                    attestation_missing: {evidenceSummary.riskFlags?.user_attestation_missing || 0}
+                  </Tag>
                   <Tag color={evidenceSummary.duplicateItems ? 'orange' : 'default'}>duplicates collapsed: {evidenceSummary.duplicateItems}</Tag>
                 </Space>
+                {Object.keys(evidenceSummary.riskFlags).length ? (
+                  <Space size={[4, 4]} wrap>
+                    <Text type="secondary">Review flags:</Text>
+                    <DistributionTags color="orange" values={evidenceSummary.riskFlags} />
+                  </Space>
+                ) : null}
                 {evidenceSummary.reviewNeeded ? (
                   <Alert
                     message="部分证据来自用户上传或手动录入，需结合来源和人工复核判断。"

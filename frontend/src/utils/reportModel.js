@@ -158,6 +158,12 @@ export function buildPublicOpinionReportModel({ analysis, recommendation, summar
     manipulationRisk,
     riskExplanation,
     reportLanguage,
+    analysisInputSource:
+      normalizedReport?.analysis_input_source ||
+      summary?.analysis_input_source ||
+      recommendation?.analysis_input_source ||
+      analysis?.analysis_input_source ||
+      '',
     generatedFromMockPipeline: Boolean(normalizedReport?.generated_from_mock_pipeline),
     hasSummaryData: Boolean(summary),
     hasRecommendationData: Boolean(recommendation),
