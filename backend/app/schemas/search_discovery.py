@@ -9,11 +9,25 @@ from app.schemas.evidence import EvidenceIngestionResult, EvidenceItem
 
 
 SearchDiscoveryCandidateStatus = Literal["pending_review", "accepted", "rejected", "attached"]
+SearchDiscoveryProviderType = Literal[
+    "mock_static",
+    "rss_mock",
+    "gdelt_mock",
+    "search_api_future",
+    "user_url_list",
+    "data_vendor_future",
+]
+SearchDiscoveryProviderLifecycleStatus = Literal[
+    "mock_only",
+    "planned",
+    "disabled",
+    "future_real_provider",
+]
 
 
 class SearchDiscoveryQuery(BaseModel):
     query: str = Field(default="Tesla", min_length=1, max_length=120)
-    providers: list[str] = Field(default_factory=lambda: ["mock_fixture"])
+    providers: list[str] = Field(default_factory=lambda: ["mock_static"])
     max_candidates: int = Field(default=5, ge=1, le=10)
     language: str = "auto"
 
@@ -35,20 +49,62 @@ class SearchDiscoveryCandidate(BaseModel):
     safety_notes: list[str] = Field(default_factory=list)
 
 
-class SearchDiscoveryProviderStatus(BaseModel):
+class SearchDiscoveryProviderCapability(BaseModel):
+    supports_query: bool = True
+    supports_provider_selection: bool = True
+    returns_title_snippet_url: bool = True
+    returns_full_content: bool = False
+    supports_live_fetch: bool = False
+    supports_url_content_extraction: bool = False
+
+
+class SearchDiscoveryProviderLimit(BaseModel):
+    max_candidates_per_query: int = Field(default=10, ge=1, le=50)
+    max_query_length: int = Field(default=120, ge=1, le=240)
+    network_call_limit: int = 0
+    safe_limit_note: str = "Static/mock provider; live network calls are disabled."
+
+
+class SearchDiscoveryProviderSafetyBoundary(BaseModel):
+    live_fetch_enabled: bool = False
+    url_fetching: bool = False
+    scraping: bool = False
+    cookies_used: bool = False
+    captcha_bypass: bool = False
+    anti_bot_bypass: bool = False
+    real_search_api_calls: bool = False
+    real_website_api_calls: bool = False
+    real_llm_calls: bool = False
+    secrets_required: bool = False
+    third_party_crawler_integrated: bool = False
+
+
+class SearchDiscoveryProvider(BaseModel):
     provider_id: str
+    provider_type: SearchDiscoveryProviderType
     display_name: str
+    status: SearchDiscoveryProviderLifecycleStatus
+    live_fetch_enabled: bool = False
+    requires_api_key: bool = False
+    requires_network: bool = False
+    returns_full_content: bool = False
+    returns_title_snippet_url: bool = True
+    capabilities: SearchDiscoveryProviderCapability = Field(default_factory=SearchDiscoveryProviderCapability)
+    limits: SearchDiscoveryProviderLimit = Field(default_factory=SearchDiscoveryProviderLimit)
+    safety_boundary: SearchDiscoveryProviderSafetyBoundary = Field(default_factory=SearchDiscoveryProviderSafetyBoundary)
+    safety_notes: list[str] = Field(default_factory=list)
+    next_action: str
+
+
+class SearchDiscoveryProviderStatus(SearchDiscoveryProvider):
     provider_class: str
-    status: str
     allowed_use: str
     forbidden_use: str
     data_returned: list[str] = Field(default_factory=list)
     full_content_available: bool = False
-    requires_api_key: bool = False
     credential_present: bool = False
     user_review_required: bool = True
     current_sentigraph_status: str
-    next_action: str
 
 
 class SearchDiscoveryReviewDecision(BaseModel):

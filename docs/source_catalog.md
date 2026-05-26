@@ -428,6 +428,8 @@ Forbidden data types:
 Current Sentigraph status:
 
 - Static status/mock endpoints and mock-only candidate attach are implemented. `GET /api/v1/search-discovery/status` and `GET /api/v1/search-discovery/mock-candidates?query=Tesla` return planning metadata and deterministic mock candidates only; `POST /api/v1/cases/{case_id}/search-discovery/candidates/attach` attaches accepted mock candidates as metadata-only `EvidenceItem` records.
+- `GET /api/v1/search-discovery/providers` returns static provider taxonomy for `mock_static`, `rss_mock`, `gdelt_mock`, `search_api_future`, `user_url_list`, and `data_vendor_future`.
+- `provider=rss_mock` and `provider=gdelt_mock` return local RSS/GDELT-style fixture candidates only. They do not fetch RSS feeds, call GDELT, call search APIs, or fetch candidate URLs.
 - No real search provider is configured.
 - Search Discovery candidates are metadata leads. Accepted mock candidates can be attached as review-needed metadata evidence; they still are not full article/video/forum content.
 
@@ -435,6 +437,7 @@ Next action:
 
 - Browser-smoke and keep the mock candidate-review attach flow stable.
 - Research RSS and GDELT/news discovery with fixtures before any real provider call.
+- Keep RSS/GDELT real-provider work behind terms/quota review, mocked fixtures, and no-fetch tests.
 - Keep full content extraction behind Manual URL Evidence, user upload, licensed vendor data, or reviewed public parser rules.
 
 Priority:

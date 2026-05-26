@@ -8,6 +8,7 @@ from app.schemas.search_discovery import (
     SearchDiscoveryBatch,
     SearchDiscoveryCandidate,
     SearchDiscoveryProviderStatus,
+    SearchDiscoveryProviderType,
     SearchDiscoveryStatusResponse,
 )
 from app.services.evidence_ingestion import enrich_and_deduplicate_evidence_items
@@ -32,125 +33,222 @@ def get_search_discovery_status() -> SearchDiscoveryStatusResponse:
         ],
         next_actions=[
             "Use the mock Search Discovery UI for safe candidate-review demos.",
-            "Research RSS discovery pilot with fixture tests.",
-            "Research GDELT or news discovery API terms and quota.",
+            "Use RSS Mock and GDELT Mock providers as local fixture rehearsals only.",
+            "Research real RSS/GDELT/news provider terms and quota before any live provider is added.",
             "Design real provider adapters only after provider terms, quota, and no-fetch tests are reviewed.",
             "Keep automatic scraping, URL fetching, cookies, and third-party crawler integration out of scope.",
         ],
     )
 
 
+def get_search_discovery_providers() -> list[SearchDiscoveryProviderStatus]:
+    return get_search_discovery_provider_statuses()
+
+
 def get_search_discovery_provider_statuses() -> list[SearchDiscoveryProviderStatus]:
     return [
-        SearchDiscoveryProviderStatus(
-            provider_id="search_engine_api",
-            display_name="Search Engine APIs",
-            provider_class="search_engine_api",
-            status="not_configured",
-            allowed_use="Use approved search APIs to return URL/title/snippet metadata after terms and quota review.",
+        _provider_status(
+            provider_id="mock_static",
+            provider_type="mock_static",
+            display_name="Mock Static",
+            status="mock_only",
+            provider_class="mock_fixture",
+            allowed_use="Return deterministic candidate URLs, titles, and snippets for UI/API contract testing.",
+            forbidden_use="Do not present mock candidates as real search results.",
+            current_sentigraph_status="implemented_static_mock",
+            next_action="Use for UI planning, candidate-review demos, and regression tests only.",
+        ),
+        _provider_status(
+            provider_id="rss_mock",
+            provider_type="rss_mock",
+            display_name="RSS Mock",
+            status="mock_only",
+            provider_class="rss_mock_fixture",
+            allowed_use="Use local RSS-style fixture metadata to rehearse future feed discovery UX.",
+            forbidden_use="Do not fetch RSS feeds, poll live feed URLs, or treat feed snippets as full article text.",
+            current_sentigraph_status="implemented_static_mock",
+            next_action="Keep as fixture-only until source-specific feed terms and no-fetch tests are reviewed.",
+            safety_notes=[
+                "RSS mock fixture only",
+                "No live RSS fetch",
+                "No URL content extraction",
+                "Candidate metadata requires human review",
+            ],
+        ),
+        _provider_status(
+            provider_id="gdelt_mock",
+            provider_type="gdelt_mock",
+            display_name="GDELT Mock",
+            status="mock_only",
+            provider_class="gdelt_mock_fixture",
+            allowed_use="Use local GDELT-style news-discovery fixtures to rehearse URL/title/snippet review.",
+            forbidden_use="Do not call GDELT APIs, fetch article URLs, or copy full article content.",
+            current_sentigraph_status="implemented_static_mock",
+            next_action="Research GDELT/news API terms and quotas before any real provider adapter.",
+            safety_notes=[
+                "GDELT mock fixture only",
+                "No real GDELT API call",
+                "No URL content extraction",
+                "Candidate metadata requires human review",
+            ],
+        ),
+        _provider_status(
+            provider_id="search_api_future",
+            provider_type="search_api_future",
+            display_name="Search API Future",
+            status="future_real_provider",
+            provider_class="search_api_future",
+            allowed_use="Use approved search/news APIs to return URL/title/snippet metadata after terms and quota review.",
             forbidden_use="Do not scrape SERP pages, bypass captcha, evade rate limits, or collect private data.",
-            data_returned=["url", "title", "snippet", "source_name", "published_at_if_available"],
-            full_content_available=False,
             requires_api_key=True,
-            credential_present=False,
-            current_sentigraph_status="planned_only",
-            next_action="Choose an approved provider and add mocked fixtures before any real call.",
+            requires_network=True,
+            current_sentigraph_status="future_only",
+            next_action="Choose an approved provider and add mocked contract fixtures before any real call.",
         ),
-        SearchDiscoveryProviderStatus(
-            provider_id="news_discovery_api",
-            display_name="News Discovery APIs",
-            provider_class="news_discovery_api",
-            status="research_pending",
-            allowed_use="Use approved news/discovery APIs for public article metadata and snippets.",
-            forbidden_use="Do not copy paywalled/full content unless licensed; do not bypass website protections.",
-            data_returned=["url", "title", "snippet", "source_name", "published_at"],
-            full_content_available=False,
-            requires_api_key=True,
-            credential_present=False,
-            current_sentigraph_status="planned_only",
-            next_action="Research GDELT/news API terms and retention limits.",
-        ),
-        SearchDiscoveryProviderStatus(
-            provider_id="rss_feeds",
-            display_name="RSS / Atom Feeds",
-            provider_class="rss",
-            status="pilot_candidate",
-            allowed_use="Use public feed metadata when feed terms permit it; keep tiny limits and fixture tests.",
-            forbidden_use="Do not fetch private feeds, paywalled content, or subscriber-only metadata.",
-            data_returned=["url", "title", "summary_or_snippet", "source_name", "published_at"],
-            full_content_available=False,
-            requires_api_key=False,
-            credential_present=False,
-            current_sentigraph_status="planned_only",
-            next_action="Add an RSS fixture pilot only after source-specific review.",
-        ),
-        SearchDiscoveryProviderStatus(
-            provider_id="site_public_search",
-            display_name="Site-Specific Public Search Pages",
-            provider_class="site_specific_public_search",
-            status="review_required",
-            allowed_use="Use only after site-specific policy and parser review, preferably as fixture-only first.",
-            forbidden_use="Do not scrape dynamic search pages, use cookies, or bypass login/captcha/anti-bot systems.",
-            data_returned=["url", "title", "snippet_if_public"],
-            full_content_available=False,
-            requires_api_key=False,
-            credential_present=False,
-            current_sentigraph_status="not_implemented",
-            next_action="Keep out of live product until parser rules explicitly allow it.",
-        ),
-        SearchDiscoveryProviderStatus(
+        _provider_status(
             provider_id="user_url_list",
+            provider_type="user_url_list",
             display_name="User-Provided URL Lists",
+            status="planned",
             provider_class="user_provided_url_list",
-            status="supported_via_manual_or_upload",
             allowed_use="Users may paste or upload lawful public URLs and accompanying text for review.",
             forbidden_use="Do not treat unknown URL lists as permission to scrape or fetch pages automatically.",
             data_returned=["url", "title_if_user_provided", "snippet_if_user_provided"],
-            full_content_available=False,
-            requires_api_key=False,
-            credential_present=False,
             current_sentigraph_status="manual_url_and_csv_available",
             next_action="Route accepted URLs to Manual URL Evidence or CSV/Excel import.",
         ),
-        SearchDiscoveryProviderStatus(
-            provider_id="data_vendor",
+        _provider_status(
+            provider_id="data_vendor_future",
+            provider_type="data_vendor_future",
             display_name="Data Vendor Discovery Indexes",
+            status="future_real_provider",
             provider_class="data_vendor",
-            status="future_contract_required",
             allowed_use="Use licensed vendor metadata only after contract, retention, and redaction review.",
             forbidden_use="Do not ingest unlicensed payloads or credential-bearing exports.",
             data_returned=["url", "title", "snippet", "source_name", "published_at", "vendor_metadata"],
-            full_content_available=False,
             requires_api_key=True,
-            credential_present=False,
+            requires_network=True,
             current_sentigraph_status="future_only",
             next_action="Wait for a selected vendor and mocked contract fixtures.",
-        ),
-        SearchDiscoveryProviderStatus(
-            provider_id="mock_fixture",
-            display_name="Mock Search Discovery Fixture",
-            provider_class="mock_fixture",
-            status="available_now",
-            allowed_use="Return deterministic candidate URLs, titles, and snippets for UI/API contract testing.",
-            forbidden_use="Do not present mock candidates as real search results.",
-            data_returned=["url", "title", "snippet", "source_name", "published_at"],
-            full_content_available=False,
-            requires_api_key=False,
-            credential_present=False,
-            current_sentigraph_status="implemented_static_mock",
-            next_action="Use for UI planning and regression tests only.",
         ),
     ]
 
 
-def get_mock_search_discovery_candidates(query: str = "Tesla") -> SearchDiscoveryBatch:
+def get_mock_search_discovery_candidates(query: str = "Tesla", provider: str = "mock_static") -> SearchDiscoveryBatch:
     safe_query = _safe_query(query)
     slug = _slugify(safe_query)
-    candidates = [
+    selected_provider = _normalize_provider(provider)
+    candidates = _candidate_fixtures(safe_query, slug, selected_provider)
+    return SearchDiscoveryBatch(
+        query=safe_query,
+        generated_at=datetime.now(timezone.utc),
+        candidates=candidates,
+        candidate_count=len(candidates),
+        provider_statuses=[provider_status for provider_status in get_search_discovery_provider_statuses() if provider_status.provider_id == selected_provider],
+    )
+
+
+def _candidate_fixtures(
+    safe_query: str,
+    slug: str,
+    provider: SearchDiscoveryProviderType,
+) -> list[SearchDiscoveryCandidate]:
+    if provider == "rss_mock":
+        return [
+            SearchDiscoveryCandidate(
+                candidate_id=f"rss_mock_{slug}_feed_001",
+                query=safe_query,
+                provider="rss_mock",
+                platform_hint="news_site",
+                title=f"{safe_query} RSS feed item: product and policy updates",
+                snippet="RSS mock metadata only: a feed item title and summary may help reviewers decide whether to attach article text later.",
+                url=f"https://example.test/rss/{slug}-feed-item-001",
+                published_at="2026-05-25T09:05:00Z",
+                source_name="Mock RSS Feed",
+                content_type_hint="search_result",
+                confidence=0.74,
+                safety_notes=_candidate_safety_notes("rss_mock"),
+            ),
+            SearchDiscoveryCandidate(
+                candidate_id=f"rss_mock_{slug}_feed_002",
+                query=safe_query,
+                provider="rss_mock",
+                platform_hint="public_web",
+                title=f"{safe_query} RSS feed item: community reaction roundup",
+                snippet="RSS mock metadata only: full content is not fetched; users must review and provide lawful text separately.",
+                url=f"https://example.test/rss/{slug}-feed-item-002",
+                published_at="2026-05-25T09:25:00Z",
+                source_name="Mock Public Feed",
+                content_type_hint="search_result",
+                confidence=0.69,
+                safety_notes=_candidate_safety_notes("rss_mock"),
+            ),
+            SearchDiscoveryCandidate(
+                candidate_id=f"rss_mock_{slug}_feed_003",
+                query=safe_query,
+                provider="rss_mock",
+                platform_hint="forum",
+                title=f"{safe_query} RSS feed item: forum digest candidate",
+                snippet="RSS mock metadata only: a digest URL can be reviewed, but Sentigraph will not fetch or parse it automatically.",
+                url=f"https://example.test/rss/{slug}-forum-digest",
+                published_at="2026-05-25T09:45:00Z",
+                source_name="Mock Forum RSS",
+                content_type_hint="post",
+                confidence=0.62,
+                safety_notes=_candidate_safety_notes("rss_mock"),
+            ),
+        ]
+    if provider == "gdelt_mock":
+        return [
+            SearchDiscoveryCandidate(
+                candidate_id=f"gdelt_mock_{slug}_news_001",
+                query=safe_query,
+                provider="gdelt_mock",
+                platform_hint="news_site",
+                title=f"{safe_query} GDELT-style news candidate: event timeline",
+                snippet="GDELT mock metadata only: a news-discovery record may identify a public URL, title, source, and snippet.",
+                url=f"https://example.test/gdelt/{slug}-timeline-candidate",
+                published_at="2026-05-25T10:00:00Z",
+                source_name="Mock GDELT News Index",
+                content_type_hint="article",
+                confidence=0.81,
+                safety_notes=_candidate_safety_notes("gdelt_mock"),
+            ),
+            SearchDiscoveryCandidate(
+                candidate_id=f"gdelt_mock_{slug}_news_002",
+                query=safe_query,
+                provider="gdelt_mock",
+                platform_hint="news_site",
+                title=f"{safe_query} GDELT-style news candidate: market reaction",
+                snippet="GDELT mock metadata only: this is not full article content and requires human review before evidence use.",
+                url=f"https://example.test/gdelt/{slug}-market-reaction",
+                published_at="2026-05-25T10:25:00Z",
+                source_name="Mock Global News Index",
+                content_type_hint="article",
+                confidence=0.77,
+                safety_notes=_candidate_safety_notes("gdelt_mock"),
+            ),
+            SearchDiscoveryCandidate(
+                candidate_id=f"gdelt_mock_{slug}_news_003",
+                query=safe_query,
+                provider="gdelt_mock",
+                platform_hint="public_web",
+                title=f"{safe_query} GDELT-style candidate: cross-source mention",
+                snippet="GDELT mock metadata only: accepted candidates become review-needed EvidenceItems without fetching the URL.",
+                url=f"https://example.test/gdelt/{slug}-cross-source-mention",
+                published_at="2026-05-25T10:45:00Z",
+                source_name="Mock Cross-Source Index",
+                content_type_hint="search_result",
+                confidence=0.66,
+                safety_notes=_candidate_safety_notes("gdelt_mock"),
+            ),
+        ]
+
+    return [
         SearchDiscoveryCandidate(
             candidate_id=f"mock_search_{slug}_article_001",
             query=safe_query,
-            provider="mock_fixture",
+            provider="mock_static",
             platform_hint="news_site",
             title=f"{safe_query} public article discussion",
             snippet="Mock discovery metadata only: a public article may provide timeline and stakeholder context.",
@@ -164,7 +262,7 @@ def get_mock_search_discovery_candidates(query: str = "Tesla") -> SearchDiscover
         SearchDiscoveryCandidate(
             candidate_id=f"mock_search_{slug}_video_001",
             query=safe_query,
-            provider="mock_fixture",
+            provider="mock_static",
             platform_hint="youtube",
             title=f"{safe_query} public video reaction",
             snippet="Mock discovery metadata only: a video URL could be reviewed before official API or manual evidence attach.",
@@ -178,7 +276,7 @@ def get_mock_search_discovery_candidates(query: str = "Tesla") -> SearchDiscover
         SearchDiscoveryCandidate(
             candidate_id=f"mock_search_{slug}_forum_001",
             query=safe_query,
-            provider="mock_fixture",
+            provider="mock_static",
             platform_hint="forum",
             title=f"{safe_query} forum thread candidate",
             snippet="Mock discovery metadata only: user review is required before adding any thread text as evidence.",
@@ -192,7 +290,7 @@ def get_mock_search_discovery_candidates(query: str = "Tesla") -> SearchDiscover
         SearchDiscoveryCandidate(
             candidate_id=f"mock_search_{slug}_rss_001",
             query=safe_query,
-            provider="mock_fixture",
+            provider="mock_static",
             platform_hint="rss",
             title=f"{safe_query} RSS item candidate",
             snippet="Mock discovery metadata only: RSS pilot candidates should still be reviewed before evidence attach.",
@@ -204,12 +302,50 @@ def get_mock_search_discovery_candidates(query: str = "Tesla") -> SearchDiscover
             safety_notes=_candidate_safety_notes(),
         ),
     ]
-    return SearchDiscoveryBatch(
-        query=safe_query,
-        generated_at=datetime.now(timezone.utc),
-        candidates=candidates,
-        candidate_count=len(candidates),
-        provider_statuses=[provider for provider in get_search_discovery_provider_statuses() if provider.provider_id == "mock_fixture"],
+
+
+def _provider_status(
+    *,
+    provider_id: str,
+    provider_type: SearchDiscoveryProviderType,
+    display_name: str,
+    status: str,
+    provider_class: str,
+    allowed_use: str,
+    forbidden_use: str,
+    current_sentigraph_status: str,
+    next_action: str,
+    data_returned: list[str] | None = None,
+    requires_api_key: bool = False,
+    requires_network: bool = False,
+    safety_notes: list[str] | None = None,
+) -> SearchDiscoveryProviderStatus:
+    return SearchDiscoveryProviderStatus(
+        provider_id=provider_id,
+        provider_type=provider_type,
+        display_name=display_name,
+        status=status,
+        live_fetch_enabled=False,
+        requires_api_key=requires_api_key,
+        requires_network=requires_network,
+        returns_full_content=False,
+        returns_title_snippet_url=True,
+        safety_notes=safety_notes
+        or [
+            "Static provider metadata only",
+            "No live network fetch",
+            "No URL content extraction",
+            "Human review required before evidence use",
+        ],
+        provider_class=provider_class,
+        allowed_use=allowed_use,
+        forbidden_use=forbidden_use,
+        data_returned=data_returned or ["url", "title", "snippet", "source_name", "published_at"],
+        full_content_available=False,
+        credential_present=False,
+        user_review_required=True,
+        current_sentigraph_status=current_sentigraph_status,
+        next_action=next_action,
     )
 
 
@@ -322,9 +458,22 @@ def search_discovery_candidates_to_evidence_items(
     )
 
 
-def _candidate_safety_notes() -> list[str]:
+def _normalize_provider(provider: str | None) -> SearchDiscoveryProviderType:
+    normalized = str(provider or "mock_static").strip().lower()
+    if normalized == "mock_fixture":
+        return "mock_static"
+    if normalized in {"mock_static", "rss_mock", "gdelt_mock"}:
+        return normalized  # type: ignore[return-value]
+    return "mock_static"
+
+
+def _candidate_safety_notes(provider: str = "mock_static") -> list[str]:
+    provider_note = {
+        "rss_mock": "RSS mock fixture only",
+        "gdelt_mock": "GDELT mock fixture only",
+    }.get(provider, "mock fixture only")
     return [
-        "mock fixture only",
+        provider_note,
         "URL was not fetched",
         "snippet is not full content",
         "human review required before attach",

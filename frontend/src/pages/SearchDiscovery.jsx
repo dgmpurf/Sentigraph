@@ -6,6 +6,7 @@ import {
   attachSearchDiscoveryCandidates,
   getAnalysisCase,
   getMockSearchDiscoveryCandidates,
+  getSearchDiscoveryProviders,
 } from '../api/sentigraphApi.js'
 
 const { Paragraph, Text, Title } = Typography
@@ -17,6 +18,13 @@ const STATUS_COLORS = {
   pending_review: 'gold',
 }
 
+const MOCK_PROVIDER_TYPES = ['mock_static', 'rss_mock', 'gdelt_mock']
+const FALLBACK_PROVIDER_OPTIONS = [
+  { value: 'mock_static', label: 'Mock Static' },
+  { value: 'rss_mock', label: 'RSS Mock' },
+  { value: 'gdelt_mock', label: 'GDELT Mock' },
+]
+
 export function SearchDiscovery({
   cases = [],
   currentCase,
@@ -25,6 +33,8 @@ export function SearchDiscovery({
   onRunCase,
 }) {
   const [query, setQuery] = useState('Tesla')
+  const [provider, setProvider] = useState('mock_static')
+  const [providers, setProviders] = useState([])
   const [targetCaseId, setTargetCaseId] = useState(currentCase?.case_id || '')
   const [batch, setBatch] = useState(null)
   const [candidateStatusById, setCandidateStatusById] = useState({})
@@ -32,6 +42,20 @@ export function SearchDiscovery({
   const [attaching, setAttaching] = useState(false)
   const [attachResult, setAttachResult] = useState(null)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    let isMounted = true
+    getSearchDiscoveryProviders()
+      .then((items) => {
+        if (isMounted) setProviders(items)
+      })
+      .catch(() => {
+        if (isMounted) setProviders([])
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   useEffect(() => {
     if (targetCaseId) return
@@ -49,6 +73,21 @@ export function SearchDiscovery({
         label: `${item.title || item.keyword || item.case_id} · ${item.case_id}`,
       })),
     [cases],
+  )
+
+  const providerOptions = useMemo(() => {
+    const options = providers
+      .filter((item) => MOCK_PROVIDER_TYPES.includes(item.provider_type || item.provider_id))
+      .map((item) => ({
+        value: item.provider_id,
+        label: item.display_name || item.provider_id,
+      }))
+    return options.length ? options : FALLBACK_PROVIDER_OPTIONS
+  }, [providers])
+
+  const selectedProviderStatus = useMemo(
+    () => providers.find((item) => item.provider_id === provider) || null,
+    [provider, providers],
   )
 
   const candidates = useMemo(() => {
@@ -72,7 +111,7 @@ export function SearchDiscovery({
     setError('')
     setAttachResult(null)
     try {
-      const result = await getMockSearchDiscoveryCandidates(query)
+      const result = await getMockSearchDiscoveryCandidates(query, provider)
       setBatch(result)
       setCandidateStatusById(
         Object.fromEntries((result.candidates || []).map((candidate) => [candidate.candidate_id, 'pending_review'])),
@@ -214,6 +253,7 @@ export function SearchDiscovery({
           </Space>
           <Space wrap>
             <Tag color="purple">Mock/static only</Tag>
+            <Tag color="purple">RSS/GDELT fixtures</Tag>
             <Tag color="green">No real search API</Tag>
             <Tag color="green">No URL fetch</Tag>
             <Tag color="green">No scraping</Tag>
@@ -230,6 +270,14 @@ export function SearchDiscovery({
 
       <Card className="panel-card">
         <Form layout="vertical">
+          <Form.Item label="Discovery provider / 发现来源">
+            <Select
+              value={provider}
+              onChange={setProvider}
+              options={providerOptions}
+              placeholder="Select a mock provider"
+            />
+          </Form.Item>
           <Form.Item label="Keyword / Event query">
             <Input
               value={query}
@@ -275,6 +323,37 @@ export function SearchDiscovery({
           </Space>
         </Form>
         {error ? <Alert className="section-alert" type="error" showIcon message={error} /> : null}
+      </Card>
+
+      <Card className="panel-card">
+        <div className="panel-heading">
+          <Space>
+            <ShieldCheck size={18} />
+            <Title level={4}>Provider status</Title>
+          </Space>
+          <Space wrap>
+            <Tag color="purple">{selectedProviderStatus?.provider_type || provider}</Tag>
+            <Tag color="blue">{selectedProviderStatus?.status || 'mock_only'}</Tag>
+            <Tag color="green">live_fetch_enabled=false</Tag>
+            <Tag color="green">metadata only</Tag>
+            <Tag color="gold">full_content=false</Tag>
+          </Space>
+        </div>
+        <Paragraph type="secondary">
+          RSS/GDELT providers are currently mock fixtures. Future real providers may return URL/title/snippet
+          metadata only; full content extraction requires a separate reviewed public parser, official API route,
+          licensed vendor payload, or user-provided text.
+        </Paragraph>
+        <Space wrap size={6}>
+          {(selectedProviderStatus?.safety_notes || [
+            'Mock/static only',
+            'No live fetching',
+            'No URL content extraction',
+            'Candidate metadata requires review',
+          ]).map((note) => (
+            <Tag key={note}>{note}</Tag>
+          ))}
+        </Space>
       </Card>
 
       <div className="metric-grid">

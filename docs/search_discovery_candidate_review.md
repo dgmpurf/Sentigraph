@@ -1,6 +1,6 @@
 # Search Discovery Candidate Review
 
-Status: mock-only UX scaffold implemented.
+Status: mock-only UX scaffold implemented. Provider selector now supports `mock_static`, `rss_mock`, and `gdelt_mock` local fixtures.
 
 This workflow lets a user review deterministic mock Search Discovery candidates and attach accepted candidates to a case as normalized `EvidenceItem` records. It is a safe product rehearsal for future search providers. It is not live search.
 
@@ -8,7 +8,9 @@ This workflow lets a user review deterministic mock Search Discovery candidates 
 
 1. User enters a keyword/event query in the Search Discovery page.
 2. Sentigraph calls the local mock endpoint:
-   `GET /api/v1/search-discovery/mock-candidates?query=Tesla`
+   `GET /api/v1/search-discovery/mock-candidates?query=Tesla&provider=mock_static`
+   or the local RSS/GDELT fixture variants:
+   `provider=rss_mock` / `provider=gdelt_mock`
 3. The UI shows candidate URL/title/snippet metadata.
 4. User marks candidates as accepted or rejected.
 5. Accepted candidates can be attached to a selected case through:
@@ -23,6 +25,7 @@ This workflow lets a user review deterministic mock Search Discovery candidates 
 ## What It Does Not Do
 
 - It does not call real search APIs.
+- It does not call real RSS feeds or GDELT APIs.
 - It does not fetch candidate URLs.
 - It does not scrape websites.
 - It does not use cookies, sessions, proxies, captcha handling, or anti-bot bypasses.
@@ -57,3 +60,5 @@ Future real provider support should stay behind:
 - credential-present booleans only
 - user review before attach
 - no automatic scraping or full-content extraction
+
+See also `docs/search_discovery_provider_plan.md` for the provider taxonomy and RSS/GDELT mock-provider roadmap.

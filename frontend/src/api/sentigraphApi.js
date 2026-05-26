@@ -33,9 +33,14 @@ export async function getSearchDiscoveryStatus() {
   return normalizeSearchDiscoveryStatus(data)
 }
 
-export async function getMockSearchDiscoveryCandidates(query = 'Tesla') {
+export async function getSearchDiscoveryProviders() {
+  const { data } = await apiClient.get(`${API_PREFIX}/search-discovery/providers`)
+  return Array.isArray(data) ? data.map(normalizeSearchDiscoveryProvider).filter(Boolean) : []
+}
+
+export async function getMockSearchDiscoveryCandidates(query = 'Tesla', provider = 'mock_static') {
   const { data } = await apiClient.get(`${API_PREFIX}/search-discovery/mock-candidates`, {
-    params: { query },
+    params: { query, provider },
   })
   return normalizeSearchDiscoveryBatch(data)
 }
@@ -1083,9 +1088,22 @@ function normalizeSearchDiscoveryProvider(provider) {
   if (!provider || typeof provider !== 'object') return null
   return {
     provider_id: String(provider.provider_id || ''),
+    provider_type: String(provider.provider_type || provider.provider_class || ''),
     display_name: String(provider.display_name || ''),
     provider_class: String(provider.provider_class || ''),
     status: String(provider.status || ''),
+    live_fetch_enabled: Boolean(provider.live_fetch_enabled),
+    requires_network: Boolean(provider.requires_network),
+    returns_full_content: Boolean(provider.returns_full_content || provider.full_content_available),
+    returns_title_snippet_url: provider.returns_title_snippet_url !== false,
+    safety_notes: Array.isArray(provider.safety_notes) ? provider.safety_notes.map((item) => String(item)) : [],
+    capabilities: provider.capabilities && typeof provider.capabilities === 'object'
+      ? normalizeSafeObject(provider.capabilities)
+      : {},
+    limits: provider.limits && typeof provider.limits === 'object' ? normalizeSafeObject(provider.limits) : {},
+    safety_boundary: provider.safety_boundary && typeof provider.safety_boundary === 'object'
+      ? normalizeBooleanMap(provider.safety_boundary)
+      : {},
     allowed_use: String(provider.allowed_use || ''),
     forbidden_use: String(provider.forbidden_use || ''),
     data_returned: Array.isArray(provider.data_returned)
@@ -1130,7 +1148,7 @@ function normalizeSearchDiscoveryCandidate(candidate) {
   return {
     candidate_id: String(candidate.candidate_id || ''),
     query: String(candidate.query || ''),
-    provider: String(candidate.provider || 'mock_fixture'),
+    provider: String(candidate.provider || 'mock_static'),
     platform_hint: String(candidate.platform_hint || 'public_web'),
     title: String(candidate.title || ''),
     snippet: String(candidate.snippet || ''),

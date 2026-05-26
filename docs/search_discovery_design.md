@@ -1,6 +1,6 @@
 # Search Discovery Design
 
-Status: mock/static candidate review implemented; real provider integration remains future work.
+Status: mock/static candidate review implemented; RSS/GDELT mock-provider fixtures implemented; real provider integration remains future work.
 
 Search Discovery is the planned layer for finding candidate public-opinion evidence locations before any content extraction happens. It can return candidate URLs, titles, snippets, source names, and timestamps from approved discovery providers, RSS feeds, data vendors, user-provided URL lists, or mock fixtures.
 
@@ -62,11 +62,25 @@ keyword/event query
 
 ```http
 GET /api/v1/search-discovery/status
+GET /api/v1/search-discovery/providers
 GET /api/v1/search-discovery/mock-candidates?query=Tesla
+GET /api/v1/search-discovery/mock-candidates?query=Tesla&provider=rss_mock
+GET /api/v1/search-discovery/mock-candidates?query=Tesla&provider=gdelt_mock
 POST /api/v1/cases/{case_id}/search-discovery/candidates/attach
 ```
 
-The status and candidate endpoints return static/mock metadata only. The attach endpoint accepts user-reviewed mock/static candidates and saves accepted candidates as conservative `EvidenceItem` records. These endpoints do not call real search APIs, fetch URLs, read credentials, expose secrets, or start crawlers.
+The status, providers, and candidate endpoints return static/mock metadata only. The attach endpoint accepts user-reviewed mock/static candidates and saves accepted candidates as conservative `EvidenceItem` records. These endpoints do not call real search APIs, RSS feeds, GDELT APIs, website APIs, fetch URLs, read credentials, expose secrets, or start crawlers.
+
+Current provider types:
+
+- `mock_static`
+- `rss_mock`
+- `gdelt_mock`
+- `search_api_future`
+- `user_url_list`
+- `data_vendor_future`
+
+`rss_mock` and `gdelt_mock` are local fixture providers. They rehearse future RSS/GDELT discovery UX without live network calls.
 
 ## Candidate Schema Summary
 
@@ -101,8 +115,9 @@ Accepted candidate evidence uses `acquisition_mode=search_discovery`, `provenanc
 ## Future Work
 
 - Mock Search Discovery UI for candidate review is implemented.
+- RSS/GDELT mock-provider planning and local fixture outputs are implemented.
 - Provider adapter design with strict no-fetch tests by default.
-- RSS discovery pilot using fixture data first.
-- GDELT/news discovery research.
+- RSS discovery pilot using fixture data first remains future live-provider work.
+- GDELT/news discovery research remains future real-provider work.
 - Candidate enrichment and review workflow polish.
 - Source-specific public parser routing only after compliance review.

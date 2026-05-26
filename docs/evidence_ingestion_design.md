@@ -97,7 +97,7 @@ Search Discovery is a lead-generation layer, not an evidence collector. `SearchD
 - CSV/Excel import with user-provided rows.
 - A separately reviewed public parser path that explicitly allows fetching for that source.
 
-The current Search Discovery endpoints are static/mock only and do not fetch URLs.
+The current Search Discovery endpoints are static/mock only and do not fetch URLs. `mock_static`, `rss_mock`, and `gdelt_mock` providers return local URL/title/snippet fixtures only; real RSS feeds, GDELT APIs, search APIs, and candidate URLs are not called.
 
 ## Trust, Provenance, And Deduplication
 

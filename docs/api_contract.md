@@ -1858,13 +1858,48 @@ Response includes:
 
 Provider classes covered by the status endpoint:
 
-- search engine APIs
-- news discovery APIs
-- RSS / Atom feeds
-- site-specific public search pages
+- `mock_static`
+- `rss_mock`
+- `gdelt_mock`
+- `search_api_future`
 - user-provided URL lists
-- data vendor discovery indexes
-- mock fixtures
+- `data_vendor_future`
+
+### Search Discovery Providers
+
+```http
+GET /api/v1/search-discovery/providers
+```
+
+Returns static provider taxonomy metadata only. It does not call real RSS feeds, GDELT APIs, search APIs, website APIs, fetch URLs, inspect `.env`, or expose secrets.
+
+Each provider includes:
+
+- `provider_id`
+- `provider_type`
+- `display_name`
+- `status`
+- `live_fetch_enabled=false`
+- `requires_api_key`
+- `requires_network`
+- `returns_full_content=false`
+- `returns_title_snippet_url=true`
+- `capabilities`
+- `limits`
+- `safety_boundary`
+- `safety_notes`
+- compatibility fields such as `provider_class`, `allowed_use`, `forbidden_use`, `data_returned`, `credential_present`, and `current_sentigraph_status`
+
+Current provider types:
+
+```text
+mock_static
+rss_mock
+gdelt_mock
+search_api_future
+user_url_list
+data_vendor_future
+```
 
 `safe_mode` must keep `real_search_api_calls=false`, `real_website_api_calls=false`, `url_fetching=false`, `scraping=false`, `cookies_used=false`, `captcha_bypass=false`, `anti_bot_bypass=false`, `real_llm_calls=false`, `secrets_exposed=false`, and `third_party_crawler_integrated=false`.
 
@@ -1872,6 +1907,8 @@ Provider classes covered by the status endpoint:
 
 ```http
 GET /api/v1/search-discovery/mock-candidates?query=Tesla
+GET /api/v1/search-discovery/mock-candidates?query=Tesla&provider=rss_mock
+GET /api/v1/search-discovery/mock-candidates?query=Tesla&provider=gdelt_mock
 ```
 
 Returns deterministic mock candidate URL/title/snippet metadata for UI planning and regression tests. The endpoint uses `example.test` URLs and never fetches them.
@@ -1886,7 +1923,7 @@ Response:
     {
       "candidate_id": "mock_search_tesla_article_001",
       "query": "Tesla",
-      "provider": "mock_fixture",
+      "provider": "mock_static",
       "platform_hint": "news_site",
       "title": "Tesla public article discussion",
       "snippet": "Mock discovery metadata only.",
@@ -1924,6 +1961,7 @@ Important:
 - Accepted mock candidates can be attached as metadata-only `EvidenceItem` records with `acquisition_mode=search_discovery` and `provenance_type=search_discovery_candidate`.
 - To become stronger content evidence, candidates should later route to Manual URL Evidence, CSV/Excel import, or a separately reviewed public parser path.
 - Full content extraction is not part of Search Discovery.
+- `provider=rss_mock` and `provider=gdelt_mock` use local fixtures only. They do not fetch RSS feeds, call GDELT, or fetch candidate URLs.
 
 ### Search Discovery Candidate Attach
 
@@ -1941,7 +1979,7 @@ Request:
     {
       "candidate_id": "mock_search_tesla_article_001",
       "query": "Tesla",
-      "provider": "mock_fixture",
+      "provider": "mock_static",
       "platform_hint": "news_site",
       "title": "Tesla public article discussion",
       "snippet": "Mock discovery metadata only.",

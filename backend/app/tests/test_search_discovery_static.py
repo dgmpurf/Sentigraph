@@ -32,20 +32,47 @@ def test_search_discovery_status_is_static_and_safe(monkeypatch) -> None:
     assert body["status"] == "planning_mock_only"
     provider_ids = {provider["provider_id"] for provider in body["provider_statuses"]}
     assert {
-        "search_engine_api",
-        "news_discovery_api",
-        "rss_feeds",
-        "site_public_search",
+        "mock_static",
+        "rss_mock",
+        "gdelt_mock",
+        "search_api_future",
         "user_url_list",
-        "data_vendor",
-        "mock_fixture",
+        "data_vendor_future",
     }.issubset(provider_ids)
+    for provider in body["provider_statuses"]:
+        assert provider["live_fetch_enabled"] is False
+        assert provider["returns_full_content"] is False
+        assert provider["returns_title_snippet_url"] is True
     assert body["safe_mode"]["static_metadata_only"] is True
     assert body["safe_mode"]["real_search_api_calls"] is False
     assert body["safe_mode"]["url_fetching"] is False
     assert body["safe_mode"]["scraping"] is False
     assert body["safe_mode"]["third_party_crawler_integrated"] is False
     assert any("User reviews candidates" in step for step in body["review_flow"])
+
+
+def test_search_discovery_providers_endpoint_returns_mock_provider_taxonomy(monkeypatch) -> None:
+    def fail_urlopen(*args, **kwargs):
+        raise AssertionError("Search Discovery providers must not fetch URLs.")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fail_urlopen)
+
+    response = client.get("/api/v1/search-discovery/providers")
+
+    assert response.status_code == 200
+    providers = response.json()
+    providers_by_id = {provider["provider_id"]: provider for provider in providers}
+    for provider_id in ("mock_static", "rss_mock", "gdelt_mock"):
+        provider = providers_by_id[provider_id]
+        assert provider["provider_type"] == provider_id
+        assert provider["status"] == "mock_only"
+        assert provider["live_fetch_enabled"] is False
+        assert provider["requires_network"] is False
+        assert provider["returns_full_content"] is False
+        assert provider["safety_boundary"]["url_fetching"] is False
+        assert provider["safety_boundary"]["scraping"] is False
+    assert providers_by_id["search_api_future"]["requires_api_key"] is True
+    assert providers_by_id["search_api_future"]["credential_present"] is False
 
 
 def test_search_discovery_mock_candidates_return_review_only_metadata(monkeypatch) -> None:
@@ -70,10 +97,37 @@ def test_search_discovery_mock_candidates_return_review_only_metadata(monkeypatc
     assert all("URL was not fetched" in candidate["safety_notes"] for candidate in body["candidates"])
 
 
+@pytest.mark.parametrize("provider", ["rss_mock", "gdelt_mock"])
+def test_search_discovery_rss_and_gdelt_mock_candidates_are_static(provider, monkeypatch) -> None:
+    def fail_urlopen(*args, **kwargs):
+        raise AssertionError(f"{provider} candidates must not fetch URLs.")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fail_urlopen)
+
+    response = client.get(
+        "/api/v1/search-discovery/mock-candidates",
+        params={"query": "Tesla", "provider": provider},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["query"] == "Tesla"
+    assert body["candidate_count"] == 3
+    assert body["provider_statuses"][0]["provider_id"] == provider
+    assert body["provider_statuses"][0]["live_fetch_enabled"] is False
+    assert all(candidate["provider"] == provider for candidate in body["candidates"])
+    assert all(candidate["status"] == "pending_review" for candidate in body["candidates"])
+    assert all(candidate["url"].startswith(f"https://example.test/{provider.split('_')[0]}/") for candidate in body["candidates"])
+    assert all("URL was not fetched" in candidate["safety_notes"] for candidate in body["candidates"])
+
+
 def test_search_discovery_does_not_expose_secrets_or_credentials() -> None:
     response_text = (
         client.get("/api/v1/search-discovery/status").text
+        + client.get("/api/v1/search-discovery/providers").text
         + client.get("/api/v1/search-discovery/mock-candidates", params={"query": "Tesla"}).text
+        + client.get("/api/v1/search-discovery/mock-candidates", params={"query": "Tesla", "provider": "rss_mock"}).text
+        + client.get("/api/v1/search-discovery/mock-candidates", params={"query": "Tesla", "provider": "gdelt_mock"}).text
     ).lower()
 
     forbidden_fragments = [
@@ -191,6 +245,41 @@ def test_search_discovery_does_not_integrate_mediacrawler_in_product_code() -> N
                     matches.append(str(file_path.relative_to(repo_root)))
 
     assert matches == []
+
+
+@pytest.mark.parametrize("provider", ["rss_mock", "gdelt_mock"])
+def test_accepting_rss_and_gdelt_mock_candidate_attaches_review_evidence(provider, monkeypatch) -> None:
+    def fail_urlopen(*args, **kwargs):
+        raise AssertionError(f"{provider} candidate attach must not fetch URLs.")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fail_urlopen)
+    case_id = _create_case()
+    candidate = client.get(
+        "/api/v1/search-discovery/mock-candidates",
+        params={"query": "Tesla", "provider": provider},
+    ).json()["candidates"][0]
+    candidate["status"] = "accepted"
+
+    response = client.post(
+        f"/api/v1/cases/{case_id}/search-discovery/candidates/attach",
+        json={"candidates": [candidate], "reviewer_label": "qa_reviewer"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["attached_candidate_count"] == 1
+    item = body["attached_evidence_items"][0]
+    assert item["acquisition_mode"] == "search_discovery"
+    assert item["provenance_type"] == "search_discovery_candidate"
+    assert item["verification_status"] == "source_url_provided_unverified"
+    assert item["review_status"] == "review_needed"
+    assert item["raw_data_safe"]["provider"] == provider
+    assert item["raw_data_safe"]["url_fetched"] is False
+    assert item["raw_data_safe"]["scraping"] is False
+
+    queue = client.get(f"/api/v1/cases/{case_id}/evidence/review-queue").json()
+    assert queue["queue_count"] == 1
+    assert queue["queue_items"][0]["provenance_type"] == "search_discovery_candidate"
 
 
 def _create_case() -> str:

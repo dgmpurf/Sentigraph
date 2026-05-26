@@ -1,6 +1,6 @@
 # Search Discovery Source Matrix
 
-Status: planning and static mock metadata only.
+Status: planning and static mock metadata only, with mock provider fixtures for `mock_static`, `rss_mock`, and `gdelt_mock`.
 
 This matrix classifies discovery providers that could later help users find candidate public-opinion evidence URLs. It does not authorize crawling or content extraction. Candidate discovery returns URL/title/snippet metadata first; evidence use requires human review and a compliant attach/import/parser path.
 
@@ -11,6 +11,8 @@ When a candidate is later attached as evidence, Sentigraph keeps conservative tr
 | Search engine APIs | Approved API use after terms/quota review. | SERP scraping, captcha bypass, proxy evasion, hidden endpoints. | URL, title, snippet, source name, optional published time. | No, metadata/snippet only. | Usually yes. | Required. | Planned only; not configured. | Pick provider and add mocked fixtures before real calls. |
 | News discovery APIs | Approved news/discovery APIs for article metadata. | Paywall bypass, full-content copying without license, website scraping. | URL, title, snippet, source, published time. | Usually no unless licensed. | Usually yes. | Required. | Research pending. | Review GDELT/news APIs and retention rules. |
 | RSS feeds | Public RSS/Atom feeds when terms permit. | Private feeds, subscriber-only metadata, paywalled content extraction. | URL, title, summary/snippet, source, published time. | Sometimes feed summary only; full content requires source review. | Usually no. | Required. | Pilot candidate only. | Add fixture-first RSS pilot if needed. |
+| RSS mock provider | Local RSS-style fixtures for UX and tests. | Live feed polling, private feed access, automatic page fetch. | URL, title, snippet, source, published time. | No. | No. | Required. | Implemented as `provider=rss_mock`; static fixtures only. | Use for demo only; real RSS remains future review. |
+| GDELT mock provider | Local GDELT/news-style fixtures for UX and tests. | Real GDELT API calls, article fetching, full-content copying. | URL, title, snippet, source, published time. | No. | No. | Required. | Implemented as `provider=gdelt_mock`; static fixtures only. | Research GDELT terms/quota before any real adapter. |
 | Site-specific public search pages | Only after site-specific policy and parser review. | Dynamic SERP scraping, cookies, login/captcha/anti-bot bypass. | URL, title, public snippet if allowed. | No. | No, but review required. | Required. | Not implemented. | Keep out of live product until parser rules allow it. |
 | User-provided URL lists | Users may paste/upload lawful public URLs and text. | Treating URL lists as permission to fetch or scrape automatically. | URL plus user-provided title/snippet/text. | Only if user provides text. | No. | Required. | Supported through Manual URL Evidence and CSV/Excel import. | Route accepted URLs to manual evidence/import. |
 | Data vendors | Licensed discovery indexes after contract review. | Unlicensed payloads, credential-bearing exports, private data outside contract. | URL, title, snippet, source, published time, vendor metadata. | Only if licensed. | Usually yes. | Required. | Future only. | Wait for vendor and mocked contract fixtures. |
@@ -32,7 +34,10 @@ When a candidate is later attached as evidence, Sentigraph keeps conservative tr
 
 ```http
 GET /api/v1/search-discovery/status
+GET /api/v1/search-discovery/providers
 GET /api/v1/search-discovery/mock-candidates?query=Tesla
+GET /api/v1/search-discovery/mock-candidates?query=Tesla&provider=rss_mock
+GET /api/v1/search-discovery/mock-candidates?query=Tesla&provider=gdelt_mock
 ```
 
 The mock candidate endpoint returns deterministic `example.test` URLs with `status=pending_review` and `acquisition_mode=search_discovery`. It is safe for UI planning and regression tests because it does not call any real provider or fetch any URL.

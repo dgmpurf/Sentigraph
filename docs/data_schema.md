@@ -839,17 +839,20 @@ Search Discovery is a planned candidate-discovery layer. Current API support is 
 
 ```http
 GET /api/v1/search-discovery/status
+GET /api/v1/search-discovery/providers
 GET /api/v1/search-discovery/mock-candidates?query=Tesla
+GET /api/v1/search-discovery/mock-candidates?query=Tesla&provider=rss_mock
+GET /api/v1/search-discovery/mock-candidates?query=Tesla&provider=gdelt_mock
 ```
 
-It does not call real search APIs, call website APIs, fetch URLs, scrape pages, use cookies, inspect `.env`, expose secrets, integrate MediaCrawler, or call real LLM APIs.
+It does not call real search APIs, RSS feeds, GDELT APIs, website APIs, fetch URLs, scrape pages, use cookies, inspect `.env`, expose secrets, integrate MediaCrawler, or call real LLM APIs.
 
 `SearchDiscoveryQuery`:
 
 ```json
 {
   "query": "Tesla",
-  "providers": ["mock_fixture"],
+  "providers": ["mock_static"],
   "max_candidates": 5,
   "language": "auto"
 }
@@ -861,7 +864,7 @@ It does not call real search APIs, call website APIs, fetch URLs, scrape pages, 
 {
   "candidate_id": "mock_search_tesla_article_001",
   "query": "Tesla",
-  "provider": "mock_fixture",
+  "provider": "mock_static",
   "platform_hint": "news_site",
   "title": "Tesla public article discussion",
   "snippet": "Mock discovery metadata only.",
@@ -880,21 +883,35 @@ It does not call real search APIs, call website APIs, fetch URLs, scrape pages, 
 
 ```json
 {
-  "provider_id": "rss_feeds",
-  "display_name": "RSS / Atom Feeds",
-  "provider_class": "rss",
-  "status": "pilot_candidate",
-  "allowed_use": "Use public feed metadata when feed terms permit it.",
-  "forbidden_use": "Do not fetch private feeds, paywalled content, or subscriber-only metadata.",
-  "data_returned": ["url", "title", "summary_or_snippet", "source_name", "published_at"],
-  "full_content_available": false,
+  "provider_id": "rss_mock",
+  "provider_type": "rss_mock",
+  "display_name": "RSS Mock",
+  "provider_class": "rss_mock_fixture",
+  "status": "mock_only",
+  "live_fetch_enabled": false,
   "requires_api_key": false,
+  "requires_network": false,
+  "returns_full_content": false,
+  "returns_title_snippet_url": true,
+  "allowed_use": "Use local RSS-style fixture metadata to rehearse future feed discovery UX.",
+  "forbidden_use": "Do not fetch RSS feeds, poll live feed URLs, or treat feed snippets as full article text.",
+  "data_returned": ["url", "title", "snippet", "source_name", "published_at"],
+  "full_content_available": false,
   "credential_present": false,
   "user_review_required": true,
-  "current_sentigraph_status": "planned_only",
-  "next_action": "Add an RSS fixture pilot only after source-specific review."
+  "current_sentigraph_status": "implemented_static_mock",
+  "next_action": "Keep as fixture-only until source-specific feed terms and no-fetch tests are reviewed."
 }
 ```
+
+Provider types:
+
+- `mock_static`
+- `rss_mock`
+- `gdelt_mock`
+- `search_api_future`
+- `user_url_list`
+- `data_vendor_future`
 
 `SearchDiscoveryBatch` returns a query, generated time, candidates, provider statuses, counts, and safe-mode flags. `SearchDiscoveryReviewDecision` is a planned review object with `candidate_id`, `decision`, `reviewer_note`, and `route_to`.
 

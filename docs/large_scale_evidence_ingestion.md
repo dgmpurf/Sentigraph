@@ -23,7 +23,7 @@ Sentigraph intentionally avoids scraping bypass, login-cookie crawling, captcha 
 | Tier 1 | Official API public data | YouTube Data API public video/comment data | Real-capable when locally configured, mocked in tests |
 | Tier 2 | Official OAuth authorized data | Douyin/Bilibili after scopes and tokens are approved | Future pending console verification |
 | Tier 3 | Reviewed public parser | Allowed public article pages after parser review | Fixture-first / planning |
-| Tier 4 | Search discovery / RSS / GDELT / Common Crawl planning | URL/title/snippet discovery, RSS items, news discovery metadata | Static/mock only |
+| Tier 4 | Search discovery / RSS / GDELT / Common Crawl planning | URL/title/snippet discovery, RSS items, news discovery metadata | Static/mock only, including `rss_mock` and `gdelt_mock` fixture providers |
 | Tier 5 | User-uploaded CSV/Excel/JSON | Lawful exported comments/articles/videos | Implemented for CSV/XLSX; JSON future |
 | Tier 6 | Data vendor integration | Contracted datasets | Future |
 
@@ -97,7 +97,7 @@ This prevents demos from implying that Sentigraph has complete all-web or platfo
 - Resumable import sessions.
 - Durable worker queue and storage backend for tens of thousands of rows.
 - Search Discovery candidate review UI, still no automatic fetching.
-- RSS/GDELT/news discovery research.
+- RSS/GDELT/news discovery research; current `rss_mock` and `gdelt_mock` providers are fixture-only UX scaffolds.
 - Vendor dataset contract model.
 - Official Douyin/Bilibili real modes only after OAuth/scope/item-id/permission gates are verified.
 - Quota/rate-limit dashboards for real official APIs.

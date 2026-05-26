@@ -11,7 +11,7 @@ Sentigraph now treats evidence reliability as an explicit part of the Evidence L
 - Manual URL evidence with a source URL and user attestation is medium trust and `source_url_provided_unverified`.
 - CSV/Excel or other user-uploaded evidence is low/medium at best unless it includes source context and user attestation.
 - Screenshot or transcribed evidence is always `screenshot_unverified`; Sentigraph never automatically verifies screenshots.
-- Search Discovery candidates are leads only. They are not evidence until a user reviews and attaches text through Manual URL Evidence, CSV/Excel import, or a reviewed parser path.
+- Search Discovery candidates are leads only. The current `mock_static`, `rss_mock`, and `gdelt_mock` providers are local fixtures and do not call live providers. Candidates are not evidence until a user reviews and attaches them; even then, URL/title/snippet candidate evidence remains unverified metadata until stronger text/source evidence is provided through Manual URL Evidence, CSV/Excel import, or a reviewed parser path.
 - Mock fixtures remain deterministic demo data and must not be described as real-world evidence.
 
 ## Provenance Fields

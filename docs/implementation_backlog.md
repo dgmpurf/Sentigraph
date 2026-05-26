@@ -8,6 +8,32 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### RSS/GDELT Mock-Provider Planning
+
+Status: implemented and validated on 2026-05-26.
+
+Completed:
+
+- Added Search Discovery provider taxonomy for `mock_static`, `rss_mock`, `gdelt_mock`, `search_api_future`, `user_url_list`, and `data_vendor_future`.
+- Added `GET /api/v1/search-discovery/providers`.
+- Extended `GET /api/v1/search-discovery/mock-candidates` with `provider=rss_mock` and `provider=gdelt_mock`.
+- RSS/GDELT candidates are static local fixtures with `example.test` URLs, metadata-only snippets, and no live network behavior.
+- Search Discovery UI now has a provider selector and provider status card for mock/static safety boundaries.
+- Added `docs/search_discovery_provider_plan.md`.
+
+Acceptance:
+
+- No real RSS feeds, GDELT APIs, search APIs, website APIs, URL fetching, scraping, cookies, MediaCrawler, real LLM calls, or secret exposure are introduced.
+- Accepted RSS/GDELT mock candidates still attach as review-needed `EvidenceItem` records with `provenance_type=search_discovery_candidate`.
+- Real RSS/GDELT/search provider integration remains future work behind terms/quota review, mocked fixtures, and no-fetch tests.
+- Validation passed with `python -m pytest` (`609 passed`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed`), and `npm --prefix frontend run build`.
+
+Future tasks:
+
+- Browser-smoke RSS/GDELT provider selector after full validation.
+- Plan RSS/GDELT/provider adapters only as design work until live-provider approval is explicit.
+- Keep automatic parser fetch and real search provider integration future-only.
+
 ### Mock-Only Search Discovery Candidate Review
 
 Status: implemented, browser-smoked, and QA-stabilized on 2026-05-26.
