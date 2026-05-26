@@ -69,8 +69,9 @@ http://127.0.0.1:5173
 ## Demo Package Docs
 
 - `docs/demo_package.md` - product summary, local run commands, real-vs-mock boundaries, limitations, and safety notes.
+- `docs/demo_asset_package_v6_27.md` - final manual screenshot/recording asset package with 21 screenshot filenames, scripts, capture commands, and privacy checklist.
 - `docs/demo_recording_script.md` - 3-minute and 8-minute recording scripts with page order and talking points.
-- `docs/demo_screenshot_checklist.md` - canonical 14-screen screenshot checklist.
+- `docs/demo_screenshot_checklist.md` - canonical 21-screen v6.27 screenshot checklist.
 - `docs/youtube_real_data_demo.md` - manual YouTube real-data walkthrough and PowerShell commands.
 - `docs/evidence_import_guide.md` - CSV / Excel evidence import guide, sample columns, and safety notes.
 - `docs/evidence_trust_and_deduplication.md` - conservative trust/provenance, screenshot, attestation, and duplicate-collapse rules.

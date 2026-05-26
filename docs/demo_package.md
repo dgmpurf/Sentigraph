@@ -1,8 +1,10 @@
-# Sentigraph v6.26 Full Demo Package
+# Sentigraph v6.26 / v6.27 Full Demo Package
 
 Status: demo-readiness package for local presentation and recording.
 
 Sentigraph is a mock-default, YouTube-real-capable, evidence-ingestion-ready desktop web MVP for public-opinion analysis. The current demo shows how evidence can enter a case from several safe sources, how the offline analysis stack summarizes it, and how reviewers can mark weak, duplicate, or rejected evidence before downstream analysis.
+
+For final manual screenshot and recording production, use [demo_asset_package_v6_27.md](demo_asset_package_v6_27.md). It contains the 21-screenshot asset list, recommended filenames, short and full recording scripts, capture commands, privacy checklist, and non-overclaim talking points.
 
 ## What v6.26 Demonstrates
 
@@ -67,11 +69,11 @@ npm --prefix frontend run build
 
 ## Screenshot List
 
-Use [demo_screenshot_checklist.md](demo_screenshot_checklist.md) for the exact screenshot sequence.
+Use [demo_screenshot_checklist.md](demo_screenshot_checklist.md) and [demo_asset_package_v6_27.md](demo_asset_package_v6_27.md) for the exact screenshot sequence.
 
 ## Recording Script
 
-Use [demo_recording_script.md](demo_recording_script.md) for the 3-minute and 8-minute narration scripts.
+Use [demo_recording_script.md](demo_recording_script.md) and [demo_asset_package_v6_27.md](demo_asset_package_v6_27.md) for the 3-minute and 8-minute narration scripts.
 
 ## Caveats
 

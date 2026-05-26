@@ -8,6 +8,36 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### v6.27 Demo Screenshot / Recording Asset Package
+
+Status: prepared on 2026-05-26.
+
+Completed:
+
+- Added `docs/demo_asset_package_v6_27.md` as the final manual screenshot/recording package manifest.
+- Defined the audience: collaborators, clients, platform reviewers, investors/partners, and internal archive.
+- Defined what the demo proves and what it does not claim.
+- Defined a 21-screenshot capture list with recommended filenames.
+- Added 3-minute and 8-minute recording scripts for the current v6.26 demo-ready capability set.
+- Added talking points for real YouTube, offline deterministic analysis, mock/static Search Discovery and RSS/GDELT, mock LLM, pending platforms, MediaCrawler not integrated, no scraping/cookies/anti-bot bypass, and evidence review caveats.
+- Added capture commands and privacy/safety checklist for avoiding `.env`, API keys, private data, and sensitive public comments.
+- Updated `docs/demo_recording_script.md`, `docs/demo_screenshot_checklist.md`, `docs/demo_package.md`, and `README.md` to point at the v6.27 asset package.
+
+Acceptance:
+
+- Package is documentation/capture planning only and does not add product features.
+- It does not claim all platforms are real, full-web capture is achieved, RSS/GDELT are live, Search Discovery calls real APIs, real LLM is active, screenshots are verified, Simulation Lab executes actions, or MediaCrawler is integrated.
+- Validation passed with `python -m pytest` (`609 passed in 6.74s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 7.87s`; existing non-blocking large chunk warning remains).
+- No real APIs, URL fetching, scraping, cookies, MediaCrawler, real LLM calls, real AI review, or GitHub Actions workflow are introduced.
+
+Next options:
+
+- Produce the actual screenshot deck and 3-minute/8-minute recordings.
+- Continue Douyin/Bilibili official API verification only after console/API gates are clear.
+- Review real RSS/GDELT provider terms, quotas, and no-fetch design before any live provider work.
+- Keep chunked/resumable import as future work until larger demo datasets require it.
+- Keep real LLM integration future-only and guarded.
+
 ### v6.26 Full Demo Readiness Audit
 
 Status: completed and validated on 2026-05-26.

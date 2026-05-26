@@ -1,140 +1,117 @@
-# Sentigraph v6.26 Demo Recording Script
+# Sentigraph v6.27 Demo Recording Script
 
 Last updated: 2026-05-26
 
-Core safety note for both scripts: YouTube data can be real when locally configured, analysis is offline deterministic, Search Discovery/RSS/GDELT are mock/static, and the LLM provider is mock.
+Use this script with [demo_asset_package_v6_27.md](demo_asset_package_v6_27.md). The recording package is for manual local capture of the v6.26 demo-ready MVP.
+
+Core safety note: YouTube data can be real only when locally configured; analysis, risk, report, forecast, and Simulation Lab are offline deterministic; Search Discovery/RSS/GDELT are mock/static metadata providers; the LLM provider is mock.
 
 ## Exact Page Order
 
-1. Dashboard
-2. Keyword Search
+1. Source Catalog / Platform Integration Overview
+2. Keyword Search / optional YouTube real-data flow
 3. Cases
-4. Evidence Import / Manual Evidence
-5. Evidence Review Queue / Audit Timeline
+4. CSV/Excel Evidence Import
+5. Manual URL Evidence
 6. Search Discovery
-7. Evidence Scale / Coverage
-8. Analysis Result
-9. Summary Report
-10. Risk Monitor / Forecast
-11. Simulation Lab
-12. Benchmarks
-13. LLM Safety
-14. Platform Integration Overview
+7. Evidence Trust / Dedup
+8. Evidence Review Queue
+9. Evidence Review Audit Timeline
+10. Evidence Scale / Coverage
+11. Analysis Result
+12. Summary Report
+13. Propagation Graph
+14. Risk Monitor / Forecast
+15. Simulation Lab initialized from case
+16. A/B Strategy Comparison
+17. Strategy Report Export
+18. Benchmarks
+19. LLM Safety
 
-## 3-Minute Short Demo
+## 3-Minute Script
 
-### 0:00 - Dashboard
+### Intro
 
-Say: "Sentigraph is a public-opinion analysis workspace. This demo is mock-default, YouTube-real-capable, and evidence-ingestion-ready. It separates data source, offline analysis, and LLM mode."
+"Sentigraph is a local public-opinion intelligence MVP. The important boundary is that data can come from optional real YouTube public comments or user-provided evidence, while analysis, reports, forecasts, and Simulation Lab remain offline deterministic. The LLM provider is mock."
 
-Proves: Current case status, demo boundary, and navigation readiness.
+### Data Source Boundaries
 
-### 0:20 - Keyword Search
+"The Platform Overview shows what is real-capable, mock/static, or pending. YouTube is optional real-data when a local key is configured. Douyin, Bilibili, Xiaohongshu, Reddit, and Weibo still need official API or OAuth gates."
 
-Say: "When YouTube is selected alone, Sentigraph exposes the real-data case flow: create a case, crawl through the official YouTube API when locally configured, attach raw data, then run offline analysis. Automated tests never call YouTube."
+### Evidence Import
 
-Proves: YouTube real-data flow is explicit and optional.
+"Cases can ingest CSV/Excel datasets and manual URL evidence. The app does not fetch URLs, scrape pages, use cookies, bypass anti-bot systems, or store raw secret material."
 
-### 0:40 - Cases / Evidence
+### Trust And Review
 
-Say: "For broader public-opinion evidence, users can import CSV/Excel datasets or manually attach URL/title/comment evidence. The system does not fetch URLs, scrape websites, store cookies, or save raw secrets."
+"Evidence is normalized, not automatically trusted. Sentigraph tracks provenance, verification status, trust labels, duplicate groups, review status, and audit history. Screenshots and transcriptions need human review."
 
-Proves: CSV/manual evidence intake and safety boundary.
+### Analysis And Report
 
-### 1:05 - Review Queue / Audit Timeline
+"Analysis Result shows `analysis_input_source`; Summary Report and Markdown export preserve evidence caveats. Rejected evidence is excluded from analysis by default, and weak or unverified evidence remains flagged."
 
-Say: "Not all evidence has equal reliability. Low-trust, missing-source, duplicate, screenshot-style, or unverified evidence goes through human review. Rejected evidence is excluded from analysis by default."
+### Simulation Lab
 
-Proves: Trust, provenance, deduplication, review decisions, and auditability.
+"Risk Monitor and Simulation Lab are deterministic decision-support tools. Simulation compares possible strategies and exports a report, but it does not execute real-world actions or guarantee outcomes."
 
-### 1:30 - Search Discovery
+### Quality And Safety
 
-Say: "Search Discovery is currently a mock-only candidate review scaffold. Mock Static, RSS Mock, and GDELT Mock return local URL/title/snippet metadata. Accepting a candidate attaches metadata as unverified evidence; no URL content is fetched."
+"Benchmarks show offline quality checks. LLM Safety confirms mock-provider status. Search Discovery, RSS Mock, and GDELT Mock save metadata only and do not call live providers."
 
-Proves: Future discovery UX without live search or scraping.
+## 8-Minute Script
 
-### 1:55 - Analysis Result / Summary Report
+### 0:00 - Source Catalog / Platform Overview
 
-Say: "The analysis result shows the input source, representative evidence, and caveats when evidence is user-uploaded or unverified. The report and Markdown export preserve these boundaries."
+"Start with source readiness. YouTube is optional real-capable through the official API when locally configured. Other real platforms are pending official access or OAuth verification. Search Discovery, RSS Mock, and GDELT Mock are static planning providers."
 
-Proves: Evidence-driven offline analysis and report clarity.
+### 0:45 - Optional YouTube Real Path
 
-### 2:25 - Risk Monitor / Simulation Lab
+"Keyword Search exposes the YouTube-only flow: create a case, crawl public YouTube data when locally configured, attach raw data, and run offline deterministic analysis. Automated tests never call YouTube and the recording must not expose the key."
 
-Say: "Forecasting and Simulation Lab are offline scenario tools. They help compare possible response strategies, but they do not guarantee outcomes or execute actions."
+### 1:25 - CSV/Excel Import
 
-Proves: Offline risk and strategy workflow.
+"CSV/Excel import is the practical route for lawful user-provided datasets. It previews rows, maps columns, normalizes EvidenceItems, redacts secret-like fields, deduplicates repeated rows, and records an import job."
 
-### 2:50 - Platform Integration / LLM Safety
+### 2:05 - Manual URL Evidence
 
-Say: "YouTube is the current optional real-data demo. Douyin, Bilibili, and other platforms are pending official API or OAuth gates. The LLM provider remains mock."
+"Manual URL evidence is for single public items: article, video, post, comment, reply, or metric. The system does not open the URL; the user supplies the text and attestation."
 
-Proves: Accurate real/offline/mock/pending boundary.
+### 2:40 - Search Discovery Mock Candidates
 
-## 8-Minute Full Demo
+"Search Discovery is mock-only. Mock Static, RSS Mock, and GDELT Mock generate local URL/title/snippet candidates. Accepting a candidate stores unverified metadata as evidence; rejected candidates are ignored."
 
-### 0:00 - Dashboard
+### 3:30 - Review Queue
 
-Say: "This is Sentigraph v6.26. The product is a desktop web MVP for public-opinion evidence ingestion, review, and offline analysis. The important distinction is: data can be real, analysis is deterministic and offline, and LLM output remains mock."
+"Evidence with low trust, missing sources, duplicates, screenshot-style capture, or missing attestation goes to human review. AI is not used for authenticity verification."
 
-Proves: Product framing and safety promise.
+### 4:10 - Audit Timeline
 
-### 0:45 - Keyword Search
+"Every review decision is append-only. The audit timeline records previous status, new status, reviewer label, notes, and the effect on analysis."
 
-Say: "The YouTube real-data path is intentionally explicit. If the local environment has the official API key and real adapter mode, this page creates a YouTube case, crawls public video/comment data, attaches raw data, and runs offline analysis. If the key is not configured, the mock fallback remains available."
+### 4:40 - Evidence Scale / Coverage
 
-Proves: Optional YouTube real-data flow and fallback.
+"Evidence Scale shows total, unique, duplicate, source, acquisition, trust, review, and latest job summaries. This is imported or available evidence coverage, not full-platform or full-web capture."
 
-### 1:30 - Cases: CSV / Excel Import
+### 5:20 - Analysis Result
 
-Say: "When official platform access is unavailable, users can import lawful datasets. The import flow previews normalized rows, maps columns into EvidenceItems, deduplicates repeated rows, redacts secret-like fields, and records an ingestion job."
+"The analysis priority is explicit: case raw data wins, then EvidenceItems, then mock fallback. Rejected evidence is excluded, and weak or unverified evidence is called out."
 
-Proves: User-uploaded evidence pipeline.
+### 5:55 - Summary Report
 
-### 2:20 - Cases: Manual Evidence
+"The report turns offline analysis into a readable Chinese report and Markdown export while preserving representative evidence and review caveats."
 
-Say: "Manual URL evidence is for cases where a user has a public source and wants to attach a single article, video, post, comment, or metric. Sentigraph does not fetch the URL. The user provides the text, attests they have rights to submit it, and the system stores normalized evidence only."
+### 6:25 - Risk Monitor / Forecast
 
-Proves: Manual evidence without scraping.
+"Forecasting is deterministic decision support. It gives a structured risk projection, not a guaranteed prediction."
 
-### 3:00 - Review Queue and Audit Timeline
+### 6:55 - Simulation Lab
 
-Say: "Evidence carries provenance, trust labels, verification status, risk flags, duplicate groups, and review status. The review queue is human review only; it does not claim AI verified authenticity. Each decision is recorded in an audit timeline."
+"Simulation Lab initializes from aggregate case data, compares strategies, and exports a Markdown strategy report. It remains human-review-oriented and does not execute platform actions."
 
-Proves: Governance for unverified or malicious evidence.
+### 7:35 - Benchmarks / LLM Safety
 
-### 4:00 - Search Discovery
+"The final proof is validation and safety: offline benchmarks pass, the LLM provider is mock, and future real provider work remains behind explicit permission and policy review."
 
-Say: "The Search Discovery page is a future-provider scaffold. Mock Static, RSS Mock, and GDELT Mock show how URL/title/snippet candidates would be reviewed. They are local fixtures, not live providers. Accepted candidates become unverified evidence for review; rejected candidates are ignored."
+## Required Closing Line
 
-Proves: Safe discovery planning and candidate attachment.
-
-### 4:50 - Evidence Scale / Coverage
-
-Say: "Evidence Scale shows total, unique, duplicate, source, acquisition, trust, review, and latest-job summaries. The coverage note is deliberate: this is coverage of imported or available evidence, not full platform or full web coverage."
-
-Proves: Scalable evidence summary without overclaiming capture.
-
-### 5:35 - Analysis Result
-
-Say: "The analysis result displays `analysis_input_source`. Raw YouTube data wins when present; otherwise evidence items are used; otherwise the mock fallback is used. Rejected evidence is excluded by default, and weak or unverified evidence is flagged."
-
-Proves: Correct priority and caveats.
-
-### 6:15 - Summary Report
-
-Say: "The report turns the offline analysis into a readable Chinese report and Markdown export. It preserves representative evidence and warns when imported/manual evidence requires review."
-
-Proves: Report output and export readiness.
-
-### 6:50 - Risk Monitor and Simulation Lab
-
-Say: "Risk Monitor, Forecast, and Simulation Lab are deterministic decision-support tools. They can compare strategies and export a strategy report, but they do not moderate content or execute real-world actions."
-
-Proves: Forecast/simulation boundary.
-
-### 7:35 - Benchmarks, LLM Safety, Platform Overview
-
-Say: "The demo closes with offline benchmarks, mock LLM status, and platform readiness. YouTube is optional real-data ready; Douyin/Bilibili and other real integrations are pending approval or OAuth gates; RSS/GDELT are mock-only planning providers."
-
-Proves: Validation, model safety, and platform roadmap.
+"Sentigraph is demo-ready as a local MVP. It clearly separates optional real YouTube data, offline deterministic analysis, mock/static discovery, mock LLM behavior, and pending platform integrations."
