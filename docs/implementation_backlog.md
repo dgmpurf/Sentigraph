@@ -8,6 +8,33 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### v6.26 Full Demo Readiness Audit
+
+Status: completed and validated on 2026-05-26.
+
+Completed:
+
+- Audited the current demo surface across YouTube optional real data, CSV/Excel import, Manual URL evidence, Source Catalog / Feasibility Matrix, Search Discovery mock/static candidates, RSS/GDELT mock providers, trust/provenance/deduplication, review queue, audit timeline, Evidence Scale / Coverage, Analysis Result, Summary Report / Markdown export, Risk Monitor / Forecast, Simulation Lab, Benchmarks, LLM Safety, and Platform Integration Overview.
+- Refreshed `docs/demo_package.md`, `docs/demo_recording_script.md`, `docs/demo_screenshot_checklist.md`, `docs/demo_story.md`, and the top of `docs/demo_checklist.md` so the final package describes v6.26 rather than the older YouTube-only v6.3 package.
+- Verified documentation boundaries: optional real YouTube public video/comment data when locally configured; offline deterministic analysis/risk/report/forecast/simulation; mock LLM; mock/static Search Discovery and RSS/GDELT providers; pending Douyin/Bilibili/Xiaohongshu/Reddit/Weibo real integrations.
+- Local API smoke verified Source Catalog static metadata, provider statuses, CSV import, Manual URL evidence, evidence review/rejection, evidence-based analysis, Markdown export, forecast, Simulation Lab initialization, Search Discovery mock/RSS/GDELT candidate attach, review-needed evidence, Evidence Scale / Coverage summaries, and mock fallback.
+- Browser smoke opened the main demo pages and generated/attached a mock Search Discovery candidate through the UI without console errors, raw `[object Object]` rendering, secret markers, or graph duplicate-node regression.
+
+Acceptance:
+
+- Validation passed with `python -m pytest` (`609 passed in 8.20s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 7.89s`; existing non-blocking large chunk warning remains).
+- No real APIs, real search APIs, real RSS/GDELT APIs, real YouTube/Douyin/Bilibili APIs, URL fetching, scraping, cookies, MediaCrawler integration, real LLM calls, real AI authenticity review, secret exposure, or GitHub Actions workflow were introduced.
+- The product is demo-ready as a local MVP with explicit real/offline/mock/pending boundaries.
+
+Next options:
+
+- Produce the final screenshot deck and recording from the v6.26 package.
+- Wait for official Douyin/Bilibili/API gates before adding real platform ingestion.
+- Review RSS/GDELT/search provider policies and quotas before any real provider adapter.
+- Add chunked/resumable import only when larger demo datasets require it.
+- Keep real LLM integration later and guarded behind explicit provider configuration.
+- Keep MediaCrawler not integrated.
+
 ### RSS/GDELT Mock-Provider Planning
 
 Status: implemented, validated, and browser-smoked on 2026-05-26.

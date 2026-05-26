@@ -1,12 +1,12 @@
 # Sentigraph Demo Story
 
-Last updated: 2026-05-19
+Last updated: 2026-05-26
 
 ## Product Summary
 
-Sentigraph is a mock-first, desktop public-opinion intelligence dashboard that turns a keyword-driven case into deterministic offline analysis, V1.5 topic risk scoring, Chinese reports, monitoring/forecasting, ethical Simulation Lab rehearsal, benchmark status, and LLM/platform safety diagnostics. The default demo uses local mock/offline data only and does not call real platform APIs, real crawlers, live public pages, or real LLM APIs. An optional manual YouTube real-data demo is available when a local ignored `.env` contains `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY=<local key>`.
+Sentigraph is a mock-default, YouTube-real-capable, evidence-ingestion-ready desktop public-opinion dashboard. It turns case raw data or normalized EvidenceItems into deterministic offline analysis, V1.5 topic risk scoring, Chinese reports, monitoring/forecasting, Simulation Lab rehearsal, benchmark status, LLM safety diagnostics, and platform readiness views. The default demo uses local mock/offline data and user-provided/mock evidence only; it does not call real platform APIs, real search APIs, real RSS/GDELT providers, crawlers, live public pages, or real LLM APIs. An optional manual YouTube real-data demo is available when a local ignored `.env` contains `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY=<local key>`.
 
-For the v6.3 screenshot/recording package, use `docs/demo_package.md` as the package overview, `docs/demo_recording_script.md` as the voiceover/page-order script, and `docs/demo_screenshot_checklist.md` as the canonical capture list. The recurring narration should stay simple: YouTube data is real when locally configured, analysis is offline deterministic, and the LLM provider is mock. Douyin should be described only as Web App readiness work with OAuth and `item.comment` verification still pending.
+For the v6.26 screenshot/recording package, use `docs/demo_package.md` as the package overview, `docs/demo_recording_script.md` as the voiceover/page-order script, and `docs/demo_screenshot_checklist.md` as the canonical capture list. The recurring narration should stay simple: YouTube data can be real only when locally configured, CSV/manual/search-discovery evidence is normalized and reviewable, analysis is offline deterministic, Search Discovery/RSS/GDELT are mock/static metadata providers, and the LLM provider is mock. Douyin, Bilibili, Xiaohongshu, Reddit, Weibo, and other real integrations remain pending official API/OAuth/permission gates.
 
 ## Demo Script
 

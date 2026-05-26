@@ -1,5 +1,50 @@
 # Sentigraph Local Demo Checklist
 
+## v6.26 Full Demo Path
+
+Run validation and demo commands from the repository root:
+
+```powershell
+python -m pytest
+python scripts/run_offline_benchmarks.py
+npm --prefix frontend run build
+```
+
+For local browser demo:
+
+```powershell
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
+```
+
+Final presentation path:
+
+1. Dashboard: show current case status and navigation.
+2. Keyword Search: show the optional YouTube real-data flow. If no local YouTube key is configured, describe the documented manual path only; do not call the real API during automated QA.
+3. Cases: show CSV/Excel import, template download, preview, commit, and `acquisition_mode=user_upload`.
+4. Cases: show Manual URL evidence and the no-fetch/no-scrape safety notes.
+5. Evidence Review Queue: show low/unverified evidence, approve/reject/mark-weak controls, and rejected-evidence exclusion.
+6. Evidence Review Audit Timeline: show append-only human review history and no-AI-authenticity-verification boundary.
+7. Evidence Scale / Coverage: show evidence count, unique/duplicate counts, latest ingestion jobs, source/acquisition/trust/review distributions, and the coverage limitation note.
+8. Search Discovery: generate Mock Static, RSS Mock, and GDELT Mock candidates; accept one candidate, reject one candidate, attach accepted metadata to a case, and confirm no URL fetching.
+9. Analysis Result: confirm `analysis_input_source` and evidence trust warnings where relevant.
+10. Summary Report / Markdown export: confirm representative evidence text and safety caveats.
+11. Risk Monitor / Forecast: show offline deterministic forecast.
+12. Simulation Lab: initialize from a case, run A/B comparison, and export a strategy report.
+13. Benchmarks and LLM Safety: show offline benchmark status and mock LLM boundary.
+14. Platform Integration Overview / Source Catalog: show YouTube real-capable, Douyin/Bilibili/other platforms pending, RSS/GDELT mock-only, and MediaCrawler not integrated.
+
+Expected success signs:
+
+- Optional YouTube raw-data cases show `Data: YouTube Real`, `Analysis: Offline`, and `LLM: Mock`.
+- Evidence-only cases do not claim YouTube Real and should show evidence-source wording.
+- Search Discovery and RSS/GDELT providers are labeled mock/static, metadata-only, and no-live-fetch.
+- Evidence Scale / Coverage does not imply full-platform or full-web capture.
+- Low-trust/unverified evidence shows review warnings; screenshots/transcriptions are not called verified.
+- Rejected evidence remains stored for audit but is excluded from default analysis.
+- No API keys, tokens, cookies, `.env` values, `[object Object]`, or raw secret fields appear.
+- No real RSS/GDELT/search/Douyin/Bilibili/LLM APIs, URL fetching, scraping, cookies, or MediaCrawler paths are used.
+
 RSS/GDELT mock-provider Search Discovery browser-smoke result (2026-05-26): open `Search Discovery`, use the provider selector to choose `Mock Static`, `RSS Mock`, and `GDELT Mock`, generate candidates for each provider, accept one, reject one, and attach the accepted candidate to a case. Expected success signs: provider status shows `mock_only`, `live_fetch_enabled=false`, `candidate metadata only`, `No URL content extraction`, and `full_content=false`; generated candidates have `provider=mock_static`, `provider=rss_mock`, or `provider=gdelt_mock`; accepted candidates attach as `acquisition_mode=search_discovery`, `provenance_type=search_discovery_candidate`, `verification_status=source_url_provided_unverified`, and review-needed evidence. Open `Cases` and confirm the candidate appears in Evidence, Evidence Review Queue, and Evidence Scale / Coverage. Safety proof points: RSS feeds are not fetched, GDELT APIs are not called, search APIs are not called, candidate URLs are not fetched, rejected candidates are not stored as evidence, and full content extraction remains separate/future.
 
 Search Discovery candidate-review QA/demo path (2026-05-26): open `Search Discovery`, keep the target case selected, enter `Tesla`, click `Generate mock candidates / 生成模拟候选`, accept one or more candidates, reject at least one candidate, then click `Attach accepted to case / 附加到案例`. Expected success signs: the page shows `Mock/static only`, `No real search API`, `No URL fetch`, and `No scraping`; attached evidence count is greater than zero; attached evidence shows `acquisition_mode=search_discovery`, `provenance_type=search_discovery_candidate`, conservative trust, and review-needed status. Open `Cases` and confirm the attached candidate appears in Evidence, Evidence Review Queue, and Evidence Scale / Coverage. Optionally run the case and confirm `analysis_input_source=case_evidence_items`; Propagation Graph should open without an ECharts duplicate-node console error. Safety proof points: rejected candidates are not attached, URL content is not fetched, snippets remain metadata only, and no real search provider/API/LLM is called.

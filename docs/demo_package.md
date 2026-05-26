@@ -1,177 +1,83 @@
-# Sentigraph v6.3 Demo Package
+# Sentigraph v6.26 Full Demo Package
 
-Status: final screenshot/recording-ready local demo package.
+Status: demo-readiness package for local presentation and recording.
 
-This package explains how to present Sentigraph to collaborators, reviewers, or future users using the already working local demo path. The key framing is:
+Sentigraph is a mock-default, YouTube-real-capable, evidence-ingestion-ready desktop web MVP for public-opinion analysis. The current demo shows how evidence can enter a case from several safe sources, how the offline analysis stack summarizes it, and how reviewers can mark weak, duplicate, or rejected evidence before downstream analysis.
 
-> Real: YouTube public video/comment data. Offline deterministic: analysis, V1.5 risk model, forecast, reports, and Simulation Lab. Mock: LLM provider. Scaffold/mock/pending: other platform APIs. Pending: Douyin Web App OAuth and `item.comment` verification.
+## What v6.26 Demonstrates
 
-The default demo can still run fully mock/offline. The optional YouTube real-data demo requires a local ignored `.env` key and must remain manual/local only.
+- Optional YouTube real-data demo when local `.env` has `YOUTUBE_ADAPTER_MODE=real` and `YOUTUBE_API_KEY`.
+- CSV/Excel Evidence Import with preview, commit, template download, normalization, deduplication, and safety handling.
+- Manual URL / manual text evidence entry without automatic URL fetching.
+- Source Catalog and Feasibility Matrix for compliant acquisition planning.
+- Mock-only Search Discovery candidate review.
+- RSS Mock and GDELT Mock provider selector for future discovery planning.
+- Evidence Trust, Provenance, Deduplication, Review Queue, and Audit Timeline.
+- Evidence Scale / Coverage summaries and local batch-job scaffold.
+- Offline deterministic Analysis Result, Summary Report / Markdown export, Risk Monitor / Forecast, and Simulation Lab.
+- Benchmark Dashboard, LLM Safety, and Platform Integration Overview.
 
-## Product Summary
+## Real vs Offline vs Mock
 
-Sentigraph is a desktop public-opinion intelligence dashboard. It turns a keyword-driven case into normalized public data, deterministic offline analysis, V1.5 topic-risk scoring, Chinese reports, Markdown export, monitoring and forecasting, ethical Simulation Lab rehearsal, benchmark status, and LLM/platform safety diagnostics.
-
-For v6.3, the demo can show an end-to-end YouTube public-data path:
-
-1. Create or load a YouTube case.
-2. Crawl a tiny YouTube sample through the official Data API when locally configured.
-3. Attach public video/comment data to the case.
-4. Run offline deterministic analysis from attached raw data.
-5. View V1.5 topic risk and Chinese reports.
-6. Initialize Simulation Lab from aggregate case analysis.
-7. Compare transparent A/B response strategies.
-8. Export a Simulation Lab strategy report.
-9. Verify offline benchmarks, mock LLM status, and platform integration boundaries.
-
-## Demo Story
-
-The short story to tell:
-
-"Sentigraph can ingest real public YouTube video/comment data when configured locally, but it keeps analysis offline and deterministic. Reports, forecasts, and Simulation Lab are review aids, not guaranteed predictions or automatic actions. The LLM layer is mock for this demo, and all other platform APIs remain mock or scaffold unless future official permissions are added."
-
-Use `docs/demo_recording_script.md` for the 3-minute and 8-minute voiceover scripts.
-
-## Screenshot List
-
-Use `docs/demo_screenshot_checklist.md` as the canonical screenshot checklist.
-
-Required sequence:
-
-1. Dashboard showing YouTube real case.
-2. Keyword Search with YouTube real-data flow.
-3. Cases page showing completed YouTube case.
-4. Analysis Result showing `analysis_input_source=case_raw_data`.
-5. Summary Report showing YouTube-derived comments.
-6. Propagation Graph showing YouTube nodes.
-7. Risk Monitor / Forecast.
-8. Simulation Lab initialized from case.
-9. Simulation Lab A/B strategy comparison.
-10. Strategy report export.
-11. Benchmark Dashboard.
-12. LLM Safety.
-13. Platform Integration Overview.
-14. Douyin readiness / platform status if visible.
-
-Store local screenshots in an ignored folder such as `.benchmarks/demo_smoke_screenshots/`. Do not capture `.env`, API keys, private data, browser cookies, or raw credential settings.
+| Area | Current status | Boundary |
+| --- | --- | --- |
+| YouTube data | Optional local real-data demo | Public video/comment data through official API only when locally configured. Automated tests do not call YouTube. |
+| Analysis pipeline | Offline deterministic | Uses case raw data or normalized evidence when present; no real LLM call. |
+| Risk / forecast | Offline deterministic | Scenario support, not a guarantee of future outcomes. |
+| Simulation Lab | Offline deterministic | Strategy rehearsal only; it does not execute real-world actions. |
+| Reports / Markdown | Offline deterministic | Summarizes available/imported evidence and includes caveats for weak or unverified evidence. |
+| Search Discovery | Mock/static | Generates local candidate metadata only; no live search API and no URL fetching. |
+| RSS / GDELT providers | Mock/static | Local fixtures for future provider UX; no RSS or GDELT network calls. |
+| LLM provider | Mock | LLM Safety UI documents provider status; no real LLM calls are made. |
+| Douyin / Bilibili / other platforms | Pending or scaffold | Official API/OAuth/permission gates remain unresolved. |
+| MediaCrawler | Not integrated | No cookie crawling, captcha bypass, proxy evasion, or anti-bot bypass. |
 
 ## Local Run Commands
 
-Run from the repository root.
+Run all commands from the repository root:
 
-Offline validation:
+```powershell
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
+```
 
-```cmd
+Validation commands:
+
+```powershell
 python -m pytest
-python scripts\run_offline_benchmarks.py
+python scripts/run_offline_benchmarks.py
 npm --prefix frontend run build
 ```
 
-Default mock/offline demo prep:
+## Recommended Demo Flow
 
-```cmd
-python scripts\reset_local_data.py --yes
-python scripts\seed_demo_cases.py --reset-first
-python scripts\run_offline_benchmarks.py
-```
+1. Dashboard: show current case status and safety framing.
+2. Keyword Search: optional YouTube real-data flow, if local key is configured.
+3. Cases: show CSV/Excel import, template download, manual URL evidence, and evidence summaries.
+4. Evidence Review Queue: approve, reject, mark weak, and show audit timeline.
+5. Search Discovery: generate Mock Static, RSS Mock, and GDELT Mock candidates; attach accepted metadata to a case.
+6. Evidence Scale / Coverage: show counts, duplicates, trust distribution, latest jobs, and coverage limitation note.
+7. Analysis Result: show `analysis_input_source` and evidence-source caveats.
+8. Summary Report: show representative evidence and Markdown export.
+9. Risk Monitor / Forecast: show offline scenario projection.
+10. Simulation Lab: initialize from the case and compare strategies.
+11. Benchmarks: show offline benchmark results.
+12. LLM Safety: confirm mock provider boundary.
+13. Platform Integration Overview: show YouTube real-capable, Douyin/Bilibili pending, RSS/GDELT mock-only.
 
-Start backend:
+## Screenshot List
 
-```cmd
-python -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000
-```
+Use [demo_screenshot_checklist.md](demo_screenshot_checklist.md) for the exact screenshot sequence.
 
-Start frontend in a second terminal:
+## Recording Script
 
-```cmd
-npm --prefix frontend run dev
-```
+Use [demo_recording_script.md](demo_recording_script.md) for the 3-minute and 8-minute narration scripts.
 
-Open:
+## Caveats
 
-```text
-http://127.0.0.1:5173
-```
-
-Optional API smoke while backend is running:
-
-```cmd
-python scripts\api_smoke_check.py --base-url http://127.0.0.1:8000
-```
-
-## YouTube Real-Data Caveats
-
-The optional YouTube demo requires a local ignored `.env` file:
-
-```text
-YOUTUBE_ADAPTER_MODE=real
-YOUTUBE_API_KEY=<local key>
-```
-
-Rules:
-
-- Never commit, print, paste, screenshot, or log the API key.
-- Automated tests and offline benchmarks must not call the real YouTube API.
-- Real YouTube calls are manual/local only.
-- The adapter uses the official YouTube Data API v3 only.
-- No scraping, browser cookies, login bypass, captcha bypass, anti-bot evasion, or private/OAuth-only data is used.
-- Keep limits tiny and cache enabled.
-- If the API key is missing or a quota/auth/network error occurs, the adapter falls back safely and reports sanitized metadata only.
-
-See `docs/youtube_real_data_demo.md` for the exact manual PowerShell path.
-
-## What Is Real vs Mock
-
-| Area | v6.3 Demo Status |
-| --- | --- |
-| YouTube data | Real public video/comment data only when local `.env` is configured and the real-data flow is manually run. |
-| Analysis pipeline | Offline deterministic analysis from attached case raw data, or mock-data fallback when no raw data is attached. |
-| V1.5 topic risk | Offline deterministic. |
-| Chinese report and Markdown export | Offline deterministic report builder. |
-| Monitoring and forecast | Offline deterministic from local snapshots; not a guaranteed prediction. |
-| Simulation Lab | Offline deterministic aggregate scenario rehearsal; no real-world action execution. |
-| LLM provider | Mock. No real LLM calls. |
-| Other platform APIs | Mock/scaffold unless future official permissioned integrations are implemented. |
-| Douyin | Web App research/readiness scaffold only. OAuth, `item.comment`, redirect URI, whitelist/test account, token flow, and lawful item-id source remain pending. No real Douyin API call is integrated. |
-
-## What Each Screen Proves
-
-| Screen | What it proves |
-| --- | --- |
-| Dashboard | A completed case can be reviewed from a compact operations view with clear data/analysis/LLM status. |
-| Keyword Search | YouTube real-data flow is explicit and separate from the default mock path. |
-| Cases | Local case state persists and can show raw-data attachment context. |
-| Analysis Result | `analysis_input_source=case_raw_data` proves attached raw data entered analysis. |
-| Summary Report | YouTube-derived representative comments can appear in a Chinese analyst report and Markdown export. |
-| Propagation Graph | Visualization remains connected for YouTube-based cases. |
-| Risk Monitor / Forecast | Monitoring and trend signals work offline from local snapshots. |
-| Simulation Lab | Aggregate scenario initialization and A/B comparison work from case analysis. |
-| Strategy Report Export | Human-review-oriented Markdown strategy reports are available. |
-| Benchmarks | Local regression checks run without credentials or external services. |
-| LLM Safety | Real LLM calls are disabled and provider status is mock. |
-| Platform Integration Overview | YouTube is the only current real-capable official adapter; other platforms remain mock/scaffold. |
-| Douyin readiness / platform status | Douyin is visible as Web App readiness work, but real mode remains disabled until console verification and future implementation. |
-
-## Current Limitations
-
-- This is not a production release.
-- Real YouTube mode requires local configuration and is manual-only.
-- Other platform APIs are not real integrations yet.
-- Douyin real API integration is not complete; Web App OAuth and `item.comment` verification remain future work.
-- Real LLM calls are not integrated.
-- Live public fetching and real crawlers remain disabled.
-- Forecasts are deterministic review signals, not guaranteed predictions.
-- Simulation Lab is deterministic and aggregate-level; it does not execute real-world actions, content moderation, or platform operations.
-- Content visibility modeling is only a lawful/platform-authorized tradeoff simulation for human review.
-- The system does not output individual targeting, account-level influenceability scoring, fake consensus, bot amplification, fake events, covert seeding, deceptive diversion, harassment, or suppression tactics.
-- Vite may report a non-blocking large vendor chunk warning for Ant Design and ECharts.
-
-## Safety and Ethics Boundaries
-
-- No API keys or `.env` values should be printed or captured.
-- No real LLM APIs are called.
-- No scraping is implemented.
-- No private data collection is implemented.
-- No bypass of login, captcha, paywalls, cookies, or anti-bot systems is implemented.
-- Real-world actions require external human, policy, and legal review.
-- Simulation Lab output is aggregate scenario rehearsal and must not be treated as automatic strategy execution.
+- YouTube real data is optional and requires local configuration; it is not run in automated validation.
+- Imported, manual, and search-discovery evidence may be unverified and can require human review.
+- Search Discovery, RSS Mock, and GDELT Mock return metadata fixtures only.
+- Evidence Scale / Coverage describes imported or available evidence, not full-platform or full-web coverage.
+- Predictions, risk scores, and simulations are decision-support outputs, not guarantees.
+- No real LLM, Douyin, Bilibili, RSS, GDELT, or general search provider is active in this demo.
