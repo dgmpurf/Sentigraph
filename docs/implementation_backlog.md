@@ -10,7 +10,7 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### Large-Scale Evidence Ingestion Roadmap and Batch Scaffold
 
-Status: roadmap and lightweight local scaffold implemented on 2026-05-26.
+Status: roadmap, lightweight local scaffold, and browser smoke QA complete on 2026-05-26.
 
 Completed:
 
@@ -21,6 +21,7 @@ Completed:
 - CSV/XLSX import commit records local job summaries with accepted, rejected, duplicate, warning, and review-needed counts.
 - Manual evidence attach records a lightweight manual job summary.
 - Cases now shows an `Evidence Scale / Coverage` panel with source/type/acquisition/trust/review distributions, latest ingestion jobs, source coverage, and the explicit note that imported/available evidence is not full-platform coverage.
+- Browser smoke created an evidence-only QA case with CSV import, manual URL evidence, duplicate submissions, one rejected evidence item, and one low-trust/missing-source evidence item. The Cases panel showed total/unique/duplicate counts, rejected and weak/unverified counts, source/type/acquisition/trust/review distributions, latest local ingestion jobs, source coverage, and the visible coverage note.
 
 Acceptance:
 
@@ -29,11 +30,10 @@ Acceptance:
 - `case_raw_data` still wins over `case_evidence_items`; evidence items still win over mock fallback; rejected evidence remains excluded by default.
 - Uploaded raw files are not persisted by default; only normalized evidence and safe job metadata are stored.
 - MediaCrawler remains not integrated and GitHub Actions CI remains intentionally disabled.
-- Validation passed with `python -m pytest` (`602 passed in 6.97s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 7.85s`; existing non-blocking large chunk warning remains).
+- Validation passed after browser-smoke polish with `python -m pytest` (`602 passed in 6.81s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 7.91s`; existing non-blocking large chunk warning remains).
 
 Future tasks:
 
-- Browser-smoke the Evidence Scale / Coverage panel.
 - Add chunked/resumable CSV/Excel/JSON import only if larger demo datasets require it.
 - Add durable worker/storage backend later for tens of thousands of evidence rows.
 - Keep Search Discovery candidate-review UI, RSS/GDELT research, vendor integrations, and Douyin/Bilibili official API gates as future tasks.

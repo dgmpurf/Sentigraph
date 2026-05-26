@@ -1058,6 +1058,8 @@ function EvidenceScaleSummaryPanel({ currentCase }) {
   const [coverage, setCoverage] = useState(null)
   const [loadingSummary, setLoadingSummary] = useState(false)
   const [summaryError, setSummaryError] = useState('')
+  const coverageBoundaryNote =
+    '\u5f53\u524d\u8986\u76d6\u8303\u56f4\u4ec5\u4ee3\u8868\u5df2\u5bfc\u5165/\u53ef\u7528\u8bc1\u636e\uff0c\u4e0d\u4ee3\u8868\u5168\u5e73\u53f0\u5168\u91cf\u8986\u76d6\u3002'
 
   const caseId = currentCase?.case_id
 
@@ -1157,7 +1159,12 @@ function EvidenceScaleSummaryPanel({ currentCase }) {
         </div>
         <Alert
           message="Coverage boundary"
-          description="当前覆盖范围仅代表已导入/可用证据，不代表全平台全量覆盖。No URL fetching, scraping, third-party crawler integration, or automatic truth verification is performed."
+          description={(
+            <Space direction="vertical" size={2}>
+              <Text>{coverageBoundaryNote}</Text>
+              <Text>No URL fetching, scraping, third-party crawler integration, or automatic truth verification is performed.</Text>
+            </Space>
+          )}
           showIcon
           type="info"
         />
