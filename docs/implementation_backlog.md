@@ -30,7 +30,7 @@ Acceptance:
 - `case_raw_data` still wins over `case_evidence_items`; evidence items still win over mock fallback; rejected evidence remains excluded by default.
 - Uploaded raw files are not persisted by default; only normalized evidence and safe job metadata are stored.
 - MediaCrawler remains not integrated and GitHub Actions CI remains intentionally disabled.
-- Validation passed after browser-smoke polish with `python -m pytest` (`602 passed in 6.81s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 7.91s`; existing non-blocking large chunk warning remains).
+- Validation passed after browser-smoke recheck with `python -m pytest` (`602 passed in 7.21s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 8.40s`; existing non-blocking large chunk warning remains).
 
 Future tasks:
 
