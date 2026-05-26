@@ -26,14 +26,15 @@ def get_search_discovery_status() -> SearchDiscoveryStatusResponse:
             "User enters keyword or event label.",
             "A configured provider or mock fixture returns candidate URLs, titles, and snippets only.",
             "User reviews candidates and accepts or rejects them.",
-            "Accepted candidates become manual_url evidence, or wait for a reviewed public parser route.",
+            "Accepted mock candidates can be attached as metadata-only EvidenceItems that require human review.",
+            "Users can later enrich candidates through Manual URL Evidence, CSV/Excel import, or a reviewed public parser route.",
             "No automatic page fetching happens in the discovery step.",
         ],
         next_actions=[
-            "Design read-only mock Search Discovery UI.",
+            "Use the mock Search Discovery UI for safe candidate-review demos.",
             "Research RSS discovery pilot with fixture tests.",
             "Research GDELT or news discovery API terms and quota.",
-            "Design user-reviewed candidate attach workflow.",
+            "Design real provider adapters only after provider terms, quota, and no-fetch tests are reviewed.",
             "Keep automatic scraping, URL fetching, cookies, and third-party crawler integration out of scope.",
         ],
     )

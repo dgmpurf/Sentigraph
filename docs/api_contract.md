@@ -1921,7 +1921,8 @@ Important:
 
 - Search Discovery candidates are not automatically attached to a case.
 - A human must review candidates before using candidate URLs/text as evidence.
-- Accepted candidates should route to Manual URL Evidence, CSV/Excel import, or a separately reviewed public parser path.
+- Accepted mock candidates can be attached as metadata-only `EvidenceItem` records with `acquisition_mode=search_discovery` and `provenance_type=search_discovery_candidate`.
+- To become stronger content evidence, candidates should later route to Manual URL Evidence, CSV/Excel import, or a separately reviewed public parser path.
 - Full content extraction is not part of Search Discovery.
 
 ### Search Discovery Candidate Attach

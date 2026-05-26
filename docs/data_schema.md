@@ -942,7 +942,8 @@ Candidate status values:
 Review rule:
 
 - Search Discovery candidates are not evidence by themselves.
-- Accepted candidates must become `manual_url` evidence, user-upload/import evidence, or go through a separately reviewed public parser route.
+- Accepted mock candidates can be attached as metadata-only `EvidenceItem` records with `acquisition_mode=search_discovery` and `provenance_type=search_discovery_candidate`.
+- To become stronger content evidence, candidates still need user-provided text through Manual URL Evidence or CSV/Excel import, or a separately reviewed public parser route.
 - Search Discovery never performs automatic page fetching by itself.
 
 ### Case Raw Data Ingestion

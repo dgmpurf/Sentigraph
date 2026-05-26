@@ -1,6 +1,6 @@
 # Search Discovery Design
 
-Status: planning and static mock status only.
+Status: mock/static candidate review implemented; real provider integration remains future work.
 
 Search Discovery is the planned layer for finding candidate public-opinion evidence locations before any content extraction happens. It can return candidate URLs, titles, snippets, source names, and timestamps from approved discovery providers, RSS feeds, data vendors, user-provided URL lists, or mock fixtures.
 
@@ -12,7 +12,8 @@ Search Discovery is not crawling. It must not automatically fetch candidate URLs
 - Returns URL/title/snippet metadata only.
 - Marks candidates as `pending_review`.
 - Requires a user to accept or reject candidates before they can affect a case.
-- Routes accepted candidates into Manual URL Evidence, CSV/Excel import, or a separately reviewed public parser path.
+- Lets reviewed mock candidates be attached as metadata-only `EvidenceItem` records.
+- Supports later enrichment through Manual URL Evidence, CSV/Excel import, or a separately reviewed public parser path.
 
 ## What It Does Not Do
 
@@ -25,7 +26,7 @@ Search Discovery is not crawling. It must not automatically fetch candidate URLs
 
 ## Relationship To Evidence Layer
 
-Search Discovery emits `SearchDiscoveryCandidate` metadata. A candidate is not an `EvidenceItem` until a human reviews it and provides or authorizes usable text.
+Search Discovery emits `SearchDiscoveryCandidate` metadata. A candidate is not case evidence until a human reviews it. In the current mock-only UI, accepted candidates can be attached as metadata-only `EvidenceItem` records with `acquisition_mode=search_discovery` and `provenance_type=search_discovery_candidate`.
 
 Accepted candidates should retain conservative provenance until stronger source
 evidence exists. A candidate URL improves review context but is not verification.
@@ -39,8 +40,8 @@ Recommended flow:
 keyword/event query
   -> discovery provider or mock fixture returns URL/title/snippet candidates
   -> user reviews candidate list
-  -> accepted candidates become manual_url evidence or wait for parser review
-  -> EvidenceItem normalization
+  -> accepted candidates become metadata-only search_discovery EvidenceItems
+  -> optional later enrichment through manual_url, upload, or reviewed parser
   -> deterministic offline case analysis
 ```
 
@@ -51,7 +52,8 @@ keyword/event query
 3. User reviews relevance, source lawfulness, and whether content should be used.
 4. User accepts or rejects each candidate.
 5. Accepted candidates can be:
-   - manually attached with title/body/comment text through Manual URL Evidence
+   - attached as metadata-only search-discovery evidence in the mock Candidate Review UI
+   - enriched later with title/body/comment text through Manual URL Evidence
    - included in CSV/Excel evidence import
    - routed to a reviewed public parser only when source rules allow it
 6. No page fetching occurs unless a later source-specific parser is explicitly reviewed, fixture-tested, and configured.
@@ -102,5 +104,5 @@ Accepted candidate evidence uses `acquisition_mode=search_discovery`, `provenanc
 - Provider adapter design with strict no-fetch tests by default.
 - RSS discovery pilot using fixture data first.
 - GDELT/news discovery research.
-- User-reviewed candidate attach workflow.
+- Candidate enrichment and review workflow polish.
 - Source-specific public parser routing only after compliance review.

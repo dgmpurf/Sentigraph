@@ -283,6 +283,7 @@ def evidence_items_to_raw_data(evidence_items: list[EvidenceItem]) -> tuple[list
     posts: list[RawPost] = []
     comments: list[RawComment] = []
     post_ids: set[str] = set()
+    comment_ids_by_evidence_id: dict[str, str] = {}
     now = datetime.now(timezone.utc).isoformat()
 
     for item in enrich_and_deduplicate_evidence_items(evidence_items):
@@ -320,12 +321,16 @@ def evidence_items_to_raw_data(evidence_items: list[EvidenceItem]) -> tuple[list
             content = item.comment_text or item.body_text or item.title or ""
             if not content:
                 continue
+            comment_id = item.evidence_id or _evidence_id(platform, item.evidence_type, str(len(comments) + 1))
+            if comment_id == root_id or comment_id in post_ids:
+                comment_id = f"{comment_id}_{item.evidence_type or 'comment'}"
+            parent_id = comment_ids_by_evidence_id.get(str(item.parent_id or ""), item.parent_id)
             comments.append(
                 RawComment(
                     platform=platform,
                     post_id=root_id,
-                    comment_id=item.evidence_id or _evidence_id(platform, item.evidence_type, str(len(comments) + 1)),
-                    parent_id=item.parent_id,
+                    comment_id=comment_id,
+                    parent_id=parent_id,
                     author_id=item.author_id or "evidence_author",
                     author_name=item.author_name or "Evidence author",
                     content=content,
@@ -337,6 +342,8 @@ def evidence_items_to_raw_data(evidence_items: list[EvidenceItem]) -> tuple[list
                     raw_data=raw_data,
                 )
             )
+            if item.evidence_id:
+                comment_ids_by_evidence_id[item.evidence_id] = comment_id
 
     return posts, comments
 

@@ -427,13 +427,13 @@ Forbidden data types:
 
 Current Sentigraph status:
 
-- Static status/mock endpoint only. `GET /api/v1/search-discovery/status` and `GET /api/v1/search-discovery/mock-candidates?query=Tesla` return planning metadata and deterministic mock candidates only.
+- Static status/mock endpoints and mock-only candidate attach are implemented. `GET /api/v1/search-discovery/status` and `GET /api/v1/search-discovery/mock-candidates?query=Tesla` return planning metadata and deterministic mock candidates only; `POST /api/v1/cases/{case_id}/search-discovery/candidates/attach` attaches accepted mock candidates as metadata-only `EvidenceItem` records.
 - No real search provider is configured.
-- Search Discovery candidates are metadata leads, not evidence records, until a user reviews and attaches usable text.
+- Search Discovery candidates are metadata leads. Accepted mock candidates can be attached as review-needed metadata evidence; they still are not full article/video/forum content.
 
 Next action:
 
-- Design user-reviewed candidate attach flow.
+- Browser-smoke and keep the mock candidate-review attach flow stable.
 - Research RSS and GDELT/news discovery with fixtures before any real provider call.
 - Keep full content extraction behind Manual URL Evidence, user upload, licensed vendor data, or reviewed public parser rules.
 

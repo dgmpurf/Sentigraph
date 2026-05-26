@@ -137,6 +137,14 @@ def test_accepting_mock_candidate_attaches_search_discovery_evidence(monkeypatch
     assert job["safe_metadata"]["real_search_api_calls"] is False
     assert job["safe_metadata"]["url_fetching"] is False
 
+    run_response = client.post(f"/api/v1/cases/{case_id}/run")
+    assert run_response.status_code == 200
+    run_body = run_response.json()
+    assert run_body["analysis_input_source"] == "case_evidence_items"
+    graph_nodes = run_body["visualization_data"]["propagation_graph"]["nodes"]
+    node_ids = [node["node_id"] for node in graph_nodes]
+    assert len(node_ids) == len(set(node_ids))
+
 
 def test_search_discovery_candidate_attach_redacts_secret_like_metadata() -> None:
     case_id = _create_case()
