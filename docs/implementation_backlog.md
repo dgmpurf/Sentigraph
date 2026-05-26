@@ -10,7 +10,7 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ### RSS/GDELT Mock-Provider Planning
 
-Status: implemented and validated on 2026-05-26.
+Status: implemented, validated, and browser-smoked on 2026-05-26.
 
 Completed:
 
@@ -19,6 +19,8 @@ Completed:
 - Extended `GET /api/v1/search-discovery/mock-candidates` with `provider=rss_mock` and `provider=gdelt_mock`.
 - RSS/GDELT candidates are static local fixtures with `example.test` URLs, metadata-only snippets, and no live network behavior.
 - Search Discovery UI now has a provider selector and provider status card for mock/static safety boundaries.
+- Browser smoke verified switching between Mock Static, RSS Mock, and GDELT Mock, generating candidates, accepting/rejecting candidates, attaching accepted candidates to a case, and seeing the attached candidates in Evidence, Evidence Review Queue, and Evidence Scale / Coverage.
+- The provider status card now explicitly shows `candidate metadata only` and `No URL content extraction`.
 - Added `docs/search_discovery_provider_plan.md`.
 
 Acceptance:
@@ -26,13 +28,13 @@ Acceptance:
 - No real RSS feeds, GDELT APIs, search APIs, website APIs, URL fetching, scraping, cookies, MediaCrawler, real LLM calls, or secret exposure are introduced.
 - Accepted RSS/GDELT mock candidates still attach as review-needed `EvidenceItem` records with `provenance_type=search_discovery_candidate`.
 - Real RSS/GDELT/search provider integration remains future work behind terms/quota review, mocked fixtures, and no-fetch tests.
-- Validation passed with `python -m pytest` (`609 passed`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed`), and `npm --prefix frontend run build`.
+- Validation passed with `python -m pytest` (`609 passed in 7.78s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`), and `npm --prefix frontend run build` (`built in 7.89s`; existing non-blocking large chunk warning remains).
 
 Future tasks:
 
-- Browser-smoke RSS/GDELT provider selector after full validation.
-- Plan RSS/GDELT/provider adapters only as design work until live-provider approval is explicit.
-- Keep automatic parser fetch and real search provider integration future-only.
+- Plan a user-reviewed URL-list provider or RSS/GDELT/provider adapters only as design work until live-provider approval is explicit.
+- Keep real RSS/GDELT providers, real search provider integration, and automatic parser fetch future-only.
+- Continue waiting for official platform API gates before adding real Douyin/Bilibili ingestion.
 
 ### Mock-Only Search Discovery Candidate Review
 

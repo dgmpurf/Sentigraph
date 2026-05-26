@@ -335,7 +335,8 @@ export function SearchDiscovery({
             <Tag color="purple">{selectedProviderStatus?.provider_type || provider}</Tag>
             <Tag color="blue">{selectedProviderStatus?.status || 'mock_only'}</Tag>
             <Tag color="green">live_fetch_enabled=false</Tag>
-            <Tag color="green">metadata only</Tag>
+            <Tag color="green">candidate metadata only</Tag>
+            <Tag color="green">No URL content extraction</Tag>
             <Tag color="gold">full_content=false</Tag>
           </Space>
         </div>
