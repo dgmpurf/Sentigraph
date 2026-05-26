@@ -83,6 +83,7 @@ const PlatformIntegrationOverview = lazyNamed(
   () => import('./pages/PlatformIntegrationOverview.jsx'),
   'PlatformIntegrationOverview',
 )
+const SearchDiscovery = lazyNamed(() => import('./pages/SearchDiscovery.jsx'), 'SearchDiscovery')
 const SelectorRepairTool = lazyNamed(() => import('./pages/SelectorRepairTool.jsx'), 'SelectorRepairTool')
 const LlmAdminStatus = lazyNamed(() => import('./pages/LlmAdminStatus.jsx'), 'LlmAdminStatus')
 const BenchmarkDashboard = lazyNamed(() => import('./pages/BenchmarkDashboard.jsx'), 'BenchmarkDashboard')
@@ -721,6 +722,7 @@ function App() {
     summary: <SummaryReport {...pageProps} />,
     publicParsers: <PublicParserStatus />,
     platformIntegrations: <PlatformIntegrationOverview />,
+    searchDiscovery: <SearchDiscovery {...pageProps} />,
     selectorRepair: <SelectorRepairTool />,
     llmSafety: <LlmAdminStatus />,
     benchmarks: <BenchmarkDashboard />,

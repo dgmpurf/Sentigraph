@@ -8,6 +8,34 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Mock-Only Search Discovery Candidate Review
+
+Status: implemented and browser-smoked on 2026-05-26.
+
+Completed:
+
+- Added `SearchDiscoveryCandidateAttachRequest` and `SearchDiscoveryCandidateAttachResult` schemas.
+- Added `POST /api/v1/cases/{case_id}/search-discovery/candidates/attach`.
+- Accepted mock/static candidates become normalized `EvidenceItem` records with `acquisition_mode=search_discovery`, `provenance_type=search_discovery_candidate`, conservative trust, URL/title/snippet metadata only, and review-needed behavior.
+- Rejected and still-pending candidates are not attached.
+- Added a `Search Discovery` frontend page for generating mock candidates, accepting/rejecting candidates, selecting a target case, attaching accepted candidates, and optionally running analysis after attach.
+- Added `docs/search_discovery_candidate_review.md`.
+- Browser smoke generated mock candidates, accepted one, rejected one, attached the accepted candidate, and verified the resulting `search_discovery` / `search_discovery_candidate` evidence is visible in Cases, Evidence Review Queue, and Evidence Scale / Coverage.
+
+Acceptance:
+
+- This is not live search and does not call real search APIs.
+- Candidate URLs are not fetched and websites are not scraped.
+- Candidate snippets are metadata, not full source text.
+- Attached candidate evidence remains reviewable and does not claim official/source verification.
+- MediaCrawler remains not integrated and GitHub Actions CI remains intentionally disabled.
+- Validation passed with `python -m pytest` (`604 passed in 7.40s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 8.28s`; existing non-blocking large chunk warning remains).
+
+Future tasks:
+
+- Add provider adapter design only after provider terms/quota review and mocked fixtures.
+- Add RSS/GDELT/news discovery research without live fetching by default.
+
 ### Large-Scale Evidence Ingestion Roadmap and Batch Scaffold
 
 Status: roadmap, lightweight local scaffold, and browser smoke QA complete on 2026-05-26.
@@ -36,7 +64,7 @@ Future tasks:
 
 - Add chunked/resumable CSV/Excel/JSON import only if larger demo datasets require it.
 - Add durable worker/storage backend later for tens of thousands of evidence rows.
-- Keep Search Discovery candidate-review UI, RSS/GDELT research, vendor integrations, and Douyin/Bilibili official API gates as future tasks.
+- Keep RSS/GDELT research, vendor integrations, and Douyin/Bilibili official API gates as future tasks.
 
 ### Evidence Review History / Audit Timeline MVP
 
@@ -133,7 +161,7 @@ Future tasks:
 - Add an Evidence Review Queue MVP for `needs_review`, screenshot/unverified evidence, source-url-missing evidence, and duplicate groups.
 - Large-scale evidence ingestion remains a future task after review/queue controls are stable.
 - AI-assisted evidence review remains future work; no real LLM review is active.
-- Search Discovery candidate-review UI remains future work.
+- Search Discovery candidate-review UI is now mock-only; real providers remain future work.
 - Keep Search Discovery candidate review mock-only unless an approved provider path is configured.
 - MediaCrawler remains not integrated.
 - GitHub Actions CI remains intentionally disabled.
@@ -159,11 +187,11 @@ Acceptance:
 
 Future tasks:
 
-- Mock Search Discovery UI for candidate review.
+- Browser-smoke the mock Search Discovery UI for candidate review.
 - Provider adapter design with fail-closed no-network tests.
 - RSS discovery pilot with fixtures.
 - GDELT/news discovery research.
-- User-reviewed candidate attach workflow.
+- Extend user-reviewed candidate attach only after the mock workflow is stable.
 - No automatic scraping.
 - MediaCrawler remains not integrated.
 - GitHub Actions CI remains intentionally disabled.

@@ -33,6 +33,10 @@ from app.schemas.evidence import (
     EvidenceReviewTimeline,
     EvidenceTrustSummary,
 )
+from app.schemas.search_discovery import (
+    SearchDiscoveryCandidateAttachRequest,
+    SearchDiscoveryCandidateAttachResult,
+)
 from app.services.evidence_import import (
     build_import_commit_result,
     build_imported_evidence_items,
@@ -65,6 +69,7 @@ from app.services.monitoring.alert_evaluator import evaluate_alerts
 from app.services.monitoring.snapshot_builder import build_analysis_snapshot
 from app.services.notifications.notification_service import create_notifications_from_alerts
 from app.services.recommendation.report_builder import build_public_opinion_report
+from app.services.search_discovery import search_discovery_candidates_to_evidence_items
 from app.services.storage.base_store import CaseStore
 from app.services.storage.store_factory import create_case_store_from_env
 from app.services.visualization.chart_data_builder import build_visualization_response
@@ -423,6 +428,75 @@ def attach_case_evidence(case_id: str, payload: EvidenceIngestionBatch) -> Evide
     if not saved_case:
         return None
     return build_evidence_ingestion_result(case_id, saved_case.evidence_items)
+
+
+def attach_search_discovery_candidates(
+    case_id: str,
+    payload: SearchDiscoveryCandidateAttachRequest,
+) -> SearchDiscoveryCandidateAttachResult | None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+    evidence_items, skipped_count, rejected_count, warnings = search_discovery_candidates_to_evidence_items(
+        case_id=case_id,
+        candidates=payload.candidates,
+        user_attestation_text=payload.user_attestation_text,
+        reviewer_label=payload.reviewer_label,
+    )
+    existing_hashes = {item.normalized_content_hash for item in enrich_and_deduplicate_evidence_items(case.evidence_items)}
+    new_items = [
+        item
+        for item in enrich_and_deduplicate_evidence_items(evidence_items)
+        if item.normalized_content_hash not in existing_hashes
+    ]
+    total_items = merge_evidence_items(case.evidence_items, evidence_items)
+    timestamp = repository.next_timestamp()
+    job = _build_evidence_ingestion_job(
+        case_id=case_id,
+        input_type="search_discovery",
+        source_type=_job_source_type(evidence_items, default="public_web"),
+        acquisition_mode=_job_acquisition_mode(evidence_items, default="search_discovery"),
+        total_rows=len(payload.candidates),
+        accepted_rows=len(new_items),
+        rejected_rows=rejected_count + skipped_count,
+        duplicate_rows=max(0, len(evidence_items) - len(new_items)),
+        warning_count=_evidence_warning_count(evidence_items) + len(warnings),
+        review_needed_count=build_review_summary(case_id, evidence_items).review_needed_count,
+        timestamp=timestamp,
+        safe_metadata={
+            "source": "search_discovery_candidate_attach",
+            "mock_candidates_only": True,
+            "raw_file_persisted": False,
+            "real_search_api_calls": False,
+            "real_website_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        },
+    )
+    saved_case = repository.save_case_evidence(
+        case_id,
+        evidence_items=total_items,
+        evidence_ingestion_jobs=_prepend_evidence_job(case.evidence_ingestion_jobs, job),
+        updated_at=timestamp,
+    )
+    if not saved_case:
+        return None
+
+    result = build_evidence_ingestion_result(case_id, saved_case.evidence_items)
+    attached_ids = {item.evidence_id for item in new_items}
+    attached_items = [item for item in result.evidence_items if item.evidence_id in attached_ids]
+    return SearchDiscoveryCandidateAttachResult(
+        case_id=case_id,
+        status="attached" if attached_items else "empty",
+        attached_candidate_count=len(attached_items),
+        skipped_candidate_count=skipped_count,
+        rejected_candidate_count=rejected_count,
+        attached_evidence_items=attached_items,
+        evidence_result=result,
+        warnings=warnings,
+    )
 
 
 def preview_case_evidence_import(case_id: str, payload: EvidenceImportPreviewRequest) -> EvidenceImportPreviewResult | None:

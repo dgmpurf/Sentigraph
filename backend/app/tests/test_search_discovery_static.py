@@ -1,12 +1,22 @@
 from pathlib import Path
 import urllib.request
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.repositories.case_repository import CaseRepository
+from app.services.case_store import configure_case_repository, reset_case_store
+from app.services.storage.local_json_store import LocalJsonCaseStore
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def configure_temp_case_store(tmp_path) -> None:
+    configure_case_repository(CaseRepository(LocalJsonCaseStore(tmp_path / "cases.json")))
+    reset_case_store()
 
 
 def test_search_discovery_status_is_static_and_safe(monkeypatch) -> None:
@@ -79,6 +89,80 @@ def test_search_discovery_does_not_expose_secrets_or_credentials() -> None:
         assert fragment not in response_text
 
 
+def test_accepting_mock_candidate_attaches_search_discovery_evidence(monkeypatch) -> None:
+    def fail_urlopen(*args, **kwargs):
+        raise AssertionError("Search Discovery candidate attach must not fetch URLs.")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fail_urlopen)
+    case_id = _create_case()
+    candidates = client.get("/api/v1/search-discovery/mock-candidates", params={"query": "Tesla"}).json()["candidates"]
+    candidates[0]["status"] = "accepted"
+    candidates[1]["status"] = "rejected"
+
+    response = client.post(
+        f"/api/v1/cases/{case_id}/search-discovery/candidates/attach",
+        json={"candidates": candidates[:2], "reviewer_label": "qa_reviewer"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["attached_candidate_count"] == 1
+    assert body["rejected_candidate_count"] == 1
+    assert body["safe_mode"]["real_search_api_calls"] is False
+    assert body["safe_mode"]["url_fetching"] is False
+    assert body["evidence_result"]["evidence_item_count"] == 1
+    item = body["attached_evidence_items"][0]
+    assert item["acquisition_mode"] == "search_discovery"
+    assert item["provenance_type"] == "search_discovery_candidate"
+    assert item["verification_status"] == "source_url_provided_unverified"
+    assert item["source_url_present"] is True
+    assert item["review_status"] == "review_needed"
+    assert item["raw_data_safe"]["url_fetched"] is False
+    assert "Mock discovery metadata only" in item["body_text"]
+
+    evidence_response = client.get(f"/api/v1/cases/{case_id}/evidence")
+    assert evidence_response.status_code == 200
+    assert "public video reaction" not in evidence_response.text
+
+    review_response = client.get(f"/api/v1/cases/{case_id}/evidence/review-queue")
+    assert review_response.status_code == 200
+    queue = review_response.json()
+    assert queue["queue_count"] == 1
+    assert queue["queue_items"][0]["provenance_type"] == "search_discovery_candidate"
+
+    jobs_response = client.get(f"/api/v1/cases/{case_id}/evidence/jobs")
+    assert jobs_response.status_code == 200
+    job = jobs_response.json()[0]
+    assert job["input_type"] == "search_discovery"
+    assert job["safe_metadata"]["real_search_api_calls"] is False
+    assert job["safe_metadata"]["url_fetching"] is False
+
+
+def test_search_discovery_candidate_attach_redacts_secret_like_metadata() -> None:
+    case_id = _create_case()
+    candidate = client.get("/api/v1/search-discovery/mock-candidates", params={"query": "Tesla"}).json()["candidates"][0]
+    candidate.update(
+        {
+            "status": "accepted",
+            "title": "api_key=should-not-appear",
+            "snippet": "access_token=should-not-appear",
+            "url": "https://example.test/news/item?client_secret=should-not-appear",
+        }
+    )
+
+    response = client.post(
+        f"/api/v1/cases/{case_id}/search-discovery/candidates/attach",
+        json={"candidates": [candidate]},
+    )
+
+    assert response.status_code == 200
+    assert "should-not-appear" not in response.text
+    item = response.json()["attached_evidence_items"][0]
+    assert "[REDACTED]" in item["title"]
+    assert "[REDACTED]" in item["body_text"]
+    assert "[REDACTED]" in item["url"]
+
+
 def test_search_discovery_does_not_integrate_mediacrawler_in_product_code() -> None:
     body = client.get("/api/v1/search-discovery/status").json()
     assert body["safe_mode"]["third_party_crawler_integrated"] is False
@@ -99,3 +183,12 @@ def test_search_discovery_does_not_integrate_mediacrawler_in_product_code() -> N
                     matches.append(str(file_path.relative_to(repo_root)))
 
     assert matches == []
+
+
+def _create_case() -> str:
+    response = client.post(
+        "/api/v1/cases",
+        json={"keyword": "Tesla", "platforms": ["public_web"], "title": "Search Discovery QA Case"},
+    )
+    assert response.status_code == 200
+    return response.json()["case_id"]

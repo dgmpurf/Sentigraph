@@ -33,6 +33,18 @@ export async function getSearchDiscoveryStatus() {
   return normalizeSearchDiscoveryStatus(data)
 }
 
+export async function getMockSearchDiscoveryCandidates(query = 'Tesla') {
+  const { data } = await apiClient.get(`${API_PREFIX}/search-discovery/mock-candidates`, {
+    params: { query },
+  })
+  return normalizeSearchDiscoveryBatch(data)
+}
+
+export async function attachSearchDiscoveryCandidates(caseId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/search-discovery/candidates/attach`, payload)
+  return normalizeSearchDiscoveryAttachResult(data)
+}
+
 export async function getPublicParserStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/public-parsers/status`)
   return normalizePublicParserStatus(data)
@@ -1085,6 +1097,80 @@ function normalizeSearchDiscoveryProvider(provider) {
     user_review_required: provider.user_review_required !== false,
     current_sentigraph_status: String(provider.current_sentigraph_status || ''),
     next_action: String(provider.next_action || ''),
+  }
+}
+
+function normalizeSearchDiscoveryBatch(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      query: '',
+      generated_at: '',
+      candidates: [],
+      candidate_count: 0,
+      provider_statuses: [],
+      safe_mode: {},
+    }
+  }
+  return {
+    query: String(data.query || ''),
+    generated_at: String(data.generated_at || ''),
+    candidates: Array.isArray(data.candidates)
+      ? data.candidates.map(normalizeSearchDiscoveryCandidate).filter(Boolean)
+      : [],
+    candidate_count: Number(data.candidate_count || 0),
+    provider_statuses: Array.isArray(data.provider_statuses)
+      ? data.provider_statuses.map(normalizeSearchDiscoveryProvider).filter(Boolean)
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeSearchDiscoveryCandidate(candidate) {
+  if (!candidate || typeof candidate !== 'object') return null
+  return {
+    candidate_id: String(candidate.candidate_id || ''),
+    query: String(candidate.query || ''),
+    provider: String(candidate.provider || 'mock_fixture'),
+    platform_hint: String(candidate.platform_hint || 'public_web'),
+    title: String(candidate.title || ''),
+    snippet: String(candidate.snippet || ''),
+    url: String(candidate.url || ''),
+    published_at: candidate.published_at ? String(candidate.published_at) : '',
+    source_name: String(candidate.source_name || 'Mock Search Discovery'),
+    content_type_hint: String(candidate.content_type_hint || 'article'),
+    confidence: normalizeRatio(candidate.confidence, 0),
+    acquisition_mode: String(candidate.acquisition_mode || 'search_discovery'),
+    status: String(candidate.status || 'pending_review'),
+    safety_notes: Array.isArray(candidate.safety_notes) ? candidate.safety_notes.map((item) => String(item)) : [],
+  }
+}
+
+function normalizeSearchDiscoveryAttachResult(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      case_id: '',
+      status: 'empty',
+      attached_candidate_count: 0,
+      skipped_candidate_count: 0,
+      rejected_candidate_count: 0,
+      attached_evidence_items: [],
+      evidence_result: normalizeEvidenceIngestionResult(null),
+      warnings: [],
+      safe_mode: {},
+    }
+  }
+  return {
+    case_id: String(data.case_id || ''),
+    status: String(data.status || 'empty'),
+    attached_candidate_count: Number(data.attached_candidate_count || 0),
+    skipped_candidate_count: Number(data.skipped_candidate_count || 0),
+    rejected_candidate_count: Number(data.rejected_candidate_count || 0),
+    attached_evidence_items: Array.isArray(data.attached_evidence_items)
+      ? data.attached_evidence_items.map(normalizeEvidenceItem).filter(Boolean)
+      : [],
+    evidence_result: normalizeEvidenceIngestionResult(data.evidence_result),
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }
 

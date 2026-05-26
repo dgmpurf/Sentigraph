@@ -26,6 +26,10 @@ from app.schemas.evidence import (
     EvidenceReviewTimeline,
     EvidenceTrustSummary,
 )
+from app.schemas.search_discovery import (
+    SearchDiscoveryCandidateAttachRequest,
+    SearchDiscoveryCandidateAttachResult,
+)
 from app.services.evidence_import import EvidenceImportError
 from app.services.evidence_ingestion import EvidenceValidationError
 from app.schemas.forecast import ForecastResult
@@ -38,6 +42,7 @@ from app.services.simulation.case_initializer import (
 from app.services.simulation.schemas import CaseSimulationInitializationResult
 from app.services.case_store import (
     attach_case_evidence,
+    attach_search_discovery_candidates,
     commit_case_evidence_import,
     create_case,
     export_case_markdown,
@@ -201,6 +206,17 @@ def attach_evidence_to_case(case_id: str, payload: EvidenceIngestionBatch) -> Ev
                 "url_fetching": False,
             },
         ) from exc
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.post("/{case_id}/search-discovery/candidates/attach", response_model=SearchDiscoveryCandidateAttachResult)
+def attach_search_discovery_candidates_to_case(
+    case_id: str,
+    payload: SearchDiscoveryCandidateAttachRequest,
+) -> SearchDiscoveryCandidateAttachResult:
+    result = attach_search_discovery_candidates(case_id, payload)
     if not result:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return result

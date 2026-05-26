@@ -61,9 +61,10 @@ keyword/event query
 ```http
 GET /api/v1/search-discovery/status
 GET /api/v1/search-discovery/mock-candidates?query=Tesla
+POST /api/v1/cases/{case_id}/search-discovery/candidates/attach
 ```
 
-Both endpoints return static/mock metadata only. They do not call real search APIs, fetch URLs, read credentials, expose secrets, or start crawlers.
+The status and candidate endpoints return static/mock metadata only. The attach endpoint accepts user-reviewed mock/static candidates and saves accepted candidates as conservative `EvidenceItem` records. These endpoints do not call real search APIs, fetch URLs, read credentials, expose secrets, or start crawlers.
 
 ## Candidate Schema Summary
 
@@ -84,6 +85,8 @@ Both endpoints return static/mock metadata only. They do not call real search AP
 - `status=pending_review|accepted|rejected|attached`
 - `safety_notes`
 
+Accepted candidate evidence uses `acquisition_mode=search_discovery`, `provenance_type=search_discovery_candidate`, URL/title/snippet metadata only, conservative trust, and review-needed behavior. Rejected candidates are not attached.
+
 ## Safety Boundary
 
 - Default status is `planning_mock_only`.
@@ -95,7 +98,7 @@ Both endpoints return static/mock metadata only. They do not call real search AP
 
 ## Future Work
 
-- Mock Search Discovery UI for candidate review.
+- Mock Search Discovery UI for candidate review is implemented.
 - Provider adapter design with strict no-fetch tests by default.
 - RSS discovery pilot using fixture data first.
 - GDELT/news discovery research.

@@ -898,6 +898,40 @@ It does not call real search APIs, call website APIs, fetch URLs, scrape pages, 
 
 `SearchDiscoveryBatch` returns a query, generated time, candidates, provider statuses, counts, and safe-mode flags. `SearchDiscoveryReviewDecision` is a planned review object with `candidate_id`, `decision`, `reviewer_note`, and `route_to`.
 
+`SearchDiscoveryCandidateAttachRequest`:
+
+```json
+{
+  "candidates": [],
+  "reviewer_label": "local_demo_reviewer",
+  "user_attestation_text": null
+}
+```
+
+`SearchDiscoveryCandidateAttachResult`:
+
+```json
+{
+  "case_id": "case_001",
+  "status": "attached",
+  "attached_candidate_count": 1,
+  "skipped_candidate_count": 0,
+  "rejected_candidate_count": 1,
+  "attached_evidence_items": [],
+  "evidence_result": {},
+  "warnings": [],
+  "safe_mode": {
+    "mock_candidates_only": true,
+    "real_search_api_calls": false,
+    "url_fetching": false,
+    "scraping": false,
+    "secrets_exposed": false
+  }
+}
+```
+
+Accepted candidates become `EvidenceItem` records with `acquisition_mode=search_discovery`, `provenance_type=search_discovery_candidate`, URL/title/snippet metadata only, conservative trust, and review-needed behavior. Rejected candidates do not become evidence. Candidate URL content is not fetched.
+
 Candidate status values:
 
 - `pending_review`

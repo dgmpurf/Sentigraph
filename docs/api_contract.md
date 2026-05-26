@@ -1924,6 +1924,41 @@ Important:
 - Accepted candidates should route to Manual URL Evidence, CSV/Excel import, or a separately reviewed public parser path.
 - Full content extraction is not part of Search Discovery.
 
+### Search Discovery Candidate Attach
+
+```http
+POST /api/v1/cases/{case_id}/search-discovery/candidates/attach
+```
+
+Accepts user-reviewed mock/static candidates and converts only accepted candidates into normalized `EvidenceItem` records. Rejected or still-pending candidates are not attached.
+
+Request:
+
+```json
+{
+  "candidates": [
+    {
+      "candidate_id": "mock_search_tesla_article_001",
+      "query": "Tesla",
+      "provider": "mock_fixture",
+      "platform_hint": "news_site",
+      "title": "Tesla public article discussion",
+      "snippet": "Mock discovery metadata only.",
+      "url": "https://example.test/news/tesla-public-article",
+      "source_name": "Mock News Index",
+      "content_type_hint": "article",
+      "confidence": 0.82,
+      "acquisition_mode": "search_discovery",
+      "status": "accepted",
+      "safety_notes": ["mock fixture only", "URL was not fetched"]
+    }
+  ],
+  "reviewer_label": "local_demo_reviewer"
+}
+```
+
+Attached evidence uses `acquisition_mode=search_discovery`, `provenance_type=search_discovery_candidate`, `verification_status=source_url_provided_unverified`, conservative trust, safe metadata only, and review-needed behavior. The endpoint does not call real search APIs, fetch URLs, scrape pages, use cookies, call real LLMs, expose secrets, or integrate MediaCrawler.
+
 ### Run Case
 
 ```http

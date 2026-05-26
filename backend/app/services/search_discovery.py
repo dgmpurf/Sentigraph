@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 
+from app.schemas.evidence import EvidenceItem, EvidenceNormalizationMetadata
 from app.schemas.search_discovery import (
     SearchDiscoveryBatch,
     SearchDiscoveryCandidate,
     SearchDiscoveryProviderStatus,
     SearchDiscoveryStatusResponse,
+)
+from app.services.evidence_ingestion import enrich_and_deduplicate_evidence_items
+
+
+SECRET_TEXT_PATTERN = re.compile(
+    r"\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|cookie|authorization)\b\s*[:=]\s*([^\s,;]+)",
+    re.IGNORECASE,
 )
 
 
@@ -203,6 +212,115 @@ def get_mock_search_discovery_candidates(query: str = "Tesla") -> SearchDiscover
     )
 
 
+def search_discovery_candidates_to_evidence_items(
+    *,
+    case_id: str,
+    candidates: list[SearchDiscoveryCandidate],
+    user_attestation_text: str | None = None,
+    reviewer_label: str | None = None,
+) -> tuple[list[EvidenceItem], int, int, list[str]]:
+    """Convert accepted mock/static candidates into conservative EvidenceItems.
+
+    The conversion is metadata-only. It never fetches candidate URLs or calls a
+    discovery provider.
+    """
+
+    evidence_items: list[EvidenceItem] = []
+    skipped_count = 0
+    rejected_count = 0
+    warnings: list[str] = []
+
+    for candidate in candidates:
+        if candidate.status == "rejected":
+            rejected_count += 1
+            continue
+        if candidate.status not in {"accepted", "attached"}:
+            skipped_count += 1
+            warnings.append(f"candidate_not_accepted:{candidate.candidate_id}")
+            continue
+
+        redacted_title, title_redacted = _redact_text(candidate.title)
+        redacted_snippet, snippet_redacted = _redact_text(candidate.snippet)
+        redacted_url, url_redacted = _redact_text(candidate.url)
+        redacted_source_name, source_redacted = _redact_text(candidate.source_name)
+        redaction_warnings = [
+            field
+            for field, redacted in (
+                ("title", title_redacted),
+                ("snippet", snippet_redacted),
+                ("url", url_redacted),
+                ("source_name", source_redacted),
+            )
+            if redacted
+        ]
+
+        evidence_type = _candidate_evidence_type(candidate.content_type_hint)
+        source_type = _candidate_source_type(candidate.platform_hint)
+        platform = _candidate_platform(candidate.platform_hint)
+        evidence_items.append(
+            EvidenceItem(
+                evidence_id=f"evidence_search_discovery_{_safe_token(candidate.candidate_id)}",
+                case_id=case_id,
+                platform=platform,
+                source_type=source_type,
+                acquisition_mode="search_discovery",
+                evidence_type=evidence_type,
+                title=redacted_title,
+                body_text=redacted_snippet,
+                url=redacted_url,
+                created_at=candidate.published_at,
+                raw_data_safe={
+                    "candidate_id": candidate.candidate_id,
+                    "query": _redact_text(candidate.query)[0],
+                    "provider": _redact_text(candidate.provider)[0],
+                    "source_name": redacted_source_name,
+                    "platform_hint": _redact_text(candidate.platform_hint)[0],
+                    "content_type_hint": _redact_text(candidate.content_type_hint)[0],
+                    "candidate_status": candidate.status,
+                    "safety_notes": [_redact_text(note)[0] for note in candidate.safety_notes],
+                    "url_fetched": False,
+                    "scraping": False,
+                },
+                confidence=candidate.confidence,
+                language="unknown",
+                content_visibility="public_metadata_only",
+                access_scope="public_metadata_only",
+                ingestion_metadata=EvidenceNormalizationMetadata(
+                    normalized_from="search_discovery_candidate",
+                    source_record_id=candidate.candidate_id,
+                    source_type=source_type,
+                    acquisition_mode="search_discovery",
+                    warnings=[f"secret_like_candidate_field_redacted:{field}" for field in redaction_warnings],
+                ),
+                provenance_type="search_discovery_candidate",
+                verification_status="source_url_provided_unverified",
+                trust_score=0.42,
+                trust_label="low",
+                source_url=redacted_url,
+                source_url_present=bool(redacted_url),
+                source_platform_claim=candidate.platform_hint,
+                source_capture_method="search_result_metadata",
+                submitted_by_label=reviewer_label,
+                user_attestation_required=not bool((user_attestation_text or "").strip()),
+                user_attestation_text=user_attestation_text,
+                review_status="not_reviewed" if user_attestation_text else "review_needed",
+                risk_flags=["search_discovery_metadata_only", *[f"secret_redacted:{field}" for field in redaction_warnings]],
+                verification_notes=[
+                    "Search discovery candidates are metadata leads only.",
+                    "Candidate URL content was not fetched.",
+                    "Human review is required before treating the source as stronger evidence.",
+                ],
+            )
+        )
+
+    return (
+        enrich_and_deduplicate_evidence_items(evidence_items),
+        skipped_count,
+        rejected_count,
+        _dedupe_warnings(warnings),
+    )
+
+
 def _candidate_safety_notes() -> list[str]:
     return [
         "mock fixture only",
@@ -210,6 +328,45 @@ def _candidate_safety_notes() -> list[str]:
         "snippet is not full content",
         "human review required before attach",
     ]
+
+
+def _candidate_evidence_type(content_type_hint: str) -> str:
+    normalized = (content_type_hint or "").strip().lower()
+    if normalized in {"video", "article", "post", "comment", "reply", "title", "body_text", "interaction_metric", "search_result"}:
+        return normalized
+    return "search_result"
+
+
+def _candidate_source_type(platform_hint: str) -> str:
+    normalized = (platform_hint or "").strip().lower()
+    if normalized in {"youtube", "douyin", "bilibili", "weibo", "xiaohongshu", "reddit"}:
+        return normalized
+    if normalized in {"news_site", "the_paper", "jiemian", "toutiao"}:
+        return "news_site"
+    if normalized in {"forum", "hupu", "tieba", "nga", "maimai", "douban", "zhihu"}:
+        return "forum"
+    return "public_web"
+
+
+def _candidate_platform(platform_hint: str) -> str:
+    normalized = (platform_hint or "").strip().lower()
+    if normalized in {"", "rss", "search", "search_discovery"}:
+        return "public_web"
+    return normalized
+
+
+def _redact_text(value: str | None) -> tuple[str, bool]:
+    text = str(value or "").strip()
+    redacted = SECRET_TEXT_PATTERN.sub(lambda match: f"{match.group(1)}=[REDACTED]", text)
+    return redacted, redacted != text
+
+
+def _dedupe_warnings(warnings: list[str]) -> list[str]:
+    values: list[str] = []
+    for warning in warnings:
+        if warning and warning not in values:
+            values.append(warning)
+    return values
 
 
 def _safe_query(query: str) -> str:
@@ -221,3 +378,7 @@ def _slugify(value: str) -> str:
     slug = "".join(char.lower() if char.isalnum() else "-" for char in value)
     slug = "-".join(part for part in slug.split("-") if part)
     return slug[:64] or "query"
+
+
+def _safe_token(value: str) -> str:
+    return "".join(char.lower() if char.isalnum() else "_" for char in str(value or "")).strip("_") or "candidate"

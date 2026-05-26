@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.evidence import EvidenceIngestionResult, EvidenceItem
+
 
 SearchDiscoveryCandidateStatus = Literal["pending_review", "accepted", "rejected", "attached"]
 
@@ -54,6 +56,38 @@ class SearchDiscoveryReviewDecision(BaseModel):
     decision: SearchDiscoveryCandidateStatus
     reviewer_note: str | None = None
     route_to: Literal["manual_url", "public_parser_review", "csv_import", "reject"] = "manual_url"
+
+
+class SearchDiscoveryCandidateAttachRequest(BaseModel):
+    candidates: list[SearchDiscoveryCandidate] = Field(default_factory=list)
+    reviewer_label: str | None = None
+    user_attestation_text: str | None = None
+
+
+class SearchDiscoveryCandidateAttachResult(BaseModel):
+    case_id: str
+    status: Literal["attached", "empty", "not_found"] = "attached"
+    attached_candidate_count: int = 0
+    skipped_candidate_count: int = 0
+    rejected_candidate_count: int = 0
+    attached_evidence_items: list[EvidenceItem] = Field(default_factory=list)
+    evidence_result: EvidenceIngestionResult
+    warnings: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "mock_candidates_only": True,
+            "real_search_api_calls": False,
+            "real_website_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "cookies_used": False,
+            "captcha_bypass": False,
+            "anti_bot_bypass": False,
+            "real_llm_calls": False,
+            "secrets_exposed": False,
+            "third_party_crawler_integrated": False,
+        }
+    )
 
 
 class SearchDiscoveryBatch(BaseModel):

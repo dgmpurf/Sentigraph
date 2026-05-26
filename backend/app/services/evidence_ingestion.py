@@ -1136,9 +1136,11 @@ def _trust_assessment(
         trust_score = 0.2
         notes.append("Screenshot/transcribed evidence is never automatically verified.")
     elif provenance_type == "search_discovery_candidate":
-        verification_status = "needs_review"
-        trust_score = 0.18
-        notes.append("Search discovery candidates are URL/title/snippet leads only until reviewed.")
+        verification_status = "source_url_provided_unverified" if source_url_present else "needs_review"
+        trust_score = 0.48 if source_url_present else 0.18
+        if has_attestation:
+            trust_score = min(0.52, trust_score + 0.04)
+        notes.append("Search discovery candidates are URL/title/snippet leads only until reviewed; URL content was not fetched.")
     elif provenance_type == "manual_url":
         if source_url_present and has_attestation:
             verification_status = "source_url_provided_unverified"
