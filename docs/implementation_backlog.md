@@ -1,12 +1,144 @@
 # Sentigraph Implementation Backlog
 
-Last updated: 2026-05-26
+Last updated: 2026-05-28
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
 
 CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate `.github/workflows/ci.yml` unless explicitly requested. Use local/Codex validation commands from the repository root: `python -m pytest`, `python scripts/run_offline_benchmarks.py`, and `npm --prefix frontend run build`; future CI can be reconsidered only if cost and notification concerns are resolved.
 
 ## Completed Pre-v1.0 Hardening Items
+
+### Vendor Sample Mapping And POC Scoring Utilities
+
+Status: offline utility implemented on 2026-05-28.
+
+Completed:
+
+- Added `docs/vendor_sample_mapping_guide.md` describing safe offline mapping
+  from third-party vendor CSV/JSON samples into Sentigraph-compatible evidence
+  rows without treating vendor data as official platform API data.
+- Added `scripts/map_vendor_sample_to_evidence.py`, a local-only mapper that
+  accepts CSV/JSON files, a vendor name, platform, and query, and emits
+  EvidenceItem-compatible JSONL or CSV.
+- Added `backend/app/tests/fixtures/evidence/vendor_sample_minimal.csv` and
+  `backend/app/tests/test_vendor_sample_mapping.py` covering local mapping,
+  missing-compliance behavior, timestamp parsing, unknown platforms, author
+  identifiers, secret redaction, output formats, and no network calls.
+- Standardized the POC default as `acquisition_mode=data_vendor`,
+  `provenance_type=data_vendor`, `verification_status=vendor_attested` only
+  when documented, and `trust_label=medium_low` at most until contract,
+  source-route, deletion-sync, retention, and personal-data handling are
+  verified.
+- Added conservative risk flags for vendor sample review:
+  `self_crawled_public_web`, `source_unclear`,
+  `deletion_sync_unknown`, `personal_data_unknown`,
+  `unsupported_platform_claim`, `source_url_missing`, `missing_timestamp`,
+  `possible_secret_redacted`, and `formula_like_text_plain`.
+
+Acceptance:
+
+- This is offline sample mapping only.
+- It does not call vendor APIs, implement real vendor adapters, fetch URLs,
+  scrape websites, use cookies, integrate MediaCrawler, store credentials, or
+  expose secrets.
+- Validation passed with `python -m pytest` (`614 passed in 8.81s`),
+  `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed,
+  0 warnings`, `no_regression`), and `npm --prefix frontend run build`
+  (`built in 9.31s`; existing non-blocking large chunk warning remains).
+
+Next options:
+
+- Run the mapper against a real vendor-provided sample only after the intake
+  checklist confirms source/rights and secret-free sample handling.
+- Use the generated JSONL/CSV as POC input, then complete the vendor
+  scorecard before any adapter design.
+- Keep a real Data Vendor Adapter blocked until POC, contract/DPA,
+  deletion-sync, retention, quota, security, and credential-handling gates pass.
+
+### Vendor POC Scoring Template
+
+Status: documentation complete on 2026-05-27.
+
+Completed:
+
+- Added `docs/vendor_scoring_rubric.md` with a 100-point scoring model:
+  Compliance / contract readiness (40), technical field completeness (25),
+  data quality (20), and risk control (15).
+- Added `docs/vendor_poc_scorecard_template.md` as a fillable vendor review
+  worksheet for source/rights, sample import summary, Sentigraph mapping, risk
+  flags, scoring, classification, next action, adapter gates, and sign-off.
+- Standardized vendor classifications: `approved_poc`, `limited_poc`,
+  `internal_research_only`, and `reject`.
+- Documented Sentigraph evidence mapping for vendor POC samples:
+  `acquisition_mode=data_vendor`, `provenance_type=data_vendor`,
+  `verification_status=vendor_attested` when documented, and default
+  `trust_label=medium_low`.
+- Added standard vendor risk flags:
+  `self_crawled_public_web`, `source_unclear`,
+  `deletion_sync_unknown`, and `personal_data_unknown`.
+
+Acceptance:
+
+- This is docs-only vendor evaluation scaffolding.
+- It does not call vendor APIs, implement adapters, scrape websites, integrate
+  MediaCrawler, store secrets, or authorize a live vendor feed.
+- Validation passed with `python -m pytest` (`609 passed in 7.04s`),
+  `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed,
+  0 warnings`, `no_regression`), and `npm --prefix frontend run build`
+  (`built in 8.22s`; existing non-blocking large chunk warning remains).
+
+Next options:
+
+- Use the scorecard on a concrete vendor sample.
+- Keep the result at `approved_poc` or `limited_poc` for CSV/Excel import only
+  until contract/DPA, security, quota, and adapter gates are complete.
+- Reject or quarantine vendors that require scraping bypass, cookies,
+  MediaCrawler, private data, unclear sources, or secret-bearing samples.
+
+### Data Vendor Intake And Sample Import Planning
+
+Status: documentation complete on 2026-05-26.
+
+Completed:
+
+- Added `docs/data_vendor_intake_checklist.md` for vendor identity,
+  supported-platform, data-field, pricing, SLA, sample, compliance,
+  commercial-rights, retention/deletion, personal-data, contract/DPA, and
+  red-flag review.
+- Added `docs/vendor_sample_data_schema.md` defining a safe vendor sample
+  schema with `acquisition_mode=data_vendor`, content IDs, parent/root IDs,
+  title/body/comment fields, metrics, timestamps, `raw_data_safe`, and
+  compliance metadata.
+- Added `docs/vendor_poc_plan.md` for bounded vendor comparison using the same
+  keyword, time window, platform list, 500 comments plus 50 parent contents per
+  platform, and CSV/Excel import.
+- Updated the source feasibility matrix so contracted vendor sample import is a
+  bounded green path, prospective vendors remain yellow until intake/POC gates
+  pass, and unofficial scrape APIs/source-code crawler solutions remain red or
+  internal-research-only.
+- Updated the Evidence Import guide to explain vendor CSV/JSON-to-EvidenceItem
+  mapping, `data_vendor` acquisition mode, conservative trust/provenance, and
+  no-secret sample requirements.
+
+Acceptance:
+
+- This is docs-only planning; no vendor API, real adapter, scraping path,
+  MediaCrawler integration, credential storage, or real API call path is added.
+- A Data Vendor Adapter remains future-only until vendor selection, POC,
+  contract/DPA, retention/deletion, security, quota, mocked fixture, and
+  credential-handling gates are complete.
+- Validation passed with `python -m pytest` (`609 passed in 6.58s`),
+  `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed,
+  0 warnings`, `no_regression`), and `npm --prefix frontend run build`
+  (`built in 8.11s`; existing non-blocking large chunk warning remains).
+
+Next options:
+
+- Run a vendor POC with CSV/Excel sample files only.
+- Compare vendors by coverage, duplication, freshness, field completeness,
+  trust/provenance, compliance fit, SLA, and cost.
+- Design a Data Vendor Adapter only after a vendor is selected and compliance
+  gates pass.
 
 ### v6.27 Demo Screenshot / Recording Asset Package
 

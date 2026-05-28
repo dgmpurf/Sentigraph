@@ -1,0 +1,3 @@
+source_provider,platform,source_type,query,content_id,url,title,body_text,comment_text,author_id,author_name,created_at,collected_at,like_count,reply_count,access_token,collection_method,vendor_attestation,deletion_sync_supported,personal_data_classification
+ExampleVendor,weibo,public_web,Tesla QA,comment_001,https://example.test/post/1,Vendor sample post,,Vendor public comment with password=secret-marker,user_123,Public User,1716211200,1716214800000,5,2,should-redact,licensed_feed,true,unknown,pseudonymized
+ExampleVendor,unknown_network,public_web,Tesla QA,article_001,https://example.test/article,=Formula-looking title,Body text from vendor sample.,,author_456,Reporter,2026-05-20T08:00:00Z,2026-05-20T09:00:00Z,not-a-number,1,api_key=secret-marker,,,,

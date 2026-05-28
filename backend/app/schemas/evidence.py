@@ -70,7 +70,7 @@ EvidenceVerificationStatus = Literal[
     "needs_review",
 ]
 
-EvidenceTrustLabel = Literal["high", "medium", "low", "unverified", "rejected"]
+EvidenceTrustLabel = Literal["high", "medium", "medium_low", "low", "unverified", "rejected"]
 
 EvidenceReviewStatus = Literal[
     "not_reviewed",

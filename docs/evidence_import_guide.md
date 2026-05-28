@@ -96,6 +96,50 @@ The response is a UTF-8 CSV attachment named `sentigraph_evidence_import_templat
 
 No credentials, cookies, API keys, tokens, or private data are included in the template. The template is a starting point only; users are still responsible for ensuring uploaded datasets come from lawful sources.
 
+## Vendor Sample Data
+
+Third-party data-vendor samples should enter Sentigraph through the same safe
+Evidence Import path until a vendor is selected and a separate adapter is
+approved. Use this path for POC evaluation only; it does not call vendor APIs,
+poll recurring feeds, fetch URLs, scrape websites, store vendor credentials, or
+integrate MediaCrawler.
+
+Vendor-provided CSV/Excel rows should use:
+
+- `acquisition_mode=data_vendor`
+- `provenance_type=data_vendor`
+- `verification_status=vendor_attested` only when the vendor's source route,
+  license, and attestation are documented; otherwise use `needs_review`.
+- `trust_label=medium_low` at most until contract, source route, retention, and
+  deletion/sync behavior are verified.
+- `source_type` matching the source bucket, such as `news_site`, `forum`,
+  `public_web`, or `uploaded_dataset`.
+
+Recommended vendor fields are defined in
+`docs/vendor_sample_data_schema.md`. The minimum POC sample should include
+source provider, platform, source type, query, content ID, parent/root IDs when
+available, URL, title/body/comment text, author labels if licensed, timestamps,
+metrics, language, safe raw metadata, and compliance metadata.
+
+If a vendor provides JSON, convert it to the same sample schema and import it as
+CSV/Excel until a JSON importer is explicitly implemented. Do not paste or
+upload vendor API keys, access tokens, cookies, passwords, client secrets,
+authorization headers, private messages, or hidden account data.
+
+Vendor POC samples remain reviewable evidence, not automatic truth. They should
+be evaluated through Evidence Scale / Coverage, trust/provenance,
+deduplication, Evidence Review Queue, and audit timeline before being used in a
+demo or customer decision.
+
+For local sample conversion before import, use
+`scripts/map_vendor_sample_to_evidence.py` and
+`docs/vendor_sample_mapping_guide.md`. The utility reads only local CSV/JSON
+files, maps common vendor fields into EvidenceItem-like JSONL/CSV, redacts
+secret-like fields, treats formulas as plain text, handles ISO/Unix timestamps,
+and emits validation warnings. It does not call vendor APIs, fetch URLs,
+scrape, use cookies, execute formulas, store raw secrets, or approve a live
+adapter.
+
 ## Recommended Columns
 
 Recommended CSV header:
