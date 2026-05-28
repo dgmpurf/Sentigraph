@@ -1,6 +1,6 @@
 # Source Feasibility Matrix
 
-Last updated: 2026-05-26
+Last updated: 2026-05-28
 
 This matrix reframes Sentigraph ingestion around event-centered evidence rather
 than platform-specific crawling. A source is usable only through a compliant
@@ -18,6 +18,15 @@ user supplies an exported dataset and attests that the source, permissions, and
 collection method were lawful. Sentigraph itself must not perform login-cookie
 crawling, captcha bypass, proxy evasion, anti-bot bypass, hidden API access, or
 private data collection.
+
+OpenClaw / 龙虾 follows the same non-integration boundary. It may be used only
+as external operator assistance for low-volume public evidence organization,
+vendor documentation review, candidate URL/title/snippet organization, or local
+demo automation. It must not become a Sentigraph crawler, adapter, scheduler, or
+production ingestion source. Any OpenClaw-assisted material must enter through
+Manual URL Evidence, CSV/Excel import, or Search Discovery candidate review with
+low or medium-low trust and human review required. See
+`docs/openclaw_usage_policy.md`.
 
 Manual/user-uploaded/screenshot evidence is not automatically verified. Source
 URLs, capture method, user attestation, trust label, verification status, and
@@ -84,6 +93,7 @@ user-uploaded evidence.
 | Douban | Official API only after permission; user-provided lawful exports; mock fixture | Scraping, cookies, private group data, login bypass | Mock Douban-style data only | Real review/group/topic/comment data | Adapter scaffold, real mode disabled | Verify official API access and public data scope |
 | unofficial scrape APIs / scraping-as-a-service | None as a core source; user-upload only after lawful-source attestation and compliance review | Cookies, hidden APIs, captcha/anti-bot bypass, proxy evasion, private data, unlicensed resale, platform-term bypass | Nothing directly through Sentigraph | Live collection, direct adapter, recurring feed, or automatic import | Not integrated; internal research only when legal/compliance review allows review of static samples | Reject by default; use official APIs, licensed vendors, reviewed public parsers, or user-provided lawful data instead |
 | source-code crawler solutions / MediaCrawler-style packages | None as a core source; exported datasets only as user-uploaded evidence with lawful-source attestation | Integrating crawler code, login-cookie crawling, captcha bypass, proxy evasion, anti-bot bypass, private-data collection | Nothing directly through Sentigraph | Product crawler integration or automatic platform collection | Explicitly not integrated | Keep out of product; evaluate only lawful exported sample files, never crawler runtime integration |
+| OpenClaw / 龙虾 runtime integration | None as a core source; external operator output may enter only through `manual_url`, `user_upload`, or `search_discovery` review with attestation | Product adapter integration, high-frequency scraping, login-cookie crawling, captcha bypass, anti-bot bypass, proxy evasion, private data, credential collection, automated URL fetching | Nothing directly through Sentigraph; only human-reviewed URL/title/snippet/text artifacts can be imported | Core crawler role, production data feed, hidden fetch path, recurring platform collection, or official-trust upgrade | Not integrated; policy note only | Keep outside the product pipeline; use `docs/openclaw_usage_policy.md` and mark assisted evidence low/medium-low trust with `needs_review` |
 
 ## Evidence Mapping
 

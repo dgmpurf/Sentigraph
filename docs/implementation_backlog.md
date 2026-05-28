@@ -8,6 +8,95 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### OpenClaw / 龙虾 Usage Policy Note
+
+Status: documentation complete on 2026-05-28.
+
+Completed:
+
+- Added `docs/openclaw_usage_policy.md` defining OpenClaw as external operator
+  assistance only, not a Sentigraph crawler, adapter, scheduler, connector,
+  parser, Search Discovery provider, or production ingestion source.
+- Updated `docs/source_feasibility_matrix.md` with the OpenClaw non-integration
+  boundary and an explicit red-source row for runtime integration.
+- Documented allowed uses: low-volume public evidence organization, candidate
+  URL/title/snippet organization, vendor documentation review, and local demo
+  automation over safe mock or non-secret sample data.
+- Documented required entry paths for any OpenClaw-assisted material: Manual
+  URL Evidence, CSV/Excel Evidence Import, or Search Discovery candidate
+  review.
+- Documented conservative trust mapping:
+  `provenance_type=manual_text` today or `external_agent_assisted` as a future
+  schema value, `verification_status=user_attested_unverified`,
+  `trust_label=low` or `medium_low`, and `review_status=needs_review`.
+- Added security guidance for third-party skills: do not run untrusted skills
+  near `.env` files, API keys, cookies, OAuth tokens, vendor credentials,
+  logged-in platform sessions, private documents, or private user data.
+
+Acceptance:
+
+- No OpenClaw code integration, adapter, endpoint, scheduler, ingestion hook, or
+  product feature was added.
+- OpenClaw remains forbidden for high-frequency scraping, login/cookie
+  crawling, captcha bypass, anti-bot bypass, proxy evasion, hidden API access,
+  private data collection, automatic URL fetching, and production monitoring.
+- OpenClaw-assisted evidence remains user-provided/manual evidence and must not
+  be upgraded to official API trust or treated as automatically verified.
+- Validation passed with `python -m pytest` (`614 passed in 7.23s`),
+  `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed,
+  0 warnings`, `no_regression`), and `npm --prefix frontend run build`
+  (`built in 8.19s`; existing non-blocking large chunk warning remains).
+
+Next options:
+
+- Use the policy when evaluating external operator workflows or demo support.
+- Keep OpenClaw outside Sentigraph's production ingestion pipeline.
+- Continue routing any lawful, human-reviewed artifacts through Manual URL
+  Evidence, CSV/Excel import, or Search Discovery candidate review.
+
+### v6.28 Operation Guide And Demo Script Refresh
+
+Status: documentation complete on 2026-05-28.
+
+Completed:
+
+- Added `docs/operation_guide_v6_28.md` with step-by-step local operation
+  instructions for validation, backend/frontend startup, optional YouTube
+  real-data demo, CSV/Excel import, Manual URL evidence, Search Discovery
+  mock/RSS/GDELT demos, Evidence Review / Audit, Evidence Scale / Coverage,
+  Vendor Sample POC, Analysis / Summary / Forecast / Simulation Lab,
+  Benchmarks, LLM Safety, and Platform Overview.
+- Updated `docs/demo_recording_script.md` so the 3-minute and 8-minute scripts
+  include Vendor POC talking points.
+- Updated `docs/demo_package.md` to describe v6.28 Vendor POC utilities as a
+  supporting path, not a live vendor integration.
+- Updated `docs/demo_screenshot_checklist.md` with optional Vendor Intake,
+  Vendor Sample Mapping CLI, and Vendor Scorecard screenshots.
+
+Acceptance:
+
+- The guide and scripts do not claim all platforms are real, full-web capture
+  is achieved, live vendor API integration exists, Search/RSS/GDELT are real,
+  LLM is real, or MediaCrawler is integrated.
+- Vendor language stays conservative: vendor samples are not official API data,
+  default `trust_label=medium_low`, `vendor_attested` only when documented, and
+  adapter work remains blocked behind POC, contract/DPA, security, quota,
+  deletion-sync, retention, mocked-fixture, and credential-handling gates.
+- This task is documentation-only and does not add product features, vendor API
+  calls, real API calls, scraping, MediaCrawler, credential storage, or secret
+  exposure.
+- Validation passed with `python -m pytest` (`614 passed in 7.25s`),
+  `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed,
+  0 warnings`, `no_regression`), and `npm --prefix frontend run build`
+  (`built in 8.14s`; existing non-blocking large chunk warning remains).
+
+Next options:
+
+- Use `docs/operation_guide_v6_28.md` for the next manual demo rehearsal.
+- Capture optional Vendor POC screenshots only with non-confidential samples.
+- Pause vendor integration work until a real vendor sample and compliance
+  review are available.
+
 ### Vendor Sample Mapping And POC Scoring Utilities
 
 Status: offline utility implemented on 2026-05-28.

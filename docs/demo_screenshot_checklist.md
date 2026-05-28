@@ -1,8 +1,8 @@
-# Sentigraph v6.27 Demo Screenshot Checklist
+# Sentigraph v6.28 Demo Screenshot Checklist
 
-Last updated: 2026-05-26
+Last updated: 2026-05-28
 
-Use this checklist with [demo_asset_package_v6_27.md](demo_asset_package_v6_27.md). Capture the screens manually after running local validation. Do not show secrets, private data, `.env` files, terminal output containing credentials, or browser tabs with private content.
+Use this checklist with [demo_asset_package_v6_27.md](demo_asset_package_v6_27.md) and [operation_guide_v6_28.md](operation_guide_v6_28.md). Capture the screens manually after running local validation. Do not show secrets, private data, `.env` files, terminal output containing credentials, vendor confidential rows, or browser tabs with private content.
 
 ## Required Screenshot Assets
 
@@ -30,6 +30,14 @@ Use this checklist with [demo_asset_package_v6_27.md](demo_asset_package_v6_27.m
 | 20 | `20_benchmarks.png` | Benchmarks |
 | 21 | `21_llm_safety.png` | LLM Safety |
 
+## Optional v6.28 Vendor POC Assets
+
+| # | File name | Screen |
+| --- | --- | --- |
+| 22 | `22_vendor_intake_checklist_optional.png` | `docs/data_vendor_intake_checklist.md` showing intake gates and red flags |
+| 23 | `23_vendor_sample_mapping_cli_optional.png` | Safe CLI output from `scripts/map_vendor_sample_to_evidence.py` using a non-confidential sample |
+| 24 | `24_vendor_scorecard_template_optional.png` | `docs/vendor_poc_scorecard_template.md` showing scoring/classification fields |
+
 ## Screenshot Success Signs
 
 - YouTube raw-data screenshots, if captured, show `Data: YouTube Real`, `Analysis: Offline`, and `LLM: Mock`.
@@ -41,6 +49,7 @@ Use this checklist with [demo_asset_package_v6_27.md](demo_asset_package_v6_27.m
 - Review Queue screenshots show human-review controls and do not imply AI authenticity verification.
 - Audit Timeline screenshots show review history as decision records, not platform verification.
 - Evidence Scale / Coverage screenshots include the coverage limitation note.
+- Vendor POC screenshots show offline sample mapping/scoring only, `acquisition_mode=data_vendor`, `trust_label=medium_low`, and no live vendor adapter claim.
 - Summary/Analysis screenshots show `analysis_input_source` and evidence caveats where relevant.
 - Simulation screenshots do not imply real-world execution.
 - LLM Safety screenshots show mock provider boundary.
@@ -60,8 +69,10 @@ npm --prefix frontend run build
 - Hide `.env`.
 - Hide terminal panes with API keys or shell history containing secrets.
 - Do not show private user data.
+- Do not show confidential vendor sample data unless cleared.
 - Use mock/static samples unless intentionally recording the optional YouTube real path.
 - If using YouTube real data, show only public comments and avoid sensitive personal information.
 - Do not start real RSS/GDELT/search/Douyin/Bilibili providers.
+- Do not call vendor APIs or show vendor credentials.
 - Do not fetch candidate URLs or scrape websites.
-- Do not imply full-web capture, guaranteed predictions, AI authenticity verification, or real-world action execution.
+- Do not imply live vendor integration, full-web capture, guaranteed predictions, AI authenticity verification, or real-world action execution.

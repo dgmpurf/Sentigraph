@@ -1,10 +1,10 @@
-# Sentigraph v6.27 Demo Recording Script
+# Sentigraph v6.28 Demo Recording Script
 
-Last updated: 2026-05-26
+Last updated: 2026-05-28
 
-Use this script with [demo_asset_package_v6_27.md](demo_asset_package_v6_27.md). The recording package is for manual local capture of the v6.26 demo-ready MVP.
+Use this script with [demo_asset_package_v6_27.md](demo_asset_package_v6_27.md) and [operation_guide_v6_28.md](operation_guide_v6_28.md). The recording package is for manual local capture of the v6.28 demo-ready MVP.
 
-Core safety note: YouTube data can be real only when locally configured; analysis, risk, report, forecast, and Simulation Lab are offline deterministic; Search Discovery/RSS/GDELT are mock/static metadata providers; the LLM provider is mock.
+Core safety note: YouTube data can be real only when locally configured; analysis, risk, report, forecast, and Simulation Lab are offline deterministic; Search Discovery/RSS/GDELT are mock/static metadata providers; Vendor POC utilities are offline sample mapping and scoring only; the LLM provider is mock.
 
 ## Exact Page Order
 
@@ -12,21 +12,22 @@ Core safety note: YouTube data can be real only when locally configured; analysi
 2. Keyword Search / optional YouTube real-data flow
 3. Cases
 4. CSV/Excel Evidence Import
-5. Manual URL Evidence
-6. Search Discovery
-7. Evidence Trust / Dedup
-8. Evidence Review Queue
-9. Evidence Review Audit Timeline
-10. Evidence Scale / Coverage
-11. Analysis Result
-12. Summary Report
-13. Propagation Graph
-14. Risk Monitor / Forecast
-15. Simulation Lab initialized from case
-16. A/B Strategy Comparison
-17. Strategy Report Export
-18. Benchmarks
-19. LLM Safety
+5. Vendor Sample POC utility
+6. Manual URL Evidence
+7. Search Discovery
+8. Evidence Trust / Dedup
+9. Evidence Review Queue
+10. Evidence Review Audit Timeline
+11. Evidence Scale / Coverage
+12. Analysis Result
+13. Summary Report
+14. Propagation Graph
+15. Risk Monitor / Forecast
+16. Simulation Lab initialized from case
+17. A/B Strategy Comparison
+18. Strategy Report Export
+19. Benchmarks
+20. LLM Safety
 
 ## 3-Minute Script
 
@@ -41,6 +42,10 @@ Core safety note: YouTube data can be real only when locally configured; analysi
 ### Evidence Import
 
 "Cases can ingest CSV/Excel datasets and manual URL evidence. The app does not fetch URLs, scrape pages, use cookies, bypass anti-bot systems, or store raw secret material."
+
+### Vendor POC
+
+"The v6.28 addition is a vendor POC utility path. Vendor samples are not official API data. They can be mapped offline from local CSV or JSON into EvidenceItem-compatible rows, scored with a 100-point rubric, and reviewed before any adapter work. The default trust label is `medium_low`; `vendor_attested` is used only when source rights and attestation are documented. A live vendor adapter remains blocked until POC, contract, security, quota, deletion-sync, retention, mocked-fixture, and credential-handling gates pass."
 
 ### Trust And Review
 
@@ -72,46 +77,50 @@ Core safety note: YouTube data can be real only when locally configured; analysi
 
 "CSV/Excel import is the practical route for lawful user-provided datasets. It previews rows, maps columns, normalizes EvidenceItems, redacts secret-like fields, deduplicates repeated rows, and records an import job."
 
-### 2:05 - Manual URL Evidence
+### 2:05 - Vendor Sample POC
+
+"Vendor POC is a supporting path, not a live integration. The intake checklist asks who the vendor is, what platforms and fields they support, what rights and deletion-sync policy they document, and whether personal data is handled safely. The offline mapper converts only local sample CSV or JSON files into EvidenceItem-compatible JSONL or CSV. It does not call vendor APIs or fetch URLs. The scorecard classifies the vendor as `approved_poc`, `limited_poc`, `internal_research_only`, or `reject`."
+
+### 2:50 - Manual URL Evidence
 
 "Manual URL evidence is for single public items: article, video, post, comment, reply, or metric. The system does not open the URL; the user supplies the text and attestation."
 
-### 2:40 - Search Discovery Mock Candidates
+### 3:20 - Search Discovery Mock Candidates
 
 "Search Discovery is mock-only. Mock Static, RSS Mock, and GDELT Mock generate local URL/title/snippet candidates. Accepting a candidate stores unverified metadata as evidence; rejected candidates are ignored."
 
-### 3:30 - Review Queue
+### 4:00 - Review Queue
 
 "Evidence with low trust, missing sources, duplicates, screenshot-style capture, or missing attestation goes to human review. AI is not used for authenticity verification."
 
-### 4:10 - Audit Timeline
+### 4:35 - Audit Timeline
 
 "Every review decision is append-only. The audit timeline records previous status, new status, reviewer label, notes, and the effect on analysis."
 
-### 4:40 - Evidence Scale / Coverage
+### 5:00 - Evidence Scale / Coverage
 
 "Evidence Scale shows total, unique, duplicate, source, acquisition, trust, review, and latest job summaries. This is imported or available evidence coverage, not full-platform or full-web capture."
 
-### 5:20 - Analysis Result
+### 5:35 - Analysis Result
 
 "The analysis priority is explicit: case raw data wins, then EvidenceItems, then mock fallback. Rejected evidence is excluded, and weak or unverified evidence is called out."
 
-### 5:55 - Summary Report
+### 6:05 - Summary Report
 
 "The report turns offline analysis into a readable Chinese report and Markdown export while preserving representative evidence and review caveats."
 
-### 6:25 - Risk Monitor / Forecast
+### 6:35 - Risk Monitor / Forecast
 
 "Forecasting is deterministic decision support. It gives a structured risk projection, not a guaranteed prediction."
 
-### 6:55 - Simulation Lab
+### 7:00 - Simulation Lab
 
 "Simulation Lab initializes from aggregate case data, compares strategies, and exports a Markdown strategy report. It remains human-review-oriented and does not execute platform actions."
 
-### 7:35 - Benchmarks / LLM Safety
+### 7:40 - Benchmarks / LLM Safety
 
 "The final proof is validation and safety: offline benchmarks pass, the LLM provider is mock, and future real provider work remains behind explicit permission and policy review."
 
 ## Required Closing Line
 
-"Sentigraph is demo-ready as a local MVP. It clearly separates optional real YouTube data, offline deterministic analysis, mock/static discovery, mock LLM behavior, and pending platform integrations."
+"Sentigraph is demo-ready as a local MVP. It clearly separates optional real YouTube data, offline deterministic analysis, mock/static discovery, offline vendor POC utilities, mock LLM behavior, and pending platform integrations."
