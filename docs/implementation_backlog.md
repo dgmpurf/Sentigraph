@@ -8,6 +8,52 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Official Website Content Package For guixutech.com
+
+Status: documentation prepared on 2026-05-28.
+
+Completed:
+
+- Added `docs/website_homepage_copy_zh.md` with homepage hero copy, product
+  summary, target users, core features, data-source explanation, compliance
+  boundaries, contact placeholders, and ICP/public-security footer placeholders.
+- Added `docs/website_product_page_copy_zh.md` with Sentigraph product
+  positioning, evidence ingestion, trust/dedup/review/audit, reporting,
+  forecasting, Simulation Lab, data boundaries, and use cases.
+- Added `docs/privacy_policy_zh.md`, `docs/user_agreement_zh.md`, and
+  `docs/data_authorization_notice_zh.md` as website/application-review drafts
+  covering user-uploaded evidence, Manual URL Evidence, vendor samples,
+  optional authorized platform data, storage/deletion, user rights, lawful use,
+  prohibited use, evidence review, and vendor-attested boundaries.
+- Added `docs/platform_application_copy_zh.md` with Douyin/Bilibili
+  application descriptions, scope request wording, comment-analysis wording,
+  scenario-flow description, and no-crawling/no-bypass language.
+- Added `docs/website_deployment_checklist.md` covering `guixutech.com`, cloud
+  server, ICP filing, public security filing, HTTPS, DNS, required pages,
+  privacy/user-agreement/contact requirements, and platform reviewer checklist.
+
+Acceptance:
+
+- This is website and platform-review content preparation only.
+- The docs do not claim all platforms are real, full-web capture is achieved,
+  Douyin/Bilibili real APIs are integrated, RSS/GDELT/search are live, real LLM
+  is active, screenshots are automatically verified, Simulation Lab executes
+  real-world actions, or MediaCrawler is integrated.
+- No product features, real API calls, scraping, MediaCrawler integration,
+  credential storage, or secret exposure are introduced.
+- Validation passed with `python -m pytest` (`614 passed in 6.88s`),
+  `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed,
+  0 warnings`, `no_regression`), and `npm --prefix frontend run build`
+  (`built in 8.02s`; existing non-blocking large chunk warning remains).
+
+Next options:
+
+- Replace placeholders with the final legal entity, contact details, ICP number,
+  public-security filing number, and policy URLs.
+- Have legal/compliance review the privacy policy and user agreement before
+  publishing.
+- Convert these Markdown drafts into actual `guixutech.com` pages.
+
 ### OpenClaw / 龙虾 Usage Policy Note
 
 Status: documentation complete on 2026-05-28.

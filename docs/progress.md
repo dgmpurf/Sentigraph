@@ -6,6 +6,27 @@ Last updated: 2026-05-28
 
 Sentigraph is currently a mock-default, YouTube-real-capable, evidence-ingestion-ready desktop web MVP.
 
+Latest official website content package update: prepared on 2026-05-28 for
+`guixutech.com` / 归墟科技 / 归墟舆情分析. Added Chinese homepage copy,
+product page copy, privacy policy draft, user agreement draft, data
+authorization notice, platform application copy for Douyin/Bilibili-style
+review, and website deployment checklist. The package positions Sentigraph as
+enterprise public-opinion evidence analysis, comment management, risk report,
+evidence review, and simulation preview software. It explicitly preserves the
+current boundaries: no unauthorized private data collection, no
+Cookie/login/captcha/anti-bot bypass, no automatic URL scraping, no MediaCrawler
+integration, no automatic screenshot authenticity verification, uploaded/manual
+/ vendor evidence is not automatically verified, YouTube real data remains an
+optional local demo path, and Douyin/Bilibili/etc. real APIs remain pending
+official permission. Validation passed with `python -m pytest`
+(`614 passed in 6.88s`), `python scripts/run_offline_benchmarks.py`
+(`522 passed, 0 failed, 0 warnings`, `no_regression`), and
+`npm --prefix frontend run build` (`built in 8.02s`; existing non-blocking
+large chunk warning remains). No product features, real APIs, scraping,
+MediaCrawler integration, credential storage, or secret exposure were
+introduced. Next recommended task: review company legal placeholders, then
+adapt these docs into actual guixutech.com pages for ICP/platform review.
+
 Latest v6.28 Operation Guide and Demo Script refresh: completed and validated on 2026-05-28. Added `docs/operation_guide_v6_28.md` as a step-by-step local operating guide covering project validation, backend/frontend startup, optional YouTube real-data demo, CSV/Excel import, Manual URL evidence, Search Discovery mock/RSS/GDELT demo, Evidence Review / Audit, Evidence Scale / Coverage, Vendor Sample POC flow, Analysis / Summary / Forecast / Simulation Lab, Benchmarks, LLM Safety, and Platform Overview. Updated `docs/demo_recording_script.md`, `docs/demo_package.md`, and `docs/demo_screenshot_checklist.md` so the presentation now explains v6.28 Vendor POC utilities as a supporting offline path rather than a live vendor integration. The updated demo language states that vendor samples are not official API data, default `trust_label=medium_low`, `verification_status=vendor_attested` only when documented, and any adapter remains blocked until POC, contract/DPA, security, quota, deletion-sync, retention, mocked-fixture, and credential-handling gates pass. Validation passed with `python -m pytest` (`614 passed in 7.25s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 8.14s`; existing non-blocking large chunk warning remains). No product features, vendor APIs, real APIs, URL fetching, scraping, MediaCrawler integration, credential storage, or secret exposure were introduced. Next recommended task: rehearse the v6.28 operation guide with safe local samples, then capture the updated demo screenshots/recording if needed.
 
 Latest Vendor Sample Mapping and POC Scoring Utilities update: implemented and validated on 2026-05-28. Added `docs/vendor_sample_mapping_guide.md` and `scripts/map_vendor_sample_to_evidence.py` so third-party vendor CSV/JSON samples can be mapped offline into Sentigraph `EvidenceItem`-compatible JSONL or CSV before any API integration. The mapper accepts only local files, keeps `acquisition_mode=data_vendor`, `provenance_type=data_vendor`, and conservative `trust_label=medium_low` only when vendor attestation exists, otherwise leaves rows `needs_review` / `unverified`. It parses Unix seconds, Unix milliseconds, and ISO timestamps; preserves safe author/content fields; treats formula-like cells as plain text; redacts secret-like fields/text; stores unknown fields only in safe metadata; and emits validation warnings for unclear source, deletion-sync unknown, personal-data unknown, unsupported platform claims, invalid metrics, formula-like text, and possible secret redaction. Added `backend/app/tests/fixtures/evidence/vendor_sample_minimal.csv` and `backend/app/tests/test_vendor_sample_mapping.py` covering local CSV/JSON mapping, missing-compliance behavior, timestamp parsing, unknown platforms, author identifiers, secret redaction, JSONL/CSV output, and no network calls. Validation passed with `python -m pytest` (`614 passed in 8.81s`), `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed, 0 warnings`, `no_regression`), and `npm --prefix frontend run build` (`built in 9.31s`; existing non-blocking large chunk warning remains). No vendor APIs, real APIs, URL fetching, scraping, cookies, MediaCrawler integration, adapter implementation, credential storage, or secret exposure were introduced. Next recommended task: apply the mapper and scorecard to one real vendor-provided sample only after intake confirms rights, deletion-sync expectations, and secret-free sample handling.
