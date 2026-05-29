@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>隐私政策 - 归墟科技</title>
+  <meta name="description" content="归墟科技隐私政策，说明 Sentigraph 的数据类别、用途、存储删除、用户权利和联系方式。">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="主导航">
+      <a class="brand" href="index.html"><span class="brand-mark">归</span><span class="brand-name"><strong>归墟舆情分析</strong><span>Sentigraph · guixutech.com</span></span></a>
+      <div class="nav-links">
+        <a href="index.html">首页</a>
+        <a href="product.html">产品</a>
+        <a href="data-authorization.html">数据授权</a>
+        <a href="privacy.html" aria-current="page">隐私政策</a>
+        <a href="terms.html">用户协议</a>
+        <a href="contact.html">联系</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-title">
+      <div class="container">
+        <h1>隐私政策</h1>
+        <p>版本日期：待补充。运营主体：待补充。联系方式：待补充。</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container copy-block">
+        <p>本政策为 guixutech.com 官网与平台审核准备稿，正式发布前请结合公司主体、部署方式、客户类型、数据处理角色和法律意见进行审阅。</p>
+
+        <h2>1. 我们处理哪些数据</h2>
+        <h3>账号与联系信息</h3>
+        <p>当您通过官网、邮件、表单或商务沟通联系我们时，我们可能处理您的姓名、公司名称、职位、联系电话、电子邮箱、沟通内容和业务需求。</p>
+        <h3>用户上传的舆情证据</h3>
+        <p>您可能上传或录入 CSV/Excel 文件、文章标题、正文摘要、评论、回复、互动指标、公开 URL、发布时间、公开作者标签、来源平台标签和相关说明。系统默认只保存规范化后的 EvidenceItem 和安全元数据，不以默认行为保存原始上传文件。</p>
+        <h3>手动 URL 证据</h3>
+        <p>您可以手动录入公开 URL、标题、正文、评论、作者标签、时间和指标。Sentigraph 不会自动访问、抓取或解析该 URL。</p>
+        <h3>供应商样本数据</h3>
+        <p>在供应商 POC 中，样本数据会被标记为 data_vendor 来源，并根据供应商说明、合同、授权、保留期限、删除同步和个人信息处理情况进行复核。供应商样本不等同于平台官方验证数据。</p>
+        <h3>可选授权平台数据</h3>
+        <p>在获得您授权并完成平台官方审核、OAuth、权限范围、回调地址和令牌配置后，系统未来可能处理授权范围内的平台公开数据或账号授权数据。当前产品中，YouTube 真实数据仅作为本地可选演示路径，抖音、Bilibili 等真实接口仍处于官方权限或应用审核阶段。</p>
+
+        <h2>2. 我们如何使用数据</h2>
+        <ul>
+          <li>提供舆情证据导入、归一化、去重和复核。</li>
+          <li>生成情绪、话题、风险、报告、趋势和模拟预演结果。</li>
+          <li>展示证据来源分布、信任标签、复核状态和审计记录。</li>
+          <li>处理客户咨询、演示、部署和技术支持。</li>
+          <li>保障系统安全、排查错误、改进产品体验。</li>
+        </ul>
+        <p>我们不会将用户上传证据自动视为已验证事实。截图、转录文本、供应商样本、搜索候选和人工录入材料均需要人工复核。</p>
+
+        <h2>3. 数据来源与用户责任</h2>
+        <p>用户应确保上传、录入或提交给 Sentigraph 的数据来源合法，且有权用于舆情分析、内部报告或约定用途。用户不得提交未经授权的私密数据、登录态数据、Cookie、访问令牌、私信、私密群组内容、付费墙内容或其他违反法律法规及平台规则的数据。</p>
+
+        <h2>4. 存储与删除</h2>
+        <p>我们会根据业务需要、合同约定和法律要求保存必要数据。对于用户上传文件，系统默认不保存原始文件，仅保存规范化证据和安全元数据。当服务终止、用户申请删除或合同要求删除时，我们将按照适用约定处理删除、匿名化或停止使用。</p>
+
+        <h2>5. 共享与委托处理</h2>
+        <p>未经您的授权或法律要求，我们不会向无关第三方出售您的上传证据。为提供服务，我们可能在云服务器、数据库、对象存储、安全运维、企业客户指定部署或法律监管要求范围内共享或委托处理必要信息。</p>
+
+        <h2>6. 安全措施</h2>
+        <ul>
+          <li>不在接口或日志中返回密钥、Cookie、Token 或 .env 值。</li>
+          <li>对疑似密钥字段进行脱敏或拒绝保存。</li>
+          <li>对低信任、缺少来源、重复、截图转录或风险标记证据进行人工复核。</li>
+          <li>禁止 Cookie 抓取、登录绕过、验证码绕过、反爬绕过和 MediaCrawler 集成作为产品采集路径。</li>
+        </ul>
+
+        <h2>7. 您的权利</h2>
+        <p>在适用法律范围内，您可以联系我们查询、更正、补充、删除、导出、撤回授权或限制特定数据处理。我们可能需要验证您的身份或企业授权关系。</p>
+
+        <h2>8. 联系方式</h2>
+        <p>公司名称：待补充。官网：guixutech.com。邮箱：待补充。地址：待补充。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div><strong>归墟舆情分析 / Sentigraph</strong><div class="fine-print">公司名称：待补充 · 联系邮箱：待补充 · ICP备案号：备案后补充 · 公安备案号：备案后补充</div></div>
+      <div class="footer-links"><a href="privacy.html">隐私政策</a><a href="terms.html">用户协议</a><a href="data-authorization.html">数据授权</a><a href="contact.html">联系</a></div>
+    </div>
+  </footer>
+</body>
+</html>

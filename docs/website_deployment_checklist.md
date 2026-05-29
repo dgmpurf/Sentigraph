@@ -63,6 +63,32 @@ ICP 备案通过后，按所在地要求办理公安联网备案：
 - 联系我们；
 - ICP / 公安备案页脚占位。
 
+## 6.1 静态网站文件与部署
+
+当前静态官网文件位于仓库 `website/` 目录：
+
+- `website/index.html`：官网首页；
+- `website/product.html`：产品介绍页；
+- `website/data-authorization.html`：数据授权与证据提交说明；
+- `website/privacy.html`：隐私政策；
+- `website/terms.html`：用户协议；
+- `website/contact.html`：联系与平台审核材料说明；
+- `website/assets/site.css`：站点样式；
+- `website/README.md`：本地预览与部署说明。
+
+该目录为纯静态 HTML/CSS，不需要前端构建步骤，不依赖后端生产服务，不包含第三方 CDN、统计脚本、追踪脚本、API Key、Token、Cookie 或 `.env` 内容。可直接由 Nginx、Caddy、对象存储静态托管、Cloudflare Pages、GitHub Pages 或云服务商静态站点能力托管。
+
+部署前必须替换以下占位信息：
+
+- 公司营业执照主体名称；
+- 联系邮箱、联系电话和办公地址；
+- ICP 备案号；
+- 公安备案号及链接；
+- 隐私政策、用户协议和数据授权说明的生效日期；
+- 平台审核使用的 HTTPS 回调地址、测试账号说明和联系人信息。
+
+静态站点上线后仍需保持与产品真实能力一致：不得宣称已实现全平台真实数据、全网全量采集、实时 RSS/GDELT/搜索接口、真实 LLM 自动真实性验证、Douyin/Bilibili 已正式接入，或任何自动抓取、Cookie 登录采集、验证码绕过、反爬绕过能力。
+
 ## 7. 内容边界检查
 
 官网文案不得出现以下表述：

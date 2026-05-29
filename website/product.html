@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>产品能力 - 归墟舆情分析 / Sentigraph</title>
+  <meta name="description" content="了解 Sentigraph 的证据导入、CSV/Excel 导入、人工 URL 证据、信任去重复核审计、报告、预测与模拟预演能力。">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="主导航">
+      <a class="brand" href="index.html"><span class="brand-mark">归</span><span class="brand-name"><strong>归墟舆情分析</strong><span>Sentigraph · guixutech.com</span></span></a>
+      <div class="nav-links">
+        <a href="index.html">首页</a>
+        <a href="product.html" aria-current="page">产品</a>
+        <a href="data-authorization.html">数据授权</a>
+        <a href="privacy.html">隐私政策</a>
+        <a href="terms.html">用户协议</a>
+        <a href="contact.html">联系</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-title">
+      <div class="container">
+        <h1>产品能力</h1>
+        <p>归墟舆情分析 / Sentigraph 将企业合法获得或经授权获取的公共舆情材料，转化为结构化、可追溯、可复核的证据记录。</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container split">
+        <div class="copy-block">
+          <h2>证据导入与归一化</h2>
+          <p>系统围绕事件组织证据，支持文章、帖子、视频、标题、正文、评论、回复和互动指标等材料的统一建模。每条证据都保留平台、来源类型、采集方式、证据类型、URL、时间、互动指标、安全元数据和导入元数据。</p>
+
+          <h3>CSV / Excel 导入</h3>
+          <p>企业可上传合法来源的 CSV 或宏关闭的 Excel 样本。系统提供预览、字段映射、导入确认、重复检测和安全警告。导入过程不执行公式，不保存原始上传文件为默认行为，不读取凭证。</p>
+
+          <h3>人工 URL 证据</h3>
+          <p>用户可手动录入公开 URL、标题、正文、评论、作者标签、发布时间和指标。系统不会自动访问、抓取或解析该 URL，URL 仅作为来源上下文和人工复核线索保存。</p>
+
+          <h3>搜索发现候选</h3>
+          <p>当前 Search Discovery、RSS Mock 和 GDELT Mock 仅提供本地静态 URL / 标题 / 摘要候选，用于演示候选复核流程。它们不是实时搜索、RSS 或 GDELT 接口。</p>
+
+          <h2>信任、去重、复核与审计</h2>
+          <p>Sentigraph 不把所有证据视为同等可靠。系统会记录 provenance_type、verification_status、trust_label、source_url_present、user_attestation_required、risk_flags、duplicate_group_id 和 duplicate_count。</p>
+          <p>低信任、未验证、截图转录、缺少来源、缺少授权确认、重复或存在风险标记的证据会进入人工复核队列。复核动作包括通过、驳回、标记为弱证据、要求补充来源、合并重复和重置复核状态，并形成审计时间线。</p>
+
+          <h2>分析、报告、预测与模拟预演</h2>
+          <p>系统可基于当前案例中的可用证据生成情绪、话题、高风险议题、重复话术提示、代表性文本、中文舆情分析报告和 Markdown 导出。风险趋势和 Simulation Lab 为离线确定性辅助能力，用于内部讨论和人工复核，不保证未来结果，也不执行真实平台操作。</p>
+
+          <h2>当前边界</h2>
+          <ul>
+            <li>默认运行在 mock/offline 模式。</li>
+            <li>YouTube 真实数据仅作为本地可选演示，需要官方 YouTube Data API Key。</li>
+            <li>抖音、Bilibili、小红书、微博、Reddit 等真实接口仍待官方权限、OAuth、回调地址、测试账号或接口范围确认。</li>
+            <li>LLM provider 当前为 mock，不调用真实大模型 API。</li>
+            <li>MediaCrawler、OpenClaw 等外部工具不作为产品核心采集器或生产数据源。</li>
+            <li>用户上传、人工录入、供应商样本和截图转录不会被自动视为已验证。</li>
+          </ul>
+        </div>
+
+        <aside class="side-note">
+          <h2>适合场景</h2>
+          <p>品牌危机复盘、产品反馈分析、评论管理准备、供应商样本 POC、舆情策略预演。</p>
+          <div class="boundary">
+            <strong>重要说明</strong>
+            <p>系统输出用于企业内部辅助研判，需要结合人工、业务、法律和平台规则复核。</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div><strong>归墟舆情分析 / Sentigraph</strong><div class="fine-print">公司名称：待补充 · 联系邮箱：待补充 · ICP备案号：备案后补充 · 公安备案号：备案后补充</div></div>
+      <div class="footer-links"><a href="privacy.html">隐私政策</a><a href="terms.html">用户协议</a><a href="data-authorization.html">数据授权</a><a href="contact.html">联系</a></div>
+    </div>
+  </footer>
+</body>
+</html>

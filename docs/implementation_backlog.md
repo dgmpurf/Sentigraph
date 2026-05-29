@@ -8,6 +8,55 @@ CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate
 
 ## Completed Pre-v1.0 Hardening Items
 
+### Static guixutech.com Website
+
+Status: static website prepared and validated on 2026-05-28.
+
+Completed:
+
+- Added `website/index.html` as the Chinese homepage for `guixutech.com` and
+  `归墟舆情分析 / Sentigraph`.
+- Added `website/product.html` covering evidence ingestion, CSV/Excel import,
+  Manual URL Evidence, trust/dedup/review/audit, reporting, forecasting,
+  Simulation Lab, and current product boundaries.
+- Added `website/data-authorization.html`, `website/privacy.html`,
+  `website/terms.html`, and `website/contact.html` for data authorization,
+  privacy policy, user agreement, contact placeholders, and platform-review
+  preparation.
+- Added `website/assets/site.css` as the responsive static site stylesheet and
+  `website/README.md` with local preview/deployment notes.
+- Updated `docs/website_deployment_checklist.md` with static `website/`
+  deployment guidance, placeholder replacement requirements, and no-overclaim
+  checks.
+
+Acceptance:
+
+- The site is pure static HTML/CSS and uses no JavaScript, external CDN,
+  analytics script, third-party tracker, backend production deployment, API
+  integration, YouTube API, `.env` content, or secrets.
+- Website copy does not claim all platforms are real, full-web/full-platform
+  capture is achieved, Douyin/Bilibili real APIs are integrated, RSS/GDELT or
+  Search Discovery are live providers, real LLM is active, screenshots are
+  automatically verified, Simulation Lab executes real-world actions, or
+  MediaCrawler is integrated.
+- The pages preserve the required boundaries: no unauthorized private data
+  collection, no Cookie/login/captcha/anti-bot bypass, no automatic URL
+  scraping, uploaded/manual/vendor evidence is not automatically verified,
+  YouTube real data remains an optional local demo, and domestic platform real
+  APIs remain pending official permissions.
+- Validation passed with `python -m pytest` (`614 passed in 8.03s`),
+  `python scripts/run_offline_benchmarks.py` (`522 passed, 0 failed,
+  0 warnings`, `no_regression`), and `npm --prefix frontend run build`
+  (`built in 8.48s`; existing non-blocking large chunk warning remains).
+
+Next options:
+
+- Replace company legal entity, contact, ICP, public-security, and policy-date
+  placeholders.
+- Deploy `website/` behind HTTPS on `guixutech.com` / `www.guixutech.com`.
+- Have legal/compliance review the privacy policy, user agreement, and data
+  authorization notice before ICP or platform review submission.
+
 ### Official Website Content Package For guixutech.com
 
 Status: documentation prepared on 2026-05-28.

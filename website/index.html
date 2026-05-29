@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>归墟舆情分析 / Sentigraph - guixutech.com</title>
+  <meta name="description" content="归墟舆情分析 / Sentigraph 是面向企业的公共舆情证据分析、评论管理、风险报告、证据复核与模拟预演平台。">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="主导航">
+      <a class="brand" href="index.html">
+        <span class="brand-mark">归</span>
+        <span class="brand-name"><strong>归墟舆情分析</strong><span>Sentigraph · guixutech.com</span></span>
+      </a>
+      <div class="nav-links">
+        <a href="index.html" aria-current="page">首页</a>
+        <a href="product.html">产品</a>
+        <a href="data-authorization.html">数据授权</a>
+        <a href="privacy.html">隐私政策</a>
+        <a href="terms.html">用户协议</a>
+        <a href="contact.html">联系</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <h1>归墟舆情分析 / Sentigraph</h1>
+          <p>面向企业的公共舆情证据分析、评论管理、风险报告、证据复核与模拟预演平台。</p>
+          <p>系统帮助企业把合规来源的公开评论、文章、视频说明、用户上传样本和授权数据整理为可复核的舆情证据，用于内部分析和风险研判。</p>
+          <div class="actions">
+            <a class="button" href="product.html">了解产品能力</a>
+            <a class="button secondary" href="data-authorization.html">查看数据边界</a>
+          </div>
+        </div>
+        <aside class="signal-panel" aria-label="产品边界摘要">
+          <h2>合规边界优先</h2>
+          <ul class="signal-list">
+            <li><span class="dot"></span><span>不进行未授权私有数据采集。</span></li>
+            <li><span class="dot"></span><span>不使用 Cookie、登录态、验证码或反爬绕过。</span></li>
+            <li><span class="dot"></span><span>不自动抓取用户输入的 URL 内容。</span></li>
+            <li><span class="dot"></span><span>上传、人工、供应商证据不会被自动视为已验证。</span></li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-header">
+          <h2>为企业舆情决策建立可追溯证据层</h2>
+          <p>Sentigraph 围绕“事件”组织证据，将不同来源的公开材料统一为可去重、可复核、可审计的 EvidenceItem。</p>
+        </div>
+        <div class="grid">
+          <article class="card">
+            <h3>证据导入</h3>
+            <p>支持人工 URL 证据、CSV/Excel 上传样本、供应商 POC 样本、搜索发现候选和未来官方授权数据的统一证据建模。</p>
+          </article>
+          <article class="card">
+            <h3>信任与复核</h3>
+            <p>为证据保留来源、采集方式、验证状态、信任标签、重复组、风险标记和人工审核记录。</p>
+          </article>
+          <article class="card">
+            <h3>分析与报告</h3>
+            <p>基于可用证据生成情绪、话题、风险、中文报告、趋势研判和聚合层面的 Simulation Lab 预演。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-header">
+          <h2>适用团队</h2>
+          <p>面向需要审慎处理公开舆情证据、评论反馈和风险报告的企业组织。</p>
+        </div>
+        <div class="grid">
+          <article class="card"><h3>品牌与公关</h3><p>整理事件舆情证据，识别争议点，形成内部研判报告。</p></article>
+          <article class="card"><h3>客服与运营</h3><p>汇总用户反馈、投诉线索和高频问题，辅助改进沟通与服务。</p></article>
+          <article class="card"><h3>合规与风控</h3><p>保留数据来源、复核记录和使用边界，降低未授权采集风险。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-header">
+          <h2>数据来源说明</h2>
+          <p>系统支持合规来源下的证据整理，不把候选线索、截图、供应商样本或人工录入内容自动视为真实事实。</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>来源</th><th>当前定位</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td>用户上传 CSV/Excel</td><td>可用</td><td>用户需确认来源合法；系统只保存规范化证据和安全元数据。</td></tr>
+              <tr><td>人工 URL 证据</td><td>可用</td><td>URL 作为来源线索保存；系统不会自动访问或抓取网页内容。</td></tr>
+              <tr><td>供应商样本</td><td>POC 路径</td><td>用于字段、来源、合规和成本评估；不是平台官方验证数据。</td></tr>
+              <tr><td>YouTube 公开数据</td><td>可选本地演示</td><td>仅在本地配置官方 YouTube Data API Key 时使用；自动化测试不调用真实 API。</td></tr>
+              <tr><td>抖音 / Bilibili 等</td><td>待官方权限</td><td>真实接口仍需平台审核、OAuth、回调地址、测试账号和评论权限确认。</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="boundary warning">
+          <h2>我们不提供的能力</h2>
+          <p>Sentigraph 不提供未授权私有数据采集、Cookie/登录态抓取、验证码绕过、反爬绕过、代理规避、MediaCrawler 生产集成、自动 URL 抓取、截图真实性自动验证、自动内容处置或个人定向影响能力。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container grid two">
+        <div>
+          <h2>联系归墟科技</h2>
+          <p>如需了解产品演示、平台接入、数据合规边界或企业部署方案，请联系我们。</p>
+        </div>
+        <div class="card">
+          <p><strong>公司名称：</strong>待补充</p>
+          <p><strong>官网域名：</strong>guixutech.com</p>
+          <p><strong>联系邮箱：</strong>待补充</p>
+          <p><strong>联系电话：</strong>待补充</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <strong>归墟舆情分析 / Sentigraph</strong>
+        <div class="fine-print">公司名称：待补充 · 联系邮箱：待补充 · ICP备案号：备案后补充 · 公安备案号：备案后补充</div>
+      </div>
+      <div class="footer-links">
+        <a href="privacy.html">隐私政策</a>
+        <a href="terms.html">用户协议</a>
+        <a href="data-authorization.html">数据授权</a>
+        <a href="contact.html">联系</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

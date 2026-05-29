@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据授权与证据提交说明 - 归墟舆情分析</title>
+  <meta name="description" content="说明 Sentigraph 可处理的数据来源、用户授权确认、证据复核、供应商样本和截图转录边界。">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="主导航">
+      <a class="brand" href="index.html"><span class="brand-mark">归</span><span class="brand-name"><strong>归墟舆情分析</strong><span>Sentigraph · guixutech.com</span></span></a>
+      <div class="nav-links">
+        <a href="index.html">首页</a>
+        <a href="product.html">产品</a>
+        <a href="data-authorization.html" aria-current="page">数据授权</a>
+        <a href="privacy.html">隐私政策</a>
+        <a href="terms.html">用户协议</a>
+        <a href="contact.html">联系</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-title">
+      <div class="container">
+        <h1>数据授权与证据提交说明</h1>
+        <p>用户提交数据前，应确认来源合法、用途合规，并理解上传、人工、供应商和截图证据不会自动被视为已验证。</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container copy-block">
+        <h2>可以提交的数据</h2>
+        <ul>
+          <li>公开文章、新闻、帖子、视频说明或评论的 URL、标题、正文、摘要。</li>
+          <li>公开评论、回复、用户反馈或投诉文本。</li>
+          <li>与事件相关的互动指标，如点赞、回复、分享、浏览量。</li>
+          <li>企业合法取得的 CSV/Excel 样本。</li>
+          <li>第三方供应商在 POC 中提供且不含密钥的样本文件。</li>
+          <li>经过平台官方授权或 OAuth 授权后可处理的数据。</li>
+        </ul>
+
+        <h2>不应提交的数据</h2>
+        <ul>
+          <li>未经授权的个人信息或敏感个人信息。</li>
+          <li>私信、私密群组、非公开账号内容。</li>
+          <li>登录态数据、Cookie、Token、账号密码、client secret、API Key。</li>
+          <li>付费墙、会员区、未授权下载或受限内容。</li>
+          <li>通过验证码绕过、反爬绕过、代理规避、隐藏接口或 Cookie 抓取得到的数据。</li>
+        </ul>
+
+        <h2>用户授权确认</h2>
+        <div class="boundary">
+          我确认对所提交的公开舆情证据拥有合法来源或使用权，并同意将其用于归墟舆情分析 / Sentigraph 的证据归一化、风险分析、报告生成和人工复核。
+        </div>
+        <p>如果用户未完成授权确认，系统可继续保存必要的规范化证据，但会降低信任标签并标记为 needs_review 或 user_attestation_missing。</p>
+
+        <h2>手动证据与可选授权平台数据</h2>
+        <p>手动 URL 证据由用户自行提供标题、正文、评论或摘要。系统不会自动访问该 URL。未来平台官方 API 或 OAuth 数据必须在平台审核、权限范围、回调地址、测试账号和令牌配置完成后处理。</p>
+
+        <h2>供应商样本数据</h2>
+        <p>供应商样本应标记为 data_vendor。vendor_attested 表示供应商对来源或授权作出说明，不表示平台官方已验证内容，也不表示证据本身一定真实。供应商数据仍需经过字段完整性、重复率、来源可追溯性、删除同步、个人信息处理和合同权利复核。</p>
+
+        <h2>证据复核原则</h2>
+        <p>低信任、未验证、截图转录、缺少来源、缺少授权确认、重复提交或包含风险标记的证据会进入人工复核队列。人工复核中被驳回的证据默认不进入后续分析、代表性评论和报告正文。</p>
+
+        <h2>截图和转录说明</h2>
+        <p>截图、截图转录、人工复制文本和外部工具辅助整理文本不会被系统自动验证。系统不会使用 AI 自动判断截图真实性，也不会把截图内容称为平台官方验证数据。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div><strong>归墟舆情分析 / Sentigraph</strong><div class="fine-print">公司名称：待补充 · 联系邮箱：待补充 · ICP备案号：备案后补充 · 公安备案号：备案后补充</div></div>
+      <div class="footer-links"><a href="privacy.html">隐私政策</a><a href="terms.html">用户协议</a><a href="data-authorization.html">数据授权</a><a href="contact.html">联系</a></div>
+    </div>
+  </footer>
+</body>
+</html>

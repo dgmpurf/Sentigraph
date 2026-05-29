@@ -6,6 +6,30 @@ Last updated: 2026-05-28
 
 Sentigraph is currently a mock-default, YouTube-real-capable, evidence-ingestion-ready desktop web MVP.
 
+Latest static guixutech.com website update: completed and validated on
+2026-05-28. Converted the official website content package into a pure static
+site under `website/`, including `index.html`, `product.html`,
+`data-authorization.html`, `privacy.html`, `terms.html`, `contact.html`,
+`assets/site.css`, and `README.md`. The site is Chinese-language and positions
+`归墟舆情分析 / Sentigraph` for `guixutech.com` with homepage, product,
+data-authorization, privacy, user-agreement, and contact/platform-review pages.
+It uses no external CDN, analytics scripts, third-party trackers, JavaScript,
+backend production deployment, API integrations, YouTube API calls, or secrets.
+The website copy remains conservative: no unauthorized data collection, no
+Cookie/login/captcha/anti-bot bypass, no MediaCrawler integration, no automatic
+URL scraping, no automatic screenshot authenticity verification, uploaded /
+manual / vendor evidence is not automatically verified, YouTube real data is
+only an optional local demo, and Douyin/Bilibili/etc. real APIs remain pending
+official permissions. Updated `docs/website_deployment_checklist.md` with
+static-site deployment notes for `website/`, placeholder replacement checks,
+and no-overclaim boundaries. Validation passed with `python -m pytest`
+(`614 passed in 8.03s`), `python scripts/run_offline_benchmarks.py`
+(`522 passed, 0 failed, 0 warnings`, `no_regression`; safety line confirms no
+real LLM or platform API calls), and `npm --prefix frontend run build` (`built
+in 8.48s`; existing non-blocking large chunk warning remains). Next recommended
+task: replace legal/contact/ICP placeholders, then deploy the static site behind
+HTTPS for ICP and platform-review preparation.
+
 Latest official website content package update: prepared on 2026-05-28 for
 `guixutech.com` / 归墟科技 / 归墟舆情分析. Added Chinese homepage copy,
 product page copy, privacy policy draft, user agreement draft, data
