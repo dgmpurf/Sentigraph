@@ -88,6 +88,10 @@ const SelectorRepairTool = lazyNamed(() => import('./pages/SelectorRepairTool.js
 const LlmAdminStatus = lazyNamed(() => import('./pages/LlmAdminStatus.jsx'), 'LlmAdminStatus')
 const BenchmarkDashboard = lazyNamed(() => import('./pages/BenchmarkDashboard.jsx'), 'BenchmarkDashboard')
 const SimulationLab = lazyNamed(() => import('./pages/SimulationLab.jsx'), 'SimulationLab')
+const OpinionEcosystemSandbox = lazyNamed(
+  () => import('./pages/OpinionEcosystemSandbox.jsx'),
+  'OpinionEcosystemSandbox',
+)
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
@@ -727,6 +731,7 @@ function App() {
     llmSafety: <LlmAdminStatus />,
     benchmarks: <BenchmarkDashboard />,
     simulationLab: <SimulationLab cases={cases} currentCase={currentCase} />,
+    opinionEcosystem: <OpinionEcosystemSandbox />,
   }[activePage] || <NotFound activePage={activePage} onNavigate={setActivePage} />
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0

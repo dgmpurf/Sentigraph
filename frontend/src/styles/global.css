@@ -1695,6 +1695,135 @@ body {
   color: #c9d4ea;
 }
 
+.opinion-ecosystem-page .ant-card-body {
+  min-width: 0;
+}
+
+.ecosystem-control-card,
+.ecosystem-canvas-card,
+.ecosystem-side-card,
+.ecosystem-boundary-card {
+  border-color: rgba(66, 245, 215, 0.22);
+  background:
+    linear-gradient(180deg, rgba(66, 245, 215, 0.045), transparent 52%),
+    rgba(17, 19, 26, 0.88);
+}
+
+.ecosystem-canvas-card .ant-card-body {
+  display: grid;
+  place-items: center;
+}
+
+.ecosystem-canvas-shell {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(66, 245, 215, var(--echo-alpha));
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 30% 16%, rgba(66, 245, 215, 0.08), transparent 32%),
+    radial-gradient(circle at 70% 72%, rgba(255, 93, 143, 0.09), transparent 30%),
+    rgba(8, 9, 13, 0.66);
+  box-shadow:
+    inset 0 0 var(--echo-blur) rgba(66, 245, 215, 0.12),
+    0 0 var(--echo-blur) rgba(66, 245, 215, 0.08);
+}
+
+.ecosystem-canvas-shell canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 760 / 520;
+}
+
+.ecosystem-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.ecosystem-stat-grid .ant-statistic {
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.34);
+}
+
+.ecosystem-stat-grid .ant-statistic-content {
+  color: #42f5d7;
+  font-size: 24px;
+}
+
+.ecosystem-progress-row {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.ecosystem-recommendation {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid rgba(66, 245, 215, 0.18);
+  border-radius: 8px;
+  background: rgba(66, 245, 215, 0.06);
+}
+
+.ecosystem-recommendation p {
+  margin: 6px 0 0 !important;
+  color: #d6deef;
+  line-height: 1.68;
+}
+
+.ecosystem-distribution-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ecosystem-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 14px currentColor;
+}
+
+.ecosystem-core-card,
+.ecosystem-reading-row {
+  width: 100%;
+}
+
+.ecosystem-core-card p,
+.ecosystem-reading-row p {
+  margin: 8px 0 0 !important;
+  color: #9aa6bf;
+  line-height: 1.58;
+}
+
+.ecosystem-core-swatch {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border: 2px solid;
+  border-radius: 6px;
+  background: rgba(8, 9, 13, 0.42);
+}
+
+.ecosystem-boundary-card .ant-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 @media (max-width: 1280px) {
   .forecast-explanation-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1711,6 +1840,10 @@ body {
 
   .simulation-comparison-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ecosystem-stat-grid {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -9,6 +9,7 @@ import {
   FolderKanban,
   Globe2,
   Network,
+  Orbit,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -45,6 +46,15 @@ const navItems = [
       </Tooltip>
     ),
     icon: <Activity size={17} />,
+  },
+  {
+    key: 'opinionEcosystem',
+    label: (
+      <Tooltip title="Opinion Ecosystem Sandbox / 舆论生态沙盒" placement="right">
+        <span>生态沙盒</span>
+      </Tooltip>
+    ),
+    icon: <Orbit size={17} />,
   },
 ]
 
