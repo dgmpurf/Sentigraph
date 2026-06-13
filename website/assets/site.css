@@ -70,15 +70,22 @@ a:hover {
 }
 
 .brand-mark {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   display: inline-grid;
   place-items: center;
-  border: 1px solid rgba(61, 214, 180, 0.55);
+  overflow: hidden;
+  border: 1px solid rgba(238, 247, 247, 0.2);
   border-radius: 10px;
-  color: var(--accent);
-  background: linear-gradient(145deg, rgba(61, 214, 180, 0.16), rgba(120, 166, 255, 0.08));
-  font-weight: 800;
+  background: #f8f6f1;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .brand-name {

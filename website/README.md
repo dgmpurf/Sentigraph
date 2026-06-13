@@ -12,6 +12,8 @@ This folder contains the static official website draft for 归墟科技 /
 - `terms.html` - user agreement
 - `contact.html` - contact and reviewer information
 - `assets/site.css` - shared static CSS
+- `assets/brand/guixu-logo.jpg` - current company/product logo used in the
+  header and favicon
 
 ## Deployment
 
@@ -29,6 +31,10 @@ Before ICP filing or platform review, replace placeholders:
 - public security filing number
 - final privacy-policy and user-agreement effective dates
 - platform OAuth callback URLs
+
+If a vector or transparent-background logo becomes available later, replace
+`assets/brand/guixu-logo.jpg` and keep the filename stable, or update the
+header and favicon references across the HTML files.
 
 ## Boundaries
 
