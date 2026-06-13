@@ -2,6 +2,8 @@ import { Alert, Button, Card, Col, List, Progress, Row, Segmented, Space, Statis
 import { PauseCircle, PlayCircle, RotateCcw, ScanLine, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { SYNTHETIC_EVIDENCE_ITEMS, SYNTHETIC_OPINION_ECOSYSTEM_CASE } from '../data/opinionEcosystemEvidenceFixture.js'
+import { mapEvidenceToOpinionEcosystem } from '../data/opinionEcosystemMapper.js'
 import {
   BOX_HEIGHT,
   BOX_WIDTH,
@@ -21,6 +23,37 @@ import {
 } from '../data/opinionEcosystemMock.js'
 
 const { Paragraph, Text, Title } = Typography
+
+const DATA_SOURCE_OPTIONS = [
+  { label: 'Mock schema mode', value: 'mock_schema' },
+  { label: 'Evidence fixture mapping mode', value: 'evidence_fixture' },
+]
+
+function createBaseModel(dataSourceMode) {
+  if (dataSourceMode === 'evidence_fixture') {
+    return mapEvidenceToOpinionEcosystem(SYNTHETIC_EVIDENCE_ITEMS)
+  }
+  return {
+    ...createOpinionEcosystemMock(),
+    mappingStatus: {
+      mode: 'mock_schema',
+      label: 'Mock schema mode',
+      notes: [
+        '当前使用前端本地 mock schema / mock weight model。',
+        '不接 backend。',
+        '不代表真实 case 数据。',
+        '不代表全网全量覆盖。',
+        '不代表因果确定。',
+        '不执行真实平台动作。',
+      ],
+    },
+  }
+}
+
+function createScenarioView(baseModel, scenarioKey, peopleClusters) {
+  const scenario = applyMockScenario(baseModel, scenarioKey)
+  return { ...scenario, peopleClusters }
+}
 
 function drawRoundedRect(ctx, x, y, width, height, radius) {
   ctx.beginPath()
@@ -100,7 +133,7 @@ function drawSandbox(ctx, peopleClusters, scenario, tick) {
 
   ctx.save()
   peopleClusters
-    .filter((cluster) => cluster.bridge_power > 0.74 && cluster.cluster_id.endsWith('7'))
+    .filter((cluster) => cluster.bridge_power > 0.74 && cluster.camp_state !== 'withdrawn')
     .slice(0, 18)
     .forEach((cluster) => {
       const target = scenarioTargetForCluster(cluster, scenario)
@@ -146,32 +179,24 @@ function MetricProgress({ label, value, strokeColor }) {
   )
 }
 
-function createScenarioView(baseModel, scenarioKey, peopleClusters) {
-  const scenario = applyMockScenario(baseModel, scenarioKey)
-  return { ...scenario, peopleClusters }
-}
-
 export function OpinionEcosystemSandbox() {
   const canvasRef = useRef(null)
   const baseModelRef = useRef(null)
   const peopleClustersRef = useRef(null)
+  const scenarioRef = useRef(null)
   const frameRef = useRef(null)
   const tickRef = useRef(0)
-  const scenarioRef = useRef(null)
+  const [dataSourceMode, setDataSourceMode] = useState('mock_schema')
   const [scenarioKey, setScenarioKey] = useState('natural')
   const [playing, setPlaying] = useState(true)
 
   if (!baseModelRef.current) {
-    baseModelRef.current = createOpinionEcosystemMock()
+    baseModelRef.current = createBaseModel(dataSourceMode)
     peopleClustersRef.current = baseModelRef.current.peopleClusters
     scenarioRef.current = createScenarioView(baseModelRef.current, scenarioKey, peopleClustersRef.current)
   }
 
-  const scenario = useMemo(
-    () => createScenarioView(baseModelRef.current, scenarioKey, peopleClustersRef.current),
-    [scenarioKey],
-  )
-
+  const [scenarioView, setScenarioView] = useState(() => scenarioRef.current)
   const [metrics, setMetrics] = useState(() =>
     computeMockMetrics(
       scenarioRef.current.echoBox,
@@ -182,18 +207,29 @@ export function OpinionEcosystemSandbox() {
     ),
   )
 
-  useEffect(() => {
-    scenarioRef.current = createScenarioView(baseModelRef.current, scenarioKey, peopleClustersRef.current)
+  const refreshScenario = useCallback((nextMode = dataSourceMode, nextScenarioKey = scenarioKey, resetClusters = false) => {
+    if (resetClusters || !baseModelRef.current || baseModelRef.current.mappingStatus?.mode !== nextMode) {
+      baseModelRef.current = createBaseModel(nextMode)
+      peopleClustersRef.current = baseModelRef.current.peopleClusters
+      tickRef.current = 0
+    }
+    const nextScenario = createScenarioView(baseModelRef.current, nextScenarioKey, peopleClustersRef.current)
+    scenarioRef.current = nextScenario
+    setScenarioView(nextScenario)
     setMetrics(
       computeMockMetrics(
-        scenarioRef.current.echoBox,
-        scenarioRef.current.influenceCores,
+        nextScenario.echoBox,
+        nextScenario.influenceCores,
         peopleClustersRef.current,
-        scenarioRef.current.responseTempo,
-        scenarioRef.current.reputationMemory,
+        nextScenario.responseTempo,
+        nextScenario.reputationMemory,
       ),
     )
-  }, [scenarioKey])
+  }, [dataSourceMode, scenarioKey])
+
+  useEffect(() => {
+    refreshScenario(dataSourceMode, scenarioKey, true)
+  }, [dataSourceMode, scenarioKey, refreshScenario])
 
   const drawCurrentFrame = useCallback(() => {
     const canvas = canvasRef.current
@@ -240,21 +276,9 @@ export function OpinionEcosystemSandbox() {
   }, [drawCurrentFrame, playing])
 
   const handleReset = useCallback(() => {
-    baseModelRef.current = createOpinionEcosystemMock()
-    peopleClustersRef.current = baseModelRef.current.peopleClusters
-    scenarioRef.current = createScenarioView(baseModelRef.current, scenarioKey, peopleClustersRef.current)
-    tickRef.current = 0
-    setMetrics(
-      computeMockMetrics(
-        scenarioRef.current.echoBox,
-        scenarioRef.current.influenceCores,
-        peopleClustersRef.current,
-        scenarioRef.current.responseTempo,
-        scenarioRef.current.reputationMemory,
-      ),
-    )
+    refreshScenario(dataSourceMode, scenarioKey, true)
     drawCurrentFrame()
-  }, [drawCurrentFrame, scenarioKey])
+  }, [dataSourceMode, drawCurrentFrame, refreshScenario, scenarioKey])
 
   const distributionItems = useMemo(() => {
     const distribution = computeCampDistribution(peopleClustersRef.current)
@@ -267,6 +291,16 @@ export function OpinionEcosystemSandbox() {
       { key: 'withdrawn', label: OPINION_STATE_LABELS.withdrawn, value: distribution.visualCounts.withdrawn, color: OPINION_STATE_COLORS.withdrawn },
     ]
   }, [metrics])
+
+  const schemaStatusItems = useMemo(
+    () => [
+      ...OPINION_ECOSYSTEM_SCHEMA_STATUS,
+      ...(scenarioView.mappingStatus?.notes || []).map((note, index) => [`Mapping note ${index + 1}`, note]),
+    ],
+    [scenarioView.mappingStatus],
+  )
+
+  const evidenceSummary = scenarioView.evidenceSummary
 
   return (
     <div className="page-stack opinion-ecosystem-page">
@@ -289,11 +323,12 @@ export function OpinionEcosystemSandbox() {
         type="info"
         showIcon
         message="安全边界"
-        description="本页面不连接后端 API、不读取 Evidence 数据、不调用真实平台或 LLM 服务、不抓取 URL。所有运动、权重、同化 / 中立化 / 退出 / 反噬 / 解构 / 处理节奏均为本地 mock 演示，不代表因果确定。"
+        description="本页面不连接后端 API、不读取真实 Evidence 数据、不调用真实平台或 LLM 服务、不抓取 URL。所有运动、权重、同化 / 中立化 / 退出 / 反噬 / 解构 / 处理节奏均为本地 mock 演示，不代表因果确定。"
       />
 
       <Card className="panel-card ecosystem-control-card">
         <Space size={12} wrap>
+          <Segmented options={DATA_SOURCE_OPTIONS} value={dataSourceMode} onChange={setDataSourceMode} />
           <Segmented options={SCENARIO_OPTIONS} value={scenarioKey} onChange={setScenarioKey} />
           <Button
             icon={playing ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
@@ -305,10 +340,34 @@ export function OpinionEcosystemSandbox() {
           <Button icon={<RotateCcw size={16} />} onClick={handleReset}>
             Reset
           </Button>
-          <Tag color="geekblue">当前场景：{scenario.scenarioLabel}</Tag>
-          <Tag color="gold">处理节奏：{scenario.responseTempo.recommendation_label}</Tag>
+          <Tag color="geekblue">当前场景：{scenarioView.scenarioLabel}</Tag>
+          <Tag color={dataSourceMode === 'evidence_fixture' ? 'purple' : 'cyan'}>{scenarioView.mappingStatus?.label}</Tag>
+          <Tag color="gold">处理节奏：{scenarioView.responseTempo.recommendation_label}</Tag>
         </Space>
       </Card>
+
+      {dataSourceMode === 'evidence_fixture' && (
+        <Card className="panel-card">
+          <Space direction="vertical" size={8}>
+            <Space wrap>
+              <Tag color="purple">Synthetic EvidenceItem fixture</Tag>
+              <Tag color="default">{SYNTHETIC_OPINION_ECOSYSTEM_CASE.title}</Tag>
+              <Tag color="default">不接 backend</Tag>
+              <Tag color="default">不代表真实 case 数据</Tag>
+            </Space>
+            <Paragraph>{SYNTHETIC_OPINION_ECOSYSTEM_CASE.summary}</Paragraph>
+            {evidenceSummary && (
+              <Space wrap>
+                <Tag>total evidence {evidenceSummary.total_evidence}</Tag>
+                <Tag>active {evidenceSummary.active_evidence}</Tag>
+                <Tag>rejected excluded {evidenceSummary.rejected_evidence}</Tag>
+                <Tag>duplicate groups {evidenceSummary.duplicate_group_count}</Tag>
+                <Tag>low trust / unreviewed {evidenceSummary.low_trust_or_unreviewed}</Tag>
+              </Space>
+            )}
+          </Space>
+        </Card>
+      )}
 
       <Row gutter={[16, 16]}>
         <Col span={16}>
@@ -325,8 +384,8 @@ export function OpinionEcosystemSandbox() {
             <div
               className="ecosystem-canvas-shell"
               style={{
-                '--echo-alpha': `${0.22 + scenario.echoBox.echo_chamber_score * 0.55}`,
-                '--echo-blur': `${12 + scenario.echoBox.echo_chamber_score * 34}px`,
+                '--echo-alpha': `${0.22 + scenarioView.echoBox.echo_chamber_score * 0.55}`,
+                '--echo-blur': `${12 + scenarioView.echoBox.echo_chamber_score * 34}px`,
               }}
             >
               <canvas ref={canvasRef} aria-label="Mock Opinion Ecosystem Sandbox visualization" />
@@ -347,7 +406,7 @@ export function OpinionEcosystemSandbox() {
             <MetricProgress label="deconstruction window score" value={metrics.deconstructionWindow} strokeColor="#a478ff" />
             <div className="ecosystem-recommendation">
               <Text type="secondary">Mock recommendation</Text>
-              <Paragraph>{scenario.responseTempo.recommendation_text}</Paragraph>
+              <Paragraph>{scenarioView.responseTempo.recommendation_text}</Paragraph>
             </div>
           </Card>
         </Col>
@@ -375,7 +434,7 @@ export function OpinionEcosystemSandbox() {
         <Col span={6}>
           <Card className="panel-card" title="Influence Cores / 影响核心">
             <List
-              dataSource={scenario.influenceCores}
+              dataSource={scenarioView.influenceCores}
               renderItem={(core) => (
                 <List.Item>
                   <div className="ecosystem-core-card">
@@ -404,7 +463,7 @@ export function OpinionEcosystemSandbox() {
         <Col span={6}>
           <Card className="panel-card" title="模型对象 / Schema status">
             <List
-              dataSource={OPINION_ECOSYSTEM_SCHEMA_STATUS}
+              dataSource={schemaStatusItems}
               renderItem={([label, description]) => (
                 <List.Item>
                   <div className="ecosystem-reading-row">
@@ -436,29 +495,29 @@ export function OpinionEcosystemSandbox() {
       <Row gutter={[16, 16]}>
         <Col span={8}>
           <Card className="panel-card" title="CampDynamics / mock 转移规则">
-            <MetricProgress label="neutralization score" value={scenario.campDynamics.neutralization_score} strokeColor="#42f5d7" />
-            <MetricProgress label="withdrawal score" value={scenario.campDynamics.withdrawal_score} strokeColor="#667085" />
-            <MetricProgress label="backlash score" value={scenario.campDynamics.backlash_score} strokeColor="#ff5d8f" />
-            <MetricProgress label="reactivation risk" value={scenario.campDynamics.reactivation_risk} strokeColor="#f5c44b" />
+            <MetricProgress label="neutralization score" value={scenarioView.campDynamics.neutralization_score} strokeColor="#42f5d7" />
+            <MetricProgress label="withdrawal score" value={scenarioView.campDynamics.withdrawal_score} strokeColor="#667085" />
+            <MetricProgress label="backlash score" value={scenarioView.campDynamics.backlash_score} strokeColor="#ff5d8f" />
+            <MetricProgress label="reactivation risk" value={scenarioView.campDynamics.reactivation_risk} strokeColor="#f5c44b" />
           </Card>
         </Col>
         <Col span={8}>
           <Card className="panel-card" title="DeconstructionCore / 解构核心">
-            <MetricProgress label="neutralization power" value={scenario.deconstructionCore.neutralization_power} strokeColor="#42f5d7" />
-            <MetricProgress label="withdrawal power" value={scenario.deconstructionCore.withdrawal_power} strokeColor="#667085" />
-            <MetricProgress label="fit score" value={scenario.deconstructionCore.deconstruction_fit_score} strokeColor="#a478ff" />
-            <Paragraph>{scenario.deconstructionCore.label} 仅为本地 mock 节点，不代表真实平台内容。</Paragraph>
+            <MetricProgress label="neutralization power" value={scenarioView.deconstructionCore.neutralization_power} strokeColor="#42f5d7" />
+            <MetricProgress label="withdrawal power" value={scenarioView.deconstructionCore.withdrawal_power} strokeColor="#667085" />
+            <MetricProgress label="fit score" value={scenarioView.deconstructionCore.deconstruction_fit_score} strokeColor="#a478ff" />
+            <Paragraph>{scenarioView.deconstructionCore.label} 仅为本地 mock 节点，不代表真实平台内容。</Paragraph>
           </Card>
         </Col>
         <Col span={8}>
           <Card className="panel-card" title="ReputationMemory / 长期残留">
             <MetricProgress
               label="unresolved grievance score"
-              value={scenario.reputationMemory.unresolved_grievance_score}
+              value={scenarioView.reputationMemory.unresolved_grievance_score}
               strokeColor="#ff5d8f"
             />
-            <MetricProgress label="trust recovery" value={scenario.reputationMemory.trust_recovery} strokeColor="#54f5a8" />
-            <MetricProgress label="reactivation risk" value={scenario.reputationMemory.reactivation_risk} strokeColor="#f5c44b" />
+            <MetricProgress label="trust recovery" value={scenarioView.reputationMemory.trust_recovery} strokeColor="#54f5a8" />
+            <MetricProgress label="reactivation risk" value={scenarioView.reputationMemory.reactivation_risk} strokeColor="#f5c44b" />
             <Paragraph>退出讨论不等于问题解决；该卡片只提示 mock 风险记忆，不做真实性判断。</Paragraph>
           </Card>
         </Col>
@@ -475,10 +534,12 @@ export function OpinionEcosystemSandbox() {
       >
         <Space wrap>
           <Tag color="cyan">基于静态模拟数据</Tag>
+          <Tag color="default">小球代表人群簇，不代表真实个人</Tag>
+          <Tag color="default">InfluenceCore 是观念 / 内容 / 媒体 / 官方 / 梗化核心，不是人群小球</Tag>
           <Tag color="default">不代表全网全量覆盖</Tag>
           <Tag color="default">不代表因果确定</Tag>
           <Tag color="default">不执行真实平台动作</Tag>
-          <Tag color="default">不连接 Evidence 数据</Tag>
+          <Tag color="default">不连接真实 Evidence 数据</Tag>
           <Tag color="default">不调用真实 LLM</Tag>
         </Space>
       </Card>
