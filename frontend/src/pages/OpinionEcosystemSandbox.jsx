@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { SYNTHETIC_EVIDENCE_ITEMS, SYNTHETIC_OPINION_ECOSYSTEM_CASE } from '../data/opinionEcosystemEvidenceFixture.js'
 import { mapEvidenceToOpinionEcosystem } from '../data/opinionEcosystemMapper.js'
+import { validateOpinionEcosystemScenario } from '../data/opinionEcosystemValidator.js'
 import {
   BOX_HEIGHT,
   BOX_WIDTH,
@@ -28,6 +29,12 @@ const DATA_SOURCE_OPTIONS = [
   { label: 'Mock schema mode', value: 'mock_schema' },
   { label: 'Evidence fixture mapping mode', value: 'evidence_fixture' },
 ]
+
+const VALIDATION_STATUS_COLOR = {
+  pass: 'green',
+  warn: 'gold',
+  fail: 'red',
+}
 
 function createBaseModel(dataSourceMode) {
   if (dataSourceMode === 'evidence_fixture') {
@@ -179,6 +186,10 @@ function MetricProgress({ label, value, strokeColor }) {
   )
 }
 
+function ContractStatusTag({ status }) {
+  return <Tag color={VALIDATION_STATUS_COLOR[status] || 'default'}>{status}</Tag>
+}
+
 export function OpinionEcosystemSandbox() {
   const canvasRef = useRef(null)
   const baseModelRef = useRef(null)
@@ -300,6 +311,15 @@ export function OpinionEcosystemSandbox() {
     [scenarioView.mappingStatus],
   )
 
+  const validationSummary = useMemo(
+    () =>
+      validateOpinionEcosystemScenario(
+        scenarioView,
+        dataSourceMode === 'evidence_fixture' ? SYNTHETIC_EVIDENCE_ITEMS : [],
+      ),
+    [dataSourceMode, scenarioView],
+  )
+
   const evidenceSummary = scenarioView.evidenceSummary
 
   return (
@@ -368,6 +388,39 @@ export function OpinionEcosystemSandbox() {
           </Space>
         </Card>
       )}
+
+      <Card
+        className="panel-card"
+        title={
+          <Space>
+            <span>Mapping contract / 映射契约检查</span>
+            <ContractStatusTag status={validationSummary.status} />
+          </Space>
+        }
+      >
+        <Space wrap>
+          <Tag color="green">pass {validationSummary.pass_count}</Tag>
+          <Tag color="gold">warn {validationSummary.warn_count}</Tag>
+          <Tag color="red">fail {validationSummary.fail_count}</Tag>
+          <Tag color="default">local validator only</Tag>
+          <Tag color="default">non-blocking</Tag>
+        </Space>
+        <List
+          size="small"
+          dataSource={validationSummary.checks}
+          renderItem={(item) => (
+            <List.Item>
+              <div className="ecosystem-distribution-row">
+                <Space>
+                  <ContractStatusTag status={item.status} />
+                  <Text strong>{item.label}</Text>
+                </Space>
+                <Text type={item.status === 'fail' ? 'danger' : 'secondary'}>{item.message}</Text>
+              </div>
+            </List.Item>
+          )}
+        />
+      </Card>
 
       <Row gutter={[16, 16]}>
         <Col span={16}>
