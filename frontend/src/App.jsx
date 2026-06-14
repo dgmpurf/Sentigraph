@@ -736,6 +736,7 @@ function App() {
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0
   const riskLevel = visualization?.risk_level ?? analysis?.risk?.risk_level ?? 'low'
+  const showGlobalError = error && activePage !== 'opinionEcosystem'
 
   return (
     <ConfigProvider theme={appTheme}>
@@ -752,7 +753,7 @@ function App() {
           riskScore={riskScore}
           sourceStatus={sourceStatus}
         >
-          {error ? <Alert className="app-alert" message={error} type="error" showIcon /> : null}
+          {showGlobalError ? <Alert className="app-alert" message={error} type="error" showIcon /> : null}
           <Spin spinning={loading}>
             <motion.div
               key={activePage}
