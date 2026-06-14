@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Col, List, Progress, Row, Space, Statistic, Tag, Timeline, Typography } from 'antd'
-import { ArrowRight, Boxes, CircleDot, FileCheck2, FlaskConical, ShieldCheck, Vote } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Boxes, CircleDot, FileCheck2, FlaskConical, ShieldCheck, Vote } from 'lucide-react'
 
 import { HELLDIVERS_PUBLIC_EVENT } from '../data/publicEventSamples.js'
 
@@ -43,6 +43,11 @@ export function PublicEventDetail({ onNavigate }) {
     onNavigate?.('opinionEcosystem')
   }
 
+  const openPlaza = () => {
+    window.location.hash = '#/public-events'
+    onNavigate?.('publicEventPlaza')
+  }
+
   return (
     <div className="page-stack public-event-page">
       <section className="public-event-hero">
@@ -57,6 +62,9 @@ export function PublicEventDetail({ onNavigate }) {
           <Title level={1}>{event.title}</Title>
           <Paragraph>{event.subtitle}</Paragraph>
           <Space wrap>
+            <Button size="large" icon={<ArrowLeft size={17} />} onClick={openPlaza}>
+              返回事件广场
+            </Button>
             <Button type="primary" size="large" icon={<Boxes size={17} />} onClick={openSandbox}>
               {event.ctas.sandbox}
             </Button>

@@ -84,6 +84,7 @@ const PlatformIntegrationOverview = lazyNamed(
   'PlatformIntegrationOverview',
 )
 const SearchDiscovery = lazyNamed(() => import('./pages/SearchDiscovery.jsx'), 'SearchDiscovery')
+const PublicEventPlaza = lazyNamed(() => import('./pages/PublicEventPlaza.jsx'), 'PublicEventPlaza')
 const PublicEventDetail = lazyNamed(() => import('./pages/PublicEventDetail.jsx'), 'PublicEventDetail')
 const SelectorRepairTool = lazyNamed(() => import('./pages/SelectorRepairTool.jsx'), 'SelectorRepairTool')
 const LlmAdminStatus = lazyNamed(() => import('./pages/LlmAdminStatus.jsx'), 'LlmAdminStatus')
@@ -96,6 +97,7 @@ const OpinionEcosystemSandbox = lazyNamed(
 
 function pageFromHash() {
   const hash = window.location.hash
+  if (hash === '#/public-events') return 'publicEventPlaza'
   if (hash === '#/public-events/helldivers-psn') return 'publicEventDetail'
   if (hash === '#/opinion-ecosystem') return 'opinionEcosystem'
   return 'dashboard'
@@ -653,6 +655,20 @@ function App() {
     loadProjectData(projectId)
   }, [activePage, currentCase, handleRunCase, loadProjectData, projectId])
 
+  const handleNavigate = useCallback((pageKey) => {
+    const hashByPage = {
+      publicEventPlaza: '#/public-events',
+      publicEventDetail: '#/public-events/helldivers-psn',
+      opinionEcosystem: '#/opinion-ecosystem',
+    }
+    if (hashByPage[pageKey]) {
+      window.location.hash = hashByPage[pageKey]
+    } else if (window.location.hash) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+    }
+    setActivePage(pageKey)
+  }, [])
+
   const appTheme = useMemo(
     () => ({
       algorithm: theme.darkAlgorithm,
@@ -714,8 +730,8 @@ function App() {
     onEnableMonitoring: handleEnableMonitoring,
     onDisableMonitoring: handleDisableMonitoring,
     onMarkNotificationRead: handleMarkNotificationRead,
-    onNavigate: setActivePage,
-    onNavigateToKeyword: () => setActivePage('keyword'),
+    onNavigate: handleNavigate,
+    onNavigateToKeyword: () => handleNavigate('keyword'),
     onOpenCaseReport: handleOpenCaseReport,
     onRefreshCases: refreshCases,
     onRunCase: handleRunCase,
@@ -746,7 +762,8 @@ function App() {
     publicParsers: <PublicParserStatus />,
     platformIntegrations: <PlatformIntegrationOverview />,
     searchDiscovery: <SearchDiscovery {...pageProps} />,
-    publicEventDetail: <PublicEventDetail onNavigate={setActivePage} />,
+    publicEventPlaza: <PublicEventPlaza onNavigate={handleNavigate} />,
+    publicEventDetail: <PublicEventDetail onNavigate={handleNavigate} />,
     selectorRepair: <SelectorRepairTool />,
     llmSafety: <LlmAdminStatus />,
     benchmarks: <BenchmarkDashboard />,
@@ -756,7 +773,7 @@ function App() {
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0
   const riskLevel = visualization?.risk_level ?? analysis?.risk?.risk_level ?? 'low'
-  const showGlobalError = error && !['opinionEcosystem', 'publicEventDetail'].includes(activePage)
+  const showGlobalError = error && !['opinionEcosystem', 'publicEventPlaza', 'publicEventDetail'].includes(activePage)
 
   return (
     <ConfigProvider theme={appTheme}>
@@ -766,7 +783,7 @@ function App() {
           alertsCount={alerts.length}
           caseTitle={currentCase?.title}
           loading={loading}
-          onNavigate={setActivePage}
+          onNavigate={handleNavigate}
           onRefresh={handleRefreshCurrent}
           projectId={projectId}
           riskLevel={riskLevel}
