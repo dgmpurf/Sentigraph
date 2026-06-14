@@ -34,3 +34,13 @@ Intended use:
 - Documentation asset for validating Sentigraph Evidence Export v1 package shape
 
 This sample has not been imported into the backend, mapped into real PeopleCluster/EchoBox objects, or used as production data.
+
+## Local validation
+
+Run the Sentigraph-side offline validator from the repository root:
+
+```powershell
+python scripts\validate_external_evidence_package.py docs\samples\helldivers2_psn_demo\helldivers2-psn-demo_20260614_055754 --case-keyword helldivers --case-keyword psn --case-keyword playstation --case-keyword steam
+```
+
+The validator is local and read-only. It does not import the package, call APIs, fetch URLs, scrape websites, use browser sessions, or verify the underlying public sources.
