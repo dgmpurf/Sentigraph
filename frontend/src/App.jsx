@@ -84,6 +84,7 @@ const PlatformIntegrationOverview = lazyNamed(
   'PlatformIntegrationOverview',
 )
 const SearchDiscovery = lazyNamed(() => import('./pages/SearchDiscovery.jsx'), 'SearchDiscovery')
+const PublicEventDetail = lazyNamed(() => import('./pages/PublicEventDetail.jsx'), 'PublicEventDetail')
 const SelectorRepairTool = lazyNamed(() => import('./pages/SelectorRepairTool.jsx'), 'SelectorRepairTool')
 const LlmAdminStatus = lazyNamed(() => import('./pages/LlmAdminStatus.jsx'), 'LlmAdminStatus')
 const BenchmarkDashboard = lazyNamed(() => import('./pages/BenchmarkDashboard.jsx'), 'BenchmarkDashboard')
@@ -93,8 +94,15 @@ const OpinionEcosystemSandbox = lazyNamed(
   'OpinionEcosystemSandbox',
 )
 
+function pageFromHash() {
+  const hash = window.location.hash
+  if (hash === '#/public-events/helldivers-psn') return 'publicEventDetail'
+  if (hash === '#/opinion-ecosystem') return 'opinionEcosystem'
+  return 'dashboard'
+}
+
 function App() {
-  const [activePage, setActivePage] = useState('dashboard')
+  const [activePage, setActivePage] = useState(pageFromHash)
   const [projectId, setProjectId] = useState(DEFAULT_PROJECT_ID)
   const [keyword, setKeyword] = useState('Tesla')
   const [expandedKeywords, setExpandedKeywords] = useState(null)
@@ -266,6 +274,17 @@ function App() {
   useEffect(() => {
     loadProjectData(DEFAULT_PROJECT_ID)
   }, [loadProjectData])
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const nextPage = pageFromHash()
+      if (nextPage !== 'dashboard') {
+        setActivePage(nextPage)
+      }
+    }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -727,6 +746,7 @@ function App() {
     publicParsers: <PublicParserStatus />,
     platformIntegrations: <PlatformIntegrationOverview />,
     searchDiscovery: <SearchDiscovery {...pageProps} />,
+    publicEventDetail: <PublicEventDetail onNavigate={setActivePage} />,
     selectorRepair: <SelectorRepairTool />,
     llmSafety: <LlmAdminStatus />,
     benchmarks: <BenchmarkDashboard />,
@@ -736,7 +756,7 @@ function App() {
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0
   const riskLevel = visualization?.risk_level ?? analysis?.risk?.risk_level ?? 'low'
-  const showGlobalError = error && activePage !== 'opinionEcosystem'
+  const showGlobalError = error && !['opinionEcosystem', 'publicEventDetail'].includes(activePage)
 
   return (
     <ConfigProvider theme={appTheme}>

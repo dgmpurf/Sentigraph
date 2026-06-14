@@ -1,4 +1,4 @@
-import { Button, Layout, Menu, Space, Tag, Tooltip, Typography } from 'antd'
+﻿import { Button, Layout, Menu, Space, Tag, Tooltip, Typography } from 'antd'
 import {
   Activity,
   BarChart3,
@@ -9,6 +9,7 @@ import {
   FolderKanban,
   Globe2,
   Network,
+  Newspaper,
   Orbit,
   RefreshCw,
   Search,
@@ -26,6 +27,7 @@ const { Text, Title } = Typography
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={17} /> },
   { key: 'searchDiscovery', label: 'Search Discovery', icon: <FileSearch size={17} /> },
+  { key: 'publicEventDetail', label: '公开事件', icon: <Newspaper size={17} /> },
   { key: 'demoFlow', label: 'Demo Flow / 演示流程', icon: <ClipboardList size={17} /> },
   { key: 'cases', label: 'Cases', icon: <FolderKanban size={17} /> },
   { key: 'keyword', label: 'Keyword Search', icon: <Search size={17} /> },

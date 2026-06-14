@@ -1824,6 +1824,121 @@ body {
   gap: 12px;
 }
 
+.public-event-page {
+  color: #f4f7fb;
+}
+
+.public-event-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 16px;
+  align-items: stretch;
+  min-height: 340px;
+}
+
+.public-event-hero-copy,
+.public-event-hero-card,
+.public-event-sandbox-entry {
+  border: 1px solid rgba(66, 245, 215, 0.22);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 16% 16%, rgba(66, 245, 215, 0.12), transparent 34%),
+    linear-gradient(140deg, rgba(255, 93, 143, 0.08), transparent 48%),
+    rgba(17, 19, 26, 0.88);
+}
+
+.public-event-hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 28px;
+}
+
+.public-event-hero-copy h1 {
+  max-width: 860px;
+  margin: 14px 0 12px;
+  font-size: 42px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.public-event-hero-copy p,
+.public-event-hero-card p,
+.public-event-note-tile p,
+.public-event-mock-card p {
+  color: #c9d4ea;
+  line-height: 1.72;
+}
+
+.public-event-hero-card .ant-card-body {
+  height: 100%;
+}
+
+.public-event-metric-card .ant-statistic-content {
+  color: #42f5d7;
+  font-size: 30px;
+}
+
+.public-event-sample-card,
+.public-event-reading-card,
+.public-event-core-card,
+.public-event-echo-card,
+.public-event-mock-card {
+  border-color: rgba(66, 245, 215, 0.18);
+}
+
+.public-event-section-title {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+}
+
+.public-event-section-title h3,
+.public-event-core-card h4,
+.public-event-echo-card h4,
+.public-event-sandbox-entry h3 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.public-event-core-card {
+  min-height: 196px;
+}
+
+.public-event-echo-card {
+  min-height: 214px;
+}
+
+.public-event-cluster-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.public-event-cluster-row p {
+  margin: 4px 0 0 !important;
+  color: #9aa6bf;
+  line-height: 1.5;
+}
+
+.public-event-note-tile {
+  padding: 14px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.public-event-action-col {
+  text-align: right;
+}
+
+.public-event-boundary-alert {
+  border-color: rgba(66, 245, 215, 0.24);
+  background: rgba(66, 245, 215, 0.06);
+}
+
 @media (max-width: 1280px) {
   .forecast-explanation-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1844,6 +1959,14 @@ body {
 
   .ecosystem-stat-grid {
     grid-template-columns: 1fr;
+  }
+
+  .public-event-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .public-event-action-col {
+    text-align: left;
   }
 }
 
