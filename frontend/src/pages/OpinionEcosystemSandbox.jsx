@@ -2,6 +2,11 @@ import { Alert, Button, Card, Col, List, Progress, Row, Segmented, Space, Statis
 import { PauseCircle, PlayCircle, RotateCcw, ScanLine, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import {
+  helldivers2PsnEvidenceItems,
+  helldivers2PsnSampleManifest,
+  helldivers2PsnSampleSummary,
+} from '../data/helldivers2PsnEvidenceFixture.js'
 import { SYNTHETIC_EVIDENCE_ITEMS, SYNTHETIC_OPINION_ECOSYSTEM_CASE } from '../data/opinionEcosystemEvidenceFixture.js'
 import { mapEvidenceToOpinionEcosystem } from '../data/opinionEcosystemMapper.js'
 import { validateOpinionEcosystemScenario } from '../data/opinionEcosystemValidator.js'
@@ -28,6 +33,7 @@ const { Paragraph, Text, Title } = Typography
 const DATA_SOURCE_OPTIONS = [
   { label: 'Mock schema mode', value: 'mock_schema' },
   { label: 'Evidence fixture mapping mode', value: 'evidence_fixture' },
+  { label: 'Helldivers PSN sample', value: 'helldivers_psn_sample' },
 ]
 
 const VALIDATION_STATUS_COLOR = {
@@ -39,6 +45,24 @@ const VALIDATION_STATUS_COLOR = {
 function createBaseModel(dataSourceMode) {
   if (dataSourceMode === 'evidence_fixture') {
     return mapEvidenceToOpinionEcosystem(SYNTHETIC_EVIDENCE_ITEMS)
+  }
+  if (dataSourceMode === 'helldivers_psn_sample') {
+    const mapped = mapEvidenceToOpinionEcosystem(helldivers2PsnEvidenceItems)
+    return {
+      ...mapped,
+      mappingStatus: {
+        mode: 'helldivers_psn_sample',
+        label: 'Helldivers PSN sample mode',
+        notes: [
+          'Frontend-local fixture mode generated from a validated Sentigraph Evidence Export v1 sample.',
+          'No backend API call, no runtime package file fetch, no platform action.',
+          'Selected public sample only; not full-web, not full-platform, not full-thread coverage.',
+          'Not official verification, not causal proof, not production data.',
+          'PeopleCluster dots represent anonymized evidence clusters, not real individual people.',
+          'InfluenceCore represents concepts / content / media / official or memetic cores, not population groups.',
+        ],
+      },
+    }
   }
   return {
     ...createOpinionEcosystemMock(),
@@ -190,6 +214,39 @@ function ContractStatusTag({ status }) {
   return <Tag color={VALIDATION_STATUS_COLOR[status] || 'default'}>{status}</Tag>
 }
 
+function HelldiversSampleStatusCard() {
+  return (
+    <Card className="panel-card">
+      <Space direction="vertical" size={8}>
+        <Space wrap>
+          <Tag color="purple">Helldivers 2 / PSN small public sample</Tag>
+          <Tag color="default">{helldivers2PsnSampleManifest.case_id}</Tag>
+          <Tag color="green">validation passed with expected warnings</Tag>
+          <Tag color="default">frontend-local fixture</Tag>
+        </Space>
+        <Paragraph>
+          {helldivers2PsnSampleSummary.evidence_items} evidence items / {helldivers2PsnSampleSummary.sources} sources /{' '}
+          {helldivers2PsnSampleSummary.comment_samples} comment samples / {helldivers2PsnSampleSummary.root_candidates} roots /
+          InfluenceCore candidates.
+        </Paragraph>
+        <Space wrap>
+          <Tag>selected public sample only</Tag>
+          <Tag>not full-web coverage</Tag>
+          <Tag>not full-platform coverage</Tag>
+          <Tag>not full-thread coverage</Tag>
+          <Tag>not official verification</Tag>
+          <Tag>not causal proof</Tag>
+          <Tag>not production data</Tag>
+        </Space>
+        <Paragraph type="secondary">
+          Mock / fixture mode. Based on a local sample package only. It does not execute real platform actions, call a backend,
+          fetch source URLs, or represent full population coverage.
+        </Paragraph>
+      </Space>
+    </Card>
+  )
+}
+
 export function OpinionEcosystemSandbox() {
   const canvasRef = useRef(null)
   const baseModelRef = useRef(null)
@@ -315,7 +372,11 @@ export function OpinionEcosystemSandbox() {
     () =>
       validateOpinionEcosystemScenario(
         scenarioView,
-        dataSourceMode === 'evidence_fixture' ? SYNTHETIC_EVIDENCE_ITEMS : [],
+        dataSourceMode === 'evidence_fixture'
+          ? SYNTHETIC_EVIDENCE_ITEMS
+          : dataSourceMode === 'helldivers_psn_sample'
+            ? helldivers2PsnEvidenceItems
+            : [],
       ),
     [dataSourceMode, scenarioView],
   )
@@ -388,6 +449,8 @@ export function OpinionEcosystemSandbox() {
           </Space>
         </Card>
       )}
+
+      {dataSourceMode === 'helldivers_psn_sample' && <HelldiversSampleStatusCard />}
 
       <Card
         className="panel-card"

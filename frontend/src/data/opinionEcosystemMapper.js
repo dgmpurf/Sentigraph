@@ -46,6 +46,18 @@ const PROVENANCE_WEIGHT = {
   data_vendor: 0.5,
 }
 
+const ROOT_EVIDENCE_TYPES = [
+  'video',
+  'post',
+  'article',
+  'official_statement',
+  'third_party_explanation',
+  'meme',
+  'community_discussion',
+  'media_article',
+  'community_meme',
+]
+
 function numeric(value, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -74,6 +86,18 @@ function textOf(evidence) {
 }
 
 function classifyStance(evidence) {
+  const stanceHint = String(evidence.stance_hint || '').toLowerCase()
+  const campHint = String(evidence.camp_state_hint || '').toLowerCase()
+  if (['opposed', 'oppose', 'opposition', 'against', 'critical'].includes(stanceHint)) {
+    return campHint === 'mobilizing' ? -0.72 : -0.46
+  }
+  if (['supporting', 'support', 'supportive', 'for'].includes(stanceHint)) {
+    return campHint === 'cooling' ? 0.42 : 0.36
+  }
+  if (['neutral', 'observing', 'unknown'].includes(stanceHint)) {
+    return 0.04
+  }
+
   const text = textOf(evidence)
   const supportHits = ['可以先观望', '接受', '放心', '合理', '降下来', '解释比较清楚', '更容易接受']
   const opposeHits = ['太慢', '失去意义', '不想讨论', '信任恢复', '重新提起', '没有看到来源', '只玩梗']
@@ -86,18 +110,17 @@ function classifyStance(evidence) {
 
 function coreIdForEvidence(evidence) {
   if (evidence.evidence_type === 'official_statement') return 'official'
-  if (evidence.evidence_type === 'third_party_explanation') return 'third_party'
-  if (evidence.evidence_type === 'meme') return 'deconstruction'
-  if (evidence.evidence_type === 'post') return 'neutral_analysis'
+  if (['third_party_explanation', 'media_article', 'article'].includes(evidence.evidence_type)) return 'third_party'
+  if (['meme', 'community_meme'].includes(evidence.evidence_type)) return 'deconstruction'
+  if (['post', 'community_discussion'].includes(evidence.evidence_type)) return 'neutral_analysis'
   return 'opposition'
 }
 
 function coreTypeForEvidence(evidence) {
   if (evidence.evidence_type === 'official_statement') return 'official_statement'
-  if (evidence.evidence_type === 'third_party_explanation') return 'third_party_explanation'
-  if (evidence.evidence_type === 'meme') return 'community_meme'
-  if (evidence.evidence_type === 'article') return 'media_article'
-  if (evidence.evidence_type === 'post') return 'forum_thread'
+  if (['third_party_explanation', 'media_article', 'article'].includes(evidence.evidence_type)) return 'media_article'
+  if (['meme', 'community_meme'].includes(evidence.evidence_type)) return 'community_meme'
+  if (['post', 'community_discussion'].includes(evidence.evidence_type)) return 'forum_thread'
   return 'creator_video'
 }
 
@@ -138,7 +161,7 @@ export function classifyEvidenceRole(evidence) {
     }
   }
 
-  if (['video', 'post', 'article', 'official_statement', 'third_party_explanation'].includes(evidence.evidence_type)) {
+  if (ROOT_EVIDENCE_TYPES.includes(evidence.evidence_type)) {
     return {
       evidence_id: evidence.evidence_id,
       role: 'candidate_influence_core',
@@ -202,9 +225,7 @@ export function buildSourceIdentities(evidenceItems) {
 }
 
 export function buildInfluenceCores(evidenceItems) {
-  const coreCandidates = activeEvidence(evidenceItems).filter((evidence) =>
-    ['video', 'post', 'article', 'official_statement', 'third_party_explanation', 'meme'].includes(evidence.evidence_type),
-  )
+  const coreCandidates = activeEvidence(evidenceItems).filter((evidence) => ROOT_EVIDENCE_TYPES.includes(evidence.evidence_type))
 
   return coreCandidates.map((evidence) => {
     const coreId = coreIdForEvidence(evidence)
@@ -380,7 +401,7 @@ export function buildCampDynamics(echoBoxes, influenceCores, peopleClusters) {
 }
 
 export function buildDeconstructionCores(evidenceItems, influenceCores) {
-  const meme = activeEvidence(evidenceItems).find((item) => item.evidence_type === 'meme')
+  const meme = activeEvidence(evidenceItems).find((item) => ['meme', 'community_meme'].includes(item.evidence_type))
   const deconstructionInfluence = influenceCores.find((core) => core.core_id === 'deconstruction')
   if (!meme) return []
   const confidence = computeEvidenceConfidence(meme)
