@@ -1,0 +1,80 @@
+{
+  "package_version": "sentigraph_external_export_v1",
+  "contract_version": "evidence_to_opinion_ecosystem_mapping_contract_v1",
+  "case_id": "helldivers2_psn_demo",
+  "case_title": "Helldivers 2 PSN account linking controversy",
+  "collector_project": "opencrawler-private",
+  "collector_version": "0.1.0",
+  "exported_at": "2026-06-14T05:57:54.156Z",
+  "input_source": "examples\\sentigraph-local-snapshots\\helldivers2_psn_demo_real_sample\\manifest.local.json",
+  "local_snapshot_manifest": "examples\\sentigraph-local-snapshots\\helldivers2_psn_demo_real_sample\\manifest.local.json",
+  "data_scope": {
+    "event_type": "game_community_controversy",
+    "platforms": [
+      "gamedeveloper",
+      "reddit",
+      "steam",
+      "videogameschronicle"
+    ],
+    "source_urls_count": 7,
+    "evidence_items_count": 34,
+    "comment_sample_count": 28,
+    "root_content_count": 6,
+    "local_records_loaded": 34,
+    "seed_urls_count": 0,
+    "local_snapshot_sources_count": 6,
+    "local_snapshot_comment_files_count": 4,
+    "skipped_sources_count": 1
+  },
+  "collection_policy": {
+    "public_only": true,
+    "no_login": true,
+    "no_saved_credentials": true,
+    "no_captcha_bypass": true,
+    "no_anti_bot_bypass": true,
+    "no_private_messages": true,
+    "no_hidden_data": true,
+    "manual_or_controlled_sampling": true
+  },
+  "seed_url_whitelist": [],
+  "source_url_whitelist": [
+    "https://store.steampowered.com/news/app/553850/view/4196868529806518741",
+    "https://www.reddit.com/r/gaming/comments/1cj1sv3/helldivers_2_requiring_psn_account_linking_on/",
+    "https://www.reddit.com/r/Games/comments/1cl9zm7/helldivers_2s_psn_account_linking_update_will_not/",
+    "https://www.videogameschronicle.com/news/playstation-u-turns-after-helldivers-2-steam-backlash-scraps-mandatory-psn-account-linking/",
+    "https://www.gamedeveloper.com/business/sony-reverses-helldivers-2-s-account-linking-requirement",
+    "https://www.reddit.com/r/Helldivers/comments/1llsfy9/review_bomb_cape_is_here/"
+  ],
+  "skipped_sources": [
+    {
+      "id": "src_polygon_review_bomb_cape",
+      "source_id": "src_polygon_review_bomb_cape",
+      "source_url": "https://www.polygon.com/gaming/609611/helldivers-2-review-bomb-cape/",
+      "platform": "polygon",
+      "reason": "HTTP 502 from this environment during controlled browser-assisted viewing. Not retried with bypass or alternate collection.",
+      "status": "skipped"
+    }
+  ],
+  "coverage_note": "Selected public sample only. Not full-platform coverage. Not full-web coverage. Not full-thread coverage. Inaccessible/login-required pages are skipped.",
+  "legal_review_status": "not_reviewed",
+  "recommended_default_trust_label": "medium_low",
+  "privacy_policy": {
+    "raw_author_id_exported": false,
+    "raw_author_name_exported": false,
+    "profile_url_exported": false,
+    "author_hash_method": "sha256_platform_case_salt",
+    "ephemeral_salt_used": false
+  },
+  "outputs": {
+    "manifest": "manifest.json",
+    "sourceManifest": "source_manifest.jsonl",
+    "evidenceJsonl": "evidence_items.jsonl",
+    "evidenceCsv": "evidence_items.csv",
+    "collectionLog": "collection_log.jsonl",
+    "coverageNote": "coverage_note.md",
+    "readme": "README.md",
+    "validationReportJson": "validation_report.json",
+    "validationReportMd": "validation_report.md"
+  },
+  "warnings": []
+}

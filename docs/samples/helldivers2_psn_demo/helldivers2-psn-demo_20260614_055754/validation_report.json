@@ -1,0 +1,70 @@
+{
+  "generatedAt": "2026-06-14T05:58:00.678Z",
+  "exportDir": "exports\\sentigraph-evidence-v1\\helldivers2-psn-demo_20260614_055754",
+  "status": "passed",
+  "case_relevance": {
+    "status": "passed",
+    "matchRate": 1,
+    "unrelatedItemCount": 0,
+    "seedUrlMatchCount": 6,
+    "skippedSources": [
+      {
+        "id": "src_polygon_review_bomb_cape",
+        "source_url": "https://www.polygon.com/gaming/609611/helldivers-2-review-bomb-cape/",
+        "platform": "polygon",
+        "reason": "HTTP 502 from this environment during controlled browser-assisted viewing. Not retried with bypass or alternate collection.",
+        "status": null
+      }
+    ],
+    "errors": [],
+    "warnings": [
+      {
+        "severity": "warning",
+        "code": "CASE_SKIPPED_SOURCES",
+        "message": "1 seed source(s) were skipped and recorded",
+        "detail": {}
+      },
+      {
+        "severity": "warning",
+        "code": "CASE_SAMPLE_SIZE_BELOW_TARGET",
+        "message": "Evidence count is below the 80 item sample target (34/80)",
+        "detail": {}
+      }
+    ]
+  },
+  "case_relevance_status": "passed",
+  "case_relevance_match_rate": 1,
+  "unrelated_item_count": 0,
+  "seed_url_match_count": 6,
+  "skipped_sources": [
+    {
+      "id": "src_polygon_review_bomb_cape",
+      "source_url": "https://www.polygon.com/gaming/609611/helldivers-2-review-bomb-cape/",
+      "platform": "polygon",
+      "reason": "HTTP 502 from this environment during controlled browser-assisted viewing. Not retried with bypass or alternate collection.",
+      "status": null
+    }
+  ],
+  "summary": {
+    "evidenceItems": 34,
+    "sourceRows": 7,
+    "collectionLogRows": 9,
+    "errors": 0,
+    "warnings": 2
+  },
+  "errors": [],
+  "warnings": [
+    {
+      "severity": "warning",
+      "code": "CASE_SKIPPED_SOURCES",
+      "message": "1 seed source(s) were skipped and recorded",
+      "detail": {}
+    },
+    {
+      "severity": "warning",
+      "code": "CASE_SAMPLE_SIZE_BELOW_TARGET",
+      "message": "Evidence count is below the 80 item sample target (34/80)",
+      "detail": {}
+    }
+  ]
+}
