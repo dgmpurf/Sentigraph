@@ -2058,6 +2058,101 @@ body {
   min-height: 120px;
 }
 
+.public-request-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.public-request-hero > div,
+.public-request-hero .ant-alert,
+.public-request-form-card,
+.public-request-preview-card,
+.public-request-vote-card,
+.public-request-explainer-card {
+  border-color: rgba(66, 245, 215, 0.2);
+  background:
+    radial-gradient(circle at 16% 18%, rgba(66, 245, 215, 0.1), transparent 34%),
+    rgba(17, 19, 26, 0.88);
+}
+
+.public-request-hero > div {
+  display: flex;
+  min-height: 260px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 28px;
+  border: 1px solid rgba(66, 245, 215, 0.2);
+  border-radius: 8px;
+}
+
+.public-request-hero h1 {
+  margin: 14px 0 12px;
+  font-size: 40px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.public-request-hero p,
+.public-request-form-card p,
+.public-request-preview-card p,
+.public-request-vote-card p,
+.public-request-explainer-card p {
+  color: #c9d4ea;
+  line-height: 1.68;
+}
+
+.public-request-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px 150px;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.public-request-form-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.public-request-wide {
+  grid-column: 1 / -1;
+}
+
+.public-request-action-row {
+  margin: 14px 0;
+}
+
+.public-request-preview-grid,
+.public-request-count-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.public-request-preview-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.public-request-preview-grid span,
+.public-request-count-grid > div {
+  padding: 10px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.public-request-count-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.public-request-count-grid strong {
+  display: block;
+  margin-top: 4px;
+  color: #42f5d7;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
 @media (max-width: 1280px) {
   .forecast-explanation-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2089,6 +2184,12 @@ body {
   }
 
   .event-plaza-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .public-request-hero,
+  .public-request-form-grid,
+  .public-request-preview-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -52,6 +52,8 @@ function EventCard({ event, onNavigate, onMockAction }) {
       onNavigate?.('publicEventDetail')
       return
     }
+    window.location.hash = '#/public-events/request'
+    onNavigate?.('publicEventRequest')
     onMockAction(event)
   }
 
@@ -110,6 +112,11 @@ function EventCard({ event, onNavigate, onMockAction }) {
 export function PublicEventPlaza({ onNavigate }) {
   const [mockNotice, setMockNotice] = useState('')
 
+  const openRequestPage = () => {
+    window.location.hash = '#/public-events/request'
+    onNavigate?.('publicEventRequest')
+  }
+
   const handleMockAction = (event) => {
     setMockNotice(`${event.title}：当前为 mock 入口，尚未提交到后端。请求/投票/赞助意向不代表自然舆情热度。`)
   }
@@ -130,6 +137,9 @@ export function PublicEventPlaza({ onNavigate }) {
           <Space wrap>
             <Button type="primary" icon={<Sparkles size={16} />} onClick={() => setMockNotice('事件广场 v1 仅展示本地静态卡片，不提交任何后端请求。')}>
               了解当前边界
+            </Button>
+            <Button icon={<Vote size={16} />} onClick={openRequestPage}>
+              请求分析一个事件
             </Button>
             <Button icon={<Building2 size={16} />} onClick={() => setMockNotice('B端咨询入口当前为 mock。私有分析可在后续接入更深证据复核、保密语境和场景对比。')}>
               B端咨询入口（mock）
@@ -206,9 +216,9 @@ export function PublicEventPlaza({ onNavigate }) {
               赞助分析必须显著标注；不做隐藏推广，不制造虚假公众热度。
             </Paragraph>
             <Space wrap>
-              <Button onClick={() => handleMockAction(PUBLIC_EVENT_PLAZA_EVENTS[1])}>请求分析（mock）</Button>
-              <Button onClick={() => handleMockAction(PUBLIC_EVENT_PLAZA_EVENTS[2])}>投票支持（mock）</Button>
-              <Button onClick={() => handleMockAction(PUBLIC_EVENT_PLAZA_EVENTS[3])}>提交公开链接（mock）</Button>
+              <Button onClick={openRequestPage}>请求分析（mock）</Button>
+              <Button onClick={openRequestPage}>投票支持（mock）</Button>
+              <Button onClick={openRequestPage}>提交公开链接（mock）</Button>
             </Space>
           </Card>
         </Col>

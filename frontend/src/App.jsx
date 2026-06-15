@@ -86,6 +86,7 @@ const PlatformIntegrationOverview = lazyNamed(
 const SearchDiscovery = lazyNamed(() => import('./pages/SearchDiscovery.jsx'), 'SearchDiscovery')
 const PublicEventPlaza = lazyNamed(() => import('./pages/PublicEventPlaza.jsx'), 'PublicEventPlaza')
 const PublicEventDetail = lazyNamed(() => import('./pages/PublicEventDetail.jsx'), 'PublicEventDetail')
+const PublicEventRequest = lazyNamed(() => import('./pages/PublicEventRequest.jsx'), 'PublicEventRequest')
 const SelectorRepairTool = lazyNamed(() => import('./pages/SelectorRepairTool.jsx'), 'SelectorRepairTool')
 const LlmAdminStatus = lazyNamed(() => import('./pages/LlmAdminStatus.jsx'), 'LlmAdminStatus')
 const BenchmarkDashboard = lazyNamed(() => import('./pages/BenchmarkDashboard.jsx'), 'BenchmarkDashboard')
@@ -98,6 +99,7 @@ const OpinionEcosystemSandbox = lazyNamed(
 function pageFromHash() {
   const hash = window.location.hash
   if (hash === '#/public-events') return 'publicEventPlaza'
+  if (hash === '#/public-events/request') return 'publicEventRequest'
   if (hash === '#/public-events/helldivers-psn') return 'publicEventDetail'
   if (hash === '#/opinion-ecosystem') return 'opinionEcosystem'
   return 'dashboard'
@@ -658,6 +660,7 @@ function App() {
   const handleNavigate = useCallback((pageKey) => {
     const hashByPage = {
       publicEventPlaza: '#/public-events',
+      publicEventRequest: '#/public-events/request',
       publicEventDetail: '#/public-events/helldivers-psn',
       opinionEcosystem: '#/opinion-ecosystem',
     }
@@ -764,6 +767,7 @@ function App() {
     searchDiscovery: <SearchDiscovery {...pageProps} />,
     publicEventPlaza: <PublicEventPlaza onNavigate={handleNavigate} />,
     publicEventDetail: <PublicEventDetail onNavigate={handleNavigate} />,
+    publicEventRequest: <PublicEventRequest />,
     selectorRepair: <SelectorRepairTool />,
     llmSafety: <LlmAdminStatus />,
     benchmarks: <BenchmarkDashboard />,
@@ -773,7 +777,7 @@ function App() {
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0
   const riskLevel = visualization?.risk_level ?? analysis?.risk?.risk_level ?? 'low'
-  const showGlobalError = error && !['opinionEcosystem', 'publicEventPlaza', 'publicEventDetail'].includes(activePage)
+  const showGlobalError = error && !['opinionEcosystem', 'publicEventPlaza', 'publicEventDetail', 'publicEventRequest'].includes(activePage)
 
   return (
     <ConfigProvider theme={appTheme}>

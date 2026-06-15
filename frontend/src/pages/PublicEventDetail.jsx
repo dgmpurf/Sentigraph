@@ -48,6 +48,11 @@ export function PublicEventDetail({ onNavigate }) {
     onNavigate?.('publicEventPlaza')
   }
 
+  const openRequest = () => {
+    window.location.hash = '#/public-events/request'
+    onNavigate?.('publicEventRequest')
+  }
+
   return (
     <div className="page-stack public-event-page">
       <section className="public-event-hero">
@@ -68,10 +73,10 @@ export function PublicEventDetail({ onNavigate }) {
             <Button type="primary" size="large" icon={<Boxes size={17} />} onClick={openSandbox}>
               {event.ctas.sandbox}
             </Button>
-            <Button size="large" icon={<Vote size={17} />}>
+            <Button size="large" icon={<Vote size={17} />} onClick={openRequest}>
               {event.ctas.requestSimilar}
             </Button>
-            <Button size="large" icon={<ShieldCheck size={17} />}>
+            <Button size="large" icon={<ShieldCheck size={17} />} onClick={openRequest}>
               {event.ctas.bEndInquiry}
             </Button>
           </Space>
