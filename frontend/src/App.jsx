@@ -1,6 +1,6 @@
 import { Alert, App as AntApp, ConfigProvider, Spin, theme } from 'antd'
 import { motion } from 'framer-motion'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   createAnalysisCase,
@@ -65,6 +65,7 @@ const FALLBACK_PLATFORM_OPTIONS = [
   { label: 'Douban', value: 'douban' },
   { label: 'Toutiao', value: 'toutiao' },
 ]
+const STATIC_PUBLIC_PAGES = ['opinionEcosystem', 'publicDemoGuide', 'publicEventPlaza', 'publicEventDetail', 'publicEventRequest']
 
 function lazyNamed(importer, exportName) {
   return lazy(() => importer().then((module) => ({ default: module[exportName] })))
@@ -84,6 +85,7 @@ const PlatformIntegrationOverview = lazyNamed(
   'PlatformIntegrationOverview',
 )
 const SearchDiscovery = lazyNamed(() => import('./pages/SearchDiscovery.jsx'), 'SearchDiscovery')
+const PublicDemoGuide = lazyNamed(() => import('./pages/PublicDemoGuide.jsx'), 'PublicDemoGuide')
 const PublicEventPlaza = lazyNamed(() => import('./pages/PublicEventPlaza.jsx'), 'PublicEventPlaza')
 const PublicEventDetail = lazyNamed(() => import('./pages/PublicEventDetail.jsx'), 'PublicEventDetail')
 const PublicEventRequest = lazyNamed(() => import('./pages/PublicEventRequest.jsx'), 'PublicEventRequest')
@@ -98,6 +100,7 @@ const OpinionEcosystemSandbox = lazyNamed(
 
 function pageFromHash() {
   const hash = window.location.hash
+  if (hash === '#/demo') return 'publicDemoGuide'
   if (hash === '#/public-events') return 'publicEventPlaza'
   if (hash === '#/public-events/request') return 'publicEventRequest'
   if (hash === '#/public-events/helldivers-psn') return 'publicEventDetail'
@@ -134,6 +137,8 @@ function App() {
   const [notificationLoading, setNotificationLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const hasLoadedProjectDataRef = useRef(false)
+  const skipBootstrapData = STATIC_PUBLIC_PAGES.includes(activePage)
 
   const platformOptions = useMemo(() => {
     const enabledPlatforms = platformRegistry.filter((platform) => platform.selectable_for_mock && platform.mock_available)
@@ -276,8 +281,10 @@ function App() {
   }, [activeMvpPlatforms])
 
   useEffect(() => {
+    if (skipBootstrapData || hasLoadedProjectDataRef.current) return
+    hasLoadedProjectDataRef.current = true
     loadProjectData(DEFAULT_PROJECT_ID)
-  }, [loadProjectData])
+  }, [loadProjectData, skipBootstrapData])
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -291,6 +298,7 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (skipBootstrapData) return undefined
     let isMounted = true
     listAnalysisCases()
       .then((caseList) => {
@@ -306,9 +314,10 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [skipBootstrapData])
 
   useEffect(() => {
+    if (skipBootstrapData) return undefined
     let isMounted = true
     getPlatformStatus()
       .then((registry) => {
@@ -324,9 +333,10 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [skipBootstrapData])
 
   useEffect(() => {
+    if (skipBootstrapData) return undefined
     let isMounted = true
     getSchedulerStatus()
       .then((status) => {
@@ -342,7 +352,7 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [skipBootstrapData])
 
   const handleStartAnalysis = useCallback(async (formValues) => {
     setLoading(true)
@@ -659,6 +669,7 @@ function App() {
 
   const handleNavigate = useCallback((pageKey) => {
     const hashByPage = {
+      publicDemoGuide: '#/demo',
       publicEventPlaza: '#/public-events',
       publicEventRequest: '#/public-events/request',
       publicEventDetail: '#/public-events/helldivers-psn',
@@ -765,6 +776,7 @@ function App() {
     publicParsers: <PublicParserStatus />,
     platformIntegrations: <PlatformIntegrationOverview />,
     searchDiscovery: <SearchDiscovery {...pageProps} />,
+    publicDemoGuide: <PublicDemoGuide />,
     publicEventPlaza: <PublicEventPlaza onNavigate={handleNavigate} />,
     publicEventDetail: <PublicEventDetail onNavigate={handleNavigate} />,
     publicEventRequest: <PublicEventRequest />,
@@ -777,7 +789,7 @@ function App() {
 
   const riskScore = visualization?.risk_score ?? analysis?.risk?.risk_score ?? 0
   const riskLevel = visualization?.risk_level ?? analysis?.risk?.risk_level ?? 'low'
-  const showGlobalError = error && !['opinionEcosystem', 'publicEventPlaza', 'publicEventDetail', 'publicEventRequest'].includes(activePage)
+  const showGlobalError = error && !STATIC_PUBLIC_PAGES.includes(activePage)
 
   return (
     <ConfigProvider theme={appTheme}>
