@@ -2,6 +2,7 @@ import { Alert, Button, Card, Col, List, Progress, Row, Segmented, Space, Statis
 import { PauseCircle, PlayCircle, RotateCcw, ScanLine, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { OpinionEcosystemV2Canvas } from '../components/opinion/OpinionEcosystemV2Canvas.jsx'
 import {
   helldivers2PsnEvidenceItems,
   helldivers2PsnSampleManifest,
@@ -34,6 +35,11 @@ const DATA_SOURCE_OPTIONS = [
   { label: 'Mock schema mode', value: 'mock_schema' },
   { label: 'Evidence fixture mapping mode', value: 'evidence_fixture' },
   { label: 'Helldivers PSN sample', value: 'helldivers_psn_sample' },
+]
+
+const VIEW_MODE_OPTIONS = [
+  { label: 'V1 classic view', value: 'classic' },
+  { label: 'V2 ecology view', value: 'ecology_v2' },
 ]
 
 const VALIDATION_STATUS_COLOR = {
@@ -256,6 +262,7 @@ export function OpinionEcosystemSandbox() {
   const tickRef = useRef(0)
   const [dataSourceMode, setDataSourceMode] = useState('mock_schema')
   const [scenarioKey, setScenarioKey] = useState('natural')
+  const [viewMode, setViewMode] = useState('classic')
   const [playing, setPlaying] = useState(true)
 
   if (!baseModelRef.current) {
@@ -409,6 +416,7 @@ export function OpinionEcosystemSandbox() {
 
       <Card className="panel-card ecosystem-control-card">
         <Space size={12} wrap>
+          <Segmented options={VIEW_MODE_OPTIONS} value={viewMode} onChange={setViewMode} />
           <Segmented options={DATA_SOURCE_OPTIONS} value={dataSourceMode} onChange={setDataSourceMode} />
           <Segmented options={SCENARIO_OPTIONS} value={scenarioKey} onChange={setScenarioKey} />
           <Button
@@ -426,6 +434,15 @@ export function OpinionEcosystemSandbox() {
           <Tag color="gold">处理节奏：{scenarioView.responseTempo.recommendation_label}</Tag>
         </Space>
       </Card>
+
+      {viewMode === 'ecology_v2' && (
+        <OpinionEcosystemV2Canvas
+          scenarioView={scenarioView}
+          peopleClusters={peopleClustersRef.current}
+          metrics={metrics}
+          playing={playing}
+        />
+      )}
 
       {dataSourceMode === 'evidence_fixture' && (
         <Card className="panel-card">
@@ -485,6 +502,7 @@ export function OpinionEcosystemSandbox() {
         />
       </Card>
 
+      {viewMode === 'classic' && (
       <Row gutter={[16, 16]}>
         <Col span={16}>
           <Card
@@ -527,6 +545,7 @@ export function OpinionEcosystemSandbox() {
           </Card>
         </Col>
       </Row>
+      )}
 
       <Row gutter={[16, 16]}>
         <Col span={6}>
