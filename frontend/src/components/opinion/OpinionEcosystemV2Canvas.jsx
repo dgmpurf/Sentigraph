@@ -3,6 +3,7 @@ import { Activity, Boxes, CircleDot, Clock3, Compass, RadioTower, Sparkles } fro
 import { useEffect, useMemo, useRef } from 'react'
 
 import { BOX_HEIGHT, BOX_WIDTH, campStateToVisual, scoreToPercent } from '../../data/opinionEcosystemMock.js'
+import { HELLDIVERS_TIMELINE_PRESETS } from '../../data/helldivers2PsnTimelinePresets.js'
 
 const { Paragraph, Text } = Typography
 
@@ -15,6 +16,14 @@ const TIMELINE_STEPS = [
   { key: 't5', label: 'T5 疲劳衰减', scenarios: ['faq_explainer', 'community_deconstruction'] },
   { key: 't6', label: 'T6 声誉记忆', scenarios: ['delayed_response', 'no_response'] },
 ]
+
+const DEFAULT_TIMELINE_PRESETS = TIMELINE_STEPS.map((step) => ({
+  phase_id: step.key,
+  label_zh: step.label,
+  label_en: 'Generic sandbox stage',
+  short_explanation_zh: '通用本地 mock 时间轴阶段。',
+  scenario_keys: step.scenarios,
+}))
 
 const EVENT_TOKENS = [
   { key: 'natural', label: '自然演化', coreId: 'opposition' },
@@ -139,6 +148,43 @@ const SCENARIO_VISUALS = {
   },
 }
 
+function getTimelinePresetForScenario(scenarioView, timelinePresets = DEFAULT_TIMELINE_PRESETS, activeTimelinePhaseId) {
+  if (activeTimelinePhaseId) {
+    const exact = timelinePresets.find((preset) => preset.phase_id === activeTimelinePhaseId)
+    if (exact) return exact
+  }
+  if (scenarioView.helldiversTimelinePreset) return scenarioView.helldiversTimelinePreset
+  return (
+    timelinePresets.find((preset) => preset.scenario_keys?.includes(scenarioView.scenarioKey)) ||
+    timelinePresets.find((preset) => preset.phase_id === scenarioView.timelinePhaseId) ||
+    timelinePresets[0]
+  )
+}
+
+function getScenarioVisual(scenarioView) {
+  const base = SCENARIO_VISUALS[scenarioView.scenarioKey] || SCENARIO_VISUALS.natural
+  const effects = scenarioView.helldiversTimelinePreset?.visual_effects
+  if (!effects) return base
+  return {
+    ...base,
+    neutralBoost: Math.max(base.neutralBoost, effects.neutral_cluster_density || 0),
+    bridgeBoost: Math.max(base.bridgeBoost, effects.bridge_cluster_strength || 0),
+    withdrawBoost: Math.max(base.withdrawBoost, effects.withdrawn_opacity || 0),
+    breakoutGlow: Math.max(base.breakoutGlow, effects.boundary_pulse || 0),
+    redClusterGlow: effects.red_cluster_glow || 0,
+    neutralClusterDensity: effects.neutral_cluster_density || 0,
+    boundaryPulse: effects.boundary_pulse || 0,
+    coreBoost: {
+      ...base.coreBoost,
+      official: Math.max(base.coreBoost.official || 0, effects.official_core_strength || 0),
+      opposition: Math.max(base.coreBoost.opposition || 0, effects.backlash_core_strength || 0),
+      third_party: Math.max(base.coreBoost.third_party || 0, effects.explanation_core_strength || 0),
+      deconstruction: Math.max(base.coreBoost.deconstruction || 0, effects.deconstruction_core_strength || 0),
+    },
+    label: scenarioView.helldiversTimelinePreset.public_copy_zh || base.label,
+  }
+}
+
 function getCoreRoleKey(core) {
   if (CORE_ROLES[core.core_id]) return core.core_id
   const haystack = `${core.core_id || ''} ${core.core_type || ''} ${core.source_type || ''} ${core.label || ''}`.toLowerCase()
@@ -209,7 +255,7 @@ function drawEchoBoundary(ctx, scenario, tick, scenarioVisual) {
   const breakout = scenario.echoBox.breakout_risk + scenarioVisual.breakoutGlow
   const permeability = scenario.echoBox.permeability_score
   const saturation = scenario.echoBox.saturation_ratio
-  const pulse = Math.sin(tick * 0.025) * breakout * 6
+  const pulse = Math.sin(tick * 0.025) * (breakout + (scenarioVisual.boundaryPulse || 0)) * 6
   const inset = 18 - pulse
   const width = BOX_WIDTH - inset * 2
   const height = BOX_HEIGHT - inset * 2
@@ -421,13 +467,15 @@ function drawPeopleCluster(ctx, cluster, scenario, tick, scenarioVisual) {
   const highEmotionBoost = 1 + cluster.expression_intensity * 0.18
   const pulse = 1 + Math.sin(tick * (0.036 + cluster.activity_weight * 0.018) + cluster.phase) * 0.09 * highEmotionBoost
   const bridgeRadiusBoost = isBridge ? 1 + scenarioVisual.bridgeBoost * 0.32 : 1
-  const radius = (2.5 + cluster.population_weight * 3.7 + cluster.influence_weight * 1.8) * pulse * bridgeRadiusBoost
+  const neutralRadiusBoost = isNeutralLike ? 1 + (scenarioVisual.neutralClusterDensity || 0) * 0.22 : 1
+  const redRadiusBoost = isOppose ? 1 + (scenarioVisual.redClusterGlow || 0) * 0.16 : 1
+  const radius = (2.5 + cluster.population_weight * 3.7 + cluster.influence_weight * 1.8) * pulse * bridgeRadiusBoost * neutralRadiusBoost * redRadiusBoost
   const outlineColor = isDormant ? '#1b1020' : isBridge ? '#d9c6ff' : 'rgba(244, 247, 251, 0.24)'
 
   ctx.save()
   ctx.globalAlpha = opacity
   ctx.shadowColor = visual.color
-  ctx.shadowBlur = 3 + cluster.expression_intensity * 8 + (isBridge ? scenarioVisual.bridgeBoost * 8 : 0)
+  ctx.shadowBlur = 3 + cluster.expression_intensity * 8 + (isBridge ? scenarioVisual.bridgeBoost * 8 : 0) + (isOppose ? (scenarioVisual.redClusterGlow || 0) * 10 : 0)
   ctx.fillStyle = visual.color
   ctx.beginPath()
   ctx.arc(cluster.position.x, cluster.position.y, radius, 0, Math.PI * 2)
@@ -516,7 +564,7 @@ function drawBreakoutSignals(ctx, scenario, tick, scenarioVisual) {
 }
 
 function drawV2Sandbox(ctx, scenario, peopleClusters, tick) {
-  const scenarioVisual = SCENARIO_VISUALS[scenario.scenarioKey] || SCENARIO_VISUALS.natural
+  const scenarioVisual = getScenarioVisual(scenario)
   const displayCores = selectDisplayCores(scenario.influenceCores)
   ctx.clearRect(0, 0, BOX_WIDTH, BOX_HEIGHT)
   drawEchoBoundary(ctx, scenario, tick, scenarioVisual)
@@ -553,24 +601,32 @@ function ScenarioTokenStrip({ scenarioKey }) {
   )
 }
 
-function ResponseTimeline({ scenarioKey }) {
+function ResponseTimeline({ timelinePresets, activeTimelinePhaseId, onTimelinePhaseChange }) {
   return (
     <Timeline
       className="ecosystem-v2-timeline"
-      items={TIMELINE_STEPS.map((step) => ({
-        color: step.scenarios.includes(scenarioKey) ? '#42f5d7' : 'gray',
-        children: (
-          <span className={step.scenarios.includes(scenarioKey) ? 'active' : ''}>
-            {step.label}
-          </span>
-        ),
-      }))}
+      items={timelinePresets.map((preset) => {
+        const active = preset.phase_id === activeTimelinePhaseId
+        return {
+          color: active ? '#42f5d7' : 'gray',
+          children: (
+            <button
+              type="button"
+              className={active ? 'ecosystem-v2-timeline-button active' : 'ecosystem-v2-timeline-button'}
+              onClick={() => onTimelinePhaseChange?.(preset.phase_id)}
+            >
+              <span>{preset.label_zh}</span>
+              <small>{preset.label_en}</small>
+            </button>
+          ),
+        }
+      })}
     />
   )
 }
 
 function CoreLegend({ scenarioView }) {
-  const scenarioVisual = SCENARIO_VISUALS[scenarioView.scenarioKey] || SCENARIO_VISUALS.natural
+  const scenarioVisual = getScenarioVisual(scenarioView)
   return (
     <div className="ecosystem-v2-core-legend">
       {scenarioView.influenceCores.map((core, index) => {
@@ -591,7 +647,7 @@ function CoreLegend({ scenarioView }) {
   )
 }
 
-export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics, playing }) {
+export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics, playing, onTimelinePhaseChange }) {
   const canvasRef = useRef(null)
   const latestRef = useRef({ scenarioView, peopleClusters, playing })
   const frameRef = useRef(null)
@@ -623,11 +679,12 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
     }
   }, [])
 
+  const timelinePresets = scenarioView.mappingStatus?.mode === 'helldivers_psn_sample' ? HELLDIVERS_TIMELINE_PRESETS : DEFAULT_TIMELINE_PRESETS
   const activeTimeline = useMemo(
-    () => TIMELINE_STEPS.find((step) => step.scenarios.includes(scenarioView.scenarioKey)) || TIMELINE_STEPS[0],
-    [scenarioView.scenarioKey],
+    () => getTimelinePresetForScenario(scenarioView, timelinePresets, scenarioView.timelinePhaseId),
+    [scenarioView, timelinePresets],
   )
-  const scenarioVisual = SCENARIO_VISUALS[scenarioView.scenarioKey] || SCENARIO_VISUALS.natural
+  const scenarioVisual = getScenarioVisual(scenarioView)
 
   return (
     <div className="ecosystem-v2-shell">
@@ -644,7 +701,7 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
             extra={
               <Space wrap>
                 <Tag color={playing ? 'green' : 'default'}>{playing ? 'playing' : 'paused'}</Tag>
-                <Tag color="cyan">{activeTimeline.label}</Tag>
+                <Tag color="cyan">{activeTimeline.label_zh}</Tag>
                 <Tag color="gold">mock event token</Tag>
               </Space>
             }
@@ -685,9 +742,39 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
       </Row>
 
       <Row gutter={[16, 16]}>
+        {scenarioView.helldiversTimelinePreset && (
+          <Col span={24}>
+            <Card className="panel-card ecosystem-v2-helldivers-note">
+              <Space direction="vertical" size={8}>
+                <Space wrap>
+                  <Tag color="cyan">Helldivers timeline preset</Tag>
+                  <Tag color="purple">{activeTimeline.label_zh}</Tag>
+                  <Tag>{activeTimeline.label_en}</Tag>
+                </Space>
+                <Paragraph>
+                  当前为 Helldivers 2 / PSN selected public sample 的本地 timeline preset。T0-T6 用于演示事件节奏，不代表完整历史重建。
+                </Paragraph>
+                <Paragraph>{scenarioView.helldiversTimelinePreset.short_explanation_zh}</Paragraph>
+                <Space wrap>
+                  <Tag>34 evidence items</Tag>
+                  <Tag>7 sources</Tag>
+                  <Tag>28 comment samples</Tag>
+                  <Tag>6 roots</Tag>
+                  <Tag>not full-web</Tag>
+                  <Tag>not official verification</Tag>
+                  <Tag>not causal proof</Tag>
+                </Space>
+              </Space>
+            </Card>
+          </Col>
+        )}
         <Col span={8}>
           <Card className="panel-card ecosystem-v2-card" title="Response Tempo / 时间轴">
-            <ResponseTimeline scenarioKey={scenarioView.scenarioKey} />
+            <ResponseTimeline
+              timelinePresets={timelinePresets}
+              activeTimelinePhaseId={activeTimeline.phase_id}
+              onTimelinePhaseChange={onTimelinePhaseChange}
+            />
           </Card>
         </Col>
         <Col span={8}>

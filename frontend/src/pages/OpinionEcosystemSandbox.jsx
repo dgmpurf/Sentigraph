@@ -8,6 +8,11 @@ import {
   helldivers2PsnSampleManifest,
   helldivers2PsnSampleSummary,
 } from '../data/helldivers2PsnEvidenceFixture.js'
+import {
+  HELLDIVERS_PHASE_TO_SCENARIO_KEY,
+  HELLDIVERS_SCENARIO_TO_PHASE_ID,
+  applyHelldiversTimelinePresetToScenario,
+} from '../data/helldivers2PsnTimelinePresets.js'
 import { SYNTHETIC_EVIDENCE_ITEMS, SYNTHETIC_OPINION_ECOSYSTEM_CASE } from '../data/opinionEcosystemEvidenceFixture.js'
 import { mapEvidenceToOpinionEcosystem } from '../data/opinionEcosystemMapper.js'
 import { validateOpinionEcosystemScenario } from '../data/opinionEcosystemValidator.js'
@@ -87,8 +92,17 @@ function createBaseModel(dataSourceMode) {
   }
 }
 
-function createScenarioView(baseModel, scenarioKey, peopleClusters) {
+function createScenarioView(baseModel, scenarioKey, peopleClusters, dataSourceMode = 'mock_schema', timelinePhaseId = null) {
   const scenario = applyMockScenario(baseModel, scenarioKey)
+  if (dataSourceMode === 'helldivers_psn_sample') {
+    return {
+      ...applyHelldiversTimelinePresetToScenario(
+        scenario,
+        timelinePhaseId || HELLDIVERS_SCENARIO_TO_PHASE_ID[scenarioKey] || 't1',
+      ),
+      peopleClusters,
+    }
+  }
   return { ...scenario, peopleClusters }
 }
 
@@ -264,11 +278,12 @@ export function OpinionEcosystemSandbox() {
   const [scenarioKey, setScenarioKey] = useState('natural')
   const [viewMode, setViewMode] = useState('classic')
   const [playing, setPlaying] = useState(true)
+  const [timelinePhaseId, setTimelinePhaseId] = useState(HELLDIVERS_SCENARIO_TO_PHASE_ID.natural)
 
   if (!baseModelRef.current) {
     baseModelRef.current = createBaseModel(dataSourceMode)
     peopleClustersRef.current = baseModelRef.current.peopleClusters
-    scenarioRef.current = createScenarioView(baseModelRef.current, scenarioKey, peopleClustersRef.current)
+    scenarioRef.current = createScenarioView(baseModelRef.current, scenarioKey, peopleClustersRef.current, dataSourceMode, timelinePhaseId)
   }
 
   const [scenarioView, setScenarioView] = useState(() => scenarioRef.current)
@@ -282,13 +297,13 @@ export function OpinionEcosystemSandbox() {
     ),
   )
 
-  const refreshScenario = useCallback((nextMode = dataSourceMode, nextScenarioKey = scenarioKey, resetClusters = false) => {
+  const refreshScenario = useCallback((nextMode = dataSourceMode, nextScenarioKey = scenarioKey, resetClusters = false, nextTimelinePhaseId = timelinePhaseId) => {
     if (resetClusters || !baseModelRef.current || baseModelRef.current.mappingStatus?.mode !== nextMode) {
       baseModelRef.current = createBaseModel(nextMode)
       peopleClustersRef.current = baseModelRef.current.peopleClusters
       tickRef.current = 0
     }
-    const nextScenario = createScenarioView(baseModelRef.current, nextScenarioKey, peopleClustersRef.current)
+    const nextScenario = createScenarioView(baseModelRef.current, nextScenarioKey, peopleClustersRef.current, nextMode, nextTimelinePhaseId)
     scenarioRef.current = nextScenario
     setScenarioView(nextScenario)
     setMetrics(
@@ -300,11 +315,33 @@ export function OpinionEcosystemSandbox() {
         nextScenario.reputationMemory,
       ),
     )
-  }, [dataSourceMode, scenarioKey])
+  }, [dataSourceMode, scenarioKey, timelinePhaseId])
 
   useEffect(() => {
-    refreshScenario(dataSourceMode, scenarioKey, true)
-  }, [dataSourceMode, scenarioKey, refreshScenario])
+    refreshScenario(dataSourceMode, scenarioKey, true, timelinePhaseId)
+  }, [dataSourceMode, scenarioKey, timelinePhaseId, refreshScenario])
+
+  const handleScenarioChange = useCallback((nextScenarioKey) => {
+    setScenarioKey(nextScenarioKey)
+    if (dataSourceMode === 'helldivers_psn_sample') {
+      setTimelinePhaseId(HELLDIVERS_SCENARIO_TO_PHASE_ID[nextScenarioKey] || 't1')
+    }
+  }, [dataSourceMode])
+
+  const handleDataSourceModeChange = useCallback((nextMode) => {
+    setDataSourceMode(nextMode)
+    if (nextMode === 'helldivers_psn_sample') {
+      setTimelinePhaseId(HELLDIVERS_SCENARIO_TO_PHASE_ID[scenarioKey] || 't1')
+    }
+  }, [scenarioKey])
+
+  const handleTimelinePhaseChange = useCallback((nextPhaseId) => {
+    setTimelinePhaseId(nextPhaseId)
+    const mappedScenarioKey = HELLDIVERS_PHASE_TO_SCENARIO_KEY[nextPhaseId]
+    if (mappedScenarioKey) {
+      setScenarioKey(mappedScenarioKey)
+    }
+  }, [])
 
   const drawCurrentFrame = useCallback(() => {
     const canvas = canvasRef.current
@@ -351,9 +388,9 @@ export function OpinionEcosystemSandbox() {
   }, [drawCurrentFrame, playing])
 
   const handleReset = useCallback(() => {
-    refreshScenario(dataSourceMode, scenarioKey, true)
+    refreshScenario(dataSourceMode, scenarioKey, true, timelinePhaseId)
     drawCurrentFrame()
-  }, [dataSourceMode, drawCurrentFrame, refreshScenario, scenarioKey])
+  }, [dataSourceMode, drawCurrentFrame, refreshScenario, scenarioKey, timelinePhaseId])
 
   const distributionItems = useMemo(() => {
     const distribution = computeCampDistribution(peopleClustersRef.current)
@@ -417,8 +454,8 @@ export function OpinionEcosystemSandbox() {
       <Card className="panel-card ecosystem-control-card">
         <Space size={12} wrap>
           <Segmented options={VIEW_MODE_OPTIONS} value={viewMode} onChange={setViewMode} />
-          <Segmented options={DATA_SOURCE_OPTIONS} value={dataSourceMode} onChange={setDataSourceMode} />
-          <Segmented options={SCENARIO_OPTIONS} value={scenarioKey} onChange={setScenarioKey} />
+          <Segmented options={DATA_SOURCE_OPTIONS} value={dataSourceMode} onChange={handleDataSourceModeChange} />
+          <Segmented options={SCENARIO_OPTIONS} value={scenarioKey} onChange={handleScenarioChange} />
           <Button
             icon={playing ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
             onClick={() => setPlaying((value) => !value)}
@@ -441,6 +478,7 @@ export function OpinionEcosystemSandbox() {
           peopleClusters={peopleClustersRef.current}
           metrics={metrics}
           playing={playing}
+          onTimelinePhaseChange={handleTimelinePhaseChange}
         />
       )}
 
