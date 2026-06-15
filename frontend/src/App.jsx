@@ -85,6 +85,10 @@ const PlatformIntegrationOverview = lazyNamed(
   'PlatformIntegrationOverview',
 )
 const SearchDiscovery = lazyNamed(() => import('./pages/SearchDiscovery.jsx'), 'SearchDiscovery')
+const ExternalCollectorBridge = lazyNamed(
+  () => import('./pages/ExternalCollectorBridge.jsx'),
+  'ExternalCollectorBridge',
+)
 const PublicDemoGuide = lazyNamed(() => import('./pages/PublicDemoGuide.jsx'), 'PublicDemoGuide')
 const PublicEventPlaza = lazyNamed(() => import('./pages/PublicEventPlaza.jsx'), 'PublicEventPlaza')
 const PublicEventDetail = lazyNamed(() => import('./pages/PublicEventDetail.jsx'), 'PublicEventDetail')
@@ -105,6 +109,7 @@ function pageFromHash() {
   if (hash === '#/public-events/request') return 'publicEventRequest'
   if (hash === '#/public-events/helldivers-psn') return 'publicEventDetail'
   if (hash === '#/opinion-ecosystem') return 'opinionEcosystem'
+  if (hash === '#/external-collector') return 'externalCollectorBridge'
   return 'dashboard'
 }
 
@@ -674,6 +679,7 @@ function App() {
       publicEventRequest: '#/public-events/request',
       publicEventDetail: '#/public-events/helldivers-psn',
       opinionEcosystem: '#/opinion-ecosystem',
+      externalCollectorBridge: '#/external-collector',
     }
     if (hashByPage[pageKey]) {
       window.location.hash = hashByPage[pageKey]
@@ -776,6 +782,7 @@ function App() {
     publicParsers: <PublicParserStatus />,
     platformIntegrations: <PlatformIntegrationOverview />,
     searchDiscovery: <SearchDiscovery {...pageProps} />,
+    externalCollectorBridge: <ExternalCollectorBridge />,
     publicDemoGuide: <PublicDemoGuide />,
     publicEventPlaza: <PublicEventPlaza onNavigate={handleNavigate} />,
     publicEventDetail: <PublicEventDetail onNavigate={handleNavigate} />,

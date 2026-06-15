@@ -50,6 +50,26 @@ export async function attachSearchDiscoveryCandidates(caseId, payload = {}) {
   return normalizeSearchDiscoveryAttachResult(data)
 }
 
+export async function getExternalCollectorStatus() {
+  const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
+  return data
+}
+
+export async function listExternalCollectorPackages() {
+  const { data } = await apiClient.get(`${API_PREFIX}/external-collector/packages`)
+  return Array.isArray(data) ? data : []
+}
+
+export async function getExternalCollectorPackage(packageName) {
+  const { data } = await apiClient.get(`${API_PREFIX}/external-collector/packages/${encodeURIComponent(packageName)}`)
+  return data
+}
+
+export async function validateExternalCollectorPackage(packageName) {
+  const { data } = await apiClient.post(`${API_PREFIX}/external-collector/packages/${encodeURIComponent(packageName)}/validate`)
+  return data
+}
+
 export async function getPublicParserStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/public-parsers/status`)
   return normalizePublicParserStatus(data)

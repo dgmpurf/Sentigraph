@@ -2,6 +2,7 @@
 import {
   Activity,
   BarChart3,
+  Cable,
   ClipboardCheck,
   ClipboardList,
   Compass,
@@ -28,6 +29,7 @@ const { Text, Title } = Typography
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={17} /> },
   { key: 'searchDiscovery', label: 'Search Discovery', icon: <FileSearch size={17} /> },
+  { key: 'externalCollectorBridge', label: '外部采集桥接', icon: <Cable size={17} /> },
   { key: 'publicDemoGuide', label: 'Demo 试玩', icon: <Compass size={17} /> },
   { key: 'publicEventPlaza', label: '公开事件', icon: <Newspaper size={17} /> },
   { key: 'demoFlow', label: 'Demo Flow / 演示流程', icon: <ClipboardList size={17} /> },
