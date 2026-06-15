@@ -1855,6 +1855,9 @@ body {
 }
 
 .ecosystem-v2-event-strip span {
+  position: relative;
+  display: grid;
+  place-items: center;
   min-height: 38px;
   padding: 8px 10px;
   border: 1px solid rgba(154, 166, 191, 0.16);
@@ -1871,6 +1874,17 @@ body {
   background: rgba(245, 196, 75, 0.1);
   color: #ffe3a0;
   box-shadow: 0 0 24px rgba(245, 196, 75, 0.12);
+}
+
+.ecosystem-v2-event-strip span.active::after {
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  left: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: #f5c44b;
+  content: "";
 }
 
 .ecosystem-v2-canvas-frame {
@@ -1942,6 +1956,10 @@ body {
   min-height: 270px;
 }
 
+.ecosystem-v2-read-card {
+  min-height: auto;
+}
+
 .ecosystem-v2-timeline {
   margin: 0;
 }
@@ -1949,6 +1967,43 @@ body {
 .ecosystem-v2-timeline .active {
   color: #42f5d7;
   font-weight: 700;
+}
+
+.ecosystem-v2-core-legend {
+  display: grid;
+  gap: 10px;
+}
+
+.ecosystem-v2-core-legend-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-height: 58px;
+  padding: 10px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.ecosystem-v2-core-legend-item > span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid;
+  border-radius: 8px;
+  color: #f4f7fb;
+  font-size: 13px;
+  font-weight: 900;
+  background: rgba(8, 9, 13, 0.44);
+}
+
+.ecosystem-v2-core-legend-item p {
+  margin: 5px 0 0 !important;
+  color: #9aa6bf;
+  font-size: 12px;
+  line-height: 1.42;
 }
 
 .ecosystem-v2-dynamics-grid {
@@ -1974,6 +2029,33 @@ body {
 
 .ecosystem-v2-card .ant-space-item {
   min-width: 0;
+}
+
+.ecosystem-v2-read-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ecosystem-v2-read-grid > .ant-space {
+  min-height: 68px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.ecosystem-v2-read-grid svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #42f5d7;
+}
+
+.ecosystem-v2-read-grid .ant-typography {
+  color: #c9d4ea;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .ecosystem-v2-safety-card .ant-card-body {
@@ -2330,6 +2412,15 @@ body {
   }
 
   .ecosystem-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ecosystem-v2-event-strip,
+  .ecosystem-v2-read-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ecosystem-v2-dynamics-grid {
     grid-template-columns: 1fr;
   }
 
