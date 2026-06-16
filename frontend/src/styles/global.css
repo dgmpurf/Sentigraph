@@ -2456,6 +2456,7 @@ body {
 
 .public-demo-hero > div,
 .public-demo-progress-card,
+.public-demo-origin-card,
 .public-demo-search-card,
 .public-demo-note-card {
   border: 1px solid rgba(66, 245, 215, 0.2);
@@ -2506,6 +2507,31 @@ body {
 .public-demo-boundary-alert {
   border-color: rgba(66, 245, 215, 0.24);
   background: rgba(66, 245, 215, 0.06);
+}
+
+.public-demo-origin-card {
+  border-color: rgba(66, 245, 215, 0.26);
+}
+
+.public-demo-origin-tile {
+  min-height: 190px;
+  padding: 14px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.public-demo-origin-tile.recommended {
+  border-color: rgba(66, 245, 215, 0.34);
+  background:
+    radial-gradient(circle at 18% 14%, rgba(66, 245, 215, 0.09), transparent 34%),
+    rgba(8, 9, 13, 0.36);
+}
+
+.public-demo-origin-tile p {
+  margin: 8px 0 !important;
+  color: #c9d4ea;
+  line-height: 1.64;
 }
 
 .public-demo-step-card {

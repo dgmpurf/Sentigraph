@@ -3,6 +3,7 @@ import {
   Building2,
   CheckCircle2,
   Compass,
+  Database,
   ExternalLink,
   RotateCcw,
   Search,
@@ -20,49 +21,57 @@ const STORAGE_KEY = 'sentigraph-public-demo-progress-v1'
 const DEMO_STEPS = [
   {
     key: 'plaza',
-    title: 'Step 1：浏览公共事件广场',
+    title: 'Step 1：打开事件广场',
     buttonLabel: '打开事件广场',
     targetHash: '#/public-events',
     description: '查看多个公共事件卡片。当前不是真实热榜，而是本地 demo 事件列表。',
   },
   {
+    key: 'collector',
+    title: 'Step 2：查看外部采集桥接',
+    buttonLabel: '打开外部采集桥接',
+    targetHash: '#/external-collector',
+    description:
+      '这里读取私人 collector 项目已经导出的本地 Evidence Export package，不运行爬虫、不搜索全网、不抓取 URL、不调用真实 API。推荐演示样本是 helldivers2-psn-demo_20260614_055754。',
+  },
+  {
     key: 'helldivers',
-    title: 'Step 2：查看 Helldivers 公开事件页',
+    title: 'Step 3：查看 Helldivers 公开事件页',
     buttonLabel: '打开 Helldivers 事件页',
     targetHash: '#/public-events/helldivers-psn',
     description: '查看 selected public sample、事件时间线、样本边界和生态沙盒入口。',
   },
   {
     key: 'sandbox',
-    title: 'Step 3：进入生态沙盒 V2',
+    title: 'Step 4：进入生态沙盒 V2',
     buttonLabel: '打开生态沙盒 V2',
     targetHash: '#/opinion-ecosystem',
     description: '进入页面后请选择 V2 ecology view + Helldivers PSN sample。这里不做 URL 抓取，也不连接真实平台。',
   },
   {
     key: 'timeline',
-    title: 'Step 4：体验 T0-T6 时间线',
+    title: 'Step 5：体验 T0-T6 时间线',
     buttonLabel: '打开沙盒并体验时间线',
     targetHash: '#/opinion-ecosystem',
     description: '依次点击 T0 公告、T1 社区反弹、T2 官方回应、T3 第三方解释、T4 社区解构、T5 疲劳衰减、T6 声誉记忆。',
   },
   {
     key: 'request',
-    title: 'Step 5：请求分析一个事件 mock',
+    title: 'Step 6：请求分析一个事件 mock',
     buttonLabel: '打开请求分析页',
     targetHash: '#/public-events/request',
     description: '填写事件标题和理由，生成本地请求预览。不会提交后端。',
   },
   {
     key: 'vote',
-    title: 'Step 6：投票支持分析 mock',
+    title: 'Step 7：投票支持分析 mock',
     buttonLabel: '打开投票区',
     targetHash: '#/public-events/request',
     description: '点击投票支持，只改变本地 UI，不代表真实热度。',
   },
   {
     key: 'bEnd',
-    title: 'Step 7：B 端咨询 mock',
+    title: 'Step 8：查看 B 端咨询 mock',
     buttonLabel: '查看 B 端咨询 mock',
     targetHash: '#/public-events/request',
     description: '当前只是入口演示，不提交信息。赞助或商业分析必须透明标注。',
@@ -79,6 +88,10 @@ const BOUNDARY_ITEMS = [
   'not causal proof',
   'no real platform action',
   'no real API / no real LLM call',
+  'local exported package only',
+  'no crawler job',
+  'no live search',
+  'no URL fetch',
   'PeopleCluster = anonymous groups/clusters, not real individuals',
   'InfluenceCore = content / narrative / official / media / meme cores, not people balls',
   'request/vote count does not represent natural public-opinion heat',
@@ -206,7 +219,7 @@ export function PublicDemoGuide() {
           </Space>
           <Title level={1}>Sentigraph 试玩演示 / Guided Demo</Title>
           <Paragraph>
-            用 5 分钟体验公共事件舆论生态推演。当前为本地前端 demo，不连接真实平台，不抓取网页，不提交后端。
+            用 5 分钟体验公共事件舆论生态推演。当前为本地前端 demo，不连接真实平台，不抓取网页，不执行真实平台动作。
           </Paragraph>
           <Space wrap>
             <Button type="primary" icon={<Compass size={16} />} onClick={() => openStep(DEMO_STEPS[0])}>
@@ -244,6 +257,54 @@ export function PublicDemoGuide() {
           </Space>
         }
       />
+
+      <Card
+        className="panel-card public-demo-origin-card"
+        title={
+          <Space>
+            <Database size={17} />
+            <span>样本从哪里来？</span>
+          </Space>
+        }
+      >
+        <Row gutter={[14, 14]}>
+          <Col span={12}>
+            <div className="public-demo-origin-tile">
+              <Text strong>外部采集桥接</Text>
+              <Paragraph>
+                抓取项目 / 私人 collector 负责生成本地 Evidence Export package。Sentigraph 只读取 package、验证 package，并把安全样本进入 Evidence / Opinion Ecosystem 展示。
+              </Paragraph>
+              <Space wrap>
+                <Tag color="cyan">local exported package only</Tag>
+                <Tag>no crawler job</Tag>
+                <Tag>no live search</Tag>
+                <Tag>no URL fetch</Tag>
+                <Tag>no real platform API</Tag>
+                <Tag>no real LLM</Tag>
+              </Space>
+            </div>
+          </Col>
+          <Col span={12}>
+            <div className="public-demo-origin-tile recommended">
+              <Text strong>推荐演示样本</Text>
+              <Paragraph>
+                当前演示推荐使用 <Text code>helldivers2-psn-demo_20260614_055754</Text>：34 evidence / 7 sources / 28 comments / 6 roots 的 Helldivers selected public sample。
+              </Paragraph>
+              <Paragraph>
+                validation passed / warn 只代表结构、安全、覆盖说明等本地检查通过，不代表全网全量、官方验证或因果证明。
+              </Paragraph>
+            </div>
+          </Col>
+          <Col span={24}>
+            <Alert
+              type="warning"
+              showIcon
+              message="历史测试包不是主演示样本"
+              description="历史 smoke、seed 相关性、local snapshot 包只用于流程测试，不建议作为第一次朋友演示的主样本。Evidence Scale / Coverage 只代表已导入或可用证据覆盖，不代表全网或全平台覆盖。"
+            />
+          </Col>
+        </Row>
+      </Card>
 
       <section>
         <div className="public-event-section-title">
