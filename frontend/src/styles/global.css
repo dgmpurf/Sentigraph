@@ -2470,7 +2470,8 @@ body {
 .public-request-form-card,
 .public-request-preview-card,
 .public-request-vote-card,
-.public-request-explainer-card {
+.public-request-explainer-card,
+.public-request-track-card {
   border-color: rgba(66, 245, 215, 0.2);
   background:
     radial-gradient(circle at 16% 18%, rgba(66, 245, 215, 0.1), transparent 34%),
@@ -2498,9 +2499,31 @@ body {
 .public-request-form-card p,
 .public-request-preview-card p,
 .public-request-vote-card p,
-.public-request-explainer-card p {
+.public-request-explainer-card p,
+.public-request-track-card p {
   color: #c9d4ea;
   line-height: 1.68;
+}
+
+.public-request-track-card {
+  min-height: 190px;
+}
+
+.public-request-track-card.primary-track {
+  border-color: rgba(66, 245, 215, 0.42);
+  box-shadow: 0 18px 42px rgba(66, 245, 215, 0.08);
+}
+
+.public-request-track-icon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(66, 245, 215, 0.25);
+  border-radius: 8px;
+  color: #42f5d7;
+  background: rgba(66, 245, 215, 0.08);
 }
 
 .public-request-breadcrumb {
@@ -2511,7 +2534,7 @@ body {
 
 .public-request-form-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px 150px;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.42fr);
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -2527,6 +2550,16 @@ body {
 
 .public-request-action-row {
   margin: 14px 0;
+}
+
+.public-request-focus-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.public-request-secondary-alert {
+  margin-bottom: 14px;
 }
 
 .public-request-preview-grid,

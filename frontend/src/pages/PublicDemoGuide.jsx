@@ -8,7 +8,7 @@ import {
   RotateCcw,
   Search,
   ShieldCheck,
-  Vote,
+  ThumbsUp,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
@@ -57,31 +57,31 @@ const DEMO_STEPS = [
   },
   {
     key: 'request',
-    title: 'Step 6：请求分析一个事件 mock',
+    title: 'Step 6：请求分析一个事件',
     buttonLabel: '打开请求分析页',
     targetHash: '#/public-events/request',
-    description: '填写事件标题和理由，生成本地请求预览。不会提交后端。',
+    description: '填写事件名称、公开线索和请求理由，生成本地演示预览。不会提交后端，也不会触发抓取。',
   },
   {
     key: 'vote',
-    title: 'Step 7：投票支持分析 mock',
-    buttonLabel: '打开投票区',
+    title: 'Step 7：支持候选事件',
+    buttonLabel: '打开支持候选区',
     targetHash: '#/public-events/request',
-    description: '点击投票支持，只改变本地 UI，不代表真实热度。',
+    description: '支持我们优先做某个公开样本，只改变本地 UI，不代表自然舆情热度或真实排序。',
   },
   {
     key: 'bEnd',
-    title: 'Step 8：查看 B 端咨询 mock',
-    buttonLabel: '查看 B 端咨询 mock',
+    title: 'Step 8：查看企业 / 团队私有分析说明',
+    buttonLabel: '查看私有分析说明',
     targetHash: '#/public-events/request',
-    description: '当前只是入口演示，不提交信息。赞助或商业分析必须透明标注。',
+    description: '当前只是入口演示，不提交信息、不创建私有 case。优先分析或商业分析必须透明标注。',
   },
 ]
 
 const BOUNDARY_ITEMS = [
   'frontend-only local demo',
   'selected public sample where labeled',
-  'request / vote mock only',
+  'request / support mock only',
   'not full-web coverage',
   'not full-platform coverage',
   'not official verification',
@@ -94,8 +94,8 @@ const BOUNDARY_ITEMS = [
   'no URL fetch',
   'PeopleCluster = anonymous groups/clusters, not real individuals',
   'InfluenceCore = content / narrative / official / media / meme cores, not people balls',
-  'request/vote count does not represent natural public-opinion heat',
-  'sponsored analysis must be transparently labeled',
+  'request/support count does not represent natural public-opinion heat',
+  'priority or commercial analysis must be transparently labeled',
 ]
 
 function readProgress() {
@@ -225,8 +225,8 @@ export function PublicDemoGuide() {
             <Button type="primary" icon={<Compass size={16} />} onClick={() => openStep(DEMO_STEPS[0])}>
               开始试玩
             </Button>
-            <Button icon={<Vote size={16} />} onClick={() => openEvent('#/public-events/request')}>
-              直接打开请求 / 投票 mock
+            <Button icon={<ThumbsUp size={16} />} onClick={() => openEvent('#/public-events/request')}>
+              直接打开请求 / 支持演示
             </Button>
           </Space>
         </div>
@@ -382,12 +382,12 @@ export function PublicDemoGuide() {
             title={
               <Space>
                 <Building2 size={17} />
-                <span>请求 / 投票 / B 端咨询说明</span>
+                <span>请求 / 支持 / B 端咨询说明</span>
               </Space>
             }
           >
             <Paragraph>
-              请求分析、投票支持分析和 B 端咨询都是本地 mock。它们不会提交后端，不代表自然公众热度，也不会触发真实平台动作。
+              请求分析、支持候选事件和 B 端咨询都是本地演示。它们不会提交后端，不代表自然公众热度，也不会触发真实平台动作。
             </Paragraph>
             <Paragraph>
               如果未来出现赞助分析或商业分析入口，必须透明标注来源与关系，不能和自然讨论热度混合展示。
