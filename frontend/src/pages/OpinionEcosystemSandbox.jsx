@@ -267,6 +267,32 @@ function HelldiversSampleStatusCard() {
   )
 }
 
+function ClassicViewLegend() {
+  const items = [
+    ['大框体', '当前事件舆论生态场；在 Helldivers 模式下仅代表 selected public sample 下的讨论空间。'],
+    ['小球', 'PeopleCluster / 匿名人群簇，不是真实个人用户。'],
+    ['六边形', 'InfluenceCore / 影响核心、内容核心或叙事核心，不是人群小球。'],
+    ['小球靠近六边形', '表示与该叙事核心更接近，不代表真实说服或真实关系链。'],
+    ['连线', '讨论关联或可能触达路径的视觉提示，不代表因果证明。'],
+    ['颜色 / 大小', '颜色表示立场或表达倾向；大小是活跃度 / 影响权重的视觉近似。'],
+  ]
+
+  return (
+    <Card className="panel-card ecosystem-classic-legend-card" title="经典视图 / 开发解释视图：怎么看">
+      <Row gutter={[12, 12]}>
+        {items.map(([label, description]) => (
+          <Col span={8} key={label}>
+            <div className="ecosystem-legend-tile">
+              <Text strong>{label}</Text>
+              <Paragraph>{description}</Paragraph>
+            </div>
+          </Col>
+        ))}
+      </Row>
+    </Card>
+  )
+}
+
 export function OpinionEcosystemSandbox() {
   const canvasRef = useRef(null)
   const baseModelRef = useRef(null)
@@ -274,9 +300,9 @@ export function OpinionEcosystemSandbox() {
   const scenarioRef = useRef(null)
   const frameRef = useRef(null)
   const tickRef = useRef(0)
-  const [dataSourceMode, setDataSourceMode] = useState('mock_schema')
+  const [dataSourceMode, setDataSourceMode] = useState('helldivers_psn_sample')
   const [scenarioKey, setScenarioKey] = useState('natural')
-  const [viewMode, setViewMode] = useState('classic')
+  const [viewMode, setViewMode] = useState('ecology_v2')
   const [playing, setPlaying] = useState(true)
   const [timelinePhaseId, setTimelinePhaseId] = useState(HELLDIVERS_SCENARIO_TO_PHASE_ID.natural)
 
@@ -392,6 +418,13 @@ export function OpinionEcosystemSandbox() {
     drawCurrentFrame()
   }, [dataSourceMode, drawCurrentFrame, refreshScenario, scenarioKey, timelinePhaseId])
 
+  const handleUseRecommendedCombo = useCallback(() => {
+    setViewMode('ecology_v2')
+    setDataSourceMode('helldivers_psn_sample')
+    setScenarioKey('natural')
+    setTimelinePhaseId(HELLDIVERS_SCENARIO_TO_PHASE_ID.natural)
+  }, [])
+
   const distributionItems = useMemo(() => {
     const distribution = computeCampDistribution(peopleClustersRef.current)
     return [
@@ -452,24 +485,59 @@ export function OpinionEcosystemSandbox() {
       />
 
       <Card className="panel-card ecosystem-control-card">
-        <Space size={12} wrap>
-          <Segmented options={VIEW_MODE_OPTIONS} value={viewMode} onChange={setViewMode} />
-          <Segmented options={DATA_SOURCE_OPTIONS} value={dataSourceMode} onChange={handleDataSourceModeChange} />
-          <Segmented options={SCENARIO_OPTIONS} value={scenarioKey} onChange={handleScenarioChange} />
-          <Button
-            icon={playing ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
-            onClick={() => setPlaying((value) => !value)}
-            type="primary"
-          >
-            {playing ? 'Pause' : 'Play'}
-          </Button>
-          <Button icon={<RotateCcw size={16} />} onClick={handleReset}>
-            Reset
-          </Button>
-          <Tag color="geekblue">当前场景：{scenarioView.scenarioLabel}</Tag>
-          <Tag color={dataSourceMode === 'evidence_fixture' ? 'purple' : 'cyan'}>{scenarioView.mappingStatus?.label}</Tag>
-          <Tag color="gold">处理节奏：{scenarioView.responseTempo.recommendation_label}</Tag>
-        </Space>
+        <Row gutter={[14, 14]}>
+          <Col span={7}>
+            <div className="ecosystem-control-tile">
+              <Text strong>视图模式 / View mode</Text>
+              <Paragraph>V1 和 V2 使用同一数据来源时，只是展示方式不同。</Paragraph>
+              <Segmented options={VIEW_MODE_OPTIONS} value={viewMode} onChange={setViewMode} />
+            </div>
+          </Col>
+          <Col span={9}>
+            <div className="ecosystem-control-tile recommended">
+              <Space wrap>
+                <Text strong>数据来源 / Data source</Text>
+                <Tag color="gold">推荐试玩组合</Tag>
+              </Space>
+              <Paragraph>数据来源决定样本内容；推荐使用 V2 ecology view + Helldivers PSN selected sample。</Paragraph>
+              <Space wrap>
+                <Segmented options={DATA_SOURCE_OPTIONS} value={dataSourceMode} onChange={handleDataSourceModeChange} />
+                <Button onClick={handleUseRecommendedCombo}>使用推荐组合：V2 + Helldivers PSN sample</Button>
+              </Space>
+            </div>
+          </Col>
+          <Col span={8}>
+            <div className="ecosystem-control-tile">
+              <Text strong>场景 / 阶段说明</Text>
+              <Paragraph>T0-T6 是本地 historical replay 阶段；场景按钮与阶段联动展示，不是实时未来预测。</Paragraph>
+              <Segmented options={SCENARIO_OPTIONS} value={scenarioKey} onChange={handleScenarioChange} />
+            </div>
+          </Col>
+          <Col span={24}>
+            <Space size={12} wrap>
+              <Button
+                icon={playing ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
+                onClick={() => setPlaying((value) => !value)}
+                type="primary"
+              >
+                {playing ? 'Pause animation / 暂停动画' : 'Play animation / 播放动画'}
+              </Button>
+              <Button icon={<RotateCcw size={16} />} onClick={handleReset}>
+                Reset animation / 重置动画
+              </Button>
+              <Tag color="geekblue">当前场景：{scenarioView.scenarioLabel}</Tag>
+              <Tag color={dataSourceMode === 'evidence_fixture' ? 'purple' : 'cyan'}>{scenarioView.mappingStatus?.label}</Tag>
+              <Tag color="gold">处理节奏：{scenarioView.responseTempo.recommendation_label}</Tag>
+            </Space>
+            <Alert
+              className="ecosystem-control-note"
+              type="info"
+              showIcon
+              message="Pause / Reset 只控制本地动画状态"
+              description="小球运动是本地视觉动画，用于表达相对变化；不会重新计算真实舆论，不会联网抓取数据，也不会调用真实平台 API 或 LLM。"
+            />
+          </Col>
+        </Row>
       </Card>
 
       {viewMode === 'ecology_v2' && (
@@ -541,48 +609,51 @@ export function OpinionEcosystemSandbox() {
       </Card>
 
       {viewMode === 'classic' && (
-      <Row gutter={[16, 16]}>
-        <Col span={16}>
-          <Card
-            className="panel-card ecosystem-canvas-card"
-            title={
-              <Space>
-                <ScanLine size={18} />
-                <span>EchoBox / 回音壁容器</span>
-              </Space>
-            }
-            extra={<Tag color="cyan">border glow = echo chamber strength</Tag>}
-          >
-            <div
-              className="ecosystem-canvas-shell"
-              style={{
-                '--echo-alpha': `${0.22 + scenarioView.echoBox.echo_chamber_score * 0.55}`,
-                '--echo-blur': `${12 + scenarioView.echoBox.echo_chamber_score * 34}px`,
-              }}
+      <>
+        <ClassicViewLegend />
+        <Row gutter={[16, 16]}>
+          <Col span={16}>
+            <Card
+              className="panel-card ecosystem-canvas-card"
+              title={
+                <Space>
+                  <ScanLine size={18} />
+                  <span>EchoBox / 讨论空间容器</span>
+                </Space>
+              }
+              extra={<Tag color="cyan">边界光晕 = 讨论圈层集中度</Tag>}
             >
-              <canvas ref={canvasRef} aria-label="Mock Opinion Ecosystem Sandbox visualization" />
-            </div>
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card className="panel-card ecosystem-side-card" title="Mock Metrics">
-            <div className="ecosystem-stat-grid">
-              <Statistic title="withdrawn share" value={scoreToPercent(metrics.withdrawnShare)} suffix="%" />
-              <Statistic title="echo box saturation" value={scoreToPercent(metrics.echoBoxSaturation)} suffix="%" />
-              <Statistic title="breakout risk" value={scoreToPercent(metrics.breakoutRisk)} suffix="%" />
-              <Statistic title="deconstruction window" value={scoreToPercent(metrics.deconstructionWindow)} suffix="%" />
-            </div>
-            <MetricProgress label="dormant grievance risk" value={metrics.dormantGrievanceRisk} strokeColor="#ff5d8f" />
-            <MetricProgress label="echo box saturation" value={metrics.echoBoxSaturation} strokeColor="#42f5d7" />
-            <MetricProgress label="breakout risk" value={metrics.breakoutRisk} strokeColor="#f5c44b" />
-            <MetricProgress label="deconstruction window score" value={metrics.deconstructionWindow} strokeColor="#a478ff" />
-            <div className="ecosystem-recommendation">
-              <Text type="secondary">Mock recommendation</Text>
-              <Paragraph>{scenarioView.responseTempo.recommendation_text}</Paragraph>
-            </div>
-          </Card>
-        </Col>
-      </Row>
+              <div
+                className="ecosystem-canvas-shell"
+                style={{
+                  '--echo-alpha': `${0.22 + scenarioView.echoBox.echo_chamber_score * 0.55}`,
+                  '--echo-blur': `${12 + scenarioView.echoBox.echo_chamber_score * 34}px`,
+                }}
+              >
+                <canvas ref={canvasRef} aria-label="Mock Opinion Ecosystem Sandbox visualization" />
+              </div>
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card className="panel-card ecosystem-side-card" title="本地演示指标 / Mock Metrics">
+              <div className="ecosystem-stat-grid">
+                <Statistic title="退出 / 疲劳比例" value={scoreToPercent(metrics.withdrawnShare)} suffix="%" />
+                <Statistic title="讨论圈层集中度" value={scoreToPercent(metrics.echoBoxSaturation)} suffix="%" />
+                <Statistic title="破圈风险" value={scoreToPercent(metrics.breakoutRisk)} suffix="%" />
+                <Statistic title="社区解构 / 降温窗口" value={scoreToPercent(metrics.deconstructionWindow)} suffix="%" />
+              </div>
+              <MetricProgress label="潜在不满再激活风险" value={metrics.dormantGrievanceRisk} strokeColor="#ff5d8f" />
+              <MetricProgress label="讨论圈层集中度（echo box saturation）" value={metrics.echoBoxSaturation} strokeColor="#42f5d7" />
+              <MetricProgress label="破圈风险" value={metrics.breakoutRisk} strokeColor="#f5c44b" />
+              <MetricProgress label="社区解构 / 降温窗口" value={metrics.deconstructionWindow} strokeColor="#a478ff" />
+              <div className="ecosystem-recommendation">
+                <Text type="secondary">本地阶段说明</Text>
+                <Paragraph>{scenarioView.responseTempo.recommendation_text}</Paragraph>
+              </div>
+            </Card>
+          </Col>
+        </Row>
+      </>
       )}
 
       <Row gutter={[16, 16]}>

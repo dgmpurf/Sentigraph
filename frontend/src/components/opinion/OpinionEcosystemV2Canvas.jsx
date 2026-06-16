@@ -1,4 +1,4 @@
-import { Card, Col, Progress, Row, Space, Statistic, Tag, Timeline, Tooltip, Typography } from 'antd'
+import { Alert, Card, Col, Progress, Row, Space, Statistic, Tag, Timeline, Tooltip, Typography } from 'antd'
 import { Activity, Boxes, CircleDot, Clock3, Compass, RadioTower, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 
@@ -73,6 +73,16 @@ const DYNAMICS_LABELS = [
   ['固化', 'high-identity clusters locking around a core'],
   ['反噬', 'poor timing increasing hardening or opposition pull'],
   ['再激活', 'dormant grievance reappearing after a shock event'],
+]
+
+const V2_VISUAL_LEGEND = [
+  ['PeopleCluster 小球', '匿名人群簇，不是真实个人，也不代表个人画像。'],
+  ['InfluenceCore 节点', '内容 / 叙事 / 官方 / 媒体 / 梗化核心，不是人群。'],
+  ['EchoBox 容器', '讨论圈层或讨论空间，边界强弱只用于视觉解释。'],
+  ['蓝色虚线 / bridge path', '跨圈层解释路径或桥接关系提示，不代表真实传播链。'],
+  ['蓝色小球 / bridge cluster', '桥接人群簇，不代表真实个人。'],
+  ['Event token', '本地事件阶段标记。'],
+  ['Lines / links', '视觉关系提示，不代表因果证明。'],
 ]
 
 const SCENARIO_VISUALS = {
@@ -591,7 +601,7 @@ function ScenarioTokenStrip({ scenarioKey }) {
       {EVENT_TOKENS.map((token) => (
         <Tooltip
           key={token.key}
-          title="Local mock scenario token only; it does not call external APIs or fetch URLs."
+          title="本地场景标记：不调用外部 API，不抓取 URL。"
           placement="top"
         >
           <span className={token.key === scenarioKey ? 'active' : ''}>{token.label}</span>
@@ -695,14 +705,14 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
             title={
               <Space>
                 <Boxes size={18} />
-                <span>V2 Ecology View / EchoBox 主舞台</span>
+                <span>V2 Ecology View / EchoBox 讨论空间</span>
               </Space>
             }
             extra={
               <Space wrap>
                 <Tag color={playing ? 'green' : 'default'}>{playing ? 'playing' : 'paused'}</Tag>
                 <Tag color="cyan">{activeTimeline.label_zh}</Tag>
-                <Tag color="gold">mock event token</Tag>
+                <Tag color="gold">本地场景标记</Tag>
               </Space>
             }
           >
@@ -721,19 +731,19 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
           </Card>
         </Col>
         <Col span={6}>
-          <Card className="panel-card ecosystem-v2-side-card" title="V2 metrics / 状态读数">
+          <Card className="panel-card ecosystem-v2-side-card" title="V2 本地演示指标 / 状态读数">
             <div className="ecosystem-v2-stat-grid">
-              <Statistic title="匿名簇数量" value={peopleClusters.length} suffix="簇" />
+              <Statistic title="匿名人群簇数量" value={peopleClusters.length} suffix="簇" />
               <Statistic title="破圈风险" value={scoreToPercent(metrics.breakoutRisk)} suffix="%" />
-              <Statistic title="饱和度" value={scoreToPercent(metrics.echoBoxSaturation)} suffix="%" />
-              <Statistic title="解构窗口" value={scoreToPercent(metrics.deconstructionWindow)} suffix="%" />
+              <Statistic title="讨论圈层集中度" value={scoreToPercent(metrics.echoBoxSaturation)} suffix="%" />
+              <Statistic title="社区解构 / 降温窗口" value={scoreToPercent(metrics.deconstructionWindow)} suffix="%" />
             </div>
             <MetricProgress label="中立化趋势" value={scenarioView.campDynamics.neutralization_score} color="#42f5d7" />
             <MetricProgress label="退出 / 疲劳" value={scenarioView.campDynamics.withdrawal_score} color="#667085" />
             <MetricProgress label="反噬风险" value={scenarioView.campDynamics.backlash_score} color="#ff5d8f" />
-            <MetricProgress label="Dormant grievance risk" value={metrics.dormantGrievanceRisk} color="#f5c44b" />
+            <MetricProgress label="潜在不满再激活风险" value={metrics.dormantGrievanceRisk} color="#f5c44b" />
             <div className="ecosystem-v2-note">
-              <Text type="secondary">Scenario annotation</Text>
+              <Text type="secondary">本地阶段说明</Text>
               <Paragraph>{scenarioView.responseTempo.recommendation_text}</Paragraph>
               <Tag color="default">{scenarioVisual.label}</Tag>
             </div>
@@ -747,12 +757,12 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
             <Card className="panel-card ecosystem-v2-helldivers-note">
               <Space direction="vertical" size={8}>
                 <Space wrap>
-                  <Tag color="cyan">Helldivers timeline preset</Tag>
+                  <Tag color="cyan">Historical replay / 历史复盘</Tag>
                   <Tag color="purple">{activeTimeline.label_zh}</Tag>
                   <Tag>{activeTimeline.label_en}</Tag>
                 </Space>
                 <Paragraph>
-                  当前为 Helldivers 2 / PSN selected public sample 的本地 timeline preset。T0-T6 用于演示事件节奏，不代表完整历史重建。
+                  T0-T6 是 Helldivers 事件的本地 historical replay 阶段。上方场景按钮表示当前阶段对应的回应状态 / 解释场景；两者会联动展示，但当前不是实时未来预测。
                 </Paragraph>
                 <Paragraph>{scenarioView.helldiversTimelinePreset.short_explanation_zh}</Paragraph>
                 <Space wrap>
@@ -768,8 +778,21 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
             </Card>
           </Col>
         )}
+        <Col span={24}>
+          <Card className="panel-card ecosystem-v2-forward-card" title="未来推演模式 / Forward simulation（规划中）">
+            <Paragraph>
+              未来推演模式用于在某一阶段插入官方澄清、FAQ、第三方说明、社区解构、延迟回应或无回应，并比较后续走势。当前尚未上线，不作为真实预测，也不会联网重新计算真实舆论。
+            </Paragraph>
+            <Space wrap>
+              <Tag>planned only</Tag>
+              <Tag>not active</Tag>
+              <Tag>not real prediction</Tag>
+              <Tag>no live API</Tag>
+            </Space>
+          </Card>
+        </Col>
         <Col span={8}>
-          <Card className="panel-card ecosystem-v2-card" title="Response Tempo / 时间轴">
+          <Card className="panel-card ecosystem-v2-card" title="Response Tempo / T0-T6 历史复盘">
             <ResponseTimeline
               timelinePresets={timelinePresets}
               activeTimelinePhaseId={activeTimeline.phase_id}
@@ -798,29 +821,22 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
 
       <Row gutter={[16, 16]}>
         <Col span={24}>
-          <Card className="panel-card ecosystem-v2-card ecosystem-v2-read-card" title="How to read V2 / 快速阅读">
+          <Card className="panel-card ecosystem-v2-card ecosystem-v2-read-card" title="V2 visual legend / 视觉图例">
             <div className="ecosystem-v2-read-grid">
-              <Space>
-                <CircleDot size={15} />
-                <Text>小球是匿名 PeopleCluster，不是真实个人。</Text>
-              </Space>
-              <Space>
-                <RadioTower size={15} />
-                <Text>大节点是 InfluenceCore，代表内容、叙事、官方、媒体或 meme 核心。</Text>
-              </Space>
-              <Space>
-                <Compass size={15} />
-                <Text>边界越厚表示 EchoBox 越强；缺口表示可渗透。</Text>
-              </Space>
-              <Space>
-                <Clock3 size={15} />
-                <Text>时间轴展示本地 mock 响应节奏，不代表因果证明。</Text>
-              </Space>
-              <Space>
-                <Activity size={15} />
-                <Text>指标用于辅助解释，不代表全网或全平台覆盖。</Text>
-              </Space>
+              {V2_VISUAL_LEGEND.map(([label, description], index) => (
+                <Space key={label}>
+                  {index === 0 ? <CircleDot size={15} /> : index === 1 ? <RadioTower size={15} /> : index === 2 ? <Compass size={15} /> : index === 5 ? <Clock3 size={15} /> : <Activity size={15} />}
+                  <Text><strong>{label}</strong>：{description}</Text>
+                </Space>
+              ))}
             </div>
+            <Alert
+              className="ecosystem-v2-legend-alert"
+              type="info"
+              showIcon
+              message="本地视觉模拟边界"
+              description="当前为本地视觉模拟，用于解释舆论生态结构；不是已校准真实仿真，不代表真实传播链、真实因果或官方验证。"
+            />
           </Card>
         </Col>
       </Row>

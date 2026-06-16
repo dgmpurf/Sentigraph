@@ -18,6 +18,21 @@ const boundaryTags = [
   'PeopleCluster not real individuals',
 ]
 
+const developmentStageLabels = [
+  '阶段 1：PSN 账号绑定公告 / 更新',
+  '阶段 2：社区反弹与评论扩散',
+  '阶段 3：绑定要求不再推进',
+  '阶段 4：媒体解释与第三方说明',
+  '阶段 5：社区解构与梗化记忆',
+  '阶段 6：疲劳冷却与长期声誉记忆',
+]
+
+const readingOrderItems = [
+  ['1', '先看事件发展脉络', '本页用阶段说明代替精确时间戳，帮助理解争议如何触发、扩散、降压和沉淀。'],
+  ['2', '再看样本规模与限制', '当前是 selected public sample 本地演示，不代表全网全量、官方验证或因果证明。'],
+  ['3', '最后打开生态沙盒', '进入 Sandbox 后选择 V2 ecology view 和 Helldivers PSN selected sample，查看 T0-T6 事件节奏。'],
+]
+
 function CompactMetric({ title, value, suffix }) {
   return (
     <Card className="metric-card public-event-metric-card">
@@ -71,7 +86,7 @@ export function PublicEventDetail({ onNavigate }) {
               返回事件广场
             </Button>
             <Button type="primary" size="large" icon={<Boxes size={17} />} onClick={openSandbox}>
-              {event.ctas.sandbox}
+              下一步：打开 Helldivers 生态沙盒
             </Button>
             <Button size="large" icon={<Vote size={17} />} onClick={openRequest}>
               {event.ctas.requestSimilar}
@@ -96,6 +111,26 @@ export function PublicEventDetail({ onNavigate }) {
           </Space>
         </Card>
       </section>
+
+      <Card className="panel-card public-event-reading-order-card" title="本页怎么看 / 阅读顺序">
+        <Row gutter={[14, 14]}>
+          {readingOrderItems.map(([step, title, description]) => (
+            <Col span={8} key={step}>
+              <div className="public-event-reading-step">
+                <Tag color="cyan">{step}</Tag>
+                <Text strong>{title}</Text>
+                <Paragraph>{description}</Paragraph>
+              </div>
+            </Col>
+          ))}
+        </Row>
+        <Alert
+          type="info"
+          showIcon
+          message="样本边界"
+          description="当前页面使用 selected public sample 做本地演示，不代表全网全量、官方验证或因果证明。"
+        />
+      </Card>
 
       <Row gutter={[16, 16]}>
         <Col span={6}>
@@ -143,13 +178,13 @@ export function PublicEventDetail({ onNavigate }) {
 
       <Row gutter={[16, 16]}>
         <Col span={13}>
-          <Card className="panel-card" title="Event timeline / 事件时间线">
+          <Card className="panel-card" title="事件发展脉络 / Development stages">
             <Timeline
-              items={event.timeline.map((item) => ({
+              items={event.timeline.map((item, index) => ({
                 color: item.tone === 'community' ? 'red' : item.tone === 'update' ? 'green' : 'blue',
                 children: (
                   <div>
-                    <Text strong>{item.title}</Text>
+                    <Text strong>{developmentStageLabels[index] || item.title}</Text>
                     <Paragraph>{item.description}</Paragraph>
                   </div>
                 ),
@@ -202,15 +237,26 @@ export function PublicEventDetail({ onNavigate }) {
       </section>
 
       <section>
-        <SectionTitle kicker="Discussion containers" title="EchoBox preview" />
+        <SectionTitle kicker="Discussion containers" title="主要讨论圈层 / EchoBox preview" />
+        <Card className="panel-card public-event-echo-helper-card">
+          <Paragraph>
+            EchoBox 指事件中相对集中的讨论容器，例如官方公告区、玩家社区、媒体解释区、梗化记忆区。下面的数值是基于当前 selected public sample 的本地展示，不代表全平台真实比例，也不是校准后的真实指标。
+          </Paragraph>
+        </Card>
         <Row gutter={[16, 16]}>
           {event.echo_boxes.map((box) => (
             <Col span={8} key={box.title}>
               <Card className="panel-card public-event-echo-card">
                 <Space direction="vertical" size={12}>
                   <Title level={4}>{box.title}</Title>
-                  <Progress percent={box.saturation} strokeColor="#42f5d7" trailColor="rgba(154,166,191,0.18)" />
-                  <Progress percent={box.breakout_risk} strokeColor="#f5c44b" trailColor="rgba(154,166,191,0.18)" />
+                  <div className="public-event-echo-metric">
+                    <Text>讨论圈层集中度</Text>
+                    <Progress percent={box.saturation} strokeColor="#42f5d7" trailColor="rgba(154,166,191,0.18)" />
+                  </div>
+                  <div className="public-event-echo-metric">
+                    <Text>扩散压力</Text>
+                    <Progress percent={box.breakout_risk} strokeColor="#f5c44b" trailColor="rgba(154,166,191,0.18)" />
+                  </div>
                   <Text type="secondary">{box.limitation}</Text>
                 </Space>
               </Card>
@@ -265,15 +311,15 @@ export function PublicEventDetail({ onNavigate }) {
           <Col span={16}>
             <Space direction="vertical" size={8}>
               <Tag color="cyan">Opinion Ecosystem Sandbox</Tag>
-              <Title level={3}>打开生态沙盒并切换到 Helldivers PSN sample</Title>
+              <Title level={3}>下一步：打开 Helldivers 生态沙盒</Title>
               <Paragraph>
-                沙盒用于视觉化解释 EchoBox、PeopleCluster、InfluenceCore 和回应节奏。它仍是本地前端样本，不执行真实平台动作。
+                沙盒用于视觉化解释 EchoBox、PeopleCluster、InfluenceCore 和回应节奏。打开后请选择 V2 ecology view 和 Helldivers PSN selected sample；它仍是本地前端样本，不执行真实平台动作。
               </Paragraph>
             </Space>
           </Col>
           <Col span={8} className="public-event-action-col">
             <Button type="primary" size="large" icon={<ArrowRight size={17} />} onClick={openSandbox}>
-              查看生态沙盒
+              查看 T0-T6 事件节奏
             </Button>
           </Col>
         </Row>
