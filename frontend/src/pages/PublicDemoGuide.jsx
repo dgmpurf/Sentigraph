@@ -23,7 +23,7 @@ const DEMO_STEPS = [
     key: 'plaza',
     title: 'Step 1：打开事件广场',
     buttonLabel: '打开事件广场',
-    targetHash: '#/public-events',
+    targetHash: '#/public-events?guided=1',
     description: '查看多个公共事件卡片。当前不是真实热榜，而是本地 demo 事件列表。',
   },
   {

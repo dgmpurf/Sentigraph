@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Checkbox, Col, Input, Row, Select, Space, Tag, Typography } from 'antd'
-import { Building2, CheckCircle2, ClipboardList, ShieldCheck, Vote } from 'lucide-react'
+import { ArrowLeft, Building2, CheckCircle2, ClipboardList, ShieldCheck, Vote } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { PUBLIC_EVENT_PLAZA_EVENTS } from '../data/publicEventSamples.js'
@@ -85,6 +85,10 @@ export function PublicEventRequest() {
   const [voteCounts, setVoteCounts] = useState(initialVoteCounts)
   const [localNote, setLocalNote] = useState('')
 
+  const goToHash = (hash) => {
+    window.location.hash = hash
+  }
+
   const updateForm = (field, value) => {
     setFormValues((current) => ({ ...current, [field]: value }))
   }
@@ -121,6 +125,7 @@ export function PublicEventRequest() {
     <div className="page-stack public-event-page public-request-page">
       <section className="public-request-hero">
         <div>
+          <div className="public-request-breadcrumb">公共事件广场 / Helldivers 事件 / 请求分析类似事件</div>
           <Space wrap>
             <Tag color="cyan">frontend-only mock</Tag>
             <Tag>no backend submission</Tag>
@@ -130,6 +135,14 @@ export function PublicEventRequest() {
           <Paragraph>
             你可以请求 Sentigraph 分析一个公共事件。当前不会提交到后端；请求/投票数量不代表自然舆情热度；赞助分析必须透明标注。
           </Paragraph>
+          <Space wrap>
+            <Button icon={<ArrowLeft size={16} />} onClick={() => goToHash('#/public-events?guided=1')}>
+              返回公共事件广场
+            </Button>
+            <Button icon={<ArrowLeft size={16} />} onClick={() => goToHash('#/public-events/helldivers-psn')}>
+              返回 Helldivers 事件页
+            </Button>
+          </Space>
         </div>
         <Alert
           type="info"
@@ -139,7 +152,7 @@ export function PublicEventRequest() {
         />
       </section>
 
-      {localNote ? <Alert type="success" showIcon message="Local mock note" description={localNote} closable onClose={() => setLocalNote('')} /> : null}
+      {localNote ? <Alert type="success" showIcon message="本地试玩状态" description={localNote} closable onClose={() => setLocalNote('')} /> : null}
 
       <Row gutter={[16, 16]}>
         <Col span={14}>

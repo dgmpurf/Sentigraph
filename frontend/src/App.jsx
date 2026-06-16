@@ -103,7 +103,7 @@ const OpinionEcosystemSandbox = lazyNamed(
 )
 
 function pageFromHash() {
-  const hash = window.location.hash
+  const hash = window.location.hash.split('?')[0]
   if (hash === '#/demo') return 'publicDemoGuide'
   if (hash === '#/public-events') return 'publicEventPlaza'
   if (hash === '#/public-events/request') return 'publicEventRequest'
@@ -115,6 +115,7 @@ function pageFromHash() {
 
 function App() {
   const [activePage, setActivePage] = useState(pageFromHash)
+  const [currentHash, setCurrentHash] = useState(window.location.hash)
   const [projectId, setProjectId] = useState(DEFAULT_PROJECT_ID)
   const [keyword, setKeyword] = useState('Tesla')
   const [expandedKeywords, setExpandedKeywords] = useState(null)
@@ -144,6 +145,8 @@ function App() {
   const [error, setError] = useState('')
   const hasLoadedProjectDataRef = useRef(false)
   const skipBootstrapData = STATIC_PUBLIC_PAGES.includes(activePage)
+  const isStaticPublicPage = STATIC_PUBLIC_PAGES.includes(activePage)
+  const isGuidedPublicEventFlow = currentHash.includes('guided=1')
 
   const platformOptions = useMemo(() => {
     const enabledPlatforms = platformRegistry.filter((platform) => platform.selectable_for_mock && platform.mock_available)
@@ -293,6 +296,7 @@ function App() {
 
   useEffect(() => {
     const handleHashChange = () => {
+      setCurrentHash(window.location.hash)
       const nextPage = pageFromHash()
       if (nextPage !== 'dashboard') {
         setActivePage(nextPage)
@@ -301,6 +305,11 @@ function App() {
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    document.querySelector('.app-content')?.scrollTo?.({ top: 0, left: 0, behavior: 'auto' })
+  }, [activePage, currentHash])
 
   useEffect(() => {
     if (skipBootstrapData) return undefined
@@ -672,6 +681,10 @@ function App() {
     loadProjectData(projectId)
   }, [activePage, currentCase, handleRunCase, loadProjectData, projectId])
 
+  const handleStaticPageRefresh = useCallback(() => {
+    window.location.reload()
+  }, [])
+
   const handleNavigate = useCallback((pageKey) => {
     const hashByPage = {
       publicDemoGuide: '#/demo',
@@ -784,7 +797,7 @@ function App() {
     searchDiscovery: <SearchDiscovery {...pageProps} />,
     externalCollectorBridge: <ExternalCollectorBridge />,
     publicDemoGuide: <PublicDemoGuide />,
-    publicEventPlaza: <PublicEventPlaza onNavigate={handleNavigate} />,
+    publicEventPlaza: <PublicEventPlaza guided={isGuidedPublicEventFlow} onNavigate={handleNavigate} />,
     publicEventDetail: <PublicEventDetail onNavigate={handleNavigate} />,
     publicEventRequest: <PublicEventRequest />,
     selectorRepair: <SelectorRepairTool />,
@@ -807,11 +820,12 @@ function App() {
           caseTitle={currentCase?.title}
           loading={loading}
           onNavigate={handleNavigate}
-          onRefresh={handleRefreshCurrent}
+          onRefresh={isStaticPublicPage ? handleStaticPageRefresh : handleRefreshCurrent}
           projectId={projectId}
           riskLevel={riskLevel}
           riskScore={riskScore}
           sourceStatus={sourceStatus}
+          isPublicDemoPage={isStaticPublicPage}
         >
           {showGlobalError ? <Alert className="app-alert" message={error} type="error" showIcon /> : null}
           <Spin spinning={loading}>

@@ -76,6 +76,21 @@ body {
   margin-bottom: 6px;
 }
 
+.app-menu .ant-menu-item-group-title {
+  height: auto;
+  padding: 14px 12px 6px;
+  color: #73809a;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.app-menu .ant-menu-item-group:not(:first-child) {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(154, 166, 191, 0.12);
+}
+
 .app-header {
   position: sticky;
   top: 0;
@@ -2295,6 +2310,14 @@ body {
   box-shadow: 0 0 28px rgba(66, 245, 215, 0.08);
 }
 
+.event-plaza-card.guided-highlight {
+  border-color: rgba(245, 196, 75, 0.58);
+  background:
+    radial-gradient(circle at 14% 10%, rgba(245, 196, 75, 0.13), transparent 30%),
+    rgba(17, 19, 26, 0.92);
+  box-shadow: 0 0 32px rgba(245, 196, 75, 0.12);
+}
+
 .event-plaza-card.mock-only {
   border-color: rgba(154, 166, 191, 0.16);
 }
@@ -2348,6 +2371,12 @@ body {
   min-height: 120px;
 }
 
+.event-plaza-guided-banner,
+.event-plaza-info-panel {
+  border-color: rgba(66, 245, 215, 0.28);
+  background: rgba(66, 245, 215, 0.06);
+}
+
 .public-request-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
@@ -2391,6 +2420,12 @@ body {
 .public-request-explainer-card p {
   color: #c9d4ea;
   line-height: 1.68;
+}
+
+.public-request-breadcrumb {
+  margin-bottom: 12px;
+  color: #9aa6bf;
+  font-size: 13px;
 }
 
 .public-request-form-grid {

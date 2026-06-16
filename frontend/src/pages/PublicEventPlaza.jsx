@@ -45,7 +45,8 @@ function MetricLine({ label, value, color }) {
   )
 }
 
-function EventCard({ event, onNavigate, onMockAction }) {
+function EventCard({ event, guided, onNavigate }) {
+  const isGuidedSample = guided && event.is_sample_available
   const handleClick = () => {
     if (event.route) {
       window.location.hash = event.route
@@ -54,17 +55,18 @@ function EventCard({ event, onNavigate, onMockAction }) {
     }
     window.location.hash = '#/public-events/request'
     onNavigate?.('publicEventRequest')
-    onMockAction(event)
   }
 
   return (
-    <Card className={`panel-card event-plaza-card ${event.is_sample_available ? 'sample-ready' : 'mock-only'}`}>
+    <Card className={`panel-card event-plaza-card ${event.is_sample_available ? 'sample-ready' : 'mock-only'} ${isGuidedSample ? 'guided-highlight' : ''}`}>
       <Space direction="vertical" size={12} className="full-width">
         <div className="event-plaza-card-header">
           <Space wrap>
             <Tag color="cyan">{event.event_type_label}</Tag>
             <Tag color={event.is_sample_available ? 'green' : 'default'}>{event.sample_label}</Tag>
             {event.is_sandbox_available ? <Tag color="geekblue">sandbox available</Tag> : null}
+            {isGuidedSample ? <Tag color="gold">推荐试玩样本</Tag> : null}
+            {isGuidedSample ? <Tag color="green">当前唯一完整体验样本</Tag> : null}
           </Space>
           <Text type="secondary">{event.event_id}</Text>
         </div>
@@ -102,24 +104,22 @@ function EventCard({ event, onNavigate, onMockAction }) {
           icon={event.route ? <ArrowRight size={16} /> : <Vote size={16} />}
           onClick={handleClick}
         >
-          {event.cta_label}
+          {isGuidedSample ? '继续试玩：查看 Helldivers 分析' : event.cta_label}
         </Button>
       </Space>
     </Card>
   )
 }
 
-export function PublicEventPlaza({ onNavigate }) {
-  const [mockNotice, setMockNotice] = useState('')
+export function PublicEventPlaza({ guided = false, onNavigate }) {
+  const [activeInfoPanel, setActiveInfoPanel] = useState('')
 
   const openRequestPage = () => {
     window.location.hash = '#/public-events/request'
     onNavigate?.('publicEventRequest')
   }
 
-  const handleMockAction = (event) => {
-    setMockNotice(`${event.title}：当前为 mock 入口，尚未提交到后端。请求/投票/赞助意向不代表自然舆情热度。`)
-  }
+  const closeInfoPanel = () => setActiveInfoPanel('')
 
   return (
     <div className="page-stack public-event-page event-plaza-page">
@@ -135,14 +135,14 @@ export function PublicEventPlaza({ onNavigate }) {
             看懂公共事件如何发酵、分裂、降温与破圈。当前为本地前端 mock / selected sample 展示，不代表全网全量，也不是自然热榜。
           </Paragraph>
           <Space wrap>
-            <Button type="primary" icon={<Sparkles size={16} />} onClick={() => setMockNotice('事件广场 v1 仅展示本地静态卡片，不提交任何后端请求。')}>
-              了解当前边界
+            <Button type="primary" icon={<Sparkles size={16} />} onClick={() => setActiveInfoPanel('boundary')}>
+              数据来源与限制
             </Button>
             <Button icon={<Vote size={16} />} onClick={openRequestPage}>
               请求分析一个事件
             </Button>
-            <Button icon={<Building2 size={16} />} onClick={() => setMockNotice('B端咨询入口当前为 mock。私有分析可在后续接入更深证据复核、保密语境和场景对比。')}>
-              B端咨询入口（mock）
+            <Button icon={<Building2 size={16} />} onClick={() => setActiveInfoPanel('private')}>
+              企业 / 团队私有分析咨询
             </Button>
           </Space>
         </div>
@@ -160,6 +160,16 @@ export function PublicEventPlaza({ onNavigate }) {
         </Card>
       </section>
 
+      {guided ? (
+        <Alert
+          className="event-plaza-guided-banner"
+          type="success"
+          showIcon
+          message="试玩引导：请选择 Helldivers 推荐样本"
+          description="你正在从 Demo 试玩页进入公共事件广场。建议点击标记为“推荐试玩样本 / 当前唯一完整体验样本”的 Helldivers 2 / PSN 账号绑定争议卡片，继续查看公开事件详情和生态沙盒。"
+        />
+      ) : null}
+
       <Card className="panel-card event-plaza-status-card" title="Status labels / 状态标签">
         <Row gutter={[12, 12]}>
           {STATUS_LABELS.map(([label, description]) => (
@@ -173,14 +183,26 @@ export function PublicEventPlaza({ onNavigate }) {
         </Row>
       </Card>
 
-      {mockNotice ? (
+      {activeInfoPanel === 'boundary' ? (
         <Alert
+          className="event-plaza-info-panel"
           type="info"
           showIcon
-          message="Mock action"
-          description={mockNotice}
+          message="数据来源与限制"
+          description="当前广场只展示本地 demo 事件和 selected public sample。它不是实时榜单，不进行全网搜索，不抓取 URL，不调用真实平台 API 或 LLM；只有明确标记为 selected public sample 的事件才有已整理样本。"
           closable
-          onClose={() => setMockNotice('')}
+          onClose={closeInfoPanel}
+        />
+      ) : null}
+      {activeInfoPanel === 'private' ? (
+        <Alert
+          className="event-plaza-info-panel"
+          type="info"
+          showIcon
+          message="企业 / 团队私有分析咨询"
+          description="当前只是前端入口演示，不提交信息。未来私有分析可面向品牌、MCN、创作者团队、公关团队或游戏社区运营，提供更深证据复核、保密语境、报告和场景对比，并且必须透明标注来源和关系。"
+          closable
+          onClose={closeInfoPanel}
         />
       ) : null}
 
@@ -192,7 +214,7 @@ export function PublicEventPlaza({ onNavigate }) {
         <Row gutter={[16, 16]}>
           {PUBLIC_EVENT_PLAZA_EVENTS.map((event) => (
             <Col span={event.is_sample_available ? 12 : 6} key={event.event_id}>
-              <EventCard event={event} onNavigate={onNavigate} onMockAction={handleMockAction} />
+              <EventCard event={event} guided={guided} onNavigate={onNavigate} />
             </Col>
           ))}
         </Row>
@@ -228,7 +250,7 @@ export function PublicEventPlaza({ onNavigate }) {
               品牌、MCN、创作者团队、游戏社区运营或公关团队可以申请私有分析。私有分析可包含更深证据复核、保密语境、更丰富报告和场景对比。
             </Paragraph>
             <Paragraph>当前按钮只是 C 端 v1 mock，不提交后端，也不触发任何外部服务。</Paragraph>
-            <Button onClick={() => handleMockAction(PUBLIC_EVENT_PLAZA_EVENTS[4])}>B端咨询（mock）</Button>
+            <Button onClick={() => setActiveInfoPanel('private')}>企业 / 团队私有分析咨询</Button>
           </Card>
         </Col>
       </Row>
