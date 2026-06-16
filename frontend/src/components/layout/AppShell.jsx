@@ -57,6 +57,7 @@ const navItems = [
       { key: 'propagation', label: 'Propagation Graph', icon: <Network size={17} /> },
       { key: 'risk', label: 'Risk Monitor', icon: <ShieldAlert size={17} /> },
       { key: 'summary', label: 'Summary Report', icon: <FileText size={17} /> },
+      { key: 'businessReportSample', label: 'B端报告样例', icon: <FileText size={17} /> },
       { key: 'demoFlow', label: 'Demo Flow / 演示流程', icon: <ClipboardList size={17} /> },
       {
         key: 'simulationLab',

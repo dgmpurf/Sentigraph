@@ -2325,6 +2325,121 @@ body {
   background: rgba(66, 245, 215, 0.06);
 }
 
+.business-report-page {
+  color: #f4f7fb;
+}
+
+.business-report-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.business-report-hero > div,
+.business-report-hero-card,
+.business-report-summary-card,
+.business-report-stat-card,
+.business-report-coverage-card,
+.business-report-ecosystem-card,
+.business-report-timeline-card,
+.business-report-tempo-card,
+.business-report-risk-card,
+.business-report-actions-card,
+.business-report-export-card,
+.business-report-next-card {
+  border-color: rgba(66, 245, 215, 0.2);
+  background:
+    radial-gradient(circle at 16% 18%, rgba(66, 245, 215, 0.1), transparent 34%),
+    rgba(17, 19, 26, 0.88);
+}
+
+.business-report-hero > div {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 28px;
+  border: 1px solid rgba(66, 245, 215, 0.2);
+  border-radius: 8px;
+}
+
+.business-report-hero h1 {
+  margin: 14px 0 12px;
+  font-size: 40px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.business-report-hero p,
+.business-report-hero-card p,
+.business-report-summary-card p,
+.business-report-stat-card p,
+.business-report-coverage-card p,
+.business-report-ecosystem-card p,
+.business-report-timeline-card p,
+.business-report-tempo-card p,
+.business-report-risk-card p,
+.business-report-actions-card p,
+.business-report-export-card p,
+.business-report-next-card p {
+  color: #c9d4ea;
+  line-height: 1.68;
+}
+
+.business-report-section-title {
+  display: flex;
+  margin-bottom: 14px;
+  align-items: end;
+  justify-content: space-between;
+}
+
+.business-report-section-title h3 {
+  margin: 0;
+}
+
+.business-report-summary-line,
+.business-report-timeline-item {
+  padding: 12px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.32);
+}
+
+.business-report-stat-card {
+  min-height: 160px;
+}
+
+.business-report-stat-card h2 {
+  margin: 6px 0;
+  color: #42f5d7;
+  font-size: 34px;
+  line-height: 1.08;
+}
+
+.business-report-coverage-card {
+  margin-top: 16px;
+}
+
+.business-report-ecosystem-card,
+.business-report-tempo-card,
+.business-report-risk-card {
+  min-height: 160px;
+}
+
+.business-report-risk-card svg {
+  color: #f5c44b;
+}
+
+.business-report-timeline-card .ant-alert,
+.business-report-section-alert {
+  margin-bottom: 14px;
+}
+
+.business-report-export-card .ant-progress {
+  margin-top: 10px;
+}
+
 .event-plaza-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
@@ -2899,7 +3014,8 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .public-event-hero {
+  .public-event-hero,
+  .business-report-hero {
     grid-template-columns: 1fr;
   }
 

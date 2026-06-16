@@ -68,6 +68,11 @@ export function PublicEventDetail({ onNavigate }) {
     onNavigate?.('publicEventRequest')
   }
 
+  const openBusinessReport = () => {
+    window.location.hash = '#/reports/helldivers-psn-sample'
+    onNavigate?.('businessReportSample')
+  }
+
   return (
     <div className="page-stack public-event-page">
       <section className="public-event-hero">
@@ -93,6 +98,9 @@ export function PublicEventDetail({ onNavigate }) {
             </Button>
             <Button size="large" icon={<ShieldCheck size={17} />} onClick={openRequest}>
               {event.ctas.bEndInquiry}
+            </Button>
+            <Button size="large" icon={<FileCheck2 size={17} />} onClick={openBusinessReport}>
+              查看 B端报告样例
             </Button>
           </Space>
         </div>
@@ -359,7 +367,7 @@ export function PublicEventDetail({ onNavigate }) {
             <Paragraph>
               如果你是品牌、MCN、创作者团队、游戏社区运营或公关团队，可以申请私有分析。私有分析可包含更深证据复核、保密语境、丰富报告和场景对比。
             </Paragraph>
-            <Button>申请私有分析（mock）</Button>
+            <Button onClick={openBusinessReport}>查看 B端报告样例</Button>
           </Card>
         </Col>
       </Row>

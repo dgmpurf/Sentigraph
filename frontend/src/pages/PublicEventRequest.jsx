@@ -379,7 +379,10 @@ export function PublicEventRequest() {
             <Paragraph>
               适合品牌、公关、MCN、创作者、游戏社区、IP 运营或团队内部复盘。B 端私有分析可包含证据复核、样本覆盖说明、Opinion Ecosystem 摘要、风险点、回应节奏、报告导出和保密语境。
             </Paragraph>
-            <Button onClick={openBEndPanel}>查看私有分析说明</Button>
+            <Space wrap>
+              <Button onClick={openBEndPanel}>查看私有分析说明</Button>
+              <Button onClick={() => goToHash('#/reports/helldivers-psn-sample')}>查看报告样例</Button>
+            </Space>
           </Card>
         </Col>
       </Row>

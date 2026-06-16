@@ -5,6 +5,7 @@ import {
   Compass,
   Database,
   ExternalLink,
+  FileText,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -75,6 +76,13 @@ const DEMO_STEPS = [
     buttonLabel: '查看私有分析说明',
     targetHash: '#/public-events/request',
     description: '当前只是入口演示，不提交信息、不创建私有 case。优先分析或商业分析必须透明标注。',
+  },
+  {
+    key: 'bEndReport',
+    title: 'Step 9：查看 B端报告样例',
+    buttonLabel: '查看 B端报告样例',
+    targetHash: '#/reports/helldivers-psn-sample',
+    description: '查看同一个 Helldivers selected public sample 如何被组织成专业报告样例。它不是生产级报告、官方验证或因果证明。',
   },
 ]
 
@@ -392,6 +400,9 @@ export function PublicDemoGuide() {
             <Paragraph>
               如果未来出现赞助分析或商业分析入口，必须透明标注来源与关系，不能和自然讨论热度混合展示。
             </Paragraph>
+            <Button icon={<FileText size={16} />} onClick={() => openEvent('#/reports/helldivers-psn-sample')}>
+              查看 B端报告样例
+            </Button>
           </Card>
         </Col>
       </Row>

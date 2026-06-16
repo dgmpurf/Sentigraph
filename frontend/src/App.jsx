@@ -65,7 +65,14 @@ const FALLBACK_PLATFORM_OPTIONS = [
   { label: 'Douban', value: 'douban' },
   { label: 'Toutiao', value: 'toutiao' },
 ]
-const STATIC_PUBLIC_PAGES = ['opinionEcosystem', 'publicDemoGuide', 'publicEventPlaza', 'publicEventDetail', 'publicEventRequest']
+const STATIC_PUBLIC_PAGES = [
+  'businessReportSample',
+  'opinionEcosystem',
+  'publicDemoGuide',
+  'publicEventPlaza',
+  'publicEventDetail',
+  'publicEventRequest',
+]
 
 function lazyNamed(importer, exportName) {
   return lazy(() => importer().then((module) => ({ default: module[exportName] })))
@@ -93,6 +100,7 @@ const PublicDemoGuide = lazyNamed(() => import('./pages/PublicDemoGuide.jsx'), '
 const PublicEventPlaza = lazyNamed(() => import('./pages/PublicEventPlaza.jsx'), 'PublicEventPlaza')
 const PublicEventDetail = lazyNamed(() => import('./pages/PublicEventDetail.jsx'), 'PublicEventDetail')
 const PublicEventRequest = lazyNamed(() => import('./pages/PublicEventRequest.jsx'), 'PublicEventRequest')
+const BusinessReportSample = lazyNamed(() => import('./pages/BusinessReportSample.jsx'), 'BusinessReportSample')
 const SelectorRepairTool = lazyNamed(() => import('./pages/SelectorRepairTool.jsx'), 'SelectorRepairTool')
 const LlmAdminStatus = lazyNamed(() => import('./pages/LlmAdminStatus.jsx'), 'LlmAdminStatus')
 const BenchmarkDashboard = lazyNamed(() => import('./pages/BenchmarkDashboard.jsx'), 'BenchmarkDashboard')
@@ -108,6 +116,7 @@ function pageFromHash() {
   if (hash === '#/public-events') return 'publicEventPlaza'
   if (hash === '#/public-events/request') return 'publicEventRequest'
   if (hash === '#/public-events/helldivers-psn') return 'publicEventDetail'
+  if (hash === '#/reports/helldivers-psn-sample') return 'businessReportSample'
   if (hash === '#/opinion-ecosystem') return 'opinionEcosystem'
   if (hash === '#/external-collector') return 'externalCollectorBridge'
   return 'dashboard'
@@ -691,6 +700,7 @@ function App() {
       publicEventPlaza: '#/public-events',
       publicEventRequest: '#/public-events/request',
       publicEventDetail: '#/public-events/helldivers-psn',
+      businessReportSample: '#/reports/helldivers-psn-sample',
       opinionEcosystem: '#/opinion-ecosystem',
       externalCollectorBridge: '#/external-collector',
     }
@@ -800,6 +810,7 @@ function App() {
     publicEventPlaza: <PublicEventPlaza guided={isGuidedPublicEventFlow} onNavigate={handleNavigate} />,
     publicEventDetail: <PublicEventDetail onNavigate={handleNavigate} />,
     publicEventRequest: <PublicEventRequest />,
+    businessReportSample: <BusinessReportSample />,
     selectorRepair: <SelectorRepairTool />,
     llmSafety: <LlmAdminStatus />,
     benchmarks: <BenchmarkDashboard />,
