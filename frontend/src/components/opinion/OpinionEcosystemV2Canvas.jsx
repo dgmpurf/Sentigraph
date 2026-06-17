@@ -3,6 +3,7 @@ import { Activity, Boxes, CircleDot, Clock3, Compass, RadioTower, Sparkles } fro
 import { useEffect, useMemo, useRef } from 'react'
 
 import { BOX_HEIGHT, BOX_WIDTH, campStateToVisual, scoreToPercent } from '../../data/opinionEcosystemMock.js'
+import { DONGLU_SUNJIHAI_TIMELINE_PRESETS } from '../../data/dongluSunjihaiTimelinePresets.js'
 import { HELLDIVERS_TIMELINE_PRESETS } from '../../data/helldivers2PsnTimelinePresets.js'
 
 const { Paragraph, Text } = Typography
@@ -163,6 +164,7 @@ function getTimelinePresetForScenario(scenarioView, timelinePresets = DEFAULT_TI
     const exact = timelinePresets.find((preset) => preset.phase_id === activeTimelinePhaseId)
     if (exact) return exact
   }
+  if (scenarioView.historicalTimelinePreset) return scenarioView.historicalTimelinePreset
   if (scenarioView.helldiversTimelinePreset) return scenarioView.helldiversTimelinePreset
   return (
     timelinePresets.find((preset) => preset.scenario_keys?.includes(scenarioView.scenarioKey)) ||
@@ -173,7 +175,8 @@ function getTimelinePresetForScenario(scenarioView, timelinePresets = DEFAULT_TI
 
 function getScenarioVisual(scenarioView) {
   const base = SCENARIO_VISUALS[scenarioView.scenarioKey] || SCENARIO_VISUALS.natural
-  const effects = scenarioView.helldiversTimelinePreset?.visual_effects
+  const activePreset = scenarioView.historicalTimelinePreset || scenarioView.helldiversTimelinePreset
+  const effects = activePreset?.visual_effects
   if (!effects) return base
   return {
     ...base,
@@ -191,7 +194,7 @@ function getScenarioVisual(scenarioView) {
       third_party: Math.max(base.coreBoost.third_party || 0, effects.explanation_core_strength || 0),
       deconstruction: Math.max(base.coreBoost.deconstruction || 0, effects.deconstruction_core_strength || 0),
     },
-    label: scenarioView.helldiversTimelinePreset.public_copy_zh || base.label,
+    label: activePreset.public_copy_zh || base.label,
   }
 }
 
@@ -689,7 +692,12 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
     }
   }, [])
 
-  const timelinePresets = scenarioView.mappingStatus?.mode === 'helldivers_psn_sample' ? HELLDIVERS_TIMELINE_PRESETS : DEFAULT_TIMELINE_PRESETS
+  const timelinePresets =
+    scenarioView.mappingStatus?.mode === 'helldivers_psn_sample'
+      ? HELLDIVERS_TIMELINE_PRESETS
+      : scenarioView.mappingStatus?.mode === 'donglu_sunjihai_sample'
+        ? DONGLU_SUNJIHAI_TIMELINE_PRESETS
+        : DEFAULT_TIMELINE_PRESETS
   const activeTimeline = useMemo(
     () => getTimelinePresetForScenario(scenarioView, timelinePresets, scenarioView.timelinePhaseId),
     [scenarioView, timelinePresets],
@@ -752,7 +760,7 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
       </Row>
 
       <Row gutter={[16, 16]}>
-        {scenarioView.helldiversTimelinePreset && (
+        {(scenarioView.historicalTimelinePreset || scenarioView.helldiversTimelinePreset) && (
           <Col span={24}>
             <Card className="panel-card ecosystem-v2-helldivers-note">
               <Space direction="vertical" size={8}>
@@ -762,17 +770,30 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
                   <Tag>{activeTimeline.label_en}</Tag>
                 </Space>
                 <Paragraph>
-                  T0-T6 是 Helldivers 事件的本地 historical replay 阶段。上方场景按钮表示当前阶段对应的回应状态 / 解释场景；两者会联动展示，但当前不是实时未来预测。
+                  T0-T6 是当前样本的本地 historical replay 阶段。上方场景按钮表示当前阶段对应的回应状态 / 解释场景；两者会联动展示，但当前不是未来预测、不是完整历史重建，也不是因果证明。
                 </Paragraph>
-                <Paragraph>{scenarioView.helldiversTimelinePreset.short_explanation_zh}</Paragraph>
+                <Paragraph>{activeTimeline.short_explanation_zh}</Paragraph>
                 <Space wrap>
-                  <Tag>34 evidence items</Tag>
-                  <Tag>7 sources</Tag>
-                  <Tag>28 comment samples</Tag>
-                  <Tag>6 roots</Tag>
+                  {scenarioView.mappingStatus?.sampleStats ? (
+                    <>
+                      <Tag>{scenarioView.mappingStatus.sampleStats.evidence} evidence items</Tag>
+                      <Tag>{scenarioView.mappingStatus.sampleStats.sources} sources</Tag>
+                      <Tag>{scenarioView.mappingStatus.sampleStats.comments} comment samples</Tag>
+                      <Tag>{scenarioView.mappingStatus.sampleStats.roots} roots</Tag>
+                    </>
+                  ) : (
+                    <>
+                      <Tag>34 evidence items</Tag>
+                      <Tag>7 sources</Tag>
+                      <Tag>28 comment samples</Tag>
+                      <Tag>6 roots</Tag>
+                    </>
+                  )}
                   <Tag>not full-web</Tag>
+                  <Tag>not full-platform</Tag>
                   <Tag>not official verification</Tag>
                   <Tag>not causal proof</Tag>
+                  <Tag>no real platform action</Tag>
                 </Space>
               </Space>
             </Card>

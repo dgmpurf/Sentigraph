@@ -57,12 +57,12 @@ function SectionTitle({ kicker, title }) {
 
 export function PublicEventDetail({ onNavigate }) {
   const event = PUBLIC_EVENT_DETAILS_BY_HASH[window.location.hash.split('?')[0]] || HELLDIVERS_PUBLIC_EVENT
-  const hasSandbox = event.event_id === 'helldivers2_psn_demo'
+  const hasSandbox = event.event_id === 'helldivers2_psn_demo' || Boolean(event.sandbox_route)
   const hasBusinessReport = event.event_id === 'helldivers2_psn_demo'
 
   const openSandbox = () => {
     if (!hasSandbox) return
-    window.location.hash = '#/opinion-ecosystem'
+    window.location.hash = event.sandbox_route || '#/opinion-ecosystem'
     onNavigate?.('opinionEcosystem')
   }
 
@@ -106,7 +106,7 @@ export function PublicEventDetail({ onNavigate }) {
               返回事件广场
             </Button>
             <Button type="primary" size="large" icon={<Boxes size={17} />} onClick={openSandbox} disabled={!hasSandbox}>
-              下一步：打开 Helldivers 生态沙盒
+              {event.ctas.sandbox}
             </Button>
             <Button size="large" icon={<Vote size={17} />} onClick={openRequest}>
               {event.ctas.requestSimilar}
@@ -423,15 +423,15 @@ export function PublicEventDetail({ onNavigate }) {
           <Col span={16}>
             <Space direction="vertical" size={8}>
               <Tag color="cyan">Opinion Ecosystem Sandbox</Tag>
-              <Title level={3}>下一步：打开 Helldivers 生态沙盒</Title>
+              <Title level={3}>{event.ctas.sandbox}</Title>
               <Paragraph>
-                沙盒用于视觉化解释 EchoBox、PeopleCluster、InfluenceCore 和回应节奏。打开后请选择 V2 ecology view 和 Helldivers PSN selected sample；它仍是本地前端样本，不执行真实平台动作。
+                沙盒用于视觉化解释 EchoBox、PeopleCluster、InfluenceCore 和回应节奏。打开后请选择 V2 ecology view 和对应样本；它仍是本地前端样本，不执行真实平台动作。
               </Paragraph>
             </Space>
           </Col>
           <Col span={8} className="public-event-action-col">
             <Button type="primary" size="large" icon={<ArrowRight size={17} />} onClick={openSandbox} disabled={!hasSandbox}>
-              查看 T0-T6 事件节奏
+              查看 T0-T6 本地历史复盘
             </Button>
           </Col>
         </Row>

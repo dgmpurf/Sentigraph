@@ -54,6 +54,9 @@ const ROOT_EVIDENCE_TYPES = [
   'third_party_explanation',
   'meme',
   'community_discussion',
+  'creator_post',
+  'creator_video',
+  'forum_thread',
   'media_article',
   'community_meme',
 ]
@@ -85,9 +88,25 @@ function textOf(evidence) {
   return [evidence.title, evidence.body_text, evidence.comment_text].filter(Boolean).join(' ')
 }
 
+function hintOf(evidence, field) {
+  return String(evidence[field] || '').toLowerCase()
+}
+
 function classifyStance(evidence) {
-  const stanceHint = String(evidence.stance_hint || '').toLowerCase()
-  const campHint = String(evidence.camp_state_hint || '').toLowerCase()
+  const stanceHint = hintOf(evidence, 'stance_hint')
+  const campHint = hintOf(evidence, 'camp_state_hint')
+  const topicHint = hintOf(evidence, 'topic_hint')
+  const peopleClusterHint = hintOf(evidence, 'people_cluster_hint')
+  if (stanceHint === 'support_donglu_view') return 0.38
+  if (stanceHint === 'support_sunjihai_view') return -0.38
+  if (stanceHint === 'extreme_attack_or_trolling') return -0.72
+  if (stanceHint === 'anti_conflict_fatigue' || peopleClusterHint === 'anti_conflict_fatigue') return 0
+  if (
+    ['neutral_process_focused', 'youth_training_concern', 'media_context', 'unknown'].includes(stanceHint) ||
+    ['media_reframing', 'children_protection_boundary', 'platform_discussion'].includes(topicHint)
+  ) {
+    return 0.04
+  }
   if (['opposed', 'oppose', 'opposition', 'against', 'critical'].includes(stanceHint)) {
     return campHint === 'mobilizing' ? -0.72 : -0.46
   }
@@ -110,17 +129,18 @@ function classifyStance(evidence) {
 
 function coreIdForEvidence(evidence) {
   if (evidence.evidence_type === 'official_statement') return 'official'
-  if (['third_party_explanation', 'media_article', 'article'].includes(evidence.evidence_type)) return 'third_party'
-  if (['meme', 'community_meme'].includes(evidence.evidence_type)) return 'deconstruction'
-  if (['post', 'community_discussion'].includes(evidence.evidence_type)) return 'neutral_analysis'
+  if (['third_party_explanation', 'media_article', 'article', 'creator_video'].includes(evidence.evidence_type)) return 'third_party'
+  if (['meme', 'community_meme', 'forum_thread'].includes(evidence.evidence_type)) return 'deconstruction'
+  if (['post', 'community_discussion', 'creator_post'].includes(evidence.evidence_type)) return 'neutral_analysis'
   return 'opposition'
 }
 
 function coreTypeForEvidence(evidence) {
   if (evidence.evidence_type === 'official_statement') return 'official_statement'
   if (['third_party_explanation', 'media_article', 'article'].includes(evidence.evidence_type)) return 'media_article'
+  if (evidence.evidence_type === 'creator_video') return 'creator_video'
   if (['meme', 'community_meme'].includes(evidence.evidence_type)) return 'community_meme'
-  if (['post', 'community_discussion'].includes(evidence.evidence_type)) return 'forum_thread'
+  if (['post', 'community_discussion', 'forum_thread', 'creator_post'].includes(evidence.evidence_type)) return 'forum_thread'
   return 'creator_video'
 }
 
@@ -401,9 +421,35 @@ export function buildCampDynamics(echoBoxes, influenceCores, peopleClusters) {
 }
 
 export function buildDeconstructionCores(evidenceItems, influenceCores) {
-  const meme = activeEvidence(evidenceItems).find((item) => ['meme', 'community_meme'].includes(item.evidence_type))
+  const meme = activeEvidence(evidenceItems).find((item) =>
+    ['meme', 'community_meme', 'forum_thread', 'creator_post', 'community_discussion'].includes(item.evidence_type)
+    || ['community_deconstruction', 'media_reframing', 'platform_discussion'].includes(hintOf(item, 'topic_hint'))
+  )
   const deconstructionInfluence = influenceCores.find((core) => core.core_id === 'deconstruction')
-  if (!meme) return []
+  if (!meme) {
+    return [
+      {
+        core_id: 'deconstruction',
+        label: 'Local deconstruction candidate',
+        deconstruction_type: 'local_reframe',
+        target_core_id: 'opposition',
+        threat_deflation: 0.12,
+        humor_acceptance: 0.18,
+        face_saving_score: 0.22,
+        neutralization_power: clamp01((deconstructionInfluence?.bridge_power || 0.28) * 0.42),
+        conversion_power: 0.08,
+        withdrawal_power: 0.14,
+        ridicule_persistence: 0.08,
+        meme_replicability: 0.1,
+        community_co_creation: 0.16,
+        backlash_risk: 0.12,
+        long_term_stigma_risk: 0.14,
+        deconstruction_fit_score: 0.18,
+        confidence: 0.36,
+        parameter_source: PARAMETER_SOURCE,
+      },
+    ]
+  }
   const confidence = computeEvidenceConfidence(meme)
   return [
     {

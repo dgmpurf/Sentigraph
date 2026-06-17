@@ -169,7 +169,7 @@ export const DONGLU_SUNJIHAI_PUBLIC_EVENT = {
     '一个围绕中国足球青训路线、公众表达、平台讨论和社区分歧的受控候选公开样本详情页。',
   event_type: 'sports_public_opinion_route_controversy',
   event_type_label: '体育 / 青训争议',
-  status: ['sample_available', 'candidate_demo_sample', 'review_needed'],
+  status: ['sample_available', 'candidate_demo_sample', 'review_needed', 'sandbox_available'],
   sample_summary: {
     evidence_items: dongluSunjihaiYouthFootballSampleSummary.evidence_items,
     sources: dongluSunjihaiYouthFootballSampleSummary.sources,
@@ -279,10 +279,11 @@ export const DONGLU_SUNJIHAI_PUBLIC_EVENT = {
     note: 'ReputationMemory 需要更长时间窗和更严格来源复核；本页不作因果证明。',
   },
   ctas: {
-    sandbox: 'Sandbox preset pending',
+    sandbox: '查看本地历史复盘沙盒',
     requestSimilar: '请求补充分析类似事件',
     bEndInquiry: 'B端咨询 / 私有分析',
   },
+  sandbox_route: '#/opinion-ecosystem?sample=donglu-sunjihai-youth-football',
 }
 
 export const PUBLIC_EVENT_PLAZA_EVENTS = [
@@ -323,10 +324,10 @@ export const PUBLIC_EVENT_PLAZA_EVENTS = [
     subtitle: '围绕中国足球青训路线分歧的中文受控候选公开样本。',
     event_type: 'sports_public_opinion_route_controversy',
     event_type_label: '体育 / 青训争议',
-    status: ['sample_available', 'candidate_demo_sample', 'review_needed'],
+    status: ['sample_available', 'candidate_demo_sample', 'review_needed', 'sandbox_available'],
     sample_label: 'controlled candidate sample',
     is_sample_available: true,
-    is_sandbox_available: false,
+    is_sandbox_available: true,
     guided_recommended: false,
     is_user_requested: false,
     is_sponsored: false,
@@ -346,7 +347,7 @@ export const PUBLIC_EVENT_PLAZA_EVENTS = [
     user_request_state_mock: 'candidate_sample_available',
     sponsored_state: 'none',
     queue_label: '受控候选公开样本',
-    request_note: '已有本地候选样本摘要；Sandbox 时间线和 B 端报告尚未生成。',
+    request_note: '已有本地候选样本摘要和 Sandbox V2 historical replay；B 端报告尚未生成。',
     request_cta_label: '查看候选样本详情',
     vote_cta_label: '支持后续复核 / mock',
   },

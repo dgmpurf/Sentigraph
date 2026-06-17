@@ -4,6 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { OpinionEcosystemV2Canvas } from '../components/opinion/OpinionEcosystemV2Canvas.jsx'
 import {
+  dongluSunjihaiYouthFootballEvidenceItems,
+  dongluSunjihaiYouthFootballSampleManifest,
+  dongluSunjihaiYouthFootballSampleSummary,
+} from '../data/dongluSunjihaiYouthFootballEvidenceFixture.js'
+import {
+  DONGLU_SUNJIHAI_PHASE_TO_SCENARIO_KEY,
+  DONGLU_SUNJIHAI_SCENARIO_TO_PHASE_ID,
+  applyDongluSunjihaiTimelinePresetToScenario,
+} from '../data/dongluSunjihaiTimelinePresets.js'
+import {
   helldivers2PsnEvidenceItems,
   helldivers2PsnSampleManifest,
   helldivers2PsnSampleSummary,
@@ -40,6 +50,7 @@ const DATA_SOURCE_OPTIONS = [
   { label: 'Mock schema mode', value: 'mock_schema' },
   { label: 'Evidence fixture mapping mode', value: 'evidence_fixture' },
   { label: 'Helldivers PSN sample', value: 'helldivers_psn_sample' },
+  { label: 'Dong/Sun youth football sample', value: 'donglu_sunjihai_sample' },
 ]
 
 const VIEW_MODE_OPTIONS = [
@@ -51,6 +62,31 @@ const VALIDATION_STATUS_COLOR = {
   pass: 'green',
   warn: 'gold',
   fail: 'red',
+}
+
+function initialDataSourceModeFromHash() {
+  const query = window.location.hash.split('?')[1] || ''
+  const params = new URLSearchParams(query)
+  const sample = params.get('sample')
+  if (sample === 'donglu-sunjihai-youth-football') return 'donglu_sunjihai_sample'
+  if (sample === 'helldivers-psn') return 'helldivers_psn_sample'
+  return 'helldivers_psn_sample'
+}
+
+function phaseIdForMode(mode, scenarioKey) {
+  if (mode === 'donglu_sunjihai_sample') {
+    return DONGLU_SUNJIHAI_SCENARIO_TO_PHASE_ID[scenarioKey] || 't1'
+  }
+  if (mode === 'helldivers_psn_sample') {
+    return HELLDIVERS_SCENARIO_TO_PHASE_ID[scenarioKey] || 't1'
+  }
+  return null
+}
+
+function scenarioKeyForPhase(mode, phaseId) {
+  if (mode === 'donglu_sunjihai_sample') return DONGLU_SUNJIHAI_PHASE_TO_SCENARIO_KEY[phaseId]
+  if (mode === 'helldivers_psn_sample') return HELLDIVERS_PHASE_TO_SCENARIO_KEY[phaseId]
+  return null
 }
 
 function createBaseModel(dataSourceMode) {
@@ -71,6 +107,33 @@ function createBaseModel(dataSourceMode) {
           'Not official verification, not causal proof, not production data.',
           'PeopleCluster dots represent anonymized evidence clusters, not real individual people.',
           'InfluenceCore represents concepts / content / media / official or memetic cores, not population groups.',
+        ],
+      },
+    }
+  }
+  if (dataSourceMode === 'donglu_sunjihai_sample') {
+    const mapped = mapEvidenceToOpinionEcosystem(dongluSunjihaiYouthFootballEvidenceItems)
+    return {
+      ...mapped,
+      mappingStatus: {
+        mode: 'donglu_sunjihai_sample',
+        label: 'Dong/Sun youth football sample mode',
+        sampleLabel: 'Dong Lu / Sun Jihai youth football controlled candidate sample',
+        sampleStats: {
+          evidence: dongluSunjihaiYouthFootballSampleSummary.evidence_items,
+          sources: dongluSunjihaiYouthFootballSampleSummary.sources,
+          comments: dongluSunjihaiYouthFootballSampleSummary.comment_samples,
+          roots: dongluSunjihaiYouthFootballSampleSummary.root_candidates,
+        },
+        notes: [
+          'Frontend-local fixture mode generated from a controlled Sentigraph Evidence Export v1 candidate sample.',
+          'No backend API call, no runtime package file fetch, no collector job, no platform action.',
+          'Selected public sample only; not full-web, not full-platform, not full-thread coverage.',
+          'All evidence remains review_needed and source_url_provided_unverified until future human review.',
+          'Not official verification, not causal proof, not a judgment of who is right or wrong.',
+          'PeopleCluster dots represent anonymized discussion clusters, not real individual people.',
+          'InfluenceCore represents content / narrative / media / forum cores, not population groups.',
+          'Extreme-expression clusters describe aggregate discussion behavior, not individual accusation.',
         ],
       },
     }
@@ -99,6 +162,15 @@ function createScenarioView(baseModel, scenarioKey, peopleClusters, dataSourceMo
       ...applyHelldiversTimelinePresetToScenario(
         scenario,
         timelinePhaseId || HELLDIVERS_SCENARIO_TO_PHASE_ID[scenarioKey] || 't1',
+      ),
+      peopleClusters,
+    }
+  }
+  if (dataSourceMode === 'donglu_sunjihai_sample') {
+    return {
+      ...applyDongluSunjihaiTimelinePresetToScenario(
+        scenario,
+        timelinePhaseId || DONGLU_SUNJIHAI_SCENARIO_TO_PHASE_ID[scenarioKey] || 't1',
       ),
       peopleClusters,
     }
@@ -267,6 +339,43 @@ function HelldiversSampleStatusCard() {
   )
 }
 
+function DongluSunjihaiSampleStatusCard() {
+  return (
+    <Card className="panel-card">
+      <Space direction="vertical" size={8}>
+        <Space wrap>
+          <Tag color="purple">Dong Lu / Sun Jihai youth football sample</Tag>
+          <Tag color="default">{dongluSunjihaiYouthFootballSampleManifest.case_id}</Tag>
+          <Tag color="gold">candidate_demo_sample</Tag>
+          <Tag color="default">frontend-local fixture</Tag>
+        </Space>
+        <Paragraph>
+          {dongluSunjihaiYouthFootballSampleSummary.evidence_items} evidence items /{' '}
+          {dongluSunjihaiYouthFootballSampleSummary.sources} sources /{' '}
+          {dongluSunjihaiYouthFootballSampleSummary.comment_samples} comment samples /{' '}
+          {dongluSunjihaiYouthFootballSampleSummary.root_candidates} roots / InfluenceCore candidates.
+        </Paragraph>
+        <Space wrap>
+          <Tag>controlled public sample</Tag>
+          <Tag>review_needed</Tag>
+          <Tag>source_url_provided_unverified</Tag>
+          <Tag>not full-web coverage</Tag>
+          <Tag>not full-platform coverage</Tag>
+          <Tag>not full-thread coverage</Tag>
+          <Tag>not official verification</Tag>
+          <Tag>not causal proof</Tag>
+          <Tag>not a judgment of who is right or wrong</Tag>
+        </Space>
+        <Paragraph type="secondary">
+          Local historical replay preset only. It does not predict the future, reconstruct the full history, execute platform
+          actions, call a backend, fetch source URLs, or expose minors, families, raw author identifiers, cookies, tokens, or
+          sessions.
+        </Paragraph>
+      </Space>
+    </Card>
+  )
+}
+
 function ClassicViewLegend() {
   const items = [
     ['大框体', '当前事件舆论生态场；在 Helldivers 模式下仅代表 selected public sample 下的讨论空间。'],
@@ -294,17 +403,18 @@ function ClassicViewLegend() {
 }
 
 export function OpinionEcosystemSandbox() {
+  const initialDataSourceMode = useMemo(() => initialDataSourceModeFromHash(), [])
   const canvasRef = useRef(null)
   const baseModelRef = useRef(null)
   const peopleClustersRef = useRef(null)
   const scenarioRef = useRef(null)
   const frameRef = useRef(null)
   const tickRef = useRef(0)
-  const [dataSourceMode, setDataSourceMode] = useState('helldivers_psn_sample')
+  const [dataSourceMode, setDataSourceMode] = useState(initialDataSourceMode)
   const [scenarioKey, setScenarioKey] = useState('natural')
   const [viewMode, setViewMode] = useState('ecology_v2')
   const [playing, setPlaying] = useState(true)
-  const [timelinePhaseId, setTimelinePhaseId] = useState(HELLDIVERS_SCENARIO_TO_PHASE_ID.natural)
+  const [timelinePhaseId, setTimelinePhaseId] = useState(() => phaseIdForMode(initialDataSourceMode, 'natural'))
 
   if (!baseModelRef.current) {
     baseModelRef.current = createBaseModel(dataSourceMode)
@@ -349,25 +459,24 @@ export function OpinionEcosystemSandbox() {
 
   const handleScenarioChange = useCallback((nextScenarioKey) => {
     setScenarioKey(nextScenarioKey)
-    if (dataSourceMode === 'helldivers_psn_sample') {
-      setTimelinePhaseId(HELLDIVERS_SCENARIO_TO_PHASE_ID[nextScenarioKey] || 't1')
+    const nextPhaseId = phaseIdForMode(dataSourceMode, nextScenarioKey)
+    if (nextPhaseId) {
+      setTimelinePhaseId(nextPhaseId)
     }
   }, [dataSourceMode])
 
   const handleDataSourceModeChange = useCallback((nextMode) => {
     setDataSourceMode(nextMode)
-    if (nextMode === 'helldivers_psn_sample') {
-      setTimelinePhaseId(HELLDIVERS_SCENARIO_TO_PHASE_ID[scenarioKey] || 't1')
-    }
+    setTimelinePhaseId(phaseIdForMode(nextMode, scenarioKey))
   }, [scenarioKey])
 
   const handleTimelinePhaseChange = useCallback((nextPhaseId) => {
     setTimelinePhaseId(nextPhaseId)
-    const mappedScenarioKey = HELLDIVERS_PHASE_TO_SCENARIO_KEY[nextPhaseId]
+    const mappedScenarioKey = scenarioKeyForPhase(dataSourceMode, nextPhaseId)
     if (mappedScenarioKey) {
       setScenarioKey(mappedScenarioKey)
     }
-  }, [])
+  }, [dataSourceMode])
 
   const drawCurrentFrame = useCallback(() => {
     const canvas = canvasRef.current
@@ -422,7 +531,7 @@ export function OpinionEcosystemSandbox() {
     setViewMode('ecology_v2')
     setDataSourceMode('helldivers_psn_sample')
     setScenarioKey('natural')
-    setTimelinePhaseId(HELLDIVERS_SCENARIO_TO_PHASE_ID.natural)
+    setTimelinePhaseId(phaseIdForMode('helldivers_psn_sample', 'natural'))
   }, [])
 
   const distributionItems = useMemo(() => {
@@ -453,6 +562,8 @@ export function OpinionEcosystemSandbox() {
           ? SYNTHETIC_EVIDENCE_ITEMS
           : dataSourceMode === 'helldivers_psn_sample'
             ? helldivers2PsnEvidenceItems
+            : dataSourceMode === 'donglu_sunjihai_sample'
+              ? dongluSunjihaiYouthFootballEvidenceItems
             : [],
       ),
     [dataSourceMode, scenarioView],
@@ -574,6 +685,7 @@ export function OpinionEcosystemSandbox() {
       )}
 
       {dataSourceMode === 'helldivers_psn_sample' && <HelldiversSampleStatusCard />}
+      {dataSourceMode === 'donglu_sunjihai_sample' && <DongluSunjihaiSampleStatusCard />}
 
       <Card
         className="panel-card"
