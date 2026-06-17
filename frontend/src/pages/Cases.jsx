@@ -56,6 +56,32 @@ function formatDate(value) {
   return date.toLocaleString()
 }
 
+function inferCaseTypeTags(record = {}) {
+  const haystack = [
+    record.title,
+    record.keyword,
+    record.case_id,
+    ...(Array.isArray(record.platforms) ? record.platforms : []),
+    record.raw_data_status,
+    record.analysis_result?.analysis_input_source,
+  ].filter(Boolean).join(' ').toLowerCase()
+  const tags = []
+  if (haystack.includes('helldivers')) tags.push({ key: 'selected_public_sample', color: 'cyan', label: 'selected_public_sample' })
+  if (haystack.includes('youtube') || haystack.includes('official_api_public') || haystack.includes('case_raw_data')) {
+    tags.push({ key: 'real_api_optional', color: 'red', label: 'real_api_optional' })
+  }
+  if (haystack.includes('smoke')) tags.push({ key: 'smoke_test', color: 'purple', label: 'smoke_test' })
+  if (haystack.includes('qa')) tags.push({ key: 'qa_case', color: 'geekblue', label: 'qa_case' })
+  if (haystack.includes('audit')) tags.push({ key: 'audit_case', color: 'gold', label: 'audit_case' })
+  if (haystack.includes('upload') || haystack.includes('uploaded_dataset') || haystack.includes('case_evidence_items')) {
+    tags.push({ key: 'uploaded_dataset', color: 'lime', label: 'uploaded_dataset' })
+  }
+  if (haystack.includes('mock') || haystack.includes('fallback') || !tags.length) {
+    tags.push({ key: 'mock_case', color: 'default', label: tags.length ? 'mock_case' : 'unknown_demo_case' })
+  }
+  return tags
+}
+
 function buildEvidenceSummary(items = []) {
   const sourceDistribution = {}
   const typeCounts = {}
@@ -1258,6 +1284,11 @@ export function Cases({
         <Space direction="vertical" size={2}>
           <Text strong>{value || record.case_id}</Text>
           <Text type="secondary">{record.case_id}</Text>
+          <Space size={[4, 4]} wrap>
+            {inferCaseTypeTags(record).map((tag) => (
+              <Tag color={tag.color} key={tag.key}>{tag.label}</Tag>
+            ))}
+          </Space>
         </Space>
       ),
     },
@@ -1365,7 +1396,7 @@ export function Cases({
 
       <Alert
         message="案例列表风险口径"
-        description="Cases 列表中的风险值通常是 case 的基础分析风险或最近保存的 case summary，不代表 Risk Monitor 的最新监控风险或预测风险。Monitor 检查不会自动重写 Analysis Result、Cases 或 Summary Report。"
+        description="当前列表包含本地 demo、mock、smoke、audit 和 QA 示例案例，用于验证分析链路和报告展示，不等同于真实客户案例或真实平台数据。风险值通常是 case 的基础分析风险或最近保存的 case summary，不代表 Risk Monitor 的最新监控风险或预测风险。"
         showIcon
         type="info"
       />

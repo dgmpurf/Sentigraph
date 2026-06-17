@@ -108,15 +108,23 @@ export function BusinessReportSample() {
         <div>
           <Space wrap>
             <Tag color="cyan">selected public sample</Tag>
+            <Tag color="gold">fixed sample report</Tag>
+            <Tag color="purple">not dynamic report generator</Tag>
             <Tag>local demo</Tag>
             <Tag>not full-web</Tag>
             <Tag>not official verification</Tag>
             <Tag>not causal proof</Tag>
           </Space>
           <Title level={1}>B端报告样例：Helldivers 2 / PSN 账号绑定争议</Title>
-          <Paragraph>
-            面向品牌、公关、MCN、创作者、游戏社区或团队内部复盘的专业报告样例。页面展示报告表达方式和分析框架，不代表生产级交付或完整验证。
-          </Paragraph>
+            <Paragraph>
+              面向品牌、公关、MCN、创作者、游戏社区或团队内部复盘的专业报告样例。页面展示报告表达方式和分析框架，不代表生产级交付或完整验证。
+            </Paragraph>
+            <Alert
+              type="info"
+              showIcon
+              message="固定 B 端报告样例"
+              description="这是基于 Helldivers selected public sample 制作的固定 B 端报告样例，用于展示未来专业报告形态；当前不是通用报告生成系统，也不会根据其他 case 自动切换。"
+            />
           <Space wrap>
             <Button type="primary" icon={<Boxes size={17} />} onClick={() => goToHash('#/opinion-ecosystem')}>
               打开生态沙盒

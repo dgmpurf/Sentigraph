@@ -44,6 +44,13 @@ export function PropagationGraph({ error, loading, propagation, visualization })
     return (
       <Card className="panel-card">
         {error ? <Alert message="Propagation graph failed to load" description={error} type="error" showIcon /> : null}
+        <Alert
+          message="Mock propagation graph boundary"
+          description="当前为离线 mock 传播结构图，用于演示节点、边和传播结构读法；不代表真实 Reddit / Weibo 数据，也不代表真实跨平台因果传播链。"
+          showIcon
+          type="info"
+          style={{ marginBottom: 16 }}
+        />
         {loading ? (
           <Skeleton active paragraph={{ rows: 8 }} title />
         ) : (
@@ -60,38 +67,46 @@ export function PropagationGraph({ error, loading, propagation, visualization })
     <div className="page-stack">
       <div className="page-heading">
         <div>
-          <Title level={2}>Propagation Graph</Title>
-          <Text>Track core nodes, cross-platform spread, and reply paths.</Text>
+          <Title level={2}>Mock Propagation Graph / 模拟传播结构图</Title>
+          <Text>Read mock nodes, mock reply/spread relations, and sample propagation structure without claiming causal proof.</Text>
         </div>
         <Space direction="vertical" align="end" size={8}>
           <Tag color="cyan">{nodes.length} nodes</Tag>
           <Tag color="geekblue">{sourceLabel}</Tag>
+          <Tag color="orange">mock platform labels</Tag>
         </Space>
       </div>
+
+      <Alert
+        message="传播图边界"
+        description="当前为离线 mock 传播图。平台名如 reddit / weibo 是 mock platform label；边表示 mock reply / spread relation 或样例传播关系，不代表因果证明、真实跨平台链路或实时速度。"
+        showIcon
+        type="info"
+      />
 
       <Row gutter={[16, 16]}>
         <Col span={6}>
           <Card className="metric-card">
             <Statistic title="Depth" value={metrics?.depth || 0} prefix={<Route size={18} />} />
-            <Text>Observed reply levels</Text>
+            <Text>观察到的 mock 回复层级</Text>
           </Card>
         </Col>
         <Col span={6}>
           <Card className="metric-card">
             <Statistic title="Breadth" value={metrics?.breadth || nodes.length} prefix={<Share2 size={18} />} />
-            <Text>Visible spread width</Text>
+            <Text>mock 扩散宽度</Text>
           </Card>
         </Col>
         <Col span={6}>
           <Card className="metric-card">
             <Statistic title="Speed" value={formatPercent(metrics?.propagation_speed)} prefix={<RadioTower size={18} />} />
-            <Text>Mock propagation velocity</Text>
+            <Text>mock propagation velocity，不是实时速度</Text>
           </Card>
         </Col>
         <Col span={6}>
           <Card className="metric-card">
             <Statistic title="Relations" value={edges.length} prefix={<GitBranch size={18} />} />
-            <Text>Reply or spread links</Text>
+            <Text>当前图中的 mock relation 数量</Text>
           </Card>
         </Col>
       </Row>
@@ -136,6 +151,7 @@ export function PropagationGraph({ error, loading, propagation, visualization })
                         <Text strong>{node.node_id}</Text>
                         <Tag>{node.type || 'node'}</Tag>
                         <Tag color="cyan">{node.platform}</Tag>
+                        <Tag color="orange">mock platform label</Tag>
                         <Tag color={sentimentTone(node.sentiment_score)}>
                           sentiment {formatSentiment(node.sentiment_score)}
                         </Tag>
@@ -192,6 +208,9 @@ export function PropagationGraph({ error, loading, propagation, visualization })
               <Title level={4}>Edge Details</Title>
               <Tag>{edges.length} links</Tag>
             </div>
+            <Text type="secondary">
+              Edges are mock reply / spread relations in the current graph. They are not causal proof.
+            </Text>
             <List
               dataSource={edges}
               locale={{ emptyText: 'No graph edges' }}

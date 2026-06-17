@@ -37,8 +37,8 @@ const PLATFORM_GROUPS = [
   },
   {
     key: 'crawler_later',
-    title: 'Crawler-later platforms',
-    description: 'Future crawler integration',
+    title: 'Reviewed public parser future platforms',
+    description: 'Future public-page parsing only after policy and parser review. Not active in this mock builder.',
     color: 'gold',
     filter: (platform) => platform.category === 'crawler_later',
   },
@@ -115,7 +115,7 @@ function PlatformRoadmap({ platformRegistry }) {
       <div className="panel-heading">
         <div>
           <Title level={4}>Data Sources / Platform Status</Title>
-          <Text type="secondary">Selection is mock-first. No real crawler or third-party API call is triggered.</Text>
+          <Text type="secondary">Selection is mock-first. No live provider, URL fetching, or third-party API call is triggered.</Text>
         </div>
       </div>
       <div className="platform-status-summary">
@@ -357,10 +357,17 @@ export function KeywordSearch({
     <div className="page-stack">
       <div className="page-heading">
         <div>
-          <Title level={2}>Keyword Search</Title>
-          <Text>Start a mock monitoring project with selected public platforms.</Text>
+          <Title level={2}>Keyword Search / Mock Case Builder</Title>
+          <Text>创建本地 mock 分析案例；这里不是 C-end 搜索，也不是真实全网搜索。</Text>
         </div>
       </div>
+
+      <Alert
+        message="本页不会进行真实全网搜索"
+        description="此页面用于创建本地 mock 分析案例，不抓取 URL，不调用真实平台 API，不刷新近期真实平台数据。平台选择仅用于 mock case 配置；Douyin / Bilibili / Weibo / Reddit 等不代表当前已真实接入。"
+        showIcon
+        type="info"
+      />
 
       <Card className="panel-card form-panel">
         <Form
@@ -380,7 +387,12 @@ export function KeywordSearch({
             >
               <Input size="large" placeholder="Tesla, product name, public figure..." />
             </Form.Item>
-            <Form.Item label="Platforms" name="platforms" rules={[{ required: true }]}>
+            <Form.Item
+              label="Platforms"
+              name="platforms"
+              rules={[{ required: true }]}
+              help="平台选择仅用于 mock case 配置；平台名是 mock platform label，除 YouTube optional real-data flow 外不代表真实 provider。"
+            >
               <Select
                 mode="multiple"
                 size="large"
@@ -406,7 +418,7 @@ export function KeywordSearch({
             </Form.Item>
           </div>
           <Button type="primary" htmlType="submit" icon={<Search size={17} />} loading={loading} size="large">
-            Create Case & Run Mock Analysis
+            创建本地 mock case 并运行 mock analysis
           </Button>
         </Form>
       </Card>

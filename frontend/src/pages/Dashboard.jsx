@@ -90,6 +90,10 @@ export function Dashboard({ alerts = [], analysis, currentCase, error, keyword, 
   const headingSourceLabel = sourceStatus.isCaseRawData
     ? 'offline deterministic analysis from attached case raw data'
     : 'mock pipeline visualization'
+  const currentCaseName = currentCase?.title || currentCase?.case_id || 'Tesla mock case / default mock project'
+  const dashboardCasePurpose = sourceStatus.isCaseRawData
+    ? 'offline deterministic case visualization'
+    : 'mock pipeline visualization'
   const botSignalCopy = sourceStatus.isCaseRawData
     ? 'Repeated-script impact from attached public comment signals.'
     : 'Repeated-script impact from mock behavior signals.'
@@ -143,6 +147,35 @@ export function Dashboard({ alerts = [], analysis, currentCase, error, keyword, 
         showIcon
         type="info"
       />
+
+      <Card className="panel-card">
+        <Space direction="vertical" className="full-width" size={10}>
+          <div className="panel-heading">
+            <div>
+              <Title level={4}>当前 case / source context</Title>
+              <Text type="secondary">
+                Dashboard follows the currently loaded professional case context. It does not automatically switch to the C-end Helldivers public event page.
+              </Text>
+            </div>
+            <Space wrap>
+              <Tag color={sourceStatus.dataTagColor}>{sourceStatus.dataLabel}</Tag>
+              <Tag color="green">{sourceStatus.analysisLabel}</Tag>
+              <Tag color="purple">{sourceStatus.llmLabel}</Tag>
+            </Space>
+          </div>
+          <Space size={[8, 8]} wrap>
+            <Tag color="cyan">当前展示：{currentCaseName}</Tag>
+            <Tag color="geekblue">用途：{dashboardCasePurpose}</Tag>
+            <Tag color="orange">不是 Helldivers selected public sample，除非当前 case 明确如此标记</Tag>
+            <Tag color="default">no live provider</Tag>
+            <Tag color="default">not full-web coverage</Tag>
+            <Tag color="default">no recent live data refresh</Tag>
+          </Space>
+          <Text type="secondary">
+            Platform names in charts are demo labels unless the page explicitly says the source is real optional official API data.
+          </Text>
+        </Space>
+      </Card>
 
       <Row gutter={[16, 16]}>
         <Col span={6}>

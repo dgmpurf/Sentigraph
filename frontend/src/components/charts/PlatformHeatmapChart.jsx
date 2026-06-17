@@ -54,9 +54,12 @@ export function PlatformHeatmapChart({ data = [] }) {
   }
 
   return (
-    <ChartFrame title="Platform Heatmap" description="Conversation intensity by hour" empty={!data.length}>
+    <ChartFrame
+      title="Platform Heatmap"
+      description="Mock/offline case discussion intensity by platform/time; platform names are demo labels unless real source is explicitly enabled."
+      empty={!data.length}
+    >
       <ReactECharts option={option} className="chart-surface" notMerge />
     </ChartFrame>
   )
 }
-
