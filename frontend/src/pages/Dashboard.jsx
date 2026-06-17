@@ -98,6 +98,13 @@ export function Dashboard({ alerts = [], analysis, currentCase, error, keyword, 
     return (
       <Card className="panel-card">
         {error ? <Alert message="Dashboard data failed to load" description={error} type="error" showIcon /> : null}
+        <Alert
+          message="风险口径说明"
+          description="Dashboard 展示 demo / mock / selected case summary；不是实时全网监控。基础分析风险、当前监控风险和预测风险来自不同阶段，监控检查不会自动改写 Dashboard。"
+          showIcon
+          type="info"
+          style={{ marginBottom: 16 }}
+        />
         {loading ? (
           <Skeleton active paragraph={{ rows: 8 }} title />
         ) : (
@@ -124,12 +131,25 @@ export function Dashboard({ alerts = [], analysis, currentCase, error, keyword, 
         </Space>
       </div>
 
+      <Alert
+        message="风险口径说明"
+        description={
+          <Space direction="vertical" size={2}>
+            <Text>Dashboard 当前展示的是 demo / mock / selected case summary，不是实时全网监控。</Text>
+            <Text>顶部风险为基础分析风险或 demo risk score；Risk Monitor 的当前监控风险和预测风险来自本地 mock 检查 / deterministic forecast，不会自动改写 Dashboard。</Text>
+            <Text>如果当前样例来自 Tesla mock case，它不是 Helldivers selected public sample，也不是实时平台刷新。</Text>
+          </Space>
+        }
+        showIcon
+        type="info"
+      />
+
       <Row gutter={[16, 16]}>
         <Col span={6}>
           <Card className={`metric-card risk-card risk-${riskLevel}`}>
             <Space align="start" className="metric-heading">
               <AlertTriangle size={20} />
-              <Text>综合风险分</Text>
+              <Text>基础分析风险 / Demo risk score</Text>
             </Space>
             <Statistic value={riskScore} suffix="/100" valueStyle={{ color: '#ff5d8f' }} />
             <Progress percent={riskScore} showInfo={false} strokeColor="#ff5d8f" trailColor="#283043" />

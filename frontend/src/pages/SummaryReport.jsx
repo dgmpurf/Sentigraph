@@ -126,6 +126,12 @@ export function SummaryReport({
       </div>
 
       {error ? <Alert message="报告数据加载失败" description={error} type="error" showIcon /> : null}
+      <Alert
+        message="报告风险 / 基础分析风险"
+        description="当前 Summary Report 基于生成时的基础分析结果。Risk Monitor 的本地监控 / 预测结果不会自动写入本报告，除非未来重新生成报告。"
+        showIcon
+        type="info"
+      />
       {evidenceReviewNeeded ? (
         <Alert
           message="证据可信度提示"
@@ -147,7 +153,7 @@ export function SummaryReport({
         <Col span={6}>
           <Card className={`metric-card risk-level-card risk-${report.riskLevel}`}>
             <ShieldAlert size={20} />
-            <Statistic title="风险分数" value={scoreText(overallRisk)} suffix="/100" />
+            <Statistic title="报告风险 / 基础分析风险" value={scoreText(overallRisk)} suffix="/100" />
             <Tag color={riskTone(report.riskLevel)}>{report.riskLevelLabel}</Tag>
             <Text type="secondary">{report.riskLevel}</Text>
           </Card>

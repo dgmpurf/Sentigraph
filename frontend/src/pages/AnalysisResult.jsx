@@ -264,6 +264,13 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
     return (
       <Card className="panel-card">
         {error ? <Alert message="分析结果加载失败" description={error} type="error" showIcon /> : null}
+        <Alert
+          message="基础分析风险 / Base analysis risk"
+          description="Analysis Result 的风险来自当前分析结果；不会自动等同于 Risk Monitor 的最新监控风险或预测风险。analysis_input_source 会标明分析来自 case_raw_data、case_evidence_items 或 mock_data_fallback。"
+          showIcon
+          type="info"
+          style={{ marginBottom: 16 }}
+        />
         {loading ? (
           <Skeleton active paragraph={{ rows: 6 }} title />
         ) : (
@@ -292,6 +299,18 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
           <Tag color={riskTone(riskLevel)}>{report.riskLevelLabel}</Tag>
         </div>
       </div>
+
+      <Alert
+        message="基础分析风险 / Base analysis risk"
+        description={
+          <Space direction="vertical" size={2}>
+            <Text>该风险来自当前 Analysis Result，不会自动等同于 Risk Monitor 的最新监控风险或预测风险。</Text>
+            <Text>analysis_input_source 表示本次分析来自 case_raw_data、case_evidence_items 或 mock_data_fallback；当前计算仍为离线 deterministic pipeline。</Text>
+          </Space>
+        }
+        showIcon
+        type="info"
+      />
 
       <Row gutter={[16, 16]}>
         {evidenceSummary.count ? (
@@ -358,7 +377,7 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
           <Card className="panel-card risk-readout-card">
             <Space className="metric-heading">
               <AlertTriangle size={20} />
-              <Text>当前风险</Text>
+              <Text>基础分析风险 / Base analysis risk</Text>
             </Space>
             <Title level={1}>{scoreText(riskScore)}</Title>
             <Space wrap>

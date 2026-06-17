@@ -1,4 +1,4 @@
-import { App as AntApp, Button, Card, Col, Empty, List, Progress, Row, Space, Tag, Typography } from 'antd'
+import { Alert, App as AntApp, Button, Card, Col, Empty, List, Progress, Row, Space, Tag, Typography } from 'antd'
 import {
   AlertTriangle,
   Bot,
@@ -138,6 +138,7 @@ export function PublicOpinionReport({ report }) {
         </div>
         <div className={`report-risk-badge risk-${report.riskLevel}`}>
           <span>{scoreText(overallRisk)}</span>
+          <Text type="secondary">报告风险 / 基础分析风险</Text>
           <Tag color={riskTone(report.riskLevel)}>{report.riskLevelLabel}</Tag>
           <Text type="secondary">{report.riskLevel}</Text>
         </div>
@@ -153,7 +154,7 @@ export function PublicOpinionReport({ report }) {
           <Text strong>{report.reportLanguage}</Text>
         </div>
         <div>
-          <Text type="secondary">风险分数</Text>
+          <Text type="secondary">报告风险 / 基础分析风险</Text>
           <Text strong>{scoreText(overallRisk)}/100</Text>
         </div>
         <div>
@@ -176,6 +177,13 @@ export function PublicOpinionReport({ report }) {
           <Text strong>{scoreText(report.manipulationRisk ?? 0)}/100</Text>
         </div>
       </div>
+
+      <Alert
+        message="报告风险口径"
+        description="本报告展示生成时的基础分析风险。Risk Monitor 的本地监控风险和 deterministic forecast 不会自动写入本报告，除非未来显式重新生成。"
+        showIcon
+        type="info"
+      />
 
       {report.evidenceReviewNeededCount || report.evidenceReviewExcludedCount || report.evidenceDuplicateItemCount ? (
         <section className="report-section">

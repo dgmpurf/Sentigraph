@@ -1279,7 +1279,7 @@ export function Cases({
       ),
     },
     {
-      title: '风险',
+      title: '基础分析风险',
       key: 'risk',
       width: 150,
       render: (_, record) => (
@@ -1362,6 +1362,13 @@ export function Cases({
       </div>
 
       {error ? <Alert message="案例数据加载失败" description={error} type="error" showIcon /> : null}
+
+      <Alert
+        message="案例列表风险口径"
+        description="Cases 列表中的风险值通常是 case 的基础分析风险或最近保存的 case summary，不代表 Risk Monitor 的最新监控风险或预测风险。Monitor 检查不会自动重写 Analysis Result、Cases 或 Summary Report。"
+        showIcon
+        type="info"
+      />
 
       {currentCase ? (
         <Card className="panel-card">

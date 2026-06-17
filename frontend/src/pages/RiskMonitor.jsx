@@ -56,9 +56,9 @@ const alertTones = {
 }
 
 const scheduleStatusLabels = {
-  disabled: '监控已暂停',
-  scheduled: '监控已启用',
-  due: '监控已到期',
+  disabled: '本地监控演示已暂停',
+  scheduled: '本地监控演示已启用',
+  due: '本地 mock 检查已到期',
 }
 
 const scheduleStatusTones = {
@@ -429,12 +429,12 @@ function ForecastPanel({ forecast, loading = false, onRunForecast }) {
       <div className="panel-heading">
         <Space>
           <TrendingUp size={18} />
-          <Title level={4}>风险预测</Title>
+          <Title level={4}>预测风险 / Forecast risk</Title>
         </Space>
         <Space wrap>
           <Tag color="cyan">Deterministic MVP</Tag>
           <Button icon={<TrendingUp size={15} />} loading={loading} onClick={onRunForecast}>
-            运行风险预测
+            运行本地 deterministic forecast
           </Button>
         </Space>
       </div>
@@ -457,6 +457,12 @@ function ForecastPanel({ forecast, loading = false, onRunForecast }) {
         </Space>
       ) : (
         <Space direction="vertical" size={18} className="full-width">
+          <Alert
+            message="Deterministic/local forecast"
+            description="当前预测基于本地 mock / offline snapshot / deterministic MVP 规则，不代表真实未来必然发生；置信度和样本来源仍需后续模型校准。"
+            showIcon
+            type="info"
+          />
           <div className="forecast-metric-grid">
             <div className="forecast-metric-tile">
               <Text type="secondary">预测风险</Text>
@@ -636,6 +642,13 @@ export function RiskMonitor({
     return (
       <Card className="panel-card">
         {error ? <Alert message="风险监控数据加载失败" description={error} type="error" showIcon /> : null}
+        <Alert
+          message="风险口径：基础分析风险 / 当前监控风险 / 预测风险"
+          description="Risk Monitor 只展示本地 mock 监控检查和 deterministic/local forecast；不会启动真实后台调度、不会抓取近期真实数据、不会调用真实平台 API，也不会自动改写 Analysis Result、Cases 或 Summary Report。"
+          showIcon
+          type="info"
+          style={{ marginBottom: 16 }}
+        />
         {loading ? (
           <Skeleton active paragraph={{ rows: 8 }} title />
         ) : (
@@ -661,10 +674,10 @@ export function RiskMonitor({
             onClick={onRunMonitoringCheck}
             type="primary"
           >
-            Run Mock Monitoring Check
+            手动运行本地 mock 检查
           </Button>
           <Button icon={<TrendingUp size={16} />} loading={forecastLoading} onClick={onRunForecast}>
-            运行风险预测
+            运行本地 deterministic forecast
           </Button>
           <Tag color={riskTone(riskLevel)} className="large-tag">
             {riskLevelLabels[riskLevel] || riskLevel}
@@ -672,6 +685,19 @@ export function RiskMonitor({
           <Tag color="geekblue">{riskModelVersion}</Tag>
         </Space>
       </div>
+
+      <Alert
+        message="风险口径：基础分析风险 / 当前监控风险 / 预测风险"
+        description={
+          <Space direction="vertical" size={2}>
+            <Text>基础分析风险来自 Analysis Result；当前监控风险来自最近一次本地 mock 监控检查；预测风险来自 deterministic/local forecast。</Text>
+            <Text>这些分数可能不同。监控检查不会自动改写 Analysis Result、Cases 或 Summary Report，除非未来显式重新生成。</Text>
+            <Text>当前不会启动真实后台调度，不会抓取近期真实数据，不会调用真实平台 API；“上次检查时间”表示本地 mock 检查时间。</Text>
+          </Space>
+        }
+        showIcon
+        type="info"
+      />
 
       <Row gutter={[16, 16]}>
         <Col span={24}>
@@ -715,19 +741,25 @@ export function RiskMonitor({
                 onClick={onEnableMonitoring}
                 type="primary"
               >
-                启用监控
+                启用本地监控演示
               </Button>
               <Button
                 disabled={!currentCase?.case_id || !scheduleConfig.enabled}
                 loading={schedulerLoading}
                 onClick={onDisableMonitoring}
               >
-                暂停监控
+                暂停本地监控演示
               </Button>
               <Button loading={schedulerLoading} onClick={onRunDueMonitoringJobs}>
-                运行到期监控任务
+                手动运行到期 mock 检查
               </Button>
             </Space>
+            <Alert
+              message="后台调度未运行"
+              description="系统不会自动定时检查；当前只能手动运行本地 mock 检查。运行后生成的快照和通知均为本地/offline 演示状态。"
+              showIcon
+              type="warning"
+            />
           </Card>
         </Col>
 
@@ -735,13 +767,18 @@ export function RiskMonitor({
           <Card className={`panel-card risk-monitor-hero risk-${riskLevel}`}>
             <Space className="metric-heading">
               <AlertTriangle size={20} />
-              <Text>监控状态</Text>
+              <Text>当前监控风险 / Monitor current risk</Text>
             </Space>
             <Statistic value={scoreText(riskScore)} suffix="/100" valueStyle={{ color: '#ff5d8f' }} />
             <Progress percent={scorePercent(riskScore)} showInfo={false} strokeColor="#ff5d8f" trailColor="#283043" />
             <Text type="secondary">
               {currentCase?.title || '默认 mock 项目'} · {riskLevelLabels[riskLevel] || riskLevel}
             </Text>
+            {monitoringStatus?.message ? (
+              <Text type="secondary">
+                已手动运行本地 mock 检查；未调用真实平台 API，未抓取近期真实数据。
+              </Text>
+            ) : null}
           </Card>
         </Col>
         <Col span={6}>
