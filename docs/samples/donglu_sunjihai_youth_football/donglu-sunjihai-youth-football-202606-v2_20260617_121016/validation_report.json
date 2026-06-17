@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-06-17T12:10:27.934Z",
+  "exportDir": "exports\\sentigraph-evidence-v1\\donglu-sunjihai-youth-football-202606-v2_20260617_121016",
+  "status": "passed",
+  "case_relevance": {
+    "status": "passed",
+    "matchRate": 1,
+    "unrelatedItemCount": 0,
+    "seedUrlMatchCount": 35,
+    "skippedSources": [
+      {
+        "id": "skipped_live_collection_all_platforms",
+        "source_url": "local://safety-gate/live-collection-skipped",
+        "platform": "multi_platform",
+        "reason": "live_collection_not_attempted; offline_local_snapshot_mode_used_for_safety",
+        "status": null
+      },
+      {
+        "id": "skipped_private_or_restricted_content",
+        "source_url": "local://safety-gate/private-restricted-content",
+        "platform": "multi_platform",
+        "reason": "private_or_restricted_content_not_collected",
+        "status": null
+      }
+    ],
+    "errors": [],
+    "warnings": [
+      {
+        "severity": "warning",
+        "code": "CASE_SKIPPED_SOURCES",
+        "message": "2 seed source(s) were skipped and recorded",
+        "detail": {}
+      }
+    ]
+  },
+  "case_relevance_status": "passed",
+  "case_relevance_match_rate": 1,
+  "unrelated_item_count": 0,
+  "seed_url_match_count": 35,
+  "skipped_sources": [
+    {
+      "id": "skipped_live_collection_all_platforms",
+      "source_url": "local://safety-gate/live-collection-skipped",
+      "platform": "multi_platform",
+      "reason": "live_collection_not_attempted; offline_local_snapshot_mode_used_for_safety",
+      "status": null
+    },
+    {
+      "id": "skipped_private_or_restricted_content",
+      "source_url": "local://safety-gate/private-restricted-content",
+      "platform": "multi_platform",
+      "reason": "private_or_restricted_content_not_collected",
+      "status": null
+    }
+  ],
+  "summary": {
+    "evidenceItems": 581,
+    "sourceRows": 37,
+    "collectionLogRows": 10,
+    "errors": 0,
+    "warnings": 1
+  },
+  "errors": [],
+  "warnings": [
+    {
+      "severity": "warning",
+      "code": "CASE_SKIPPED_SOURCES",
+      "message": "2 seed source(s) were skipped and recorded",
+      "detail": {}
+    }
+  ]
+}
