@@ -14,6 +14,13 @@ SAMPLE_PACKAGE = (
     / "helldivers2_psn_demo"
     / "helldivers2-psn-demo_20260614_055754"
 )
+DONG_LU_SUN_JIHAI_PACKAGE = (
+    REPO_ROOT
+    / "docs"
+    / "samples"
+    / "donglu_sunjihai_youth_football"
+    / "donglu-sunjihai-youth-football-202606-v2_20260617_121016"
+)
 
 
 def load_generator():
@@ -119,6 +126,49 @@ def test_generator_strips_raw_identity_fields_from_tiny_package(tmp_path: Path) 
     assert "raw id must not leak" not in output
     assert "profile/raw" not in output
     assert "comment_user_name" not in output
+    assert "author_name" not in output
+    assert "author_id" not in output
+    assert "profile_url" not in output
+
+
+def test_generator_writes_donglu_sunjihai_fixture_with_boundaries(tmp_path: Path) -> None:
+    generator = load_generator()
+    out_file = tmp_path / "dongluSunjihaiYouthFootballEvidenceFixture.js"
+
+    summary = generator.generate_fixture(
+        DONG_LU_SUN_JIHAI_PACKAGE,
+        out_file,
+        export_prefix="dongluSunjihaiYouthFootball",
+        label="Dong Lu / Sun Jihai youth football controlled candidate sample",
+    )
+
+    output = out_file.read_text(encoding="utf-8")
+    assert summary["evidence_items"] == 581
+    assert summary["sources"] == 37
+    assert summary["comment_samples"] == 546
+    assert summary["root_candidates"] == 35
+    assert summary["influence_core_candidates"] == 35
+    assert summary["platform_distribution"]["weibo"] == 170
+    assert summary["platform_distribution"]["bilibili"] == 133
+    assert summary["evidence_type_distribution"]["comment"] == 546
+    assert summary["trust_label_distribution"]["medium_low"] == 546
+    assert summary["review_status_distribution"]["review_needed"] == 581
+    assert summary["verification_status_distribution"]["source_url_provided_unverified"] == 581
+    assert "export const dongluSunjihaiYouthFootballSampleMetadata" in output
+    assert "export const dongluSunjihaiYouthFootballSampleManifest" in output
+    assert "export const dongluSunjihaiYouthFootballEvidenceItems" in output
+    assert "export const dongluSunjihaiYouthFootballSampleSummary" in output
+    assert "candidate_demo_sample" in output
+    assert "not production data" in output
+    assert "not full-web coverage" in output
+    assert "not full-platform coverage" in output
+    assert "not full-thread coverage" in output
+    assert "not official verification" in output
+    assert "not causal proof" in output
+    assert "not a judgment of who is right or wrong" in output
+    assert "minors, families, and sensitive personal details are not exposed" in output
+    assert "raw_author_id" not in output
+    assert "raw_author_name" not in output
     assert "author_name" not in output
     assert "author_id" not in output
     assert "profile_url" not in output
