@@ -15,6 +15,8 @@ const STATUS_COLORS = {
   pending_analysis: 'orange',
   b_end_sample_preview: 'purple',
   private_demo_only: 'magenta',
+  candidate_demo_sample: 'cyan',
+  review_needed: 'gold',
 }
 
 const STATUS_LABELS = [
@@ -46,11 +48,10 @@ function MetricLine({ label, value, color }) {
 }
 
 function EventCard({ event, guided, onNavigate }) {
-  const isGuidedSample = guided && event.is_sample_available
+  const isGuidedSample = guided && event.guided_recommended
   const handleClick = () => {
     if (event.route) {
       window.location.hash = event.route
-      onNavigate?.('publicEventDetail')
       return
     }
     window.location.hash = '#/public-events/request'

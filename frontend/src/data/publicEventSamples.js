@@ -1,3 +1,37 @@
+const dongluSunjihaiYouthFootballSampleSummary = {
+  evidence_items: 581,
+  sources: 37,
+  comment_samples: 546,
+  root_candidates: 35,
+  validation_warnings: ['CASE_SKIPPED_SOURCES: 2 seed source(s) were skipped and recorded'],
+  platform_distribution: {
+    weibo: 170,
+    bilibili: 133,
+    tieba: 133,
+    hupu: 84,
+    dongqiudi: 57,
+    manual_context: 4,
+  },
+  evidence_type_distribution: {
+    comment: 546,
+    creator_post: 10,
+    creator_video: 7,
+    forum_thread: 7,
+    community_discussion: 7,
+    media_article: 4,
+  },
+  trust_label_distribution: {
+    medium: 35,
+    medium_low: 546,
+  },
+  review_status_distribution: {
+    review_needed: 581,
+  },
+  verification_status_distribution: {
+    source_url_provided_unverified: 581,
+  },
+}
+
 export const HELLDIVERS_PUBLIC_EVENT = {
   event_id: 'helldivers2_psn_demo',
   title: 'Helldivers 2 / PSN 账号绑定争议',
@@ -128,6 +162,129 @@ export const HELLDIVERS_PUBLIC_EVENT = {
   },
 }
 
+export const DONGLU_SUNJIHAI_PUBLIC_EVENT = {
+  event_id: 'donglu_sunjihai_youth_football_202606',
+  title: '董路 / 孙继海青训路线争议样本',
+  subtitle:
+    '一个围绕中国足球青训路线、公众表达、平台讨论和社区分歧的受控候选公开样本详情页。',
+  event_type: 'sports_public_opinion_route_controversy',
+  event_type_label: '体育 / 青训争议',
+  status: ['sample_available', 'candidate_demo_sample', 'review_needed'],
+  sample_summary: {
+    evidence_items: dongluSunjihaiYouthFootballSampleSummary.evidence_items,
+    sources: dongluSunjihaiYouthFootballSampleSummary.sources,
+    comment_samples: dongluSunjihaiYouthFootballSampleSummary.comment_samples,
+    root_candidates: dongluSunjihaiYouthFootballSampleSummary.root_candidates,
+    sample_label: 'controlled candidate public sample',
+    validator_status: 'passed / 0 errors / warnings accepted',
+    warnings: dongluSunjihaiYouthFootballSampleSummary.validation_warnings,
+  },
+  labels: [
+    'controlled candidate sample',
+    'frontend fixture summary',
+    'not production data',
+    'not full-web',
+    'not full-platform',
+    'not full-thread',
+    'not official verification',
+    'not causal proof',
+    'not a judgment of who is right or wrong',
+  ],
+  platform_distribution: dongluSunjihaiYouthFootballSampleSummary.platform_distribution,
+  evidence_type_distribution: dongluSunjihaiYouthFootballSampleSummary.evidence_type_distribution,
+  trust_label_distribution: dongluSunjihaiYouthFootballSampleSummary.trust_label_distribution,
+  review_status_distribution: dongluSunjihaiYouthFootballSampleSummary.review_status_distribution,
+  verification_status_distribution: dongluSunjihaiYouthFootballSampleSummary.verification_status_distribution,
+  timeline: [
+    {
+      title: '样本包进入 C 端候选展示',
+      description:
+        '当前只展示已整理的本地 Evidence Export 摘要，用于说明中文事件样本如何进入公开事件页。',
+      tone: 'announcement',
+    },
+    {
+      title: '多平台讨论结构预览',
+      description:
+        '样本覆盖微博、B 站、贴吧、虎扑、懂球帝和少量人工上下文；这些是受控样本，不代表全平台全量。',
+      tone: 'community',
+    },
+    {
+      title: '复核与建模仍待后续',
+      description:
+        '所有证据默认需要人工复核；后续才会进入 Sandbox 时间线、B 端报告或正式指标解释。',
+      tone: 'update',
+    },
+  ],
+  influence_cores: [
+    {
+      title: 'Youth football route debate',
+      type: 'route_controversy',
+      role: '议题核心',
+      why_it_matters:
+        '样本围绕青训路线、职业化路径、校园足球与公众评价展开，适合展示中文体育事件的结构化入口。',
+      confidence_note: '来自受控候选公开样本，不代表官方结论或完整事实裁定。',
+    },
+    {
+      title: 'Platform discussion clusters',
+      type: 'platform_discussion',
+      role: '平台讨论核心',
+      why_it_matters:
+        '微博、B 站、贴吧、虎扑、懂球帝上的表达方式不同，适合后续观察圈层差异。',
+      confidence_note: '只表示样本内的来源分布，不代表全平台覆盖。',
+    },
+    {
+      title: 'Review-needed evidence pool',
+      type: 'review_needed_pool',
+      role: '复核队列核心',
+      why_it_matters:
+        '样本默认 source_url_provided_unverified / review_needed，强调先复核再解释。',
+      confidence_note: '不是官方验证，也不是因果证明。',
+    },
+  ],
+  echo_boxes: [
+    {
+      title: 'Weibo / broad discussion container',
+      saturation: 68,
+      breakout_risk: 56,
+      limitation: '样本内微博数量较高，但这不是微博全量覆盖。',
+    },
+    {
+      title: 'Bilibili / creator-video discussion container',
+      saturation: 61,
+      breakout_risk: 48,
+      limitation: '只保留整理后的公开样本摘要，不展示原始身份字段。',
+    },
+    {
+      title: 'Forum / football community container',
+      saturation: 64,
+      breakout_risk: 52,
+      limitation: '贴吧、虎扑、懂球帝样本只用于候选事件展示和后续复核。',
+    },
+  ],
+  people_clusters: [
+    { label: '路线支持 / 经验派', share: 28, color: '#54f5a8', note: '倾向从训练实践、比赛经验和长期投入解释争议。' },
+    { label: '路线质疑 / 成效派', share: 31, color: '#ff5d8f', note: '关注青训成效、公开表达、争议边界和责任归因。' },
+    { label: '中立观察 / 信息整理', share: 23, color: '#9aa6bf', note: '整理时间线、平台说法和双方观点，不直接站队。' },
+    { label: '情绪化表达 / 梗化讨论', share: 10, color: '#f5c44b', note: '样本内存在调侃、讽刺和高情绪表达，需要人工复核。' },
+    { label: '治理与未成年人保护关注', share: 8, color: '#42f5d7', note: '关注青少年、家庭和敏感个人信息边界。' },
+  ],
+  response_tempo: {
+    summary:
+      '当前详情页只展示候选样本结构，不提供具体处置建议。若进入后续建模，需要先完成来源复核、身份脱敏和边界说明。',
+    note: '这是候选样本解释，不是完整推演、官方裁定或真实平台动作。',
+  },
+  reputation_memory: {
+    summary:
+      '体育和青训争议往往会形成长期记忆与反复引用。当前样本只提示这种可能性，不证明长期影响大小。',
+    note: 'ReputationMemory 需要更长时间窗和更严格来源复核；本页不作因果证明。',
+  },
+  ctas: {
+    sandbox: 'Sandbox preset pending',
+    requestSimilar: '请求补充分析类似事件',
+    bEndInquiry: 'B端咨询 / 私有分析',
+  },
+}
+
 export const PUBLIC_EVENT_PLAZA_EVENTS = [
   {
     event_id: 'helldivers2_psn_demo',
@@ -139,6 +296,7 @@ export const PUBLIC_EVENT_PLAZA_EVENTS = [
     sample_label: 'selected public sample',
     is_sample_available: true,
     is_sandbox_available: true,
+    guided_recommended: true,
     is_user_requested: false,
     is_sponsored: false,
     heat_score_mock: 76,
@@ -158,6 +316,39 @@ export const PUBLIC_EVENT_PLAZA_EVENTS = [
     request_note: '已有 selected public sample；建议直接查看分析和生态沙盒。',
     request_cta_label: '已有样本 / 查看分析',
     vote_cta_label: '查看分析',
+  },
+  {
+    event_id: 'donglu_sunjihai_youth_football_202606',
+    title: '董路 / 孙继海青训路线争议样本',
+    subtitle: '围绕中国足球青训路线分歧的中文受控候选公开样本。',
+    event_type: 'sports_public_opinion_route_controversy',
+    event_type_label: '体育 / 青训争议',
+    status: ['sample_available', 'candidate_demo_sample', 'review_needed'],
+    sample_label: 'controlled candidate sample',
+    is_sample_available: true,
+    is_sandbox_available: false,
+    guided_recommended: false,
+    is_user_requested: false,
+    is_sponsored: false,
+    heat_score_mock: 64,
+    controversy_score_mock: 72,
+    breakout_risk_mock: 49,
+    support_neutral_oppose_distribution: { support: 28, neutral: 31, oppose: 41 },
+    source_label: '581 evidence items / 37 sources / 546 comments / 35 roots',
+    coverage_label:
+      'controlled selected public sample only; not full-web, not full-platform, not official verification',
+    route: '#/public-events/donglu-sunjihai-youth-football',
+    cta_label: '查看受控样本详情',
+    warning_note:
+      '该样本用于候选事件展示和后续复核规划；不是生产数据，不判断谁对谁错，不代表全网全量或官方验证。',
+    request_count_mock: 56,
+    vote_count_mock: 148,
+    user_request_state_mock: 'candidate_sample_available',
+    sponsored_state: 'none',
+    queue_label: '受控候选公开样本',
+    request_note: '已有本地候选样本摘要；Sandbox 时间线和 B 端报告尚未生成。',
+    request_cta_label: '查看候选样本详情',
+    vote_cta_label: '支持后续复核 / mock',
   },
   {
     event_id: 'game_update_mock',

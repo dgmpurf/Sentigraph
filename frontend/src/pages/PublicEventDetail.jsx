@@ -1,9 +1,14 @@
 import { Alert, Button, Card, Col, List, Progress, Row, Space, Statistic, Tag, Timeline, Typography } from 'antd'
 import { ArrowLeft, ArrowRight, Boxes, CircleDot, FileCheck2, FlaskConical, ShieldCheck, Vote } from 'lucide-react'
 
-import { HELLDIVERS_PUBLIC_EVENT } from '../data/publicEventSamples.js'
+import { DONGLU_SUNJIHAI_PUBLIC_EVENT, HELLDIVERS_PUBLIC_EVENT } from '../data/publicEventSamples.js'
 
 const { Paragraph, Text, Title } = Typography
+
+const PUBLIC_EVENT_DETAILS_BY_HASH = {
+  '#/public-events/helldivers-psn': HELLDIVERS_PUBLIC_EVENT,
+  '#/public-events/donglu-sunjihai-youth-football': DONGLU_SUNJIHAI_PUBLIC_EVENT,
+}
 
 const boundaryTags = [
   'frontend-only local demo',
@@ -51,9 +56,12 @@ function SectionTitle({ kicker, title }) {
 }
 
 export function PublicEventDetail({ onNavigate }) {
-  const event = HELLDIVERS_PUBLIC_EVENT
+  const event = PUBLIC_EVENT_DETAILS_BY_HASH[window.location.hash.split('?')[0]] || HELLDIVERS_PUBLIC_EVENT
+  const hasSandbox = event.event_id === 'helldivers2_psn_demo'
+  const hasBusinessReport = event.event_id === 'helldivers2_psn_demo'
 
   const openSandbox = () => {
+    if (!hasSandbox) return
     window.location.hash = '#/opinion-ecosystem'
     onNavigate?.('opinionEcosystem')
   }
@@ -69,8 +77,14 @@ export function PublicEventDetail({ onNavigate }) {
   }
 
   const openBusinessReport = () => {
+    if (!hasBusinessReport) return
     window.location.hash = '#/reports/helldivers-psn-sample'
     onNavigate?.('businessReportSample')
+  }
+
+  const openExternalCollector = () => {
+    window.location.hash = '#/external-collector'
+    onNavigate?.('externalCollectorBridge')
   }
 
   return (
@@ -80,7 +94,8 @@ export function PublicEventDetail({ onNavigate }) {
           <Space wrap>
             <Tag color="cyan">{event.event_type_label}</Tag>
             <Tag color="green">sample available</Tag>
-            <Tag color="geekblue">sandbox available</Tag>
+            {hasSandbox ? <Tag color="geekblue">sandbox available</Tag> : <Tag color="gold">sandbox preset pending</Tag>}
+            {event.status?.includes('review_needed') ? <Tag color="gold">review needed</Tag> : null}
             <Tag color="default">not full-web</Tag>
             <Tag color="default">not causal proof</Tag>
           </Space>
@@ -90,7 +105,7 @@ export function PublicEventDetail({ onNavigate }) {
             <Button size="large" icon={<ArrowLeft size={17} />} onClick={openPlaza}>
               返回事件广场
             </Button>
-            <Button type="primary" size="large" icon={<Boxes size={17} />} onClick={openSandbox}>
+            <Button type="primary" size="large" icon={<Boxes size={17} />} onClick={openSandbox} disabled={!hasSandbox}>
               下一步：打开 Helldivers 生态沙盒
             </Button>
             <Button size="large" icon={<Vote size={17} />} onClick={openRequest}>
@@ -99,15 +114,21 @@ export function PublicEventDetail({ onNavigate }) {
             <Button size="large" icon={<ShieldCheck size={17} />} onClick={openRequest}>
               {event.ctas.bEndInquiry}
             </Button>
-            <Button size="large" icon={<FileCheck2 size={17} />} onClick={openBusinessReport}>
-              查看 B端报告样例
-            </Button>
+            {hasBusinessReport ? (
+              <Button size="large" icon={<FileCheck2 size={17} />} onClick={openBusinessReport}>
+                查看 B端报告样例
+              </Button>
+            ) : (
+              <Button size="large" icon={<FileCheck2 size={17} />} onClick={openExternalCollector}>
+                查看样本来源边界
+              </Button>
+            )}
           </Space>
         </div>
         <Card className="panel-card public-event-hero-card">
           <Space direction="vertical" size={12}>
             <Text type="secondary">样本状态</Text>
-            <Title level={3}>Helldivers PSN selected public sample</Title>
+            <Title level={3}>{event.sample_summary.sample_label}</Title>
             <Paragraph>
               这是一个面向公众解释的本地前端样本页。页面只展示整理后的样本状态和沙盒入口，不代表完整平台覆盖或官方核验。
             </Paragraph>
@@ -119,6 +140,15 @@ export function PublicEventDetail({ onNavigate }) {
           </Space>
         </Card>
       </section>
+
+      {!hasSandbox ? (
+        <Alert
+          type="info"
+          showIcon
+          message="What this page is / what this page is not"
+          description="本页是 Sentigraph C 端候选事件详情页，用于展示一个已整理的受控公开样本摘要。它不是全网覆盖、不是全平台覆盖、不是全线程覆盖、不是官方验证、不是因果证明、不是生产监控、不是实时爬虫结果，也不是由 Sentigraph 在本页运行采集任务生成。"
+        />
+      ) : null}
 
       <Card className="panel-card public-event-reading-order-card" title="本页怎么看 / 阅读顺序">
         <Row gutter={[14, 14]}>
@@ -184,6 +214,71 @@ export function PublicEventDetail({ onNavigate }) {
         </Row>
       </Card>
 
+      {!hasSandbox ? (
+        <Alert
+          type="info"
+          showIcon
+          message="Privacy and sensitivity note / 隐私与敏感信息边界"
+          description="本页只展示候选样本摘要：未成年人、家庭和敏感个人细节不在页面中展示；原始作者 ID、原始作者名、主页链接、Cookie、令牌、会话和密钥不进入此页面。所有证据在后续人工复核前仍保持 review_needed 与 source_url_provided_unverified。"
+        />
+      ) : null}
+
+      {event.platform_distribution ? (
+        <Row gutter={[16, 16]}>
+          <Col span={8}>
+            <Card className="panel-card" title="Source distribution / 来源分布">
+              <List
+                size="small"
+                dataSource={Object.entries(event.platform_distribution)}
+                renderItem={([label, count]) => (
+                  <List.Item>
+                    <Text>{label}</Text>
+                    <Tag>{count}</Tag>
+                  </List.Item>
+                )}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card className="panel-card" title="Evidence type counts / 证据类型">
+              <List
+                size="small"
+                dataSource={Object.entries(event.evidence_type_distribution || {})}
+                renderItem={([label, count]) => (
+                  <List.Item>
+                    <Text>{label}</Text>
+                    <Tag>{count}</Tag>
+                  </List.Item>
+                )}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card className="panel-card" title="Review boundary / 复核边界">
+              <Space direction="vertical" size={8}>
+                <Space wrap>
+                  {Object.entries(event.trust_label_distribution || {}).map(([label, count]) => (
+                    <Tag key={label} color="cyan">
+                      trust {label}: {count}
+                    </Tag>
+                  ))}
+                </Space>
+                <Space wrap>
+                  {Object.entries(event.review_status_distribution || {}).map(([label, count]) => (
+                    <Tag key={label} color="gold">
+                      {label}: {count}
+                    </Tag>
+                  ))}
+                </Space>
+                <Text type="secondary">
+                  候选样本只表示本地已整理证据摘要；需要人工复核，不代表官方验证、因果证明或全平台覆盖。
+                </Text>
+              </Space>
+            </Card>
+          </Col>
+        </Row>
+      ) : null}
+
       <Row gutter={[16, 16]}>
         <Col span={13}>
           <Card className="panel-card" title="事件发展脉络 / Development stages">
@@ -192,7 +287,7 @@ export function PublicEventDetail({ onNavigate }) {
                 color: item.tone === 'community' ? 'red' : item.tone === 'update' ? 'green' : 'blue',
                 children: (
                   <div>
-                    <Text strong>{developmentStageLabels[index] || item.title}</Text>
+                    <Text strong>{hasSandbox ? developmentStageLabels[index] || item.title : item.title}</Text>
                     <Paragraph>{item.description}</Paragraph>
                   </div>
                 ),
@@ -314,6 +409,15 @@ export function PublicEventDetail({ onNavigate }) {
         </Col>
       </Row>
 
+      {!hasSandbox ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="Sandbox preset pending / 沙盒时间线尚未生成"
+          description="当前事件只有受控候选样本详情页；尚未创建 Sandbox V2 时间线预设、B 端报告样本或报告导出。请勿把本页解释为完整模拟、官方验证或因果证明。"
+        />
+      ) : null}
+
       <Card className="panel-card public-event-sandbox-entry">
         <Row gutter={[16, 16]} align="middle">
           <Col span={16}>
@@ -326,7 +430,7 @@ export function PublicEventDetail({ onNavigate }) {
             </Space>
           </Col>
           <Col span={8} className="public-event-action-col">
-            <Button type="primary" size="large" icon={<ArrowRight size={17} />} onClick={openSandbox}>
+            <Button type="primary" size="large" icon={<ArrowRight size={17} />} onClick={openSandbox} disabled={!hasSandbox}>
               查看 T0-T6 事件节奏
             </Button>
           </Col>
@@ -367,7 +471,11 @@ export function PublicEventDetail({ onNavigate }) {
             <Paragraph>
               如果你是品牌、MCN、创作者团队、游戏社区运营或公关团队，可以申请私有分析。私有分析可包含更深证据复核、保密语境、丰富报告和场景对比。
             </Paragraph>
-            <Button onClick={openBusinessReport}>查看 B端报告样例</Button>
+            {hasBusinessReport ? (
+              <Button onClick={openBusinessReport}>查看 B端报告样例</Button>
+            ) : (
+              <Button onClick={openExternalCollector}>查看样本来源边界</Button>
+            )}
           </Card>
         </Col>
       </Row>

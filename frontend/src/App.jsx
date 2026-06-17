@@ -116,6 +116,7 @@ function pageFromHash() {
   if (hash === '#/public-events') return 'publicEventPlaza'
   if (hash === '#/public-events/request') return 'publicEventRequest'
   if (hash === '#/public-events/helldivers-psn') return 'publicEventDetail'
+  if (hash === '#/public-events/donglu-sunjihai-youth-football') return 'publicEventDetail'
   if (hash === '#/reports/helldivers-psn-sample') return 'businessReportSample'
   if (hash === '#/opinion-ecosystem') return 'opinionEcosystem'
   if (hash === '#/external-collector') return 'externalCollectorBridge'
