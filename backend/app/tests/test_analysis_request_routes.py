@@ -314,6 +314,89 @@ def test_analysis_request_import_plan_route_blocks_bad_draft(tmp_path: Path, mon
     assert "validation errors" in response.text
 
 
+def test_analysis_request_import_preview_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Import preview route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(json.dumps(route_provider_result(request_id)), encoding="utf-8")
+    assert client.post(f"/api/v1/analysis-requests/{request_id}/case-draft").status_code == 200
+    assert client.post(f"/api/v1/analysis-requests/{request_id}/import-plan").status_code == 200
+
+    post_response = client.post(f"/api/v1/analysis-requests/{request_id}/import-preview")
+    get_response = client.get(f"/api/v1/analysis-requests/{request_id}/import-preview")
+    list_response = client.get("/api/v1/analysis-requests/import-previews")
+
+    assert post_response.status_code == 200
+    body = post_response.json()
+    assert body["schema"] == "sentigraph_evidence_import_preview_v1"
+    assert body["preview_id"] == f"import_preview_{request_id}"
+    assert body["plan_id"] == f"import_plan_{request_id}"
+    assert body["draft_id"] == f"draft_{request_id}"
+    assert body["package_reference"]["package_name"] == "route_package"
+    assert body["metadata_summary"]["evidence"] == 581
+    assert body["validation_summary"]["errors"] == 0
+    assert body["proposed_evidence_defaults"]["review_status"] == "review_needed"
+    assert body["proposed_evidence_defaults"]["verification_status"] == "source_url_provided_unverified"
+    assert body["proposed_evidence_defaults"]["trust_label"] == "medium_low"
+    assert body["dedup_preview"]["required"] is True
+    assert body["dedup_preview"]["computed_now"] is False
+    assert body["sample_preview_policy"]["read_rows_now"] is False
+    assert body["readiness"]["can_import_now"] is False
+    assert body["safe_mode"]["metadata_only_preview"] is True
+    assert body["safe_mode"]["evidence_rows_read"] is False
+    assert body["safe_mode"]["evidence_rows_parsed"] is False
+    assert body["safe_mode"]["evidence_rows_imported"] is False
+    assert body["safe_mode"]["production_case_created"] is False
+    assert get_response.status_code == 200
+    assert get_response.json()["preview_id"] == body["preview_id"]
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+    assert "raw_author_value" not in post_response.text
+
+
+def test_analysis_request_import_preview_route_blocks_without_import_plan(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Blocked import preview route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(json.dumps(route_provider_result(request_id)), encoding="utf-8")
+    assert client.post(f"/api/v1/analysis-requests/{request_id}/case-draft").status_code == 200
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/import-preview")
+
+    assert response.status_code == 404
+    assert "evidence import plan" in response.text.lower()
+
+
+def test_analysis_request_import_preview_route_blocks_bad_plan(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Bad import preview plan route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(json.dumps(route_provider_result(request_id)), encoding="utf-8")
+    assert client.post(f"/api/v1/analysis-requests/{request_id}/case-draft").status_code == 200
+    assert client.post(f"/api/v1/analysis-requests/{request_id}/import-plan").status_code == 200
+    plan_path = tmp_path / "import_plans" / f"{request_id}.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["proposed_import"]["import_evidence_rows_now"] = True
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/import-preview")
+
+    assert response.status_code == 400
+    assert "immediate execution" in response.text
+
+
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
     create_response = client.post(

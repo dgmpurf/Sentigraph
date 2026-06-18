@@ -9,6 +9,7 @@ from app.schemas.analysis_request import (
     AnalysisRequestRecord,
     CaseDraftHandoff,
     EvidenceImportPlan,
+    EvidenceImportPreview,
 )
 from app.services.analysis_request_store import (
     AnalysisRequestNotFoundError,
@@ -16,13 +17,16 @@ from app.services.analysis_request_store import (
     cancel_analysis_request,
     create_case_draft_handoff,
     create_evidence_import_plan,
+    create_evidence_import_preview,
     create_analysis_request,
     get_analysis_request_config,
     list_case_draft_handoffs,
     list_evidence_import_plans,
+    list_evidence_import_previews,
     list_analysis_requests,
     read_case_draft_handoff,
     read_evidence_import_plan,
+    read_evidence_import_preview,
     read_analysis_request,
 )
 
@@ -52,6 +56,11 @@ def analysis_request_case_draft_list() -> list[CaseDraftHandoff]:
 @router.get("/import-plans", response_model=list[EvidenceImportPlan])
 def analysis_request_import_plan_list() -> list[EvidenceImportPlan]:
     return list_evidence_import_plans()
+
+
+@router.get("/import-previews", response_model=list[EvidenceImportPreview])
+def analysis_request_import_preview_list() -> list[EvidenceImportPreview]:
+    return list_evidence_import_previews()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -88,6 +97,26 @@ def analysis_request_import_plan_detail(request_id: str) -> EvidenceImportPlan:
 def analysis_request_import_plan_create(request_id: str) -> EvidenceImportPlan:
     try:
         return create_evidence_import_plan(request_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/import-preview", response_model=EvidenceImportPreview)
+def analysis_request_import_preview_detail(request_id: str) -> EvidenceImportPreview:
+    try:
+        return read_evidence_import_preview(request_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/import-preview", response_model=EvidenceImportPreview)
+def analysis_request_import_preview_create(request_id: str) -> EvidenceImportPreview:
+    try:
+        return create_evidence_import_preview(request_id)
     except AnalysisRequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:

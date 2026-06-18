@@ -9,9 +9,11 @@ from app.services.analysis_request_store import (
     cancel_analysis_request,
     create_case_draft_handoff,
     create_evidence_import_plan,
+    create_evidence_import_preview,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
+    list_evidence_import_previews,
     list_analysis_requests,
     read_analysis_request,
 )
@@ -68,6 +70,18 @@ def create_valid_case_draft(tmp_path: Path, request_id: str) -> dict:
 def overwrite_case_draft(tmp_path: Path, request_id: str, draft_payload: dict) -> None:
     draft_path = tmp_path / "case_drafts" / f"{request_id}.json"
     draft_path.write_text(json.dumps(draft_payload), encoding="utf-8")
+
+
+def create_valid_import_plan(tmp_path: Path, request_id: str) -> dict:
+    create_valid_case_draft(tmp_path, request_id)
+    plan = create_evidence_import_plan(request_id)
+    plan_path = tmp_path / "import_plans" / f"{request_id}.json"
+    return json.loads(plan_path.read_text(encoding="utf-8"))
+
+
+def overwrite_import_plan(tmp_path: Path, request_id: str, plan_payload: dict) -> None:
+    plan_path = tmp_path / "import_plans" / f"{request_id}.json"
+    plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
 
 
 def test_create_request_writes_json_with_conservative_defaults(tmp_path: Path, monkeypatch) -> None:
@@ -448,6 +462,123 @@ def test_import_plan_does_not_import_rows_or_create_case_outputs(tmp_path: Path,
     assert plan.safe_mode["provider_execution"] is False
     assert plan.safe_mode["collector_jobs_run"] is False
     assert not (tmp_path / "evidence_items.jsonl").exists()
+    assert not (tmp_path / "cases").exists()
+
+
+def test_eligible_import_plan_creates_metadata_only_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Preview from import plan"))
+    )
+    create_valid_import_plan(tmp_path, record.request_id)
+
+    preview = create_evidence_import_preview(record.request_id)
+    preview_again = create_evidence_import_preview(record.request_id)
+    preview_text = (tmp_path / "import_previews" / f"{record.request_id}.json").read_text(encoding="utf-8")
+
+    assert preview.schema_ == "sentigraph_evidence_import_preview_v1"
+    assert preview.preview_id == f"import_preview_{record.request_id}"
+    assert preview_again.preview_id == preview.preview_id
+    assert preview.source == "evidence_import_plan"
+    assert preview.plan_id == f"import_plan_{record.request_id}"
+    assert preview.draft_id == f"draft_{record.request_id}"
+    assert preview.package_reference.package_name == "sample_package"
+    assert preview.metadata_summary.evidence == 581
+    assert preview.validation_summary.errors == 0
+    assert preview.coverage_summary.not_full_web is True
+    assert preview.privacy_summary.raw_author_ids_removed is True
+    assert preview.proposed_evidence_defaults.review_status == "review_needed"
+    assert preview.proposed_evidence_defaults.verification_status == "source_url_provided_unverified"
+    assert preview.proposed_evidence_defaults.trust_label == "medium_low"
+    assert preview.dedup_preview.required is True
+    assert preview.dedup_preview.computed_now is False
+    assert preview.sample_preview_policy.read_rows_now is False
+    assert preview.sample_preview_policy.max_safe_sample_rows_future == 20
+    assert preview.sample_preview_policy.redact_author_fields is True
+    assert preview.readiness.can_import_now is False
+    assert preview.safe_mode["metadata_only_preview"] is True
+    assert preview.safe_mode["evidence_rows_read"] is False
+    assert preview.safe_mode["evidence_rows_parsed"] is False
+    assert preview.safe_mode["evidence_rows_imported"] is False
+    assert preview.safe_mode["production_case_created"] is False
+    assert preview.safe_mode["analysis_generated"] is False
+    assert len(preview.recommended_next_steps) >= 4
+    assert len(list_evidence_import_previews()) == 1
+    assert "raw_author_value" not in preview_text
+
+
+def test_import_preview_requires_existing_import_plan(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="No import plan preview"))
+    )
+    create_valid_case_draft(tmp_path, record.request_id)
+
+    try:
+        create_evidence_import_preview(record.request_id)
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "evidence import plan" in str(exc).lower()
+    else:
+        raise AssertionError("Missing import plan should block preview")
+
+
+def test_import_preview_blocks_ineligible_import_plans(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+
+    cases = [
+        ("Missing package", lambda plan: plan["package_reference"].update({"package_name": ""}), "package_name is missing"),
+        ("Validation failed", lambda plan: plan["validation"].update({"status": "failed"}), "validation status"),
+        ("Validation not run", lambda plan: plan["validation"].update({"status": "not_run"}), "validation status"),
+        ("Validation errors", lambda plan: plan["validation"].update({"errors": 2}), "validation errors"),
+        ("No evidence", lambda plan: plan["counts"].update({"evidence": 0}), "counts.evidence"),
+        ("Missing privacy", lambda plan: plan["privacy"].update({"raw_author_ids_removed": False}), "privacy flags"),
+        ("Claims full web", lambda plan: plan["coverage"].update({"coverage_level": "full_web", "not_full_web": False}), "coverage"),
+        ("Immediate import", lambda plan: plan["proposed_import"].update({"import_evidence_rows_now": True}), "immediate execution"),
+        ("Immediate case", lambda plan: plan["proposed_import"].update({"create_case_now": True}), "immediate execution"),
+        ("Immediate analysis", lambda plan: plan["proposed_import"].update({"run_analysis_now": True}), "immediate execution"),
+        ("Immediate sandbox", lambda plan: plan["proposed_import"].update({"generate_sandbox_now": True}), "immediate execution"),
+        ("Immediate report", lambda plan: plan["proposed_import"].update({"generate_report_now": True}), "immediate execution"),
+        ("Not ready", lambda plan: plan["readiness"].update({"state": "blocked"}), "readiness"),
+    ]
+
+    for title, mutate, expected_message in cases:
+        record = create_analysis_request(
+            AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title=title))
+        )
+        plan_payload = create_valid_import_plan(tmp_path, record.request_id)
+        mutate(plan_payload)
+        overwrite_import_plan(tmp_path, record.request_id, plan_payload)
+
+        try:
+            create_evidence_import_preview(record.request_id)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should not create an import preview")
+
+
+def test_import_preview_does_not_parse_invalid_evidence_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Invalid rows ignored by preview"))
+    )
+    plan_payload = create_valid_import_plan(tmp_path, record.request_id)
+    package_dir = tmp_path / "external_package"
+    package_dir.mkdir()
+    (package_dir / "manifest.json").write_text(json.dumps({"package_name": "external_package"}), encoding="utf-8")
+    (package_dir / "validation_report.json").write_text(json.dumps({"status": "warn", "errors": 0}), encoding="utf-8")
+    (package_dir / "evidence_items.jsonl").write_text("{this is not valid jsonl and must not be parsed", encoding="utf-8")
+    plan_payload["package_reference"]["package_name"] = "external_package"
+    plan_payload["package_reference"]["package_path"] = str(package_dir)
+    overwrite_import_plan(tmp_path, record.request_id, plan_payload)
+
+    preview = create_evidence_import_preview(record.request_id)
+
+    assert preview.package_reference.package_name == "external_package"
+    assert preview.metadata_summary.evidence == 581
+    assert preview.sample_preview_policy.read_rows_now is False
+    assert preview.safe_mode["evidence_rows_read"] is False
+    assert preview.safe_mode["evidence_rows_parsed"] is False
     assert not (tmp_path / "cases").exists()
 
 

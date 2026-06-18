@@ -292,6 +292,73 @@ class EvidenceImportPlan(BaseModel):
     )
 
 
+class EvidenceImportDedupPreview(BaseModel):
+    required: bool = True
+    computed_now: bool = False
+    reason: str = "Preview phase does not import or compute final dedup."
+
+
+class EvidenceImportSamplePreviewPolicy(BaseModel):
+    read_rows_now: bool = False
+    max_safe_sample_rows_future: int = 20
+    redact_author_fields: bool = True
+
+
+class EvidenceImportPreviewReadiness(BaseModel):
+    state: str = "ready_for_human_review"
+    can_import_now: bool = False
+    requires_review_decision: bool = True
+    reason: str = "Import preview only. Evidence rows are not imported."
+
+
+class EvidenceImportPreview(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_evidence_import_preview_v1"] = Field(
+        default="sentigraph_evidence_import_preview_v1",
+        alias="schema",
+    )
+    preview_id: str
+    plan_id: str
+    draft_id: str
+    request_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    source: str = "evidence_import_plan"
+    package_reference: CaseDraftPackageReference = Field(default_factory=CaseDraftPackageReference)
+    metadata_summary: ProviderJobCounts = Field(default_factory=ProviderJobCounts)
+    validation_summary: ProviderJobValidation = Field(default_factory=ProviderJobValidation)
+    coverage_summary: ProviderJobCoverage = Field(default_factory=ProviderJobCoverage)
+    privacy_summary: ProviderJobPrivacy = Field(default_factory=ProviderJobPrivacy)
+    proposed_evidence_defaults: EvidenceImportDefaultPolicy = Field(default_factory=EvidenceImportDefaultPolicy)
+    dedup_preview: EvidenceImportDedupPreview = Field(default_factory=EvidenceImportDedupPreview)
+    sample_preview_policy: EvidenceImportSamplePreviewPolicy = Field(default_factory=EvidenceImportSamplePreviewPolicy)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    readiness: EvidenceImportPreviewReadiness = Field(default_factory=EvidenceImportPreviewReadiness)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "metadata_only_preview": True,
+            "evidence_rows_read": False,
+            "evidence_rows_parsed": False,
+            "evidence_rows_imported": False,
+            "production_case_created": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

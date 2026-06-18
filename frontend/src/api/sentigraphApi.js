@@ -105,6 +105,21 @@ export async function createAnalysisRequestImportPlan(requestId) {
   return normalizeEvidenceImportPlan(data)
 }
 
+export async function listAnalysisRequestImportPreviews() {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/import-previews`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisRequestImportPreview).filter(Boolean) : []
+}
+
+export async function getAnalysisRequestImportPreview(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/import-preview`)
+  return normalizeAnalysisRequestImportPreview(data)
+}
+
+export async function createAnalysisRequestImportPreview(requestId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/import-preview`)
+  return normalizeAnalysisRequestImportPreview(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1215,6 +1230,59 @@ function normalizeEvidenceImportPlan(data) {
       ? data.manual_review_checklist.map((item) => String(item))
       : [],
     blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisRequestImportPreview(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_evidence_import_preview_v1'),
+    preview_id: String(data.preview_id || ''),
+    plan_id: String(data.plan_id || ''),
+    draft_id: String(data.draft_id || ''),
+    request_id: String(data.request_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    source: String(data.source || 'evidence_import_plan'),
+    package_reference:
+      data.package_reference && typeof data.package_reference === 'object'
+        ? normalizeSafeObject(data.package_reference)
+        : {},
+    metadata_summary:
+      data.metadata_summary && typeof data.metadata_summary === 'object'
+        ? normalizeNumberMap(data.metadata_summary)
+        : {},
+    validation_summary:
+      data.validation_summary && typeof data.validation_summary === 'object'
+        ? normalizeSafeObject(data.validation_summary)
+        : {},
+    coverage_summary:
+      data.coverage_summary && typeof data.coverage_summary === 'object'
+        ? normalizeSafeObject(data.coverage_summary)
+        : {},
+    privacy_summary:
+      data.privacy_summary && typeof data.privacy_summary === 'object'
+        ? normalizeSafeObject(data.privacy_summary)
+        : {},
+    proposed_evidence_defaults:
+      data.proposed_evidence_defaults && typeof data.proposed_evidence_defaults === 'object'
+        ? normalizeSafeObject(data.proposed_evidence_defaults)
+        : {},
+    dedup_preview:
+      data.dedup_preview && typeof data.dedup_preview === 'object'
+        ? normalizeSafeObject(data.dedup_preview)
+        : {},
+    sample_preview_policy:
+      data.sample_preview_policy && typeof data.sample_preview_policy === 'object'
+        ? normalizeSafeObject(data.sample_preview_policy)
+        : {},
+    blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
     readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
     boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
     recommended_next_steps: Array.isArray(data.recommended_next_steps)

@@ -22,6 +22,8 @@ from app.schemas.analysis_request import (
     CaseDraftReadiness,
     EvidenceImportPlan,
     EvidenceImportPlanReadiness,
+    EvidenceImportPreview,
+    EvidenceImportPreviewReadiness,
     ProviderJobResult,
 )
 
@@ -283,6 +285,79 @@ def create_evidence_import_plan(request_id: str) -> EvidenceImportPlan:
     return read_evidence_import_plan(request_id)
 
 
+def read_evidence_import_preview(request_id: str) -> EvidenceImportPreview:
+    preview_path = _import_preview_path(request_id)
+    if not preview_path.exists():
+        raise AnalysisRequestNotFoundError(f"Evidence import preview for {request_id} was not found.")
+    try:
+        parsed = json.loads(preview_path.read_text(encoding="utf-8-sig"))
+        return EvidenceImportPreview.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{preview_path.name} is not a valid evidence import preview: {type(exc).__name__}") from exc
+
+
+def list_evidence_import_previews() -> list[EvidenceImportPreview]:
+    root = _ensure_root()
+    previews: list[EvidenceImportPreview] = []
+    for path in sorted((root / "import_previews").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            previews.append(EvidenceImportPreview.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return previews
+
+
+def create_evidence_import_preview(request_id: str) -> EvidenceImportPreview:
+    preview_path = _import_preview_path(request_id)
+    if preview_path.exists():
+        return read_evidence_import_preview(request_id)
+
+    plan = read_evidence_import_plan(request_id)
+    _validate_import_preview_eligibility(plan)
+
+    preview = EvidenceImportPreview(
+        preview_id=f"import_preview_{request_id}",
+        plan_id=plan.plan_id,
+        draft_id=plan.draft_id,
+        request_id=request_id,
+        package_reference=plan.package_reference,
+        metadata_summary=plan.counts,
+        validation_summary=plan.validation,
+        coverage_summary=plan.coverage,
+        privacy_summary=plan.privacy,
+        proposed_evidence_defaults=plan.default_evidence_policy,
+        blockers=[],
+        warnings=[
+            "Preview is metadata-only and does not read evidence rows.",
+            "Provider output is evidence, not truth.",
+            "Coverage is selected/controlled public sample metadata, not full-web or full-platform coverage.",
+        ],
+        readiness=EvidenceImportPreviewReadiness(
+            state="ready_for_human_review",
+            can_import_now=False,
+            requires_review_decision=True,
+            reason="Import preview only. Evidence rows are not imported.",
+        ),
+        boundary_notes=[
+            "Import preview is not import.",
+            "Preview does not create a production case.",
+            "Preview does not run analysis, generate reports, or create Sandbox/public event outputs.",
+            "Preview does not verify truth or official status.",
+            "Evidence rows require a later human review decision and manual import job.",
+        ],
+        recommended_next_steps=[
+            "Human reviewer opens package README, coverage_note, and validation_report.",
+            "Reviewer decides approve_import, reject_import, request_more_source, or hold_for_privacy_review.",
+            "Only after review decision create a manual Evidence import job.",
+            "Dedup and review queue must run before analysis.",
+            "Analysis, Sandbox, public event, and report generation are later explicit actions only.",
+        ],
+    )
+    _write_json(preview_path, preview.model_dump(mode="json", by_alias=True))
+    return read_evidence_import_preview(request_id)
+
+
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -388,6 +463,42 @@ def _validate_import_plan_eligibility(draft: CaseDraftHandoff) -> None:
         raise AnalysisRequestValidationError("Cannot create evidence import plan: coverage must not claim full-web/full-platform/full-thread coverage.")
 
 
+def _validate_import_preview_eligibility(plan: EvidenceImportPlan) -> None:
+    if plan.readiness.state not in {"ready_for_manual_import_review", "ready_for_human_review"}:
+        raise AnalysisRequestValidationError(f"Cannot create evidence import preview: import plan readiness {plan.readiness.state} is not eligible.")
+    if not plan.package_reference.package_name:
+        raise AnalysisRequestValidationError("Cannot create evidence import preview: package_name is missing.")
+    if plan.counts.evidence <= 0:
+        raise AnalysisRequestValidationError("Cannot create evidence import preview: counts.evidence must be greater than 0.")
+    if plan.validation.status not in {"passed", "warn"}:
+        raise AnalysisRequestValidationError(f"Cannot create evidence import preview: validation status {plan.validation.status} is not eligible.")
+    if plan.validation.errors > 0:
+        raise AnalysisRequestValidationError("Cannot create evidence import preview: validation errors must be 0.")
+    required_privacy = [
+        plan.privacy.raw_author_ids_removed,
+        plan.privacy.raw_author_names_removed,
+        plan.privacy.profile_urls_removed,
+        plan.privacy.private_messages_excluded,
+    ]
+    if not all(required_privacy):
+        raise AnalysisRequestValidationError("Cannot create evidence import preview: privacy flags must all be true.")
+    if not (plan.coverage.not_full_web and plan.coverage.not_full_platform and plan.coverage.not_full_thread):
+        raise AnalysisRequestValidationError("Cannot create evidence import preview: coverage must not claim full-web/full-platform/full-thread coverage.")
+
+    immediate_flags = {
+        "import_evidence_rows_now": plan.proposed_import.import_evidence_rows_now,
+        "create_case_now": plan.proposed_import.create_case_now,
+        "run_analysis_now": plan.proposed_import.run_analysis_now,
+        "generate_sandbox_now": plan.proposed_import.generate_sandbox_now,
+        "generate_report_now": plan.proposed_import.generate_report_now,
+    }
+    enabled_flags = [name for name, enabled in immediate_flags.items() if enabled]
+    if enabled_flags:
+        raise AnalysisRequestValidationError(
+            f"Cannot create evidence import preview: import plan suggests immediate execution ({', '.join(enabled_flags)})."
+        )
+
+
 def _read_result_payload(request_id: str) -> dict[str, Any]:
     result_path = _result_path(request_id)
     try:
@@ -410,6 +521,7 @@ def _ensure_root() -> Path:
     (root / "results").mkdir(parents=True, exist_ok=True)
     (root / "case_drafts").mkdir(parents=True, exist_ok=True)
     (root / "import_plans").mkdir(parents=True, exist_ok=True)
+    (root / "import_previews").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -435,6 +547,12 @@ def _import_plan_path(request_id: str) -> Path:
     _validate_request_id(request_id)
     root = _ensure_root()
     return root / "import_plans" / f"{request_id}.json"
+
+
+def _import_preview_path(request_id: str) -> Path:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    return root / "import_previews" / f"{request_id}.json"
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:

@@ -26,10 +26,12 @@ import {
   createAnalysisRequest,
   createAnalysisRequestCaseDraft,
   createAnalysisRequestImportPlan,
+  createAnalysisRequestImportPreview,
   getAnalysisRequest,
   getAnalysisRequestCaseDraft,
   getAnalysisRequestConfig,
   getAnalysisRequestImportPlan,
+  getAnalysisRequestImportPreview,
   listAnalysisRequests,
 } from '../api/sentigraphApi.js'
 
@@ -222,6 +224,42 @@ function importPlanEligibility(caseDraft) {
   return { eligible: true, reason: '可生成 Evidence 导入计划。' }
 }
 
+function importPreviewEligibility(importPlan) {
+  if (!importPlan) return { eligible: false, reason: '请先创建或读取 Evidence 导入计划。' }
+  if (!['ready_for_manual_import_review', 'ready_for_human_review'].includes(importPlan.readiness?.state)) {
+    return { eligible: false, reason: `Import plan readiness ${importPlan.readiness?.state || 'unknown'} 不可生成预览。` }
+  }
+  if (!importPlan.package_reference?.package_name) return { eligible: false, reason: 'Import plan 缺少 package_name。' }
+  if (Number(importPlan.counts?.evidence || 0) <= 0) return { eligible: false, reason: 'Import plan evidence count 必须大于 0。' }
+  if (!['passed', 'warn'].includes(importPlan.validation?.status)) {
+    return { eligible: false, reason: `Validation status ${importPlan.validation?.status || 'unknown'} 不可生成导入预览。` }
+  }
+  if (Number(importPlan.validation?.errors || 0) > 0) {
+    return { eligible: false, reason: 'Import plan validation.errors 必须为 0。' }
+  }
+  if (importPlan.coverage?.not_full_web !== true || importPlan.coverage?.not_full_platform !== true || importPlan.coverage?.not_full_thread !== true) {
+    return { eligible: false, reason: 'Import plan 必须保留 not_full_web / not_full_platform / not_full_thread。' }
+  }
+  if (
+    importPlan.privacy?.raw_author_ids_removed !== true ||
+    importPlan.privacy?.raw_author_names_removed !== true ||
+    importPlan.privacy?.profile_urls_removed !== true ||
+    importPlan.privacy?.private_messages_excluded !== true
+  ) {
+    return { eligible: false, reason: 'Import plan 隐私移除标记不完整。' }
+  }
+  if (
+    importPlan.proposed_import?.import_evidence_rows_now === true ||
+    importPlan.proposed_import?.create_case_now === true ||
+    importPlan.proposed_import?.run_analysis_now === true ||
+    importPlan.proposed_import?.generate_sandbox_now === true ||
+    importPlan.proposed_import?.generate_report_now === true
+  ) {
+    return { eligible: false, reason: 'Import plan 不允许包含立即导入、建 case、分析、Sandbox 或报告生成意图。' }
+  }
+  return { eligible: true, reason: '可以生成 metadata-only Evidence 导入预览。' }
+}
+
 function SummaryList({ title, items }) {
   return (
     <Card size="small" title={title}>
@@ -247,14 +285,17 @@ export function AnalysisRequests() {
   const [detail, setDetail] = useState(null)
   const [caseDraft, setCaseDraft] = useState(null)
   const [importPlan, setImportPlan] = useState(null)
+  const [importPreview, setImportPreview] = useState(null)
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [draftLoading, setDraftLoading] = useState(false)
   const [planLoading, setPlanLoading] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
+  const [previewError, setPreviewError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -262,13 +303,16 @@ export function AnalysisRequests() {
   )
   const draftGate = useMemo(() => draftEligibility(selectedRecord), [selectedRecord])
   const planGate = useMemo(() => importPlanEligibility(caseDraft), [caseDraft])
+  const previewGate = useMemo(() => importPreviewEligibility(importPlan), [importPlan])
 
   async function loadDraftAndPlan(requestId) {
     if (!requestId) {
       setCaseDraft(null)
       setImportPlan(null)
+      setImportPreview(null)
       setDraftError('')
       setPlanError('')
+      setPreviewError('')
       return
     }
     try {
@@ -284,6 +328,13 @@ export function AnalysisRequests() {
     } catch {
       setImportPlan(null)
       setPlanError('')
+    }
+    try {
+      setImportPreview(await getAnalysisRequestImportPreview(requestId))
+      setPreviewError('')
+    } catch {
+      setImportPreview(null)
+      setPreviewError('')
     }
   }
 
@@ -333,6 +384,7 @@ export function AnalysisRequests() {
     setError('')
     setDraftError('')
     setPlanError('')
+    setPreviewError('')
     try {
       setDetail(await getAnalysisRequest(record.request_id))
       await loadDraftAndPlan(record.request_id)
@@ -383,12 +435,29 @@ export function AnalysisRequests() {
     try {
       const plan = await createAnalysisRequestImportPlan(selectedRecord.request_id)
       setImportPlan(plan)
+      setImportPreview(null)
       message.success('已生成 Evidence 导入计划')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import plan.'
       setPlanError(String(messageText))
     } finally {
       setPlanLoading(false)
+    }
+  }
+
+  async function handleCreateImportPreview() {
+    if (!selectedRecord?.request_id) return
+    setPreviewLoading(true)
+    setPreviewError('')
+    try {
+      const preview = await createAnalysisRequestImportPreview(selectedRecord.request_id)
+      setImportPreview(preview)
+      message.success('已生成 metadata-only Evidence 导入预览')
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import preview.'
+      setPreviewError(String(messageText))
+    } finally {
+      setPreviewLoading(false)
     }
   }
 
@@ -452,6 +521,7 @@ export function AnalysisRequests() {
   const requestJson = selectedRecord?.request ? JSON.stringify(selectedRecord.request, null, 2) : ''
   const draftJson = caseDraft ? JSON.stringify(caseDraft, null, 2) : ''
   const importPlanJson = importPlan ? JSON.stringify(importPlan, null, 2) : ''
+  const importPreviewJson = importPreview ? JSON.stringify(importPreview, null, 2) : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -827,6 +897,88 @@ export function AnalysisRequests() {
                   </Space>
                 </Card>
 
+                <Card size="small" title="Evidence 导入预览 / Metadata-only import preview">
+                  <Space direction="vertical" size={12} className="full-width">
+                    <Alert
+                      type={previewGate.eligible ? 'success' : 'info'}
+                      showIcon
+                      message={previewGate.eligible ? '可生成 Evidence 导入预览' : '暂不可生成 Evidence 导入预览'}
+                      description={importPreview ? '已存在本地 metadata-only import preview。' : previewGate.reason}
+                    />
+                    <Text type="secondary">
+                      只生成 metadata-only 导入预览，不读取 evidence rows，不导入，不创建正式 case，不运行分析。Preview is not import, not truth verification, and not report/Sandbox/public event generation.
+                    </Text>
+                    {previewError ? <Alert type="error" showIcon message={previewError} /> : null}
+                    <Space wrap>
+                      <Button
+                        type="primary"
+                        disabled={!previewGate.eligible && !importPreview}
+                        loading={previewLoading}
+                        onClick={handleCreateImportPreview}
+                      >
+                        生成导入预览 / Create import preview
+                      </Button>
+                      {importPreview ? (
+                        <Button
+                          icon={<ClipboardCopy size={16} />}
+                          onClick={() => copyText(importPreviewJson, 'Import preview JSON 已复制')}
+                        >
+                          复制 preview JSON
+                        </Button>
+                      ) : null}
+                    </Space>
+                    {importPreview ? (
+                      <Card className="panel-card" size="small">
+                        <Space direction="vertical" size={12} className="full-width">
+                          <Space wrap>
+                            <Tag color="green">{importPreview.readiness?.state || 'ready_for_human_review'}</Tag>
+                            <Tag color="default">can_import_now: {boolText(importPreview.readiness?.can_import_now)}</Tag>
+                            <Tag color="gold">requires_review: {boolText(importPreview.readiness?.requires_review_decision)}</Tag>
+                            <Tag color="purple">{importPreview.proposed_evidence_defaults?.trust_label || 'medium_low'}</Tag>
+                          </Space>
+                          <Descriptions column={1} size="small">
+                            <Descriptions.Item label="preview_id">{importPreview.preview_id}</Descriptions.Item>
+                            <Descriptions.Item label="plan_id">{importPreview.plan_id}</Descriptions.Item>
+                            <Descriptions.Item label="draft_id">{importPreview.draft_id}</Descriptions.Item>
+                            <Descriptions.Item label="package">{importPreview.package_reference?.package_name || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="metadata summary">
+                              evidence={importPreview.metadata_summary?.evidence || 0}, comments={importPreview.metadata_summary?.comments || 0}, sources={importPreview.metadata_summary?.sources || 0}, roots={importPreview.metadata_summary?.roots || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="validation summary">
+                              {importPreview.validation_summary?.status || 'unknown'} / errors {importPreview.validation_summary?.errors || 0} / warnings {importPreview.validation_summary?.warnings || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="coverage summary">
+                              level={importPreview.coverage_summary?.coverage_level || 'selected_public_sample'}, not_full_web={boolText(importPreview.coverage_summary?.not_full_web)}, not_full_platform={boolText(importPreview.coverage_summary?.not_full_platform)}, not_full_thread={boolText(importPreview.coverage_summary?.not_full_thread)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="privacy summary">
+                              raw ids removed={boolText(importPreview.privacy_summary?.raw_author_ids_removed)}, raw names removed={boolText(importPreview.privacy_summary?.raw_author_names_removed)}, profile URLs removed={boolText(importPreview.privacy_summary?.profile_urls_removed)}, private messages excluded={boolText(importPreview.privacy_summary?.private_messages_excluded)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="proposed defaults">
+                              review={importPreview.proposed_evidence_defaults?.review_status || 'review_needed'}, verification={importPreview.proposed_evidence_defaults?.verification_status || 'source_url_provided_unverified'}, trust={importPreview.proposed_evidence_defaults?.trust_label || 'medium_low'}, dedup={boolText(importPreview.proposed_evidence_defaults?.dedup_required)}, audit={boolText(importPreview.proposed_evidence_defaults?.audit_required)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="dedup preview">
+                              required={boolText(importPreview.dedup_preview?.required)}, computed_now={boolText(importPreview.dedup_preview?.computed_now)}, reason={importPreview.dedup_preview?.reason || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="sample preview policy">
+                              read_rows_now={boolText(importPreview.sample_preview_policy?.read_rows_now)}, future_safe_rows={importPreview.sample_preview_policy?.max_safe_sample_rows_future || 0}, redact_author_fields={boolText(importPreview.sample_preview_policy?.redact_author_fields)}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="Import preview boundary"
+                            description="Import preview is not import. It does not read rows, create a case, run analysis, verify truth, or generate Sandbox/public event/report output. Evidence rows require later human review decision and manual import job."
+                          />
+                          <SummaryList title="Preview blockers" items={importPreview.blockers || []} />
+                          <SummaryList title="Preview warnings" items={importPreview.warnings || []} />
+                          <SummaryList title="Boundary notes" items={importPreview.boundary_notes || []} />
+                          <SummaryList title="Recommended next steps" items={importPreview.recommended_next_steps || []} />
+                        </Space>
+                      </Card>
+                    ) : null}
+                  </Space>
+                </Card>
+
                 <Alert
                   type="info"
                   showIcon
@@ -857,6 +1009,7 @@ export function AnalysisRequests() {
 
       <Card className="panel-card" title={<Space><ShieldCheck size={17} />Intentional non-goals</Space>}>
         <Space wrap>
+          <Tag>no evidence row parsing</Tag>
           <Tag>no evidence row import</Tag>
           <Tag>no production case creation</Tag>
           <Tag>no analysis generation</Tag>
