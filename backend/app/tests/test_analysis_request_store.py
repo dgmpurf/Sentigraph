@@ -10,10 +10,12 @@ from app.services.analysis_request_store import (
     create_case_draft_handoff,
     create_evidence_import_plan,
     create_evidence_import_preview,
+    create_evidence_import_review_decision,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
     list_evidence_import_previews,
+    list_evidence_import_review_decisions,
     list_analysis_requests,
     read_analysis_request,
 )
@@ -82,6 +84,48 @@ def create_valid_import_plan(tmp_path: Path, request_id: str) -> dict:
 def overwrite_import_plan(tmp_path: Path, request_id: str, plan_payload: dict) -> None:
     plan_path = tmp_path / "import_plans" / f"{request_id}.json"
     plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
+
+
+def create_valid_import_preview(tmp_path: Path, request_id: str) -> dict:
+    create_valid_import_plan(tmp_path, request_id)
+    preview = create_evidence_import_preview(request_id)
+    preview_path = tmp_path / "import_previews" / f"{request_id}.json"
+    return json.loads(preview_path.read_text(encoding="utf-8"))
+
+
+def overwrite_import_preview(tmp_path: Path, request_id: str, preview_payload: dict) -> None:
+    preview_path = tmp_path / "import_previews" / f"{request_id}.json"
+    preview_path.write_text(json.dumps(preview_payload), encoding="utf-8")
+
+
+def full_review_checklist() -> dict:
+    return {
+        "coverage_reviewed": True,
+        "validation_reviewed": True,
+        "privacy_reviewed": True,
+        "no_raw_author_identifiers": True,
+        "not_full_web_acknowledged": True,
+        "not_full_platform_acknowledged": True,
+        "not_full_thread_acknowledged": True,
+        "review_needed_default_acknowledged": True,
+        "trust_label_default_acknowledged": True,
+        "dedup_required_acknowledged": True,
+        "no_auto_analysis_acknowledged": True,
+        "no_auto_report_acknowledged": True,
+    }
+
+
+def review_payload(decision: str = "approve_import", **overrides: object) -> dict:
+    payload = {
+        "reviewer_label": "local_reviewer",
+        "decision": decision,
+        "target_case_mode": "new_review_case" if decision != "reject_import" else "reject_no_case",
+        "target_case_id": None,
+        "notes": "Reviewed local metadata-only import preview.",
+        "checklist": full_review_checklist(),
+    }
+    payload.update(overrides)
+    return payload
 
 
 def test_create_request_writes_json_with_conservative_defaults(tmp_path: Path, monkeypatch) -> None:
@@ -579,6 +623,173 @@ def test_import_preview_does_not_parse_invalid_evidence_rows(tmp_path: Path, mon
     assert preview.sample_preview_policy.read_rows_now is False
     assert preview.safe_mode["evidence_rows_read"] is False
     assert preview.safe_mode["evidence_rows_parsed"] is False
+    assert not (tmp_path / "cases").exists()
+
+
+def test_approve_import_creates_append_only_review_decision(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Approve future import"))
+    )
+    create_valid_import_preview(tmp_path, record.request_id)
+
+    decision = create_evidence_import_review_decision(record.request_id, review_payload("approve_import"))
+    decision_again = create_evidence_import_review_decision(
+        record.request_id,
+        review_payload("request_more_source", notes="Ask provider for broader source notes."),
+    )
+    decision_files = sorted((tmp_path / "review_decisions").glob(f"{record.request_id}_*.json"))
+    decision_text = "\n".join(path.read_text(encoding="utf-8") for path in decision_files)
+
+    assert decision.schema_ == "sentigraph_evidence_import_review_decision_v1"
+    assert decision.preview_id == f"import_preview_{record.request_id}"
+    assert decision.plan_id == f"import_plan_{record.request_id}"
+    assert decision.draft_id == f"draft_{record.request_id}"
+    assert decision.request_id == record.request_id
+    assert decision.reviewer_label == "local_reviewer"
+    assert decision.decision == "approve_import"
+    assert decision.readiness.state == "approved_for_future_manual_import"
+    assert decision.readiness.can_create_import_job_now is False
+    assert decision.readiness.requires_future_manual_import_phase is True
+    assert decision.approved_defaults.review_status == "review_needed"
+    assert decision.approved_defaults.verification_status == "source_url_provided_unverified"
+    assert decision.approved_defaults.trust_label == "medium_low"
+    assert decision.audit.source == "manual_review"
+    assert decision.safe_mode["evidence_rows_imported"] is False
+    assert decision.safe_mode["production_case_created"] is False
+    assert decision.safe_mode["analysis_generated"] is False
+    assert decision.safe_mode["report_generated"] is False
+    assert decision_again.decision_id != decision.decision_id
+    assert len(decision_files) == 2
+    assert len(list_evidence_import_review_decisions(record.request_id)) == 2
+    assert "raw_author_value" not in decision_text
+
+
+def test_approve_import_blocks_when_checklist_missing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Approve missing checklist"))
+    )
+    create_valid_import_preview(tmp_path, record.request_id)
+    checklist = full_review_checklist()
+    checklist["privacy_reviewed"] = False
+
+    try:
+        create_evidence_import_review_decision(record.request_id, review_payload("approve_import", checklist=checklist))
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "acknowledgements" in str(exc)
+    else:
+        raise AssertionError("approve_import should require all checklist acknowledgements")
+
+
+def test_non_approve_review_decisions_are_allowed_with_notes(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    expected_states = {
+        "reject_import": "rejected",
+        "request_more_source": "needs_more_source",
+        "mark_limited_sample": "limited_sample_only",
+        "hold_for_privacy_review": "held_for_privacy_review",
+    }
+
+    for decision_value, expected_state in expected_states.items():
+        record = create_analysis_request(
+            AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title=f"{decision_value} decision"))
+        )
+        create_valid_import_preview(tmp_path, record.request_id)
+        checklist = full_review_checklist()
+        checklist["coverage_reviewed"] = False
+
+        decision = create_evidence_import_review_decision(
+            record.request_id,
+            review_payload(decision_value, checklist=checklist, notes=f"{decision_value} recorded with notes."),
+        )
+
+        assert decision.decision == decision_value
+        assert decision.readiness.state == expected_state
+        assert decision.readiness.can_create_import_job_now is False
+        assert decision.safe_mode["evidence_rows_imported"] is False
+
+
+def test_review_decision_blocks_missing_preview_and_invalid_payloads(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Missing preview decision"))
+    )
+
+    cases = [
+        ("Missing preview", record.request_id, review_payload("reject_import"), "import preview"),
+    ]
+
+    valid_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Invalid decision payloads"))
+    )
+    create_valid_import_preview(tmp_path, valid_record.request_id)
+    cases.extend(
+        [
+            ("Missing reviewer", valid_record.request_id, review_payload("reject_import", reviewer_label=""), "reviewer_label"),
+            ("Unknown decision", valid_record.request_id, review_payload("unknown_decision"), "decision"),
+            ("Missing notes", valid_record.request_id, review_payload("request_more_source", notes=""), "notes"),
+        ]
+    )
+
+    for title, request_id, payload, expected_message in cases:
+        try:
+            create_evidence_import_review_decision(request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should block review decision")
+
+
+def test_review_decision_blocks_unsafe_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+
+    cases = [
+        ("Validation errors", lambda preview: preview["validation_summary"].update({"errors": 2}), "validation errors"),
+        ("Missing privacy", lambda preview: preview["privacy_summary"].update({"raw_author_ids_removed": False}), "privacy flags"),
+        ("Claims full web", lambda preview: preview["coverage_summary"].update({"coverage_level": "full_web", "not_full_web": False}), "coverage"),
+        ("Wrong review default", lambda preview: preview["proposed_evidence_defaults"].update({"review_status": "approved"}), "review_status"),
+        ("Wrong verification default", lambda preview: preview["proposed_evidence_defaults"].update({"verification_status": "verified"}), "verification_status"),
+        ("Wrong trust default", lambda preview: preview["proposed_evidence_defaults"].update({"trust_label": "high"}), "trust_label"),
+        ("Reads rows", lambda preview: preview["sample_preview_policy"].update({"read_rows_now": True}), "read_rows_now"),
+        ("Not ready", lambda preview: preview["readiness"].update({"state": "blocked"}), "readiness"),
+    ]
+
+    for title, mutate, expected_message in cases:
+        record = create_analysis_request(
+            AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title=title))
+        )
+        preview_payload = create_valid_import_preview(tmp_path, record.request_id)
+        mutate(preview_payload)
+        overwrite_import_preview(tmp_path, record.request_id, preview_payload)
+
+        try:
+            create_evidence_import_review_decision(record.request_id, review_payload("reject_import", notes=title))
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should block review decision")
+
+
+def test_review_decision_does_not_import_rows_or_create_outputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Decision only safety"))
+    )
+    preview_payload = create_valid_import_preview(tmp_path, record.request_id)
+    package_dir = tmp_path / "external_package"
+    package_dir.mkdir()
+    (package_dir / "evidence_items.jsonl").write_text("{invalid rows should not be parsed", encoding="utf-8")
+    preview_payload["package_reference"]["package_path"] = str(package_dir)
+    overwrite_import_preview(tmp_path, record.request_id, preview_payload)
+
+    decision = create_evidence_import_review_decision(record.request_id, review_payload("approve_import"))
+
+    assert decision.safe_mode["evidence_rows_read"] is False
+    assert decision.safe_mode["evidence_rows_parsed"] is False
+    assert decision.safe_mode["evidence_rows_imported"] is False
+    assert decision.safe_mode["production_case_created"] is False
+    assert decision.safe_mode["analysis_generated"] is False
     assert not (tmp_path / "cases").exists()
 
 

@@ -10,6 +10,8 @@ from app.schemas.analysis_request import (
     CaseDraftHandoff,
     EvidenceImportPlan,
     EvidenceImportPreview,
+    EvidenceImportReviewDecision,
+    EvidenceImportReviewDecisionCreate,
 )
 from app.services.analysis_request_store import (
     AnalysisRequestNotFoundError,
@@ -18,15 +20,19 @@ from app.services.analysis_request_store import (
     create_case_draft_handoff,
     create_evidence_import_plan,
     create_evidence_import_preview,
+    create_evidence_import_review_decision,
     create_analysis_request,
     get_analysis_request_config,
     list_case_draft_handoffs,
+    list_all_evidence_import_review_decisions,
     list_evidence_import_plans,
     list_evidence_import_previews,
+    list_evidence_import_review_decisions,
     list_analysis_requests,
     read_case_draft_handoff,
     read_evidence_import_plan,
     read_evidence_import_preview,
+    read_evidence_import_review_decision,
     read_analysis_request,
 )
 
@@ -61,6 +67,11 @@ def analysis_request_import_plan_list() -> list[EvidenceImportPlan]:
 @router.get("/import-previews", response_model=list[EvidenceImportPreview])
 def analysis_request_import_preview_list() -> list[EvidenceImportPreview]:
     return list_evidence_import_previews()
+
+
+@router.get("/review-decisions", response_model=list[EvidenceImportReviewDecision])
+def analysis_request_review_decision_all_list() -> list[EvidenceImportReviewDecision]:
+    return list_all_evidence_import_review_decisions()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -117,6 +128,37 @@ def analysis_request_import_preview_detail(request_id: str) -> EvidenceImportPre
 def analysis_request_import_preview_create(request_id: str) -> EvidenceImportPreview:
     try:
         return create_evidence_import_preview(request_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/review-decisions", response_model=list[EvidenceImportReviewDecision])
+def analysis_request_review_decision_list(request_id: str) -> list[EvidenceImportReviewDecision]:
+    try:
+        return list_evidence_import_review_decisions(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/review-decisions", response_model=EvidenceImportReviewDecision)
+def analysis_request_review_decision_create(
+    request_id: str,
+    payload: EvidenceImportReviewDecisionCreate,
+) -> EvidenceImportReviewDecision:
+    try:
+        return create_evidence_import_review_decision(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/review-decisions/{decision_id}", response_model=EvidenceImportReviewDecision)
+def analysis_request_review_decision_detail(request_id: str, decision_id: str) -> EvidenceImportReviewDecision:
+    try:
+        return read_evidence_import_review_decision(request_id, decision_id)
     except AnalysisRequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:

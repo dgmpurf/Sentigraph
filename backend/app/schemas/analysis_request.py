@@ -359,6 +359,103 @@ class EvidenceImportPreview(BaseModel):
     )
 
 
+EvidenceImportDecisionValue = Literal[
+    "approve_import",
+    "reject_import",
+    "request_more_source",
+    "mark_limited_sample",
+    "hold_for_privacy_review",
+]
+
+EvidenceImportTargetCaseMode = Literal["new_review_case", "existing_case", "reject_no_case"]
+
+
+class EvidenceImportReviewChecklist(BaseModel):
+    coverage_reviewed: bool = False
+    validation_reviewed: bool = False
+    privacy_reviewed: bool = False
+    no_raw_author_identifiers: bool = False
+    not_full_web_acknowledged: bool = False
+    not_full_platform_acknowledged: bool = False
+    not_full_thread_acknowledged: bool = False
+    review_needed_default_acknowledged: bool = False
+    trust_label_default_acknowledged: bool = False
+    dedup_required_acknowledged: bool = False
+    no_auto_analysis_acknowledged: bool = False
+    no_auto_report_acknowledged: bool = False
+
+    def missing_acknowledgements(self) -> list[str]:
+        return [key for key, value in self.model_dump().items() if value is not True]
+
+
+class EvidenceImportReviewDecisionCreate(BaseModel):
+    reviewer_label: str = Field(..., min_length=1, max_length=120)
+    decision: EvidenceImportDecisionValue
+    target_case_mode: EvidenceImportTargetCaseMode = "new_review_case"
+    target_case_id: str | None = None
+    notes: str = Field(default="", max_length=3000)
+    checklist: EvidenceImportReviewChecklist = Field(default_factory=EvidenceImportReviewChecklist)
+    created_by: str = "sentigraph_local_ui"
+
+
+class EvidenceImportReviewReadiness(BaseModel):
+    state: str = "needs_more_source"
+    can_create_import_job_now: bool = False
+    requires_future_manual_import_phase: bool = True
+    reason: str = "Review decision recorded. Evidence rows are not imported in Phase 6H."
+
+
+class EvidenceImportReviewAudit(BaseModel):
+    created_by: str = "sentigraph_local_ui"
+    created_at: datetime = Field(default_factory=utc_now)
+    source: str = "manual_review"
+
+
+class EvidenceImportReviewDecision(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_evidence_import_review_decision_v1"] = Field(
+        default="sentigraph_evidence_import_review_decision_v1",
+        alias="schema",
+    )
+    decision_id: str
+    preview_id: str
+    plan_id: str
+    draft_id: str
+    request_id: str
+    reviewer_label: str
+    reviewed_at: datetime = Field(default_factory=utc_now)
+    decision: EvidenceImportDecisionValue
+    target_case_mode: EvidenceImportTargetCaseMode = "new_review_case"
+    target_case_id: str | None = None
+    notes: str = ""
+    checklist: EvidenceImportReviewChecklist = Field(default_factory=EvidenceImportReviewChecklist)
+    approved_defaults: EvidenceImportDefaultPolicy = Field(default_factory=EvidenceImportDefaultPolicy)
+    readiness: EvidenceImportReviewReadiness = Field(default_factory=EvidenceImportReviewReadiness)
+    boundary_notes: list[str] = Field(default_factory=list)
+    audit: EvidenceImportReviewAudit = Field(default_factory=EvidenceImportReviewAudit)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "review_record_only": True,
+            "evidence_rows_read": False,
+            "evidence_rows_parsed": False,
+            "evidence_rows_imported": False,
+            "production_case_created": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

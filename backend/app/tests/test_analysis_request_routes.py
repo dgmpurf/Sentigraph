@@ -30,6 +30,50 @@ def route_provider_result(request_id: str, *, status: str = "validation_warn", e
     }
 
 
+def route_full_review_checklist() -> dict:
+    return {
+        "coverage_reviewed": True,
+        "validation_reviewed": True,
+        "privacy_reviewed": True,
+        "no_raw_author_identifiers": True,
+        "not_full_web_acknowledged": True,
+        "not_full_platform_acknowledged": True,
+        "not_full_thread_acknowledged": True,
+        "review_needed_default_acknowledged": True,
+        "trust_label_default_acknowledged": True,
+        "dedup_required_acknowledged": True,
+        "no_auto_analysis_acknowledged": True,
+        "no_auto_report_acknowledged": True,
+    }
+
+
+def route_review_payload(decision: str = "approve_import", **overrides: object) -> dict:
+    payload = {
+        "reviewer_label": "route_reviewer",
+        "decision": decision,
+        "target_case_mode": "new_review_case" if decision != "reject_import" else "reject_no_case",
+        "target_case_id": None,
+        "notes": "Route review decision.",
+        "checklist": route_full_review_checklist(),
+    }
+    payload.update(overrides)
+    return payload
+
+
+def create_route_import_preview(tmp_path: Path, title: str = "Review decision route") -> str:
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": title}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(json.dumps(route_provider_result(request_id)), encoding="utf-8")
+    assert client.post(f"/api/v1/analysis-requests/{request_id}/case-draft").status_code == 200
+    assert client.post(f"/api/v1/analysis-requests/{request_id}/import-plan").status_code == 200
+    assert client.post(f"/api/v1/analysis-requests/{request_id}/import-preview").status_code == 200
+    return request_id
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -395,6 +439,98 @@ def test_analysis_request_import_preview_route_blocks_bad_plan(tmp_path: Path, m
 
     assert response.status_code == 400
     assert "immediate execution" in response.text
+
+
+def test_analysis_request_review_decision_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id = create_route_import_preview(tmp_path)
+
+    approve_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-decisions",
+        json=route_review_payload("approve_import"),
+    )
+    second_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-decisions",
+        json=route_review_payload("request_more_source", notes="Need more source context."),
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-decisions")
+    all_response = client.get("/api/v1/analysis-requests/review-decisions")
+
+    assert approve_response.status_code == 200
+    body = approve_response.json()
+    assert body["schema"] == "sentigraph_evidence_import_review_decision_v1"
+    assert body["preview_id"] == f"import_preview_{request_id}"
+    assert body["plan_id"] == f"import_plan_{request_id}"
+    assert body["draft_id"] == f"draft_{request_id}"
+    assert body["reviewer_label"] == "route_reviewer"
+    assert body["decision"] == "approve_import"
+    assert body["readiness"]["state"] == "approved_for_future_manual_import"
+    assert body["readiness"]["can_create_import_job_now"] is False
+    assert body["approved_defaults"]["review_status"] == "review_needed"
+    assert body["approved_defaults"]["verification_status"] == "source_url_provided_unverified"
+    assert body["approved_defaults"]["trust_label"] == "medium_low"
+    assert body["safe_mode"]["evidence_rows_imported"] is False
+    assert body["safe_mode"]["production_case_created"] is False
+    assert body["safe_mode"]["analysis_generated"] is False
+    assert second_response.status_code == 200
+    assert second_response.json()["decision_id"] != body["decision_id"]
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 2
+    assert all_response.status_code == 200
+    assert len(all_response.json()) == 2
+    read_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-decisions/{body['decision_id']}")
+    assert read_response.status_code == 200
+    assert read_response.json()["decision_id"] == body["decision_id"]
+    assert "raw_author_value" not in approve_response.text
+
+
+def test_analysis_request_review_decision_route_blocks_without_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Blocked review decision route"}},
+    )
+    request_id = create_response.json()["request_id"]
+
+    response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-decisions",
+        json=route_review_payload("reject_import"),
+    )
+
+    assert response.status_code == 404
+    assert "import preview" in response.text.lower()
+
+
+def test_analysis_request_review_decision_route_blocks_missing_approve_ack(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id = create_route_import_preview(tmp_path, "Missing approve ack route")
+    checklist = route_full_review_checklist()
+    checklist["no_auto_report_acknowledged"] = False
+
+    response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-decisions",
+        json=route_review_payload("approve_import", checklist=checklist),
+    )
+
+    assert response.status_code == 400
+    assert "acknowledgements" in response.text
+
+
+def test_analysis_request_review_decision_route_blocks_bad_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id = create_route_import_preview(tmp_path, "Bad review preview route")
+    preview_path = tmp_path / "import_previews" / f"{request_id}.json"
+    preview = json.loads(preview_path.read_text(encoding="utf-8"))
+    preview["coverage_summary"]["not_full_web"] = False
+    preview_path.write_text(json.dumps(preview), encoding="utf-8")
+
+    response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-decisions",
+        json=route_review_payload("reject_import"),
+    )
+
+    assert response.status_code == 400
+    assert "coverage" in response.text
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:

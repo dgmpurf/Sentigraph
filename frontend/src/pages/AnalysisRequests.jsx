@@ -27,11 +27,13 @@ import {
   createAnalysisRequestCaseDraft,
   createAnalysisRequestImportPlan,
   createAnalysisRequestImportPreview,
+  createAnalysisRequestReviewDecision,
   getAnalysisRequest,
   getAnalysisRequestCaseDraft,
   getAnalysisRequestConfig,
   getAnalysisRequestImportPlan,
   getAnalysisRequestImportPreview,
+  listAnalysisRequestReviewDecisions,
   listAnalysisRequests,
 } from '../api/sentigraphApi.js'
 
@@ -99,6 +101,37 @@ const BOUNDARY_TAGS = [
   'needs review',
 ]
 
+const REVIEW_DECISION_OPTIONS = [
+  { value: 'approve_import', label: 'approve future manual import' },
+  { value: 'reject_import', label: 'reject import' },
+  { value: 'request_more_source', label: 'request more source' },
+  { value: 'mark_limited_sample', label: 'mark limited sample' },
+  { value: 'hold_for_privacy_review', label: 'privacy hold' },
+]
+
+const TARGET_CASE_MODE_OPTIONS = [
+  { value: 'new_review_case', label: 'new_review_case' },
+  { value: 'existing_case', label: 'existing_case' },
+  { value: 'reject_no_case', label: 'reject_no_case' },
+]
+
+const REVIEW_CHECKLIST_ITEMS = [
+  { value: 'coverage_reviewed', label: 'coverage reviewed' },
+  { value: 'validation_reviewed', label: 'validation reviewed' },
+  { value: 'privacy_reviewed', label: 'privacy reviewed' },
+  { value: 'no_raw_author_identifiers', label: 'no raw author identifiers' },
+  { value: 'not_full_web_acknowledged', label: 'not full-web acknowledged' },
+  { value: 'not_full_platform_acknowledged', label: 'not full-platform acknowledged' },
+  { value: 'not_full_thread_acknowledged', label: 'not full-thread acknowledged' },
+  { value: 'review_needed_default_acknowledged', label: 'review_needed default acknowledged' },
+  { value: 'trust_label_default_acknowledged', label: 'medium_low trust default acknowledged' },
+  { value: 'dedup_required_acknowledged', label: 'dedup required acknowledged' },
+  { value: 'no_auto_analysis_acknowledged', label: 'no auto analysis acknowledged' },
+  { value: 'no_auto_report_acknowledged', label: 'no auto report acknowledged' },
+]
+
+const REVIEW_CHECKLIST_KEYS = REVIEW_CHECKLIST_ITEMS.map((item) => item.value)
+
 function statusTag(status) {
   return <Tag color={STATUS_COLOR[status] || 'default'}>{status || 'no_result'}</Tag>
 }
@@ -117,6 +150,11 @@ function splitTags(value) {
 
 function boolText(value) {
   return value ? 'yes' : 'no'
+}
+
+function buildReviewChecklist(selectedKeys = []) {
+  const selected = new Set(Array.isArray(selectedKeys) ? selectedKeys : [])
+  return Object.fromEntries(REVIEW_CHECKLIST_KEYS.map((key) => [key, selected.has(key)]))
 }
 
 function buildPayload(values) {
@@ -279,6 +317,7 @@ function SummaryList({ title, items }) {
 export function AnalysisRequests() {
   const { message } = AntApp.useApp()
   const [form] = Form.useForm()
+  const [reviewForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -286,16 +325,19 @@ export function AnalysisRequests() {
   const [caseDraft, setCaseDraft] = useState(null)
   const [importPlan, setImportPlan] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
+  const [reviewDecisions, setReviewDecisions] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [draftLoading, setDraftLoading] = useState(false)
   const [planLoading, setPlanLoading] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [reviewLoading, setReviewLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
   const [previewError, setPreviewError] = useState('')
+  const [reviewError, setReviewError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -304,15 +346,27 @@ export function AnalysisRequests() {
   const draftGate = useMemo(() => draftEligibility(selectedRecord), [selectedRecord])
   const planGate = useMemo(() => importPlanEligibility(caseDraft), [caseDraft])
   const previewGate = useMemo(() => importPreviewEligibility(importPlan), [importPlan])
+  const watchedReviewDecision = Form.useWatch('decision', reviewForm)
+  const watchedReviewChecklist = Form.useWatch('checklist', reviewForm)
+  const watchedReviewerLabel = Form.useWatch('reviewer_label', reviewForm)
+  const reviewSubmitDisabled = useMemo(() => {
+    if (!importPreview || reviewLoading) return true
+    if (!String(watchedReviewerLabel || '').trim()) return true
+    if (watchedReviewDecision !== 'approve_import') return false
+    const selected = new Set(Array.isArray(watchedReviewChecklist) ? watchedReviewChecklist : [])
+    return REVIEW_CHECKLIST_KEYS.some((key) => !selected.has(key))
+  }, [importPreview, reviewLoading, watchedReviewChecklist, watchedReviewDecision, watchedReviewerLabel])
 
   async function loadDraftAndPlan(requestId) {
     if (!requestId) {
       setCaseDraft(null)
       setImportPlan(null)
       setImportPreview(null)
+      setReviewDecisions([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
+      setReviewError('')
       return
     }
     try {
@@ -335,6 +389,13 @@ export function AnalysisRequests() {
     } catch {
       setImportPreview(null)
       setPreviewError('')
+    }
+    try {
+      setReviewDecisions(await listAnalysisRequestReviewDecisions(requestId))
+      setReviewError('')
+    } catch {
+      setReviewDecisions([])
+      setReviewError('')
     }
   }
 
@@ -385,6 +446,7 @@ export function AnalysisRequests() {
     setDraftError('')
     setPlanError('')
     setPreviewError('')
+    setReviewError('')
     try {
       setDetail(await getAnalysisRequest(record.request_id))
       await loadDraftAndPlan(record.request_id)
@@ -436,6 +498,7 @@ export function AnalysisRequests() {
       const plan = await createAnalysisRequestImportPlan(selectedRecord.request_id)
       setImportPlan(plan)
       setImportPreview(null)
+      setReviewDecisions([])
       message.success('已生成 Evidence 导入计划')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import plan.'
@@ -452,12 +515,37 @@ export function AnalysisRequests() {
     try {
       const preview = await createAnalysisRequestImportPreview(selectedRecord.request_id)
       setImportPreview(preview)
+      setReviewDecisions([])
       message.success('已生成 metadata-only Evidence 导入预览')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import preview.'
       setPreviewError(String(messageText))
     } finally {
       setPreviewLoading(false)
+    }
+  }
+
+  async function handleCreateReviewDecision(values) {
+    if (!selectedRecord?.request_id) return
+    setReviewLoading(true)
+    setReviewError('')
+    try {
+      const decision = await createAnalysisRequestReviewDecision(selectedRecord.request_id, {
+        reviewer_label: values.reviewer_label || '',
+        decision: values.decision || 'request_more_source',
+        target_case_mode: values.target_case_mode || 'new_review_case',
+        target_case_id: values.target_case_id || null,
+        notes: values.notes || '',
+        checklist: buildReviewChecklist(values.checklist || []),
+        created_by: 'sentigraph_local_ui',
+      })
+      setReviewDecisions(await listAnalysisRequestReviewDecisions(selectedRecord.request_id))
+      message.success(`已记录人工审核决策：${decision.decision}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review decision.'
+      setReviewError(String(messageText))
+    } finally {
+      setReviewLoading(false)
     }
   }
 
@@ -522,6 +610,8 @@ export function AnalysisRequests() {
   const draftJson = caseDraft ? JSON.stringify(caseDraft, null, 2) : ''
   const importPlanJson = importPlan ? JSON.stringify(importPlan, null, 2) : ''
   const importPreviewJson = importPreview ? JSON.stringify(importPreview, null, 2) : ''
+  const latestReviewDecision = reviewDecisions[0] || null
+  const latestReviewDecisionJson = latestReviewDecision ? JSON.stringify(latestReviewDecision, null, 2) : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -976,6 +1066,141 @@ export function AnalysisRequests() {
                         </Space>
                       </Card>
                     ) : null}
+                  </Space>
+                </Card>
+
+                <Card size="small" title="人工审核决策 / Human review decision">
+                  <Space direction="vertical" size={12} className="full-width">
+                    <Alert
+                      type={importPreview ? 'success' : 'info'}
+                      showIcon
+                      message={importPreview ? '可记录人工审核决策' : '请先生成 Evidence 导入预览'}
+                      description="Review decision is not import. Approval only allows a future manual import job phase; it does not create case, run analysis, verify truth, or generate report/Sandbox/public event output."
+                    />
+                    {reviewError ? <Alert type="error" showIcon message={reviewError} /> : null}
+                    {importPreview ? (
+                      <Form
+                        form={reviewForm}
+                        layout="vertical"
+                        initialValues={{
+                          reviewer_label: 'sentigraph_local_reviewer',
+                          decision: 'request_more_source',
+                          target_case_mode: 'new_review_case',
+                          checklist: [],
+                        }}
+                        onFinish={handleCreateReviewDecision}
+                      >
+                        <Row gutter={[12, 0]}>
+                          <Col span={8}>
+                            <Form.Item
+                              name="reviewer_label"
+                              label="reviewer_label"
+                              rules={[{ required: true, message: 'Please enter reviewer_label' }]}
+                            >
+                              <Input placeholder="sentigraph_local_reviewer" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={8}>
+                            <Form.Item name="decision" label="decision">
+                              <Select options={REVIEW_DECISION_OPTIONS} />
+                            </Form.Item>
+                          </Col>
+                          <Col span={8}>
+                            <Form.Item name="target_case_mode" label="target_case_mode">
+                              <Select options={TARGET_CASE_MODE_OPTIONS} />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                        <Form.Item name="target_case_id" label="target_case_id / optional existing case id">
+                          <Input placeholder="Only meaningful when target_case_mode=existing_case" />
+                        </Form.Item>
+                        <Form.Item name="notes" label="review notes">
+                          <TextArea rows={3} placeholder="例如：覆盖范围已确认，仅允许未来人工导入；或要求 provider 补充来源说明。" />
+                        </Form.Item>
+                        <Form.Item name="checklist" label="review checklist">
+                          <Checkbox.Group className="full-width">
+                            <Row gutter={[8, 8]}>
+                              {REVIEW_CHECKLIST_ITEMS.map((item) => (
+                                <Col span={12} key={item.value}>
+                                  <Checkbox value={item.value}>{item.label}</Checkbox>
+                                </Col>
+                              ))}
+                            </Row>
+                          </Checkbox.Group>
+                        </Form.Item>
+                        <Space wrap>
+                          <Button type="primary" htmlType="submit" loading={reviewLoading} disabled={reviewSubmitDisabled}>
+                            记录人工审核决策 / Record review decision
+                          </Button>
+                          {watchedReviewDecision === 'approve_import' && reviewSubmitDisabled ? (
+                            <Text type="secondary">approve_import requires all checklist acknowledgements.</Text>
+                          ) : null}
+                        </Space>
+                      </Form>
+                    ) : null}
+
+                    {latestReviewDecision ? (
+                      <Card className="panel-card" size="small" title="Latest review decision">
+                        <Space direction="vertical" size={12} className="full-width">
+                          <Space wrap>
+                            <Tag color="green">{latestReviewDecision.readiness?.state || 'recorded'}</Tag>
+                            <Tag color="blue">{latestReviewDecision.decision}</Tag>
+                            <Tag color="default">can_create_import_job_now: {boolText(latestReviewDecision.readiness?.can_create_import_job_now)}</Tag>
+                            <Tag color="purple">{latestReviewDecision.approved_defaults?.trust_label || 'medium_low'}</Tag>
+                          </Space>
+                          <Descriptions column={1} size="small">
+                            <Descriptions.Item label="decision_id">{latestReviewDecision.decision_id}</Descriptions.Item>
+                            <Descriptions.Item label="reviewer_label">{latestReviewDecision.reviewer_label}</Descriptions.Item>
+                            <Descriptions.Item label="reviewed_at">{latestReviewDecision.reviewed_at || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="target_case_mode">{latestReviewDecision.target_case_mode}</Descriptions.Item>
+                            <Descriptions.Item label="target_case_id">{latestReviewDecision.target_case_id || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="approved defaults">
+                              review={latestReviewDecision.approved_defaults?.review_status || 'review_needed'}, verification={latestReviewDecision.approved_defaults?.verification_status || 'source_url_provided_unverified'}, trust={latestReviewDecision.approved_defaults?.trust_label || 'medium_low'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="checklist">
+                              {Object.entries(latestReviewDecision.checklist || {}).filter(([, value]) => value).length}/{REVIEW_CHECKLIST_KEYS.length} acknowledged
+                            </Descriptions.Item>
+                            <Descriptions.Item label="notes">{latestReviewDecision.notes || '-'}</Descriptions.Item>
+                          </Descriptions>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="Review decision boundary"
+                            description="Even approve_import does not import evidence rows, create a case, run analysis, generate reports, or verify official truth. It only records a human decision for a later manual import phase."
+                          />
+                          <SummaryList title="Decision boundary notes" items={latestReviewDecision.boundary_notes || []} />
+                          <Button
+                            icon={<ClipboardCopy size={16} />}
+                            onClick={() => copyText(latestReviewDecisionJson, 'Review decision JSON 已复制')}
+                          >
+                            复制 decision JSON
+                          </Button>
+                        </Space>
+                      </Card>
+                    ) : null}
+
+                    <Card size="small" title={`Existing decisions (${reviewDecisions.length})`}>
+                      {reviewDecisions.length ? (
+                        <Space direction="vertical" size={8} className="full-width">
+                          {reviewDecisions.map((decision) => (
+                            <Card size="small" key={decision.decision_id}>
+                              <Space direction="vertical" size={4} className="full-width">
+                                <Space wrap>
+                                  <Tag color="blue">{decision.decision}</Tag>
+                                  <Tag>{decision.readiness?.state || 'recorded'}</Tag>
+                                  <Text type="secondary">{decision.decision_id}</Text>
+                                </Space>
+                                <Text>reviewer: {decision.reviewer_label || '-'}</Text>
+                                <Text type="secondary">reviewed_at: {decision.reviewed_at || '-'}</Text>
+                                <Text type="secondary">notes: {decision.notes || '-'}</Text>
+                              </Space>
+                            </Card>
+                          ))}
+                        </Space>
+                      ) : (
+                        <Text type="secondary">No human review decision records yet.</Text>
+                      )}
+                    </Card>
                   </Space>
                 </Card>
 

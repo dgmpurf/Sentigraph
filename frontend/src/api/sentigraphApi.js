@@ -120,6 +120,16 @@ export async function createAnalysisRequestImportPreview(requestId) {
   return normalizeAnalysisRequestImportPreview(data)
 }
 
+export async function listAnalysisRequestReviewDecisions(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-decisions`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisRequestReviewDecision).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestReviewDecision(requestId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-decisions`, payload)
+  return normalizeAnalysisRequestReviewDecision(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1288,6 +1298,33 @@ function normalizeAnalysisRequestImportPreview(data) {
     recommended_next_steps: Array.isArray(data.recommended_next_steps)
       ? data.recommended_next_steps.map((item) => String(item))
       : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisRequestReviewDecision(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_evidence_import_review_decision_v1'),
+    decision_id: String(data.decision_id || ''),
+    preview_id: String(data.preview_id || ''),
+    plan_id: String(data.plan_id || ''),
+    draft_id: String(data.draft_id || ''),
+    request_id: String(data.request_id || ''),
+    reviewer_label: String(data.reviewer_label || ''),
+    reviewed_at: data.reviewed_at ? String(data.reviewed_at) : '',
+    decision: String(data.decision || ''),
+    target_case_mode: String(data.target_case_mode || 'new_review_case'),
+    target_case_id: data.target_case_id ? String(data.target_case_id) : '',
+    notes: String(data.notes || ''),
+    checklist: data.checklist && typeof data.checklist === 'object' ? normalizeBooleanMap(data.checklist) : {},
+    approved_defaults:
+      data.approved_defaults && typeof data.approved_defaults === 'object'
+        ? normalizeSafeObject(data.approved_defaults)
+        : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    audit: data.audit && typeof data.audit === 'object' ? normalizeSafeObject(data.audit) : {},
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }

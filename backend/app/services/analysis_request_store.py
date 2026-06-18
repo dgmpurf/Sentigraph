@@ -24,6 +24,10 @@ from app.schemas.analysis_request import (
     EvidenceImportPlanReadiness,
     EvidenceImportPreview,
     EvidenceImportPreviewReadiness,
+    EvidenceImportReviewAudit,
+    EvidenceImportReviewDecision,
+    EvidenceImportReviewDecisionCreate,
+    EvidenceImportReviewReadiness,
     ProviderJobResult,
 )
 
@@ -32,6 +36,22 @@ ANALYSIS_REQUESTS_ENV_VAR = "SENTIGRAPH_ANALYSIS_REQUESTS_DIR"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_ROOT = PROJECT_ROOT / "runtime" / "analysis_requests"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+
+REVIEW_DECISION_STATES = {
+    "approve_import": "approved_for_future_manual_import",
+    "reject_import": "rejected",
+    "request_more_source": "needs_more_source",
+    "mark_limited_sample": "limited_sample_only",
+    "hold_for_privacy_review": "held_for_privacy_review",
+}
+
+REVIEW_DECISION_NEXT_STEPS = {
+    "approve_import": "Next phase may create a manual evidence import job, still with human confirmation.",
+    "reject_import": "Package remains visible for audit but should not be imported.",
+    "request_more_source": "Ask provider for more sources or clearer coverage/validation.",
+    "mark_limited_sample": "May only be used as controlled sample; do not present as broad coverage.",
+    "hold_for_privacy_review": "Requires privacy/legal/security review before any import job.",
+}
 
 
 class AnalysisRequestStoreError(Exception):
@@ -358,6 +378,111 @@ def create_evidence_import_preview(request_id: str) -> EvidenceImportPreview:
     return read_evidence_import_preview(request_id)
 
 
+def read_evidence_import_review_decision(request_id: str, decision_id: str) -> EvidenceImportReviewDecision:
+    decision_path = _review_decision_path(request_id, decision_id)
+    if not decision_path.exists():
+        raise AnalysisRequestNotFoundError(f"Evidence import review decision {decision_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(decision_path.read_text(encoding="utf-8-sig"))
+        return EvidenceImportReviewDecision.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{decision_path.name} is not a valid review decision: {type(exc).__name__}") from exc
+
+
+def list_evidence_import_review_decisions(request_id: str) -> list[EvidenceImportReviewDecision]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    decisions: list[EvidenceImportReviewDecision] = []
+    for path in sorted((root / "review_decisions").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            decisions.append(EvidenceImportReviewDecision.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return decisions
+
+
+def list_all_evidence_import_review_decisions() -> list[EvidenceImportReviewDecision]:
+    root = _ensure_root()
+    decisions: list[EvidenceImportReviewDecision] = []
+    for path in sorted((root / "review_decisions").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            decisions.append(EvidenceImportReviewDecision.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return decisions
+
+
+def create_evidence_import_review_decision(
+    request_id: str,
+    payload: EvidenceImportReviewDecisionCreate | dict[str, Any],
+) -> EvidenceImportReviewDecision:
+    try:
+        decision_payload = (
+            payload
+            if isinstance(payload, EvidenceImportReviewDecisionCreate)
+            else EvidenceImportReviewDecisionCreate.model_validate(payload)
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create review decision: invalid decision payload ({exc}).") from exc
+
+    if not decision_payload.reviewer_label.strip():
+        raise AnalysisRequestValidationError("Cannot create review decision: reviewer_label is required.")
+    if decision_payload.decision not in REVIEW_DECISION_STATES:
+        raise AnalysisRequestValidationError("Cannot create review decision: decision value is unknown.")
+    if decision_payload.decision == "approve_import":
+        missing_acknowledgements = decision_payload.checklist.missing_acknowledgements()
+        if missing_acknowledgements:
+            raise AnalysisRequestValidationError(
+                f"Cannot create review decision: approve_import requires all checklist acknowledgements ({', '.join(missing_acknowledgements)})."
+            )
+    elif not decision_payload.notes.strip():
+        raise AnalysisRequestValidationError("Cannot create review decision: notes are required for non-approve decisions.")
+
+    preview = read_evidence_import_preview(request_id)
+    _validate_review_decision_preview_eligibility(preview)
+    decision_id = _new_review_decision_id()
+    now = datetime.now(timezone.utc)
+    decision = EvidenceImportReviewDecision(
+        decision_id=decision_id,
+        preview_id=preview.preview_id,
+        plan_id=preview.plan_id,
+        draft_id=preview.draft_id,
+        request_id=request_id,
+        reviewer_label=decision_payload.reviewer_label.strip(),
+        reviewed_at=now,
+        decision=decision_payload.decision,
+        target_case_mode=decision_payload.target_case_mode,
+        target_case_id=decision_payload.target_case_id,
+        notes=decision_payload.notes.strip(),
+        checklist=decision_payload.checklist,
+        approved_defaults=preview.proposed_evidence_defaults,
+        readiness=EvidenceImportReviewReadiness(
+            state=REVIEW_DECISION_STATES[decision_payload.decision],
+            can_create_import_job_now=False,
+            requires_future_manual_import_phase=True,
+            reason="Review decision recorded. Evidence rows are not imported in Phase 6H.",
+        ),
+        boundary_notes=[
+            "Review decision is not import.",
+            "Approval only allows a future manual import job phase.",
+            "Evidence rows are still not imported.",
+            "No production case is created.",
+            "No analysis, report, Sandbox fixture, or public event page is generated.",
+            "Provider output remains evidence, not official truth.",
+            REVIEW_DECISION_NEXT_STEPS[decision_payload.decision],
+        ],
+        audit=EvidenceImportReviewAudit(
+            created_by=decision_payload.created_by or "sentigraph_local_ui",
+            created_at=now,
+            source="manual_review",
+        ),
+    )
+    _write_json(_review_decision_path(request_id, decision_id), decision.model_dump(mode="json", by_alias=True))
+    return read_evidence_import_review_decision(request_id, decision_id)
+
+
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -499,6 +624,55 @@ def _validate_import_preview_eligibility(plan: EvidenceImportPlan) -> None:
         )
 
 
+def _validate_review_decision_preview_eligibility(preview: EvidenceImportPreview) -> None:
+    if preview.readiness.state not in {"ready_for_human_review", "ready_for_manual_review"}:
+        raise AnalysisRequestValidationError(f"Cannot create review decision: import preview readiness {preview.readiness.state} is not eligible.")
+    if not preview.package_reference.package_name:
+        raise AnalysisRequestValidationError("Cannot create review decision: package_name is missing.")
+    if preview.metadata_summary.evidence <= 0:
+        raise AnalysisRequestValidationError("Cannot create review decision: metadata_summary.evidence must be greater than 0.")
+    if preview.validation_summary.errors > 0:
+        raise AnalysisRequestValidationError("Cannot create review decision: validation errors must be 0.")
+    required_privacy = [
+        preview.privacy_summary.raw_author_ids_removed,
+        preview.privacy_summary.raw_author_names_removed,
+        preview.privacy_summary.profile_urls_removed,
+        preview.privacy_summary.private_messages_excluded,
+    ]
+    if not all(required_privacy):
+        raise AnalysisRequestValidationError("Cannot create review decision: privacy flags must all be true.")
+    if not (
+        preview.coverage_summary.not_full_web
+        and preview.coverage_summary.not_full_platform
+        and preview.coverage_summary.not_full_thread
+    ):
+        raise AnalysisRequestValidationError("Cannot create review decision: coverage must not claim full-web/full-platform/full-thread coverage.")
+    if preview.proposed_evidence_defaults.review_status != "review_needed":
+        raise AnalysisRequestValidationError("Cannot create review decision: proposed review_status must be review_needed.")
+    if preview.proposed_evidence_defaults.verification_status != "source_url_provided_unverified":
+        raise AnalysisRequestValidationError("Cannot create review decision: proposed verification_status must be source_url_provided_unverified.")
+    if preview.proposed_evidence_defaults.trust_label != "medium_low":
+        raise AnalysisRequestValidationError("Cannot create review decision: proposed trust_label must be medium_low.")
+    if preview.sample_preview_policy.read_rows_now:
+        raise AnalysisRequestValidationError("Cannot create review decision: sample_preview_policy.read_rows_now must be false.")
+
+    unsafe_flags = {
+        "evidence_rows_read": preview.safe_mode.get("evidence_rows_read", False),
+        "evidence_rows_parsed": preview.safe_mode.get("evidence_rows_parsed", False),
+        "evidence_rows_imported": preview.safe_mode.get("evidence_rows_imported", False),
+        "production_case_created": preview.safe_mode.get("production_case_created", False),
+        "analysis_generated": preview.safe_mode.get("analysis_generated", False),
+        "sandbox_fixture_generated": preview.safe_mode.get("sandbox_fixture_generated", False),
+        "public_event_page_generated": preview.safe_mode.get("public_event_page_generated", False),
+        "report_generated": preview.safe_mode.get("report_generated", False),
+    }
+    enabled_flags = [name for name, enabled in unsafe_flags.items() if enabled]
+    if enabled_flags:
+        raise AnalysisRequestValidationError(
+            f"Cannot create review decision: preview suggests immediate execution or row access ({', '.join(enabled_flags)})."
+        )
+
+
 def _read_result_payload(request_id: str) -> dict[str, Any]:
     result_path = _result_path(request_id)
     try:
@@ -522,6 +696,7 @@ def _ensure_root() -> Path:
     (root / "case_drafts").mkdir(parents=True, exist_ok=True)
     (root / "import_plans").mkdir(parents=True, exist_ok=True)
     (root / "import_previews").mkdir(parents=True, exist_ok=True)
+    (root / "review_decisions").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -555,6 +730,13 @@ def _import_preview_path(request_id: str) -> Path:
     return root / "import_previews" / f"{request_id}.json"
 
 
+def _review_decision_path(request_id: str, decision_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(decision_id)
+    root = _ensure_root()
+    return root / "review_decisions" / f"{request_id}_{decision_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -571,6 +753,11 @@ def _new_request_id(title: str) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     slug = _slugify(title)[:40] or "analysis-request"
     return f"req_{timestamp}_{slug}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_review_decision_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"review_decision_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:
