@@ -76,6 +76,7 @@ const navItems = [
     label: '数据与开发工具',
     children: [
       { key: 'searchDiscovery', label: 'Search Discovery', icon: <FileSearch size={17} /> },
+      { key: 'analysisRequests', label: '分析任务请求', icon: <ClipboardList size={17} /> },
       { key: 'externalCollectorBridge', label: '外部采集桥接', icon: <Cable size={17} /> },
       { key: 'publicParsers', label: '公开页面解析', icon: <FileSearch size={17} /> },
       { key: 'platformIntegrations', label: '平台接入总览', icon: <Globe2 size={17} /> },

@@ -93,6 +93,7 @@ const PlatformIntegrationOverview = lazyNamed(
   'PlatformIntegrationOverview',
 )
 const SearchDiscovery = lazyNamed(() => import('./pages/SearchDiscovery.jsx'), 'SearchDiscovery')
+const AnalysisRequests = lazyNamed(() => import('./pages/AnalysisRequests.jsx'), 'AnalysisRequests')
 const ExternalCollectorBridge = lazyNamed(
   () => import('./pages/ExternalCollectorBridge.jsx'),
   'ExternalCollectorBridge',
@@ -126,6 +127,7 @@ function pageFromHash() {
   if (hash === '#/reports/donglu-sunjihai-youth-football-sample') return 'businessReportDongluSunjihaiSample'
   if (hash === '#/opinion-ecosystem') return 'opinionEcosystem'
   if (hash === '#/external-collector') return 'externalCollectorBridge'
+  if (hash === '#/analysis-requests') return 'analysisRequests'
   return 'dashboard'
 }
 
@@ -711,6 +713,7 @@ function App() {
       businessReportDongluSunjihaiSample: '#/reports/donglu-sunjihai-youth-football-sample',
       opinionEcosystem: '#/opinion-ecosystem',
       externalCollectorBridge: '#/external-collector',
+      analysisRequests: '#/analysis-requests',
     }
     if (hashByPage[pageKey]) {
       window.location.hash = hashByPage[pageKey]
@@ -813,6 +816,7 @@ function App() {
     publicParsers: <PublicParserStatus />,
     platformIntegrations: <PlatformIntegrationOverview />,
     searchDiscovery: <SearchDiscovery {...pageProps} />,
+    analysisRequests: <AnalysisRequests />,
     externalCollectorBridge: <ExternalCollectorBridge />,
     publicDemoGuide: <PublicDemoGuide />,
     publicEventPlaza: <PublicEventPlaza guided={isGuidedPublicEventFlow} onNavigate={handleNavigate} />,

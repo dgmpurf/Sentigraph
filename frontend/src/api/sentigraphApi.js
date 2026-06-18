@@ -50,6 +50,31 @@ export async function attachSearchDiscoveryCandidates(caseId, payload = {}) {
   return normalizeSearchDiscoveryAttachResult(data)
 }
 
+export async function getAnalysisRequestConfig() {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/config`)
+  return normalizeAnalysisRequestConfig(data)
+}
+
+export async function createAnalysisRequest(payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests`, payload)
+  return normalizeAnalysisRequestRecord(data)
+}
+
+export async function listAnalysisRequests() {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisRequestRecord).filter(Boolean) : []
+}
+
+export async function getAnalysisRequest(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}`)
+  return normalizeAnalysisRequestRecord(data)
+}
+
+export async function cancelAnalysisRequest(requestId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/cancel`)
+  return data
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1026,6 +1051,78 @@ function normalizeEvidenceImportWarning(warning) {
     code: String(warning.code || ''),
     message: String(warning.message || ''),
     severity: String(warning.severity || 'warning'),
+  }
+}
+
+function normalizeAnalysisRequestConfig(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      configured_by_env: false,
+      root_exists: false,
+      requests_dir_exists: false,
+      results_dir_exists: false,
+      request_count: 0,
+      result_count: 0,
+      root_label: 'runtime/analysis_requests',
+      suggested_env_var: 'SENTIGRAPH_ANALYSIS_REQUESTS_DIR',
+      safe_mode: {},
+    }
+  }
+  return {
+    configured_by_env: Boolean(data.configured_by_env),
+    root_exists: Boolean(data.root_exists),
+    requests_dir_exists: Boolean(data.requests_dir_exists),
+    results_dir_exists: Boolean(data.results_dir_exists),
+    request_count: Number(data.request_count || 0),
+    result_count: Number(data.result_count || 0),
+    root_label: String(data.root_label || 'runtime/analysis_requests'),
+    suggested_env_var: String(data.suggested_env_var || 'SENTIGRAPH_ANALYSIS_REQUESTS_DIR'),
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisRequestRecord(data) {
+  if (!data || typeof data !== 'object') return null
+  const request = data.request && typeof data.request === 'object' ? data.request : {}
+  const providerResult = data.provider_result && typeof data.provider_result === 'object'
+    ? normalizeProviderJobResult(data.provider_result)
+    : null
+  return {
+    request_id: String(data.request_id || request.request_id || ''),
+    request,
+    request_status: String(data.request_status || request.sentigraph_metadata?.request_status || 'draft'),
+    request_file: String(data.request_file || ''),
+    result_file: data.result_file ? String(data.result_file) : '',
+    provider_result: providerResult,
+    result_warning: data.result_warning ? String(data.result_warning) : '',
+    provider_status: data.provider_status ? String(data.provider_status) : providerResult?.status || '',
+    safety_status: data.safety_status ? String(data.safety_status) : providerResult?.safety_status || '',
+    package_name: data.package_name ? String(data.package_name) : providerResult?.package_name || '',
+    created_at: data.created_at ? String(data.created_at) : request.created_at ? String(request.created_at) : '',
+    updated_at: data.updated_at ? String(data.updated_at) : '',
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeProviderJobResult(result) {
+  if (!result || typeof result !== 'object') return null
+  return {
+    schema: String(result.schema || 'sentigraph_provider_job_result_v1'),
+    request_id: String(result.request_id || ''),
+    provider_job_id: String(result.provider_job_id || ''),
+    provider_type: String(result.provider_type || ''),
+    status: String(result.status || ''),
+    safety_status: String(result.safety_status || ''),
+    package_path: String(result.package_path || ''),
+    package_name: String(result.package_name || ''),
+    package_role: String(result.package_role || ''),
+    package_index_path: String(result.package_index_path || ''),
+    counts: result.counts && typeof result.counts === 'object' ? normalizeNumberMap(result.counts) : {},
+    validation: result.validation && typeof result.validation === 'object' ? normalizeSafeObject(result.validation) : {},
+    coverage: result.coverage && typeof result.coverage === 'object' ? normalizeSafeObject(result.coverage) : {},
+    privacy: result.privacy && typeof result.privacy === 'object' ? normalizeSafeObject(result.privacy) : {},
+    skipped: Array.isArray(result.skipped) ? result.skipped.map((item) => JSON.stringify(item)) : [],
+    notes: Array.isArray(result.notes) ? result.notes.map((item) => String(item)) : [],
   }
 }
 

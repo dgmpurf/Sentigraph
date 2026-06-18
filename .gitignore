@@ -13,3 +13,4 @@ venv/
 backend/data/*.json
 backend/data/*.json.tmp
 !backend/data/.gitkeep
+runtime/
