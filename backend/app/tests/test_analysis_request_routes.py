@@ -74,6 +74,16 @@ def create_route_import_preview(tmp_path: Path, title: str = "Review decision ro
     return request_id
 
 
+def create_route_approve_decision(tmp_path: Path, title: str = "Import job route") -> str:
+    request_id = create_route_import_preview(tmp_path, title)
+    response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-decisions",
+        json=route_review_payload("approve_import"),
+    )
+    assert response.status_code == 200
+    return request_id
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -531,6 +541,110 @@ def test_analysis_request_review_decision_route_blocks_bad_preview(tmp_path: Pat
 
     assert response.status_code == 400
     assert "coverage" in response.text
+
+
+def test_analysis_request_import_job_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id = create_route_approve_decision(tmp_path)
+
+    post_response = client.post(f"/api/v1/analysis-requests/{request_id}/import-jobs")
+    second_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/import-jobs",
+        json={"target_case_mode": "existing_case", "target_case_id": "case_route_existing"},
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/import-jobs")
+    all_response = client.get("/api/v1/analysis-requests/import-jobs")
+
+    assert post_response.status_code == 200
+    body = post_response.json()
+    assert body["schema"] == "sentigraph_manual_evidence_import_job_v1"
+    assert body["job_type"] == "manual_evidence_import"
+    assert body["execution_mode"] == "dry_run_gate"
+    assert body["status"] == "draft_not_executed"
+    assert body["source"] == "human_review_decision"
+    assert body["target_case"]["mode"] == "new_review_case"
+    assert body["target_case"]["create_case_now"] is False
+    assert body["package_reference"]["package_name"] == "route_package"
+    assert body["metadata_summary"]["evidence"] == 581
+    assert body["approved_defaults"]["review_status"] == "review_needed"
+    assert body["approved_defaults"]["verification_status"] == "source_url_provided_unverified"
+    assert body["approved_defaults"]["trust_label"] == "medium_low"
+    assert body["dry_run_result"]["would_import_evidence_rows"] is True
+    assert body["dry_run_result"]["import_evidence_rows_now"] is False
+    assert body["dry_run_result"]["create_case_now"] is False
+    assert body["dry_run_result"]["run_analysis_now"] is False
+    assert body["dry_run_result"]["generate_report_now"] is False
+    assert body["preflight_checks"]["approved_import_decision_present"] is True
+    assert body["readiness"]["state"] == "ready_for_future_manual_import_execution"
+    assert body["readiness"]["can_execute_now"] is False
+    assert body["safe_mode"]["evidence_rows_read"] is False
+    assert body["safe_mode"]["evidence_rows_parsed"] is False
+    assert body["safe_mode"]["evidence_rows_imported"] is False
+    assert body["safe_mode"]["production_case_created"] is False
+    assert body["safe_mode"]["analysis_generated"] is False
+    assert second_response.status_code == 200
+    assert second_response.json()["job_id"] != body["job_id"]
+    assert second_response.json()["target_case"]["mode"] == "existing_case"
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 2
+    assert all_response.status_code == 200
+    assert len(all_response.json()) == 2
+    read_response = client.get(f"/api/v1/analysis-requests/{request_id}/import-jobs/{body['job_id']}")
+    assert read_response.status_code == 200
+    assert read_response.json()["job_id"] == body["job_id"]
+    assert "raw_author_value" not in post_response.text
+
+
+def test_analysis_request_import_job_route_blocks_without_approve_decision(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id = create_route_import_preview(tmp_path, "Job blocked no decision")
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/import-jobs")
+
+    assert response.status_code == 404
+    assert "review decision" in response.text.lower()
+
+
+def test_analysis_request_import_job_route_blocks_non_approve_latest_decision(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id = create_route_import_preview(tmp_path, "Job blocked non approve")
+    reject_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-decisions",
+        json=route_review_payload("reject_import", notes="Reject package."),
+    )
+    assert reject_response.status_code == 200
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/import-jobs")
+
+    assert response.status_code == 400
+    assert "approve_import" in response.text
+
+
+def test_analysis_request_import_job_route_blocks_existing_case_without_id(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id = create_route_approve_decision(tmp_path, "Job blocked target id")
+
+    response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/import-jobs",
+        json={"target_case_mode": "existing_case"},
+    )
+
+    assert response.status_code == 400
+    assert "target_case_id" in response.text
+
+
+def test_analysis_request_import_job_route_blocks_bad_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id = create_route_approve_decision(tmp_path, "Job blocked bad preview")
+    preview_path = tmp_path / "import_previews" / f"{request_id}.json"
+    preview = json.loads(preview_path.read_text(encoding="utf-8"))
+    preview["validation_summary"]["errors"] = 2
+    preview_path.write_text(json.dumps(preview), encoding="utf-8")
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/import-jobs")
+
+    assert response.status_code == 400
+    assert "validation errors" in response.text
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:

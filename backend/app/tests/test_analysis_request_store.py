@@ -11,11 +11,13 @@ from app.services.analysis_request_store import (
     create_evidence_import_plan,
     create_evidence_import_preview,
     create_evidence_import_review_decision,
+    create_manual_evidence_import_job,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
+    list_manual_evidence_import_jobs,
     list_analysis_requests,
     read_analysis_request,
 )
@@ -126,6 +128,13 @@ def review_payload(decision: str = "approve_import", **overrides: object) -> dic
     }
     payload.update(overrides)
     return payload
+
+
+def create_approved_review_decision(tmp_path: Path, request_id: str) -> dict:
+    create_valid_import_preview(tmp_path, request_id)
+    decision = create_evidence_import_review_decision(request_id, review_payload("approve_import"))
+    decision_path = tmp_path / "review_decisions" / f"{request_id}_{decision.decision_id}.json"
+    return json.loads(decision_path.read_text(encoding="utf-8"))
 
 
 def test_create_request_writes_json_with_conservative_defaults(tmp_path: Path, monkeypatch) -> None:
@@ -790,6 +799,196 @@ def test_review_decision_does_not_import_rows_or_create_outputs(tmp_path: Path, 
     assert decision.safe_mode["evidence_rows_imported"] is False
     assert decision.safe_mode["production_case_created"] is False
     assert decision.safe_mode["analysis_generated"] is False
+    assert not (tmp_path / "cases").exists()
+
+
+def test_approved_review_decision_creates_manual_import_job_dry_run(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Manual import job dry run"))
+    )
+    decision_payload = create_approved_review_decision(tmp_path, record.request_id)
+
+    job = create_manual_evidence_import_job(record.request_id)
+    second_job = create_manual_evidence_import_job(
+        record.request_id,
+        {"decision_id": decision_payload["decision_id"], "target_case_mode": "new_review_case"},
+    )
+    job_files = sorted((tmp_path / "import_jobs").glob(f"{record.request_id}_*.json"))
+    job_text = "\n".join(path.read_text(encoding="utf-8") for path in job_files)
+
+    assert job.schema_ == "sentigraph_manual_evidence_import_job_v1"
+    assert job.decision_id == decision_payload["decision_id"]
+    assert job.preview_id == f"import_preview_{record.request_id}"
+    assert job.plan_id == f"import_plan_{record.request_id}"
+    assert job.draft_id == f"draft_{record.request_id}"
+    assert job.request_id == record.request_id
+    assert job.job_type == "manual_evidence_import"
+    assert job.execution_mode == "dry_run_gate"
+    assert job.status == "draft_not_executed"
+    assert job.target_case.mode == "new_review_case"
+    assert job.target_case.create_case_now is False
+    assert job.package_reference.package_name == "sample_package"
+    assert job.metadata_summary.evidence == 581
+    assert job.approved_defaults.review_status == "review_needed"
+    assert job.approved_defaults.verification_status == "source_url_provided_unverified"
+    assert job.approved_defaults.trust_label == "medium_low"
+    assert job.dry_run_result.would_import_evidence_rows is True
+    assert job.dry_run_result.import_evidence_rows_now is False
+    assert job.dry_run_result.would_create_or_attach_case is True
+    assert job.dry_run_result.create_case_now is False
+    assert job.dry_run_result.would_run_dedup is True
+    assert job.dry_run_result.run_dedup_now is False
+    assert job.dry_run_result.would_create_review_queue_items is True
+    assert job.dry_run_result.create_review_queue_now is False
+    assert job.dry_run_result.would_run_analysis is False
+    assert job.dry_run_result.run_analysis_now is False
+    assert job.dry_run_result.generate_report_now is False
+    assert job.preflight_checks.approved_import_decision_present is True
+    assert job.preflight_checks.coverage_acknowledged is True
+    assert job.preflight_checks.no_raw_author_identifiers_acknowledged is True
+    assert job.readiness.state == "ready_for_future_manual_import_execution"
+    assert job.readiness.can_execute_now is False
+    assert job.readiness.requires_separate_import_phase is True
+    assert job.safe_mode["evidence_rows_read"] is False
+    assert job.safe_mode["evidence_rows_parsed"] is False
+    assert job.safe_mode["evidence_rows_imported"] is False
+    assert job.safe_mode["production_case_created"] is False
+    assert job.safe_mode["analysis_generated"] is False
+    assert second_job.job_id != job.job_id
+    assert len(job_files) == 2
+    assert len(list_manual_evidence_import_jobs(record.request_id)) == 2
+    assert "raw_author_value" not in job_text
+
+
+def test_manual_import_job_blocks_non_approve_latest_decisions(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    blocked_decisions = [
+        "reject_import",
+        "request_more_source",
+        "mark_limited_sample",
+        "hold_for_privacy_review",
+    ]
+
+    for decision_value in blocked_decisions:
+        record = create_analysis_request(
+            AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title=f"{decision_value} job block"))
+        )
+        create_valid_import_preview(tmp_path, record.request_id)
+        create_evidence_import_review_decision(
+            record.request_id,
+            review_payload(decision_value, notes=f"{decision_value} should block job."),
+        )
+
+        try:
+            create_manual_evidence_import_job(record.request_id)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert "approve_import" in str(exc)
+        else:
+            raise AssertionError(f"{decision_value} should block manual import job draft")
+
+
+def test_manual_import_job_blocks_missing_decision_and_bad_target(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    missing_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Missing decision job"))
+    )
+    create_valid_import_preview(tmp_path, missing_record.request_id)
+    approved_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Bad target job"))
+    )
+    create_approved_review_decision(tmp_path, approved_record.request_id)
+
+    cases = [
+        ("Missing decision", missing_record.request_id, {}, "review decision"),
+        ("Existing case without id", approved_record.request_id, {"target_case_mode": "existing_case"}, "target_case_id"),
+        ("Invalid target", approved_record.request_id, {"target_case_mode": "reject_no_case"}, "target_case_mode"),
+    ]
+
+    for title, request_id, payload, expected_message in cases:
+        try:
+            create_manual_evidence_import_job(request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should block manual import job")
+
+
+def test_manual_import_job_blocks_unsafe_decision_and_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+
+    cases = [
+        ("Checklist missing", "decision", lambda decision: decision["checklist"].update({"privacy_reviewed": False}), "acknowledgements"),
+        ("Validation errors", "preview", lambda preview: preview["validation_summary"].update({"errors": 2}), "validation errors"),
+        ("No evidence", "preview", lambda preview: preview["metadata_summary"].update({"evidence": 0}), "metadata_summary.evidence"),
+        ("Missing package", "preview", lambda preview: preview["package_reference"].update({"package_name": ""}), "package_name"),
+        ("Privacy missing", "preview", lambda preview: preview["privacy_summary"].update({"raw_author_ids_removed": False}), "privacy flags"),
+        ("Full web claim", "preview", lambda preview: preview["coverage_summary"].update({"not_full_web": False}), "coverage"),
+        ("Reads rows", "preview", lambda preview: preview["sample_preview_policy"].update({"read_rows_now": True}), "read_rows_now"),
+    ]
+
+    for title, target, mutate, expected_message in cases:
+        record = create_analysis_request(
+            AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title=title))
+        )
+        decision_payload = create_approved_review_decision(tmp_path, record.request_id)
+        if target == "decision":
+            decision_path = tmp_path / "review_decisions" / f"{record.request_id}_{decision_payload['decision_id']}.json"
+            decision = json.loads(decision_path.read_text(encoding="utf-8"))
+            mutate(decision)
+            decision_path.write_text(json.dumps(decision), encoding="utf-8")
+        else:
+            preview_path = tmp_path / "import_previews" / f"{record.request_id}.json"
+            preview = json.loads(preview_path.read_text(encoding="utf-8"))
+            mutate(preview)
+            preview_path.write_text(json.dumps(preview), encoding="utf-8")
+
+        try:
+            create_manual_evidence_import_job(record.request_id)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should block manual import job")
+
+
+def test_manual_import_job_existing_case_requires_target_id_and_remains_dry_run(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Existing case dry run"))
+    )
+    create_approved_review_decision(tmp_path, record.request_id)
+
+    job = create_manual_evidence_import_job(
+        record.request_id,
+        {"target_case_mode": "existing_case", "target_case_id": "case_existing_review_only"},
+    )
+
+    assert job.target_case.mode == "existing_case"
+    assert job.target_case.target_case_id == "case_existing_review_only"
+    assert job.target_case.create_case_now is False
+    assert job.dry_run_result.create_case_now is False
+    assert job.readiness.can_execute_now is False
+
+
+def test_manual_import_job_does_not_parse_invalid_evidence_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Dry run ignores rows"))
+    )
+    create_approved_review_decision(tmp_path, record.request_id)
+    package_dir = tmp_path / "external_package"
+    package_dir.mkdir()
+    (package_dir / "evidence_items.jsonl").write_text("{invalid rows must not be parsed", encoding="utf-8")
+    preview_path = tmp_path / "import_previews" / f"{record.request_id}.json"
+    preview = json.loads(preview_path.read_text(encoding="utf-8"))
+    preview["package_reference"]["package_path"] = str(package_dir)
+    preview_path.write_text(json.dumps(preview), encoding="utf-8")
+
+    job = create_manual_evidence_import_job(record.request_id)
+
+    assert job.safe_mode["evidence_rows_read"] is False
+    assert job.safe_mode["evidence_rows_parsed"] is False
+    assert job.safe_mode["evidence_rows_imported"] is False
     assert not (tmp_path / "cases").exists()
 
 

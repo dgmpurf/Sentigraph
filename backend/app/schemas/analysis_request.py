@@ -456,6 +456,110 @@ class EvidenceImportReviewDecision(BaseModel):
     )
 
 
+class ManualEvidenceImportJobCreate(BaseModel):
+    decision_id: str | None = None
+    target_case_mode: Literal["new_review_case", "existing_case"] | None = None
+    target_case_id: str | None = None
+    created_by: str = "sentigraph_local_ui"
+
+
+class ManualEvidenceImportTargetCase(BaseModel):
+    mode: Literal["new_review_case", "existing_case", "reject_no_case"] = "new_review_case"
+    target_case_id: str | None = None
+    create_case_now: bool = False
+
+
+class ManualEvidenceImportDryRunResult(BaseModel):
+    would_import_evidence_rows: bool = True
+    import_evidence_rows_now: bool = False
+    would_create_or_attach_case: bool = True
+    create_case_now: bool = False
+    would_run_dedup: bool = True
+    run_dedup_now: bool = False
+    would_create_review_queue_items: bool = True
+    create_review_queue_now: bool = False
+    would_run_analysis: bool = False
+    run_analysis_now: bool = False
+    would_generate_sandbox: bool = False
+    generate_sandbox_now: bool = False
+    would_generate_report: bool = False
+    generate_report_now: bool = False
+
+
+class ManualEvidenceImportPreflightChecks(BaseModel):
+    approved_import_decision_present: bool = True
+    coverage_acknowledged: bool = True
+    validation_acknowledged: bool = True
+    privacy_acknowledged: bool = True
+    no_raw_author_identifiers_acknowledged: bool = True
+    not_full_web_acknowledged: bool = True
+    not_full_platform_acknowledged: bool = True
+    not_full_thread_acknowledged: bool = True
+    review_needed_default_acknowledged: bool = True
+    trust_label_default_acknowledged: bool = True
+    dedup_required_acknowledged: bool = True
+    no_auto_analysis_acknowledged: bool = True
+    no_auto_report_acknowledged: bool = True
+
+
+class ManualEvidenceImportJobReadiness(BaseModel):
+    state: str = "ready_for_future_manual_import_execution"
+    can_execute_now: bool = False
+    requires_separate_import_phase: bool = True
+    reason: str = "Dry-run gate only. Evidence rows are not imported in Phase 6I."
+
+
+class ManualEvidenceImportJob(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_manual_evidence_import_job_v1"] = Field(
+        default="sentigraph_manual_evidence_import_job_v1",
+        alias="schema",
+    )
+    job_id: str
+    decision_id: str
+    preview_id: str
+    plan_id: str
+    draft_id: str
+    request_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    job_type: str = "manual_evidence_import"
+    execution_mode: str = "dry_run_gate"
+    status: str = "draft_not_executed"
+    source: str = "human_review_decision"
+    target_case: ManualEvidenceImportTargetCase = Field(default_factory=ManualEvidenceImportTargetCase)
+    package_reference: CaseDraftPackageReference = Field(default_factory=CaseDraftPackageReference)
+    metadata_summary: ProviderJobCounts = Field(default_factory=ProviderJobCounts)
+    approved_defaults: EvidenceImportDefaultPolicy = Field(default_factory=EvidenceImportDefaultPolicy)
+    dry_run_result: ManualEvidenceImportDryRunResult = Field(default_factory=ManualEvidenceImportDryRunResult)
+    preflight_checks: ManualEvidenceImportPreflightChecks = Field(default_factory=ManualEvidenceImportPreflightChecks)
+    readiness: ManualEvidenceImportJobReadiness = Field(default_factory=ManualEvidenceImportJobReadiness)
+    blockers: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "dry_run_gate_only": True,
+            "evidence_rows_read": False,
+            "evidence_rows_parsed": False,
+            "evidence_rows_imported": False,
+            "production_case_created": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

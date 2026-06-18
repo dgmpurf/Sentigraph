@@ -25,6 +25,7 @@ import {
   cancelAnalysisRequest,
   createAnalysisRequest,
   createAnalysisRequestCaseDraft,
+  createAnalysisRequestImportJob,
   createAnalysisRequestImportPlan,
   createAnalysisRequestImportPreview,
   createAnalysisRequestReviewDecision,
@@ -33,6 +34,7 @@ import {
   getAnalysisRequestConfig,
   getAnalysisRequestImportPlan,
   getAnalysisRequestImportPreview,
+  listAnalysisRequestImportJobs,
   listAnalysisRequestReviewDecisions,
   listAnalysisRequests,
 } from '../api/sentigraphApi.js'
@@ -113,6 +115,11 @@ const TARGET_CASE_MODE_OPTIONS = [
   { value: 'new_review_case', label: 'new_review_case' },
   { value: 'existing_case', label: 'existing_case' },
   { value: 'reject_no_case', label: 'reject_no_case' },
+]
+
+const IMPORT_JOB_TARGET_CASE_OPTIONS = [
+  { value: 'new_review_case', label: 'new_review_case' },
+  { value: 'existing_case', label: 'existing_case' },
 ]
 
 const REVIEW_CHECKLIST_ITEMS = [
@@ -298,6 +305,28 @@ function importPreviewEligibility(importPlan) {
   return { eligible: true, reason: '可以生成 metadata-only Evidence 导入预览。' }
 }
 
+function importJobEligibility(importPreview, latestReviewDecision) {
+  if (!importPreview) return { eligible: false, reason: 'Create an Evidence import preview first.' }
+  if (!latestReviewDecision) return { eligible: false, reason: 'Record a human review decision first.' }
+  if (latestReviewDecision.decision !== 'approve_import') {
+    return { eligible: false, reason: 'Latest review decision must be approve_import.' }
+  }
+  if (latestReviewDecision.readiness?.state !== 'approved_for_future_manual_import') {
+    return { eligible: false, reason: `Review readiness ${latestReviewDecision.readiness?.state || 'unknown'} is not eligible.` }
+  }
+  const acknowledged = Object.values(latestReviewDecision.checklist || {}).filter(Boolean).length
+  if (acknowledged < REVIEW_CHECKLIST_KEYS.length) {
+    return { eligible: false, reason: 'approve_import requires all checklist acknowledgements.' }
+  }
+  if (importPreview.sample_preview_policy?.read_rows_now === true) {
+    return { eligible: false, reason: 'Import preview must stay metadata-only and read_rows_now=false.' }
+  }
+  if (Number(importPreview.validation_summary?.errors || 0) > 0) {
+    return { eligible: false, reason: 'Import preview validation errors must be 0.' }
+  }
+  return { eligible: true, reason: 'Ready to create a dry-run import job draft.' }
+}
+
 function SummaryList({ title, items }) {
   return (
     <Card size="small" title={title}>
@@ -318,6 +347,7 @@ export function AnalysisRequests() {
   const { message } = AntApp.useApp()
   const [form] = Form.useForm()
   const [reviewForm] = Form.useForm()
+  const [importJobForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -326,6 +356,7 @@ export function AnalysisRequests() {
   const [importPlan, setImportPlan] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
   const [reviewDecisions, setReviewDecisions] = useState([])
+  const [importJobs, setImportJobs] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -333,11 +364,13 @@ export function AnalysisRequests() {
   const [planLoading, setPlanLoading] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [reviewLoading, setReviewLoading] = useState(false)
+  const [importJobLoading, setImportJobLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
   const [previewError, setPreviewError] = useState('')
   const [reviewError, setReviewError] = useState('')
+  const [importJobError, setImportJobError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -363,10 +396,13 @@ export function AnalysisRequests() {
       setImportPlan(null)
       setImportPreview(null)
       setReviewDecisions([])
+      setImportJobs([])
+      setImportJobs([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
       setReviewError('')
+      setImportJobError('')
       return
     }
     try {
@@ -396,6 +432,13 @@ export function AnalysisRequests() {
     } catch {
       setReviewDecisions([])
       setReviewError('')
+    }
+    try {
+      setImportJobs(await listAnalysisRequestImportJobs(requestId))
+      setImportJobError('')
+    } catch {
+      setImportJobs([])
+      setImportJobError('')
     }
   }
 
@@ -447,6 +490,7 @@ export function AnalysisRequests() {
     setPlanError('')
     setPreviewError('')
     setReviewError('')
+    setImportJobError('')
     try {
       setDetail(await getAnalysisRequest(record.request_id))
       await loadDraftAndPlan(record.request_id)
@@ -516,6 +560,7 @@ export function AnalysisRequests() {
       const preview = await createAnalysisRequestImportPreview(selectedRecord.request_id)
       setImportPreview(preview)
       setReviewDecisions([])
+      setImportJobs([])
       message.success('已生成 metadata-only Evidence 导入预览')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import preview.'
@@ -540,12 +585,35 @@ export function AnalysisRequests() {
         created_by: 'sentigraph_local_ui',
       })
       setReviewDecisions(await listAnalysisRequestReviewDecisions(selectedRecord.request_id))
+      setImportJobs([])
       message.success(`已记录人工审核决策：${decision.decision}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review decision.'
       setReviewError(String(messageText))
     } finally {
       setReviewLoading(false)
+    }
+  }
+
+  async function handleCreateImportJob(values) {
+    if (!selectedRecord?.request_id) return
+    setImportJobLoading(true)
+    setImportJobError('')
+    try {
+      const payload = {
+        decision_id: values.decision_id || undefined,
+        target_case_mode: values.target_case_mode || 'new_review_case',
+        target_case_id: values.target_case_mode === 'existing_case' ? values.target_case_id || '' : null,
+        created_by: 'sentigraph_local_ui',
+      }
+      const job = await createAnalysisRequestImportJob(selectedRecord.request_id, payload)
+      setImportJobs(await listAnalysisRequestImportJobs(selectedRecord.request_id))
+      message.success(`Created dry-run import job draft: ${job.job_id}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create manual import job draft.'
+      setImportJobError(String(messageText))
+    } finally {
+      setImportJobLoading(false)
     }
   }
 
@@ -612,6 +680,12 @@ export function AnalysisRequests() {
   const importPreviewJson = importPreview ? JSON.stringify(importPreview, null, 2) : ''
   const latestReviewDecision = reviewDecisions[0] || null
   const latestReviewDecisionJson = latestReviewDecision ? JSON.stringify(latestReviewDecision, null, 2) : ''
+  const importJobGate = useMemo(
+    () => importJobEligibility(importPreview, latestReviewDecision),
+    [importPreview, latestReviewDecision],
+  )
+  const latestImportJob = importJobs[0] || null
+  const latestImportJobJson = latestImportJob ? JSON.stringify(latestImportJob, null, 2) : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -1199,6 +1273,128 @@ export function AnalysisRequests() {
                         </Space>
                       ) : (
                         <Text type="secondary">No human review decision records yet.</Text>
+                      )}
+                    </Card>
+                  </Space>
+                </Card>
+
+                <Card size="small" title="Manual Evidence Import Job / Dry-run gate">
+                  <Space direction="vertical" size={12} className="full-width">
+                    <Alert
+                      type={importJobGate.eligible ? 'success' : 'info'}
+                      showIcon
+                      message={importJobGate.eligible ? 'Ready to create import job draft' : 'Import job draft not ready'}
+                      description={latestImportJob ? 'An append-only dry-run job draft already exists for this request.' : importJobGate.reason}
+                    />
+                    <Text type="secondary">
+                      This creates only a local dry-run job draft. It does not import evidence rows, read or parse rows, create a production case, run dedup, create review queue items, run analysis, generate Sandbox/public event pages, or generate reports.
+                    </Text>
+                    {importJobError ? <Alert type="error" showIcon message={importJobError} /> : null}
+                    <Form
+                      form={importJobForm}
+                      layout="vertical"
+                      initialValues={{
+                        target_case_mode: 'new_review_case',
+                      }}
+                      onFinish={handleCreateImportJob}
+                    >
+                      <Row gutter={[12, 0]}>
+                        <Col span={8}>
+                          <Form.Item name="target_case_mode" label="target_case_mode">
+                            <Select options={IMPORT_JOB_TARGET_CASE_OPTIONS} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item name="target_case_id" label="target_case_id">
+                            <Input placeholder="Required only for existing_case" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item name="decision_id" label="decision_id">
+                            <Input placeholder={latestReviewDecision?.decision_id || 'latest approve_import decision'} />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <Space wrap>
+                        <Button
+                          type="primary"
+                          htmlType="submit"
+                          loading={importJobLoading}
+                          disabled={!importJobGate.eligible}
+                        >
+                          Create import job draft / dry-run only
+                        </Button>
+                        {latestImportJob ? (
+                          <Button
+                            icon={<ClipboardCopy size={16} />}
+                            onClick={() => copyText(latestImportJobJson, 'Import job JSON copied')}
+                          >
+                            Copy latest job JSON
+                          </Button>
+                        ) : null}
+                      </Space>
+                    </Form>
+
+                    {latestImportJob ? (
+                      <Card className="panel-card" size="small" title="Latest dry-run import job draft">
+                        <Space direction="vertical" size={12} className="full-width">
+                          <Space wrap>
+                            <Tag color="green">{latestImportJob.status || 'draft_not_executed'}</Tag>
+                            <Tag color="blue">{latestImportJob.execution_mode || 'dry_run_gate'}</Tag>
+                            <Tag color="default">can_execute_now: {boolText(latestImportJob.readiness?.can_execute_now)}</Tag>
+                            <Tag color="purple">{latestImportJob.approved_defaults?.trust_label || 'medium_low'}</Tag>
+                          </Space>
+                          <Descriptions column={1} size="small">
+                            <Descriptions.Item label="job_id">{latestImportJob.job_id}</Descriptions.Item>
+                            <Descriptions.Item label="decision_id">{latestImportJob.decision_id}</Descriptions.Item>
+                            <Descriptions.Item label="preview_id">{latestImportJob.preview_id}</Descriptions.Item>
+                            <Descriptions.Item label="package">{latestImportJob.package_reference?.package_name || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="target_case">
+                              mode={latestImportJob.target_case?.mode || 'new_review_case'}, target_case_id={latestImportJob.target_case?.target_case_id || '-'}, create_case_now={boolText(latestImportJob.target_case?.create_case_now)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="metadata summary">
+                              evidence={latestImportJob.metadata_summary?.evidence || 0}, comments={latestImportJob.metadata_summary?.comments || 0}, sources={latestImportJob.metadata_summary?.sources || 0}, roots={latestImportJob.metadata_summary?.roots || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="approved defaults">
+                              review={latestImportJob.approved_defaults?.review_status || 'review_needed'}, verification={latestImportJob.approved_defaults?.verification_status || 'source_url_provided_unverified'}, trust={latestImportJob.approved_defaults?.trust_label || 'medium_low'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="dry-run now flags">
+                              import_rows={boolText(latestImportJob.dry_run_result?.import_evidence_rows_now)}, create_case={boolText(latestImportJob.dry_run_result?.create_case_now)}, dedup={boolText(latestImportJob.dry_run_result?.run_dedup_now)}, review_queue={boolText(latestImportJob.dry_run_result?.create_review_queue_now)}, analysis={boolText(latestImportJob.dry_run_result?.run_analysis_now)}, report={boolText(latestImportJob.dry_run_result?.generate_report_now)}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="Dry-run boundary"
+                            description="Append-only job draft only: no evidence rows read, parsed, or imported; no production case; no analysis; no report; no provider or collector execution."
+                          />
+                          <SummaryList title="Preflight checks" items={Object.entries(latestImportJob.preflight_checks || {}).map(([key, value]) => `${key}: ${boolText(value)}`)} />
+                          <SummaryList title="Boundary notes" items={latestImportJob.boundary_notes || []} />
+                          <SummaryList title="Recommended next steps" items={latestImportJob.recommended_next_steps || []} />
+                        </Space>
+                      </Card>
+                    ) : null}
+
+                    <Card size="small" title={`Existing import job drafts (${importJobs.length})`}>
+                      {importJobs.length ? (
+                        <Space direction="vertical" size={8} className="full-width">
+                          {importJobs.map((job) => (
+                            <Card size="small" key={job.job_id}>
+                              <Space direction="vertical" size={4} className="full-width">
+                                <Space wrap>
+                                  <Tag color="blue">{job.execution_mode}</Tag>
+                                  <Tag>{job.status}</Tag>
+                                  <Text type="secondary">{job.job_id}</Text>
+                                </Space>
+                                <Text>package: {job.package_reference?.package_name || '-'}</Text>
+                                <Text type="secondary">created_at: {job.created_at || '-'}</Text>
+                                <Text type="secondary">target: {job.target_case?.mode || 'new_review_case'}</Text>
+                              </Space>
+                            </Card>
+                          ))}
+                        </Space>
+                      ) : (
+                        <Text type="secondary">No import job drafts yet.</Text>
                       )}
                     </Card>
                   </Space>

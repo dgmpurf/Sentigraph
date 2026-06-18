@@ -28,6 +28,11 @@ from app.schemas.analysis_request import (
     EvidenceImportReviewDecision,
     EvidenceImportReviewDecisionCreate,
     EvidenceImportReviewReadiness,
+    ManualEvidenceImportJob,
+    ManualEvidenceImportJobCreate,
+    ManualEvidenceImportJobReadiness,
+    ManualEvidenceImportPreflightChecks,
+    ManualEvidenceImportTargetCase,
     ProviderJobResult,
 )
 
@@ -483,6 +488,126 @@ def create_evidence_import_review_decision(
     return read_evidence_import_review_decision(request_id, decision_id)
 
 
+def read_manual_evidence_import_job(request_id: str, job_id: str) -> ManualEvidenceImportJob:
+    job_path = _import_job_path(request_id, job_id)
+    if not job_path.exists():
+        raise AnalysisRequestNotFoundError(f"Manual evidence import job {job_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(job_path.read_text(encoding="utf-8-sig"))
+        return ManualEvidenceImportJob.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{job_path.name} is not a valid manual import job: {type(exc).__name__}") from exc
+
+
+def list_manual_evidence_import_jobs(request_id: str) -> list[ManualEvidenceImportJob]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    jobs: list[ManualEvidenceImportJob] = []
+    for path in sorted((root / "import_jobs").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            jobs.append(ManualEvidenceImportJob.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return jobs
+
+
+def list_all_manual_evidence_import_jobs() -> list[ManualEvidenceImportJob]:
+    root = _ensure_root()
+    jobs: list[ManualEvidenceImportJob] = []
+    for path in sorted((root / "import_jobs").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            jobs.append(ManualEvidenceImportJob.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return jobs
+
+
+def create_manual_evidence_import_job(
+    request_id: str,
+    payload: ManualEvidenceImportJobCreate | dict[str, Any] | None = None,
+) -> ManualEvidenceImportJob:
+    try:
+        job_payload = (
+            payload
+            if isinstance(payload, ManualEvidenceImportJobCreate)
+            else ManualEvidenceImportJobCreate.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create manual import job draft: invalid job payload ({exc}).") from exc
+
+    decision = _select_review_decision_for_import_job(request_id, job_payload.decision_id)
+    _validate_import_job_decision_eligibility(decision)
+    preview = read_evidence_import_preview(request_id)
+    _validate_import_job_preview_eligibility(preview)
+
+    target_case_mode = job_payload.target_case_mode or decision.target_case_mode
+    if target_case_mode not in {"new_review_case", "existing_case"}:
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: target_case_mode must be new_review_case or existing_case.")
+    target_case_id = job_payload.target_case_id or decision.target_case_id
+    if target_case_mode == "existing_case" and not target_case_id:
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: target_case_id is required for existing_case.")
+
+    job_id = _new_import_job_id()
+    job = ManualEvidenceImportJob(
+        job_id=job_id,
+        decision_id=decision.decision_id,
+        preview_id=preview.preview_id,
+        plan_id=preview.plan_id,
+        draft_id=preview.draft_id,
+        request_id=request_id,
+        created_by=job_payload.created_by or "sentigraph_local_ui",
+        target_case=ManualEvidenceImportTargetCase(
+            mode=target_case_mode,
+            target_case_id=target_case_id,
+            create_case_now=False,
+        ),
+        package_reference=preview.package_reference,
+        metadata_summary=preview.metadata_summary,
+        approved_defaults=decision.approved_defaults,
+        preflight_checks=ManualEvidenceImportPreflightChecks(
+            approved_import_decision_present=True,
+            coverage_acknowledged=decision.checklist.coverage_reviewed,
+            validation_acknowledged=decision.checklist.validation_reviewed,
+            privacy_acknowledged=decision.checklist.privacy_reviewed,
+            no_raw_author_identifiers_acknowledged=decision.checklist.no_raw_author_identifiers,
+            not_full_web_acknowledged=decision.checklist.not_full_web_acknowledged,
+            not_full_platform_acknowledged=decision.checklist.not_full_platform_acknowledged,
+            not_full_thread_acknowledged=decision.checklist.not_full_thread_acknowledged,
+            review_needed_default_acknowledged=decision.checklist.review_needed_default_acknowledged,
+            trust_label_default_acknowledged=decision.checklist.trust_label_default_acknowledged,
+            dedup_required_acknowledged=decision.checklist.dedup_required_acknowledged,
+            no_auto_analysis_acknowledged=decision.checklist.no_auto_analysis_acknowledged,
+            no_auto_report_acknowledged=decision.checklist.no_auto_report_acknowledged,
+        ),
+        readiness=ManualEvidenceImportJobReadiness(
+            state="ready_for_future_manual_import_execution",
+            can_execute_now=False,
+            requires_separate_import_phase=True,
+            reason="Dry-run gate only. Evidence rows are not imported in Phase 6I.",
+        ),
+        blockers=[],
+        boundary_notes=[
+            "Job draft is not import.",
+            "Dry-run gate does not read evidence rows.",
+            "Dry-run gate does not create a production case.",
+            "Dry-run gate does not run dedup, create review queue items, run analysis, or generate reports.",
+            "Future phase must explicitly execute manual import after another review.",
+            "Provider output remains evidence, not official truth.",
+        ],
+        recommended_next_steps=[
+            "Future Phase 6J may implement manual import execution against a review-only case.",
+            "Import execution must read rows only in the execution phase.",
+            "Dedup and review queue must run before analysis.",
+            "Analysis, Sandbox, public event, and report generation are later explicit actions only.",
+            "If package is limited sample, do not present it as broad coverage.",
+        ],
+    )
+    _write_json(_import_job_path(request_id, job_id), job.model_dump(mode="json", by_alias=True))
+    return read_manual_evidence_import_job(request_id, job_id)
+
+
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -673,6 +798,98 @@ def _validate_review_decision_preview_eligibility(preview: EvidenceImportPreview
         )
 
 
+def _select_review_decision_for_import_job(
+    request_id: str,
+    decision_id: str | None,
+) -> EvidenceImportReviewDecision:
+    if decision_id:
+        return read_evidence_import_review_decision(request_id, decision_id)
+    decisions = list_evidence_import_review_decisions(request_id)
+    if not decisions:
+        raise AnalysisRequestNotFoundError(f"Evidence import review decision for {request_id} was not found.")
+    return decisions[0]
+
+
+def _validate_import_job_decision_eligibility(decision: EvidenceImportReviewDecision) -> None:
+    if decision.decision != "approve_import":
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: latest review decision must be approve_import.")
+    if decision.readiness.state != "approved_for_future_manual_import":
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual import job draft: decision readiness {decision.readiness.state} is not eligible."
+        )
+    missing_acknowledgements = decision.checklist.missing_acknowledgements()
+    if missing_acknowledgements:
+        missing = ", ".join(missing_acknowledgements)
+        raise AnalysisRequestValidationError(f"Cannot create manual import job draft: missing acknowledgements ({missing}).")
+    if decision.approved_defaults.review_status != "review_needed":
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: approved review_status must be review_needed.")
+    if decision.approved_defaults.verification_status != "source_url_provided_unverified":
+        raise AnalysisRequestValidationError(
+            "Cannot create manual import job draft: approved verification_status must be source_url_provided_unverified."
+        )
+    if decision.approved_defaults.trust_label != "medium_low":
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: approved trust_label must be medium_low.")
+
+    unsafe_flags = {
+        "evidence_rows_read": decision.safe_mode.get("evidence_rows_read", False),
+        "evidence_rows_parsed": decision.safe_mode.get("evidence_rows_parsed", False),
+        "evidence_rows_imported": decision.safe_mode.get("evidence_rows_imported", False),
+        "production_case_created": decision.safe_mode.get("production_case_created", False),
+        "analysis_generated": decision.safe_mode.get("analysis_generated", False),
+        "sandbox_fixture_generated": decision.safe_mode.get("sandbox_fixture_generated", False),
+        "public_event_page_generated": decision.safe_mode.get("public_event_page_generated", False),
+        "report_generated": decision.safe_mode.get("report_generated", False),
+    }
+    enabled_flags = [name for name, enabled in unsafe_flags.items() if enabled]
+    if enabled_flags:
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual import job draft: decision suggests immediate execution or row access ({', '.join(enabled_flags)})."
+        )
+
+
+def _validate_import_job_preview_eligibility(preview: EvidenceImportPreview) -> None:
+    if not preview.package_reference.package_name:
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: package_name is missing.")
+    if preview.metadata_summary.evidence <= 0:
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: metadata_summary.evidence must be greater than 0.")
+    if preview.validation_summary.errors > 0:
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: validation errors must be 0.")
+    required_privacy = [
+        preview.privacy_summary.raw_author_ids_removed,
+        preview.privacy_summary.raw_author_names_removed,
+        preview.privacy_summary.profile_urls_removed,
+        preview.privacy_summary.private_messages_excluded,
+    ]
+    if not all(required_privacy):
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: privacy flags must all be true.")
+    if not (
+        preview.coverage_summary.not_full_web
+        and preview.coverage_summary.not_full_platform
+        and preview.coverage_summary.not_full_thread
+    ):
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: coverage must not claim full-web/full-platform/full-thread coverage.")
+    if preview.sample_preview_policy.read_rows_now:
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: sample_preview_policy.read_rows_now must be false.")
+    if not preview.readiness.requires_review_decision:
+        raise AnalysisRequestValidationError("Cannot create manual import job draft: preview must require review decision.")
+
+    unsafe_flags = {
+        "evidence_rows_read": preview.safe_mode.get("evidence_rows_read", False),
+        "evidence_rows_parsed": preview.safe_mode.get("evidence_rows_parsed", False),
+        "evidence_rows_imported": preview.safe_mode.get("evidence_rows_imported", False),
+        "production_case_created": preview.safe_mode.get("production_case_created", False),
+        "analysis_generated": preview.safe_mode.get("analysis_generated", False),
+        "sandbox_fixture_generated": preview.safe_mode.get("sandbox_fixture_generated", False),
+        "public_event_page_generated": preview.safe_mode.get("public_event_page_generated", False),
+        "report_generated": preview.safe_mode.get("report_generated", False),
+    }
+    enabled_flags = [name for name, enabled in unsafe_flags.items() if enabled]
+    if enabled_flags:
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual import job draft: preview suggests immediate execution or row access ({', '.join(enabled_flags)})."
+        )
+
+
 def _read_result_payload(request_id: str) -> dict[str, Any]:
     result_path = _result_path(request_id)
     try:
@@ -697,6 +914,7 @@ def _ensure_root() -> Path:
     (root / "import_plans").mkdir(parents=True, exist_ok=True)
     (root / "import_previews").mkdir(parents=True, exist_ok=True)
     (root / "review_decisions").mkdir(parents=True, exist_ok=True)
+    (root / "import_jobs").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -737,6 +955,13 @@ def _review_decision_path(request_id: str, decision_id: str) -> Path:
     return root / "review_decisions" / f"{request_id}_{decision_id}.json"
 
 
+def _import_job_path(request_id: str, job_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(job_id)
+    root = _ensure_root()
+    return root / "import_jobs" / f"{request_id}_{job_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -758,6 +983,11 @@ def _new_request_id(title: str) -> str:
 def _new_review_decision_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"review_decision_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_import_job_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"manual_import_job_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

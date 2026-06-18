@@ -130,6 +130,16 @@ export async function createAnalysisRequestReviewDecision(requestId, payload = {
   return normalizeAnalysisRequestReviewDecision(data)
 }
 
+export async function listAnalysisRequestImportJobs(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/import-jobs`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisRequestImportJob).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestImportJob(requestId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/import-jobs`, payload)
+  return normalizeAnalysisRequestImportJob(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1325,6 +1335,53 @@ function normalizeAnalysisRequestReviewDecision(data) {
     readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
     boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
     audit: data.audit && typeof data.audit === 'object' ? normalizeSafeObject(data.audit) : {},
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisRequestImportJob(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_manual_evidence_import_job_v1'),
+    job_id: String(data.job_id || ''),
+    decision_id: String(data.decision_id || ''),
+    preview_id: String(data.preview_id || ''),
+    plan_id: String(data.plan_id || ''),
+    draft_id: String(data.draft_id || ''),
+    request_id: String(data.request_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    job_type: String(data.job_type || 'manual_evidence_import'),
+    execution_mode: String(data.execution_mode || 'dry_run_gate'),
+    status: String(data.status || 'draft_not_executed'),
+    source: String(data.source || 'human_review_decision'),
+    target_case: data.target_case && typeof data.target_case === 'object' ? normalizeSafeObject(data.target_case) : {},
+    package_reference:
+      data.package_reference && typeof data.package_reference === 'object'
+        ? normalizeSafeObject(data.package_reference)
+        : {},
+    metadata_summary:
+      data.metadata_summary && typeof data.metadata_summary === 'object'
+        ? normalizeNumberMap(data.metadata_summary)
+        : {},
+    approved_defaults:
+      data.approved_defaults && typeof data.approved_defaults === 'object'
+        ? normalizeSafeObject(data.approved_defaults)
+        : {},
+    dry_run_result:
+      data.dry_run_result && typeof data.dry_run_result === 'object'
+        ? normalizeBooleanMap(data.dry_run_result)
+        : {},
+    preflight_checks:
+      data.preflight_checks && typeof data.preflight_checks === 'object'
+        ? normalizeBooleanMap(data.preflight_checks)
+        : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }
