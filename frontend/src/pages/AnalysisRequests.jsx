@@ -24,7 +24,9 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   cancelAnalysisRequest,
   createAnalysisRequest,
+  createAnalysisRequestCaseDraft,
   getAnalysisRequest,
+  getAnalysisRequestCaseDraft,
   getAnalysisRequestConfig,
   listAnalysisRequests,
 } from '../api/sentigraphApi.js'
@@ -61,14 +63,14 @@ const SAFETY_COLOR = {
 }
 
 const DEFAULT_FORM_VALUES = {
-  title: 'Helldivers PSN selected public sample request',
+  title: 'Dong Lu / Sun Jihai selected public sample request',
   description: 'Create a local file-based analysis request. Provider execution stays outside Sentigraph.',
-  keywords: ['helldivers', 'psn'],
-  negative_keywords: [],
+  keywords: ['董路', '孙继海', '青训'],
+  negative_keywords: ['广告', '无关'],
   language: ['zh-CN'],
-  event_type: 'public_opinion_event',
+  event_type: 'public_opinion_demo',
   sensitive_flags: [],
-  platforms: ['reddit', 'news_site'],
+  platforms: ['weibo', 'bilibili', 'tieba'],
   target_comment_count: 500,
   target_source_count: 30,
   max_runtime_minutes: 60,
@@ -107,6 +109,10 @@ function splitTags(value) {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function boolText(value) {
+  return value ? 'yes' : 'no'
 }
 
 function buildPayload(values) {
@@ -154,6 +160,36 @@ function buildPayload(values) {
   }
 }
 
+function draftEligibility(record) {
+  const result = record?.provider_result
+  if (!record) return { eligible: false, reason: '请选择一个分析请求。' }
+  if (record.result_warning) return { eligible: false, reason: `Provider result 无法解析：${record.result_warning}` }
+  if (!result) return { eligible: false, reason: '等待 Evidence package metadata。' }
+  if (!['package_ready', 'validation_warn'].includes(result.status)) {
+    return { eligible: false, reason: `当前状态 ${result.status || 'unknown'} 不可生成草稿。` }
+  }
+  if (!['safe', 'medium'].includes(result.safety_status)) {
+    return { eligible: false, reason: `安全状态 ${result.safety_status || 'unknown'} 不可生成草稿。` }
+  }
+  if (Number(result.validation?.errors || 0) > 0) {
+    return { eligible: false, reason: 'validation.errors 必须为 0。' }
+  }
+  if (!result.package_name) return { eligible: false, reason: '缺少 package_name。' }
+  if (Number(result.counts?.evidence || 0) <= 0) return { eligible: false, reason: 'counts.evidence 必须大于 0。' }
+  if (result.coverage?.not_full_web !== true || result.coverage?.not_full_platform !== true || result.coverage?.not_full_thread !== true) {
+    return { eligible: false, reason: '缺少覆盖范围限制说明。' }
+  }
+  if (
+    result.privacy?.raw_author_ids_removed !== true ||
+    result.privacy?.raw_author_names_removed !== true ||
+    result.privacy?.profile_urls_removed !== true ||
+    result.privacy?.private_messages_excluded !== true
+  ) {
+    return { eligible: false, reason: '隐私字段必须确认已移除或排除。' }
+  }
+  return { eligible: true, reason: '可创建本地案例草稿 handoff。' }
+}
+
 export function AnalysisRequests() {
   const { message } = AntApp.useApp()
   const [form] = Form.useForm()
@@ -161,15 +197,35 @@ export function AnalysisRequests() {
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
   const [detail, setDetail] = useState(null)
+  const [caseDraft, setCaseDraft] = useState(null)
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
+  const [draftLoading, setDraftLoading] = useState(false)
   const [error, setError] = useState('')
+  const [draftError, setDraftError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
     [detail, requests, selectedRequestId],
   )
+  const eligibility = useMemo(() => draftEligibility(selectedRecord), [selectedRecord])
+
+  async function loadDraft(requestId) {
+    if (!requestId) {
+      setCaseDraft(null)
+      setDraftError('')
+      return
+    }
+    try {
+      const draft = await getAnalysisRequestCaseDraft(requestId)
+      setCaseDraft(draft)
+      setDraftError('')
+    } catch {
+      setCaseDraft(null)
+      setDraftError('')
+    }
+  }
 
   async function loadRequests(nextSelectedId = selectedRequestId) {
     setLoading(true)
@@ -183,7 +239,9 @@ export function AnalysisRequests() {
       setRequests(nextRequests)
       const fallbackId = nextSelectedId || nextRequests[0]?.request_id || ''
       setSelectedRequestId(fallbackId)
-      setDetail(fallbackId ? await getAnalysisRequest(fallbackId) : null)
+      const nextDetail = fallbackId ? await getAnalysisRequest(fallbackId) : null
+      setDetail(nextDetail)
+      await loadDraft(fallbackId)
     } catch (requestError) {
       setError(requestError?.message || 'Unable to load local analysis requests.')
     } finally {
@@ -213,8 +271,10 @@ export function AnalysisRequests() {
   async function handleOpen(record) {
     setSelectedRequestId(record.request_id)
     setError('')
+    setDraftError('')
     try {
       setDetail(await getAnalysisRequest(record.request_id))
+      await loadDraft(record.request_id)
     } catch (requestError) {
       setError(requestError?.message || 'Unable to open analysis request.')
     }
@@ -239,14 +299,28 @@ export function AnalysisRequests() {
     }
   }
 
-  async function handleCopyRequestJson() {
-    if (!selectedRecord?.request) return
-    const text = JSON.stringify(selectedRecord.request, null, 2)
+  async function handleCreateCaseDraft() {
+    if (!selectedRecord?.request_id) return
+    setDraftLoading(true)
+    setDraftError('')
+    try {
+      const draft = await createAnalysisRequestCaseDraft(selectedRecord.request_id)
+      setCaseDraft(draft)
+      message.success('已创建本地案例草稿 handoff')
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create case draft.'
+      setDraftError(String(messageText))
+    } finally {
+      setDraftLoading(false)
+    }
+  }
+
+  async function copyText(text, successMessage) {
     try {
       await navigator.clipboard.writeText(text)
-      message.success('Request JSON 已复制')
+      message.success(successMessage)
     } catch {
-      message.warning('当前浏览器不允许复制，请在详情 JSON 区域手动选择。')
+      message.warning('当前浏览器不允许复制，请在 JSON 区域手动选择。')
     }
   }
 
@@ -299,6 +373,7 @@ export function AnalysisRequests() {
 
   const providerResult = selectedRecord?.provider_result
   const requestJson = selectedRecord?.request ? JSON.stringify(selectedRecord.request, null, 2) : ''
+  const draftJson = caseDraft ? JSON.stringify(caseDraft, null, 2) : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -312,9 +387,9 @@ export function AnalysisRequests() {
           </Space>
           <Title level={1}>Analysis Requests / 分析任务请求</Title>
           <Paragraph>
-            创建本地 <Text code>sentigraph_analysis_request_v1</Text> JSON，并读取手动放入的{' '}
-            <Text code>sentigraph_provider_job_result_v1</Text>。外部 Provider 负责采样和生成 Evidence
-            Package；当前页面不会运行 collector，不会抓取 URL，不会调用真实 API。
+            创建本地 <Text code>sentigraph_analysis_request_v1</Text> JSON，读取手动放入的{' '}
+            <Text code>sentigraph_provider_job_result_v1</Text>，并可在 package metadata 合格时生成本地案例草稿
+            handoff。当前页面不会运行 collector，不会导入 Evidence，不会抓取 URL，不会调用真实 API，也不会生成分析或报告。
           </Paragraph>
           <Space wrap>
             <Button type="primary" icon={<RefreshCw size={16} />} loading={loading} onClick={() => loadRequests()}>
@@ -351,8 +426,8 @@ export function AnalysisRequests() {
       <Alert
         type="warning"
         showIcon
-        message="Provider execution is outside Sentigraph core"
-        description="Sentigraph 只创建分析请求和接收 Evidence Package。平台访问、采样、安全门控、rate limit、snapshot/package 生成都属于外部 Provider；本页不会执行这些动作。"
+        message="Provider output is evidence, not official truth"
+        description="Draft creation does not mean import, verification, analysis, report generation, public page generation, or Sandbox fixture generation."
       />
       {error ? <Alert type="error" showIcon message={error} /> : null}
 
@@ -366,16 +441,16 @@ export function AnalysisRequests() {
               onFinish={handleCreate}
             >
               <Form.Item name="title" label="事件标题" rules={[{ required: true, message: '请输入事件标题' }]}>
-                <Input placeholder="例如：Helldivers PSN account linking controversy" />
+                <Input placeholder="例如：董路 / 孙继海青训争议" />
               </Form.Item>
               <Form.Item name="description" label="事件描述">
                 <TextArea rows={3} placeholder="简要说明事件背景和分析目的" />
               </Form.Item>
               <Form.Item name="keywords" label="关键词">
-                <Select mode="tags" tokenSeparators={[',']} placeholder="helldivers, psn" />
+                <Select mode="tags" tokenSeparators={[',']} placeholder="董路, 孙继海, 青训" />
               </Form.Item>
               <Form.Item name="negative_keywords" label="排除关键词">
-                <Select mode="tags" tokenSeparators={[',']} placeholder="unrelated terms" />
+                <Select mode="tags" tokenSeparators={[',']} placeholder="广告, 无关" />
               </Form.Item>
               <Form.Item name="language" label="语言">
                 <Select mode="tags" tokenSeparators={[',']} options={[
@@ -386,14 +461,14 @@ export function AnalysisRequests() {
               </Form.Item>
               <Form.Item name="event_type" label="事件类型">
                 <Select options={[
+                  { value: 'public_opinion_demo', label: 'public_opinion_demo' },
                   { value: 'public_opinion_event', label: 'public_opinion_event' },
-                  { value: 'game_community_event', label: 'game_community_event' },
                   { value: 'brand_risk_event', label: 'brand_risk_event' },
                   { value: 'creator_community_event', label: 'creator_community_event' },
                 ]} />
               </Form.Item>
               <Form.Item name="platforms" label="目标平台 / source hint">
-                <Select mode="tags" tokenSeparators={[',']} placeholder="reddit, youtube, news_site" />
+                <Select mode="tags" tokenSeparators={[',']} placeholder="weibo, bilibili, tieba" />
               </Form.Item>
               <Row gutter={10}>
                 <Col span={8}>
@@ -523,6 +598,81 @@ export function AnalysisRequests() {
                     description="如果外部 Provider 手动写入 runtime/analysis_requests/results/<request_id>.json，本页会读取并展示状态；不会启动 Provider。"
                   />
                 )}
+
+                <Card size="small" title="本地案例草稿 handoff">
+                  <Space direction="vertical" size={12} className="full-width">
+                    <Alert
+                      type={eligibility.eligible ? 'success' : 'info'}
+                      showIcon
+                      message={eligibility.eligible ? '可创建本地案例草稿' : '暂不可创建本地案例草稿'}
+                      description={caseDraft ? '已存在本地 handoff 草稿。' : eligibility.reason}
+                    />
+                    <Text type="secondary">
+                      仅生成本地 handoff 草稿，不导入 Evidence，不运行分析，不生成报告。Provider output is evidence, not official truth.
+                    </Text>
+                    {draftError ? <Alert type="error" showIcon message={draftError} /> : null}
+                    <Space wrap>
+                      <Button
+                        type="primary"
+                        disabled={!eligibility.eligible && !caseDraft}
+                        loading={draftLoading}
+                        onClick={handleCreateCaseDraft}
+                      >
+                        创建案例草稿 / Create case draft
+                      </Button>
+                      {caseDraft ? (
+                        <Button
+                          icon={<ClipboardCopy size={16} />}
+                          onClick={() => copyText(draftJson, 'Case draft JSON 已复制')}
+                        >
+                          复制 draft JSON
+                        </Button>
+                      ) : null}
+                    </Space>
+                    {caseDraft ? (
+                      <Card className="panel-card" size="small">
+                        <Space direction="vertical" size={12} className="full-width">
+                          <Space wrap>
+                            <Tag color="green">{caseDraft.readiness?.state || 'ready_for_manual_review'}</Tag>
+                            <Tag color="default">can_import_evidence: {boolText(caseDraft.readiness?.can_import_evidence)}</Tag>
+                            <Tag color="gold">needs human review</Tag>
+                          </Space>
+                          <Row gutter={[12, 12]}>
+                            <Col span={6}><Statistic title="Evidence" value={caseDraft.counts?.evidence || 0} /></Col>
+                            <Col span={6}><Statistic title="Comments" value={caseDraft.counts?.comments || 0} /></Col>
+                            <Col span={6}><Statistic title="Sources" value={caseDraft.counts?.sources || 0} /></Col>
+                            <Col span={6}><Statistic title="Roots" value={caseDraft.counts?.roots || 0} /></Col>
+                          </Row>
+                          <Descriptions column={1} size="small">
+                            <Descriptions.Item label="draft_id">{caseDraft.draft_id}</Descriptions.Item>
+                            <Descriptions.Item label="package">{caseDraft.package_reference?.package_name || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="validation">
+                              {caseDraft.validation?.status || 'unknown'} / errors {caseDraft.validation?.errors || 0} / warnings {caseDraft.validation?.warnings || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="coverage">
+                              not_full_web={boolText(caseDraft.coverage?.not_full_web)}, not_full_platform={boolText(caseDraft.coverage?.not_full_platform)}, not_full_thread={boolText(caseDraft.coverage?.not_full_thread)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="privacy">
+                              raw ids removed={boolText(caseDraft.privacy?.raw_author_ids_removed)}, raw names removed={boolText(caseDraft.privacy?.raw_author_names_removed)}, profile URLs removed={boolText(caseDraft.privacy?.profile_urls_removed)}, private messages excluded={boolText(caseDraft.privacy?.private_messages_excluded)}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="Boundary notes"
+                            description={(caseDraft.boundary_notes || []).join(' ')}
+                          />
+                          <ul className="compact-list">
+                            {(caseDraft.recommended_next_steps || []).map((step) => (
+                              <li key={step}>{step}</li>
+                            ))}
+                          </ul>
+                        </Space>
+                      </Card>
+                    ) : null}
+                  </Space>
+                </Card>
+
                 <Alert
                   type="info"
                   showIcon
@@ -530,7 +680,7 @@ export function AnalysisRequests() {
                   description="Provider 输出仍是 evidence，不是 official truth。导入 case 前仍需 validation、trust/provenance、review、dedup、coverage 和 audit。"
                 />
                 <Space wrap>
-                  <Button icon={<ClipboardCopy size={16} />} onClick={handleCopyRequestJson}>
+                  <Button icon={<ClipboardCopy size={16} />} onClick={() => copyText(requestJson, 'Request JSON 已复制')}>
                     复制 request JSON
                   </Button>
                   <Button icon={<XCircle size={16} />} loading={canceling} onClick={handleCancel}>
@@ -553,6 +703,10 @@ export function AnalysisRequests() {
 
       <Card className="panel-card" title={<Space><ShieldCheck size={17} />Intentional non-goals</Space>}>
         <Space wrap>
+          <Tag>no evidence row import</Tag>
+          <Tag>no analysis generation</Tag>
+          <Tag>no Sandbox fixture generation</Tag>
+          <Tag>no report generation</Tag>
           <Tag>no provider execution</Tag>
           <Tag>no collector jobs</Tag>
           <Tag>no subprocess provider execution</Tag>
@@ -561,7 +715,6 @@ export function AnalysisRequests() {
           <Tag>no scraping</Tag>
           <Tag>no real API calls</Tag>
           <Tag>no real LLM</Tag>
-          <Tag>no Project Source changes</Tag>
         </Space>
       </Card>
     </div>

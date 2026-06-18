@@ -7,11 +7,53 @@ from app.schemas.analysis_request import AnalysisRequestCaseSeed, AnalysisReques
 from app.services import analysis_request_store
 from app.services.analysis_request_store import (
     cancel_analysis_request,
+    create_case_draft_handoff,
     create_analysis_request,
     get_analysis_request_config,
     list_analysis_requests,
     read_analysis_request,
 )
+
+
+def provider_result_payload(
+    request_id: str,
+    *,
+    status: str = "validation_warn",
+    safety_status: str = "safe",
+    validation_errors: int = 0,
+    package_name: str = "sample_package",
+    evidence: int = 581,
+    privacy: dict | None = None,
+    coverage: dict | None = None,
+) -> dict:
+    return {
+        "schema": "sentigraph_provider_job_result_v1",
+        "request_id": request_id,
+        "provider_job_id": "provider_job_local_001",
+        "provider_type": "private_collector",
+        "status": status,
+        "safety_status": safety_status,
+        "package_path": "exports/sentigraph-evidence-v1/sample_package",
+        "package_name": package_name,
+        "package_role": "selected_public_sample",
+        "package_index_path": "exports/sentigraph-evidence-v1/package_index.json",
+        "counts": {"evidence": evidence, "comments": 546, "sources": 37, "roots": 35},
+        "validation": {"status": "warn" if validation_errors == 0 else "failed", "errors": validation_errors, "warnings": 1},
+        "coverage": coverage
+        if coverage is not None
+        else {"coverage_level": "selected_public_sample", "not_full_web": True, "not_full_platform": True, "not_full_thread": True},
+        "privacy": privacy
+        if privacy is not None
+        else {"raw_author_ids_removed": True, "raw_author_names_removed": True, "profile_urls_removed": True, "private_messages_excluded": True},
+        "skipped": [],
+        "notes": ["Local package result only."],
+    }
+
+
+def write_provider_result(tmp_path: Path, request_id: str, payload: dict) -> None:
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_create_request_writes_json_with_conservative_defaults(tmp_path: Path, monkeypatch) -> None:
@@ -186,6 +228,108 @@ def test_provider_result_canonical_fields_win_over_legacy_aliases(tmp_path: Path
     assert detail.provider_result.counts.roots == 6
     assert detail.provider_result.validation.errors == 0
     assert detail.provider_result.validation.warnings == 0
+
+
+def test_eligible_validation_warn_result_creates_case_draft(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(
+            case_seed=AnalysisRequestCaseSeed(
+                title="Dong Sun draft handoff",
+                description="Local handoff only.",
+                keywords=["donglu", "sunjihai"],
+            )
+        )
+    )
+    write_provider_result(tmp_path, record.request_id, provider_result_payload(record.request_id))
+
+    draft = create_case_draft_handoff(record.request_id)
+    draft_again = create_case_draft_handoff(record.request_id)
+    draft_text = (tmp_path / "case_drafts" / f"{record.request_id}.json").read_text(encoding="utf-8")
+
+    assert draft.schema_ == "sentigraph_case_draft_handoff_v1"
+    assert draft.draft_id == f"draft_{record.request_id}"
+    assert draft_again.draft_id == draft.draft_id
+    assert draft.provider_summary.status == "validation_warn"
+    assert draft.package_reference.package_name == "sample_package"
+    assert draft.counts.evidence == 581
+    assert draft.counts.roots == 35
+    assert draft.validation.warnings == 1
+    assert draft.coverage.not_full_web is True
+    assert draft.privacy.raw_author_ids_removed is True
+    assert draft.readiness.can_import_evidence is False
+    assert draft.safe_mode["evidence_rows_imported"] is False
+    assert "raw_author_value" not in draft_text
+
+
+def test_eligible_package_ready_result_creates_case_draft(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Package ready handoff"))
+    )
+    result = provider_result_payload(record.request_id, status="package_ready")
+    result["validation"] = {"status": "passed", "errors": 0, "warnings": 0}
+    write_provider_result(tmp_path, record.request_id, result)
+
+    draft = create_case_draft_handoff(record.request_id)
+
+    assert draft.provider_summary.status == "package_ready"
+    assert draft.validation.status == "passed"
+
+
+def test_legacy_alias_result_can_create_case_draft_after_normalization(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Legacy handoff"))
+    )
+    result = provider_result_payload(record.request_id)
+    result["counts"] = {"evidence_items": 581, "comments": 546, "sources": 37, "root_content": 35}
+    result["validation"] = {"status": "warn", "errors_count": 0, "warnings_count": 1}
+    write_provider_result(tmp_path, record.request_id, result)
+
+    draft = create_case_draft_handoff(record.request_id)
+
+    assert draft.counts.evidence == 581
+    assert draft.counts.roots == 35
+    assert draft.validation.warnings == 1
+
+
+def test_case_draft_blocks_ineligible_provider_results(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+
+    cases = [
+        ("No provider result", None, "provider result is missing"),
+        ("Needs manual snapshot", provider_result_payload("placeholder", status="needs_manual_snapshot", evidence=0, package_name=""), "not eligible"),
+        ("Validation failed", provider_result_payload("placeholder", status="validation_failed"), "not eligible"),
+        ("Validation errors", provider_result_payload("placeholder", status="validation_warn", validation_errors=2), "validation errors"),
+        ("Missing package", provider_result_payload("placeholder", package_name=""), "package_name is missing"),
+        ("Unsafe safety", provider_result_payload("placeholder", safety_status="blocked"), "safety status"),
+        (
+            "Missing privacy",
+            provider_result_payload("placeholder", privacy={"raw_author_ids_removed": True}),
+            "privacy fields missing",
+        ),
+        (
+            "Claims full web",
+            provider_result_payload("placeholder", coverage={"coverage_level": "full_web", "not_full_web": False, "not_full_platform": True, "not_full_thread": True}),
+            "coverage",
+        ),
+    ]
+
+    for title, result, expected_message in cases:
+        record = create_analysis_request(
+            AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title=title))
+        )
+        if result is not None:
+            result["request_id"] = record.request_id
+            write_provider_result(tmp_path, record.request_id, result)
+
+        try:
+            create_case_draft_handoff(record.request_id)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should not create a case draft")
 
 
 def test_invalid_result_json_sets_warning_without_crash(tmp_path: Path, monkeypatch) -> None:

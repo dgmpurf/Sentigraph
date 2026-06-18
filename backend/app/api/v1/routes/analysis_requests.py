@@ -7,14 +7,18 @@ from app.schemas.analysis_request import (
     AnalysisRequestConfig,
     AnalysisRequestCreate,
     AnalysisRequestRecord,
+    CaseDraftHandoff,
 )
 from app.services.analysis_request_store import (
     AnalysisRequestNotFoundError,
     AnalysisRequestValidationError,
     cancel_analysis_request,
+    create_case_draft_handoff,
     create_analysis_request,
     get_analysis_request_config,
+    list_case_draft_handoffs,
     list_analysis_requests,
+    read_case_draft_handoff,
     read_analysis_request,
 )
 
@@ -36,6 +40,31 @@ def analysis_request_list() -> list[AnalysisRequestRecord]:
     return list_analysis_requests()
 
 
+@router.get("/case-drafts", response_model=list[CaseDraftHandoff])
+def analysis_request_case_draft_list() -> list[CaseDraftHandoff]:
+    return list_case_draft_handoffs()
+
+
+@router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
+def analysis_request_case_draft_detail(request_id: str) -> CaseDraftHandoff:
+    try:
+        return read_case_draft_handoff(request_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/case-draft", response_model=CaseDraftHandoff)
+def analysis_request_case_draft_create(request_id: str) -> CaseDraftHandoff:
+    try:
+        return create_case_draft_handoff(request_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/{request_id}", response_model=AnalysisRequestRecord)
 def analysis_request_detail(request_id: str) -> AnalysisRequestRecord:
     try:
@@ -54,4 +83,3 @@ def analysis_request_cancel(request_id: str) -> AnalysisRequestCancelResult:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-

@@ -164,6 +164,65 @@ class ProviderJobPrivacy(BaseModel):
     private_messages_excluded: bool = True
 
 
+class CaseDraftProviderSummary(BaseModel):
+    provider_job_id: str = ""
+    provider_type: str = "private_collector"
+    status: str = ""
+    safety_status: str = ""
+
+
+class CaseDraftPackageReference(BaseModel):
+    package_name: str = ""
+    package_role: str = ""
+    package_path: str = ""
+    package_index_path: str = ""
+
+
+class CaseDraftReadiness(BaseModel):
+    state: str = "ready_for_manual_review"
+    can_import_evidence: bool = False
+    requires_human_review: bool = True
+    reason: str = "Provider result is validation_warn/package_ready but evidence import is not automatic."
+
+
+class CaseDraftHandoff(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_case_draft_handoff_v1"] = Field(
+        default="sentigraph_case_draft_handoff_v1",
+        alias="schema",
+    )
+    draft_id: str
+    request_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    source: str = "analysis_request_provider_result"
+    case_seed: AnalysisRequestCaseSeed
+    provider_summary: CaseDraftProviderSummary = Field(default_factory=CaseDraftProviderSummary)
+    package_reference: CaseDraftPackageReference = Field(default_factory=CaseDraftPackageReference)
+    counts: ProviderJobCounts = Field(default_factory=ProviderJobCounts)
+    validation: ProviderJobValidation = Field(default_factory=ProviderJobValidation)
+    coverage: ProviderJobCoverage = Field(default_factory=ProviderJobCoverage)
+    privacy: ProviderJobPrivacy = Field(default_factory=ProviderJobPrivacy)
+    readiness: CaseDraftReadiness = Field(default_factory=CaseDraftReadiness)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "local_handoff_only": True,
+            "evidence_rows_imported": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

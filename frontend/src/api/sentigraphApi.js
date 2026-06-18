@@ -75,6 +75,21 @@ export async function cancelAnalysisRequest(requestId) {
   return data
 }
 
+export async function listAnalysisRequestCaseDrafts() {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/case-drafts`)
+  return Array.isArray(data) ? data.map(normalizeCaseDraftHandoff).filter(Boolean) : []
+}
+
+export async function getAnalysisRequestCaseDraft(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/case-draft`)
+  return normalizeCaseDraftHandoff(data)
+}
+
+export async function createAnalysisRequestCaseDraft(requestId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/case-draft`)
+  return normalizeCaseDraftHandoff(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1123,6 +1138,36 @@ function normalizeProviderJobResult(result) {
     privacy: result.privacy && typeof result.privacy === 'object' ? normalizeSafeObject(result.privacy) : {},
     skipped: Array.isArray(result.skipped) ? result.skipped.map((item) => JSON.stringify(item)) : [],
     notes: Array.isArray(result.notes) ? result.notes.map((item) => String(item)) : [],
+  }
+}
+
+function normalizeCaseDraftHandoff(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_case_draft_handoff_v1'),
+    draft_id: String(data.draft_id || ''),
+    request_id: String(data.request_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    source: String(data.source || 'analysis_request_provider_result'),
+    case_seed: data.case_seed && typeof data.case_seed === 'object' ? data.case_seed : {},
+    provider_summary:
+      data.provider_summary && typeof data.provider_summary === 'object'
+        ? normalizeSafeObject(data.provider_summary)
+        : {},
+    package_reference:
+      data.package_reference && typeof data.package_reference === 'object'
+        ? normalizeSafeObject(data.package_reference)
+        : {},
+    counts: data.counts && typeof data.counts === 'object' ? normalizeNumberMap(data.counts) : {},
+    validation: data.validation && typeof data.validation === 'object' ? normalizeSafeObject(data.validation) : {},
+    coverage: data.coverage && typeof data.coverage === 'object' ? normalizeSafeObject(data.coverage) : {},
+    privacy: data.privacy && typeof data.privacy === 'object' ? normalizeSafeObject(data.privacy) : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }
 

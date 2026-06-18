@@ -411,6 +411,16 @@ body {
   word-break: break-word;
 }
 
+.compact-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #d7dee9;
+}
+
+.compact-list li {
+  margin: 4px 0;
+}
+
 .evidence-import-mapping-grid {
   display: grid;
   gap: 10px;

@@ -16,6 +16,10 @@ from app.schemas.analysis_request import (
     AnalysisRequestCreate,
     AnalysisRequestFile,
     AnalysisRequestRecord,
+    CaseDraftHandoff,
+    CaseDraftPackageReference,
+    CaseDraftProviderSummary,
+    CaseDraftReadiness,
     ProviderJobResult,
 )
 
@@ -122,6 +126,83 @@ def cancel_analysis_request(request_id: str) -> AnalysisRequestCancelResult:
     return AnalysisRequestCancelResult(request_id=request_id, status="canceled", request=updated)
 
 
+def read_case_draft_handoff(request_id: str) -> CaseDraftHandoff:
+    draft_path = _case_draft_path(request_id)
+    if not draft_path.exists():
+        raise AnalysisRequestNotFoundError(f"Case draft handoff for {request_id} was not found.")
+    try:
+        parsed = json.loads(draft_path.read_text(encoding="utf-8-sig"))
+        return CaseDraftHandoff.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{draft_path.name} is not a valid case draft handoff: {type(exc).__name__}") from exc
+
+
+def list_case_draft_handoffs() -> list[CaseDraftHandoff]:
+    root = _ensure_root()
+    drafts: list[CaseDraftHandoff] = []
+    for path in sorted((root / "case_drafts").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            drafts.append(CaseDraftHandoff.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return drafts
+
+
+def create_case_draft_handoff(request_id: str) -> CaseDraftHandoff:
+    draft_path = _case_draft_path(request_id)
+    if draft_path.exists():
+        return read_case_draft_handoff(request_id)
+
+    record = read_analysis_request(request_id)
+    _validate_case_draft_eligibility(record)
+    result = record.provider_result
+    assert result is not None
+
+    draft = CaseDraftHandoff(
+        draft_id=f"draft_{request_id}",
+        request_id=request_id,
+        case_seed=record.request.case_seed,
+        provider_summary=CaseDraftProviderSummary(
+            provider_job_id=result.provider_job_id,
+            provider_type=result.provider_type,
+            status=result.status,
+            safety_status=result.safety_status,
+        ),
+        package_reference=CaseDraftPackageReference(
+            package_name=result.package_name,
+            package_role=result.package_role,
+            package_path=result.package_path,
+            package_index_path=result.package_index_path,
+        ),
+        counts=result.counts,
+        validation=result.validation,
+        coverage=result.coverage,
+        privacy=result.privacy,
+        readiness=CaseDraftReadiness(
+            state="ready_for_manual_review",
+            can_import_evidence=False,
+            requires_human_review=True,
+            reason="Provider result is validation_warn/package_ready but evidence import is not automatic.",
+        ),
+        boundary_notes=[
+            "Provider output is evidence metadata, not official truth.",
+            "Draft creation does not import evidence rows.",
+            "Draft creation does not run analysis, generate reports, or create public event pages.",
+            "Coverage is selected/controlled available evidence, not full-web or full-platform coverage.",
+        ],
+        recommended_next_steps=[
+            "Review provider result and coverage note.",
+            "Run or open the external package validator manually if needed.",
+            "Decide whether to import the package into the Evidence layer.",
+            "If imported, mark review_status and verification_status clearly.",
+            "Only after manual review generate public event sample, Sandbox fixture, or B-end report draft.",
+        ],
+    )
+    _write_json(draft_path, draft.model_dump(mode="json", by_alias=True))
+    return read_case_draft_handoff(request_id)
+
+
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -162,6 +243,55 @@ def _read_result(request_id: str) -> tuple[ProviderJobResult | None, str | None,
     return result, None, result_path
 
 
+def _validate_case_draft_eligibility(record: AnalysisRequestRecord) -> None:
+    if record.result_warning:
+        raise AnalysisRequestValidationError(f"Cannot create case draft: provider result is invalid ({record.result_warning}).")
+    result = record.provider_result
+    if not result:
+        raise AnalysisRequestValidationError("Cannot create case draft: provider result is missing.")
+    if result.status not in {"package_ready", "validation_warn"}:
+        raise AnalysisRequestValidationError(f"Cannot create case draft: provider status {result.status} is not eligible.")
+    if result.safety_status not in {"safe", "medium"}:
+        raise AnalysisRequestValidationError(f"Cannot create case draft: safety status {result.safety_status} is not eligible.")
+    if result.validation.errors > 0:
+        raise AnalysisRequestValidationError("Cannot create case draft: provider validation errors must be 0.")
+    if not result.package_name:
+        raise AnalysisRequestValidationError("Cannot create case draft: package_name is missing.")
+    if result.counts.evidence <= 0:
+        raise AnalysisRequestValidationError("Cannot create case draft: counts.evidence must be greater than 0.")
+
+    raw = _read_result_payload(record.request_id)
+    raw_privacy = raw.get("privacy") if isinstance(raw.get("privacy"), dict) else {}
+    required_privacy = [
+        "raw_author_ids_removed",
+        "raw_author_names_removed",
+        "profile_urls_removed",
+        "private_messages_excluded",
+    ]
+    missing_privacy = [field for field in required_privacy if field not in raw_privacy]
+    if missing_privacy:
+        raise AnalysisRequestValidationError(f"Cannot create case draft: privacy fields missing ({', '.join(missing_privacy)}).")
+    if not all(bool(raw_privacy.get(field)) for field in required_privacy):
+        raise AnalysisRequestValidationError("Cannot create case draft: privacy flags must all be true.")
+
+    raw_coverage = raw.get("coverage") if isinstance(raw.get("coverage"), dict) else {}
+    required_coverage = ["not_full_web", "not_full_platform", "not_full_thread"]
+    missing_coverage = [field for field in required_coverage if field not in raw_coverage]
+    if missing_coverage:
+        raise AnalysisRequestValidationError(f"Cannot create case draft: coverage limitation fields missing ({', '.join(missing_coverage)}).")
+    if not all(bool(raw_coverage.get(field)) for field in required_coverage):
+        raise AnalysisRequestValidationError("Cannot create case draft: coverage must not claim full-web/full-platform/full-thread coverage.")
+
+
+def _read_result_payload(request_id: str) -> dict[str, Any]:
+    result_path = _result_path(request_id)
+    try:
+        parsed = json.loads(result_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _request_root() -> Path:
     raw_value = os.environ.get(ANALYSIS_REQUESTS_ENV_VAR, "").strip()
     if raw_value:
@@ -173,6 +303,7 @@ def _ensure_root() -> Path:
     root = _request_root()
     (root / "requests").mkdir(parents=True, exist_ok=True)
     (root / "results").mkdir(parents=True, exist_ok=True)
+    (root / "case_drafts").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -186,6 +317,12 @@ def _result_path(request_id: str) -> Path:
     _validate_request_id(request_id)
     root = _ensure_root()
     return root / "results" / f"{request_id}.json"
+
+
+def _case_draft_path(request_id: str) -> Path:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    return root / "case_drafts" / f"{request_id}.json"
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:

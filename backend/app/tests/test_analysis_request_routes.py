@@ -11,6 +11,25 @@ from app.main import app
 client = TestClient(app)
 
 
+def route_provider_result(request_id: str, *, status: str = "validation_warn", errors: int = 0) -> dict:
+    return {
+        "schema": "sentigraph_provider_job_result_v1",
+        "request_id": request_id,
+        "provider_job_id": "provider_job_route_001",
+        "provider_type": "private_collector",
+        "status": status,
+        "safety_status": "safe",
+        "package_path": "exports/sentigraph-evidence-v1/route_package",
+        "package_name": "route_package",
+        "package_role": "selected_public_sample",
+        "package_index_path": "exports/sentigraph-evidence-v1/package_index.json",
+        "counts": {"evidence": 581, "comments": 546, "sources": 37, "roots": 35},
+        "validation": {"status": "warn" if errors == 0 else "failed", "errors": errors, "warnings": 1},
+        "coverage": {"coverage_level": "selected_public_sample", "not_full_web": True, "not_full_platform": True, "not_full_thread": True},
+        "privacy": {"raw_author_ids_removed": True, "raw_author_names_removed": True, "profile_urls_removed": True, "private_messages_excluded": True},
+    }
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -168,6 +187,54 @@ def test_analysis_request_route_reads_legacy_provider_result_aliases(tmp_path: P
     assert body["provider_result"]["counts"]["sources"] == 37
     assert body["provider_result"]["counts"]["roots"] == 35
     assert body["provider_result"]["validation"]["warnings"] == 1
+
+
+def test_analysis_request_case_draft_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Case draft route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(json.dumps(route_provider_result(request_id)), encoding="utf-8")
+
+    post_response = client.post(f"/api/v1/analysis-requests/{request_id}/case-draft")
+    get_response = client.get(f"/api/v1/analysis-requests/{request_id}/case-draft")
+    list_response = client.get("/api/v1/analysis-requests/case-drafts")
+
+    assert post_response.status_code == 200
+    body = post_response.json()
+    assert body["schema"] == "sentigraph_case_draft_handoff_v1"
+    assert body["draft_id"] == f"draft_{request_id}"
+    assert body["provider_summary"]["status"] == "validation_warn"
+    assert body["package_reference"]["package_name"] == "route_package"
+    assert body["counts"]["evidence"] == 581
+    assert body["counts"]["roots"] == 35
+    assert body["validation"]["warnings"] == 1
+    assert body["readiness"]["can_import_evidence"] is False
+    assert body["safe_mode"]["evidence_rows_imported"] is False
+    assert get_response.status_code == 200
+    assert get_response.json()["draft_id"] == body["draft_id"]
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+    assert "raw_author_value" not in post_response.text
+
+
+def test_analysis_request_case_draft_route_blocks_ineligible_result(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Blocked draft route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(json.dumps(route_provider_result(request_id, status="validation_failed", errors=2)), encoding="utf-8")
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/case-draft")
+
+    assert response.status_code == 400
+    assert "not eligible" in response.text
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:
