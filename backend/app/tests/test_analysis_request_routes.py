@@ -237,6 +237,83 @@ def test_analysis_request_case_draft_route_blocks_ineligible_result(tmp_path: Pa
     assert "not eligible" in response.text
 
 
+def test_analysis_request_import_plan_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Import plan route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(json.dumps(route_provider_result(request_id)), encoding="utf-8")
+    draft_response = client.post(f"/api/v1/analysis-requests/{request_id}/case-draft")
+
+    post_response = client.post(f"/api/v1/analysis-requests/{request_id}/import-plan")
+    get_response = client.get(f"/api/v1/analysis-requests/{request_id}/import-plan")
+    list_response = client.get("/api/v1/analysis-requests/import-plans")
+
+    assert draft_response.status_code == 200
+    assert post_response.status_code == 200
+    body = post_response.json()
+    assert body["schema"] == "sentigraph_evidence_import_plan_v1"
+    assert body["plan_id"] == f"import_plan_{request_id}"
+    assert body["draft_id"] == f"draft_{request_id}"
+    assert body["package_reference"]["package_name"] == "route_package"
+    assert body["counts"]["evidence"] == 581
+    assert body["proposed_import"]["import_evidence_rows_now"] is False
+    assert body["proposed_import"]["create_case_now"] is False
+    assert body["proposed_import"]["run_analysis_now"] is False
+    assert body["proposed_import"]["generate_sandbox_now"] is False
+    assert body["proposed_import"]["generate_report_now"] is False
+    assert body["default_evidence_policy"]["review_status"] == "review_needed"
+    assert body["default_evidence_policy"]["trust_label"] == "medium_low"
+    assert body["readiness"]["can_import_now"] is False
+    assert body["safe_mode"]["evidence_rows_imported"] is False
+    assert body["safe_mode"]["production_case_created"] is False
+    assert get_response.status_code == 200
+    assert get_response.json()["plan_id"] == body["plan_id"]
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+    assert "raw_author_value" not in post_response.text
+
+
+def test_analysis_request_import_plan_route_blocks_without_case_draft(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Blocked import plan route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(json.dumps(route_provider_result(request_id)), encoding="utf-8")
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/import-plan")
+
+    assert response.status_code == 404
+    assert "case draft handoff" in response.text.lower()
+
+
+def test_analysis_request_import_plan_route_blocks_bad_draft(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Bad import draft route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(json.dumps(route_provider_result(request_id)), encoding="utf-8")
+    assert client.post(f"/api/v1/analysis-requests/{request_id}/case-draft").status_code == 200
+    draft_path = tmp_path / "case_drafts" / f"{request_id}.json"
+    draft = json.loads(draft_path.read_text(encoding="utf-8"))
+    draft["validation"]["errors"] = 2
+    draft_path.write_text(json.dumps(draft), encoding="utf-8")
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/import-plan")
+
+    assert response.status_code == 400
+    assert "validation errors" in response.text
+
+
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
     create_response = client.post(

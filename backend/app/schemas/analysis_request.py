@@ -223,6 +223,75 @@ class CaseDraftHandoff(BaseModel):
     )
 
 
+class EvidenceImportProposedAction(BaseModel):
+    mode: str = "manual_review_required"
+    target: str = "future_evidence_layer"
+    import_evidence_rows_now: bool = False
+    create_case_now: bool = False
+    run_analysis_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_report_now: bool = False
+
+
+class EvidenceImportDefaultPolicy(BaseModel):
+    review_status: str = "review_needed"
+    verification_status: str = "source_url_provided_unverified"
+    trust_label: str = "medium_low"
+    dedup_required: bool = True
+    audit_required: bool = True
+
+
+class EvidenceImportPlanReadiness(BaseModel):
+    state: str = "ready_for_manual_import_review"
+    can_import_now: bool = False
+    requires_human_review: bool = True
+    reason: str = "Import plan only. Evidence rows are not imported automatically."
+
+
+class EvidenceImportPlan(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_evidence_import_plan_v1"] = Field(
+        default="sentigraph_evidence_import_plan_v1",
+        alias="schema",
+    )
+    plan_id: str
+    draft_id: str
+    request_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    source: str = "case_draft_handoff"
+    package_reference: CaseDraftPackageReference = Field(default_factory=CaseDraftPackageReference)
+    counts: ProviderJobCounts = Field(default_factory=ProviderJobCounts)
+    validation: ProviderJobValidation = Field(default_factory=ProviderJobValidation)
+    coverage: ProviderJobCoverage = Field(default_factory=ProviderJobCoverage)
+    privacy: ProviderJobPrivacy = Field(default_factory=ProviderJobPrivacy)
+    proposed_import: EvidenceImportProposedAction = Field(default_factory=EvidenceImportProposedAction)
+    default_evidence_policy: EvidenceImportDefaultPolicy = Field(default_factory=EvidenceImportDefaultPolicy)
+    manual_review_checklist: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    readiness: EvidenceImportPlanReadiness = Field(default_factory=EvidenceImportPlanReadiness)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "local_planning_only": True,
+            "evidence_rows_imported": False,
+            "production_case_created": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

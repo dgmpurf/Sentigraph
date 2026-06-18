@@ -8,8 +8,10 @@ from app.services import analysis_request_store
 from app.services.analysis_request_store import (
     cancel_analysis_request,
     create_case_draft_handoff,
+    create_evidence_import_plan,
     create_analysis_request,
     get_analysis_request_config,
+    list_evidence_import_plans,
     list_analysis_requests,
     read_analysis_request,
 )
@@ -54,6 +56,18 @@ def write_provider_result(tmp_path: Path, request_id: str, payload: dict) -> Non
     result_path = tmp_path / "results" / f"{request_id}.json"
     result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def create_valid_case_draft(tmp_path: Path, request_id: str) -> dict:
+    write_provider_result(tmp_path, request_id, provider_result_payload(request_id))
+    draft = create_case_draft_handoff(request_id)
+    draft_path = tmp_path / "case_drafts" / f"{request_id}.json"
+    return json.loads(draft_path.read_text(encoding="utf-8"))
+
+
+def overwrite_case_draft(tmp_path: Path, request_id: str, draft_payload: dict) -> None:
+    draft_path = tmp_path / "case_drafts" / f"{request_id}.json"
+    draft_path.write_text(json.dumps(draft_payload), encoding="utf-8")
 
 
 def test_create_request_writes_json_with_conservative_defaults(tmp_path: Path, monkeypatch) -> None:
@@ -330,6 +344,111 @@ def test_case_draft_blocks_ineligible_provider_results(tmp_path: Path, monkeypat
             assert expected_message in str(exc)
         else:
             raise AssertionError(f"{title} should not create a case draft")
+
+
+def test_eligible_case_draft_creates_evidence_import_plan(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Import plan handoff"))
+    )
+    create_valid_case_draft(tmp_path, record.request_id)
+
+    plan = create_evidence_import_plan(record.request_id)
+    plan_again = create_evidence_import_plan(record.request_id)
+    plan_text = (tmp_path / "import_plans" / f"{record.request_id}.json").read_text(encoding="utf-8")
+
+    assert plan.schema_ == "sentigraph_evidence_import_plan_v1"
+    assert plan.plan_id == f"import_plan_{record.request_id}"
+    assert plan_again.plan_id == plan.plan_id
+    assert plan.source == "case_draft_handoff"
+    assert plan.package_reference.package_name == "sample_package"
+    assert plan.counts.evidence == 581
+    assert plan.validation.errors == 0
+    assert plan.coverage.not_full_web is True
+    assert plan.privacy.raw_author_ids_removed is True
+    assert plan.proposed_import.import_evidence_rows_now is False
+    assert plan.proposed_import.create_case_now is False
+    assert plan.proposed_import.run_analysis_now is False
+    assert plan.proposed_import.generate_sandbox_now is False
+    assert plan.proposed_import.generate_report_now is False
+    assert plan.default_evidence_policy.review_status == "review_needed"
+    assert plan.default_evidence_policy.verification_status == "source_url_provided_unverified"
+    assert plan.default_evidence_policy.trust_label == "medium_low"
+    assert plan.default_evidence_policy.dedup_required is True
+    assert plan.default_evidence_policy.audit_required is True
+    assert plan.readiness.can_import_now is False
+    assert plan.safe_mode["evidence_rows_imported"] is False
+    assert plan.safe_mode["production_case_created"] is False
+    assert len(plan.manual_review_checklist) >= 8
+    assert len(list_evidence_import_plans()) == 1
+    assert "raw_author_value" not in plan_text
+
+
+def test_import_plan_requires_existing_case_draft(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="No draft import plan"))
+    )
+    write_provider_result(tmp_path, record.request_id, provider_result_payload(record.request_id))
+
+    try:
+        create_evidence_import_plan(record.request_id)
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "case draft handoff" in str(exc).lower()
+    else:
+        raise AssertionError("Missing case draft should block import plan")
+
+
+def test_import_plan_blocks_ineligible_case_drafts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+
+    cases = [
+        ("Missing package", lambda draft: draft["package_reference"].update({"package_name": ""}), "package_name is missing"),
+        ("Validation failed", lambda draft: draft["validation"].update({"status": "failed"}), "validation status"),
+        ("Validation errors", lambda draft: draft["validation"].update({"errors": 2}), "validation errors"),
+        ("Unsafe safety", lambda draft: draft["provider_summary"].update({"safety_status": "blocked"}), "safety status"),
+        ("No evidence", lambda draft: draft["counts"].update({"evidence": 0}), "counts.evidence"),
+        ("Missing privacy", lambda draft: draft["privacy"].update({"raw_author_ids_removed": False}), "privacy flags"),
+        ("Claims full web", lambda draft: draft["coverage"].update({"coverage_level": "full_web", "not_full_web": False}), "coverage"),
+        ("Not ready", lambda draft: draft["readiness"].update({"state": "blocked"}), "readiness"),
+    ]
+
+    for title, mutate, expected_message in cases:
+        record = create_analysis_request(
+            AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title=title))
+        )
+        draft_payload = create_valid_case_draft(tmp_path, record.request_id)
+        mutate(draft_payload)
+        overwrite_case_draft(tmp_path, record.request_id, draft_payload)
+
+        try:
+            create_evidence_import_plan(record.request_id)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should not create an import plan")
+
+
+def test_import_plan_does_not_import_rows_or_create_case_outputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Plan only safety"))
+    )
+    create_valid_case_draft(tmp_path, record.request_id)
+
+    plan = create_evidence_import_plan(record.request_id)
+
+    assert plan.safe_mode["local_planning_only"] is True
+    assert plan.safe_mode["evidence_rows_imported"] is False
+    assert plan.safe_mode["production_case_created"] is False
+    assert plan.safe_mode["analysis_generated"] is False
+    assert plan.safe_mode["sandbox_fixture_generated"] is False
+    assert plan.safe_mode["public_event_page_generated"] is False
+    assert plan.safe_mode["report_generated"] is False
+    assert plan.safe_mode["provider_execution"] is False
+    assert plan.safe_mode["collector_jobs_run"] is False
+    assert not (tmp_path / "evidence_items.jsonl").exists()
+    assert not (tmp_path / "cases").exists()
 
 
 def test_invalid_result_json_sets_warning_without_crash(tmp_path: Path, monkeypatch) -> None:

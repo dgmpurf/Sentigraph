@@ -25,9 +25,11 @@ import {
   cancelAnalysisRequest,
   createAnalysisRequest,
   createAnalysisRequestCaseDraft,
+  createAnalysisRequestImportPlan,
   getAnalysisRequest,
   getAnalysisRequestCaseDraft,
   getAnalysisRequestConfig,
+  getAnalysisRequestImportPlan,
   listAnalysisRequests,
 } from '../api/sentigraphApi.js'
 
@@ -190,6 +192,52 @@ function draftEligibility(record) {
   return { eligible: true, reason: '可创建本地案例草稿 handoff。' }
 }
 
+function importPlanEligibility(caseDraft) {
+  if (!caseDraft) return { eligible: false, reason: '请先创建或读取 case draft handoff。' }
+  if (!['ready_for_manual_review', 'ready_for_manual_import_review'].includes(caseDraft.readiness?.state)) {
+    return { eligible: false, reason: `Draft readiness ${caseDraft.readiness?.state || 'unknown'} 不可创建导入计划。` }
+  }
+  if (!['safe', 'medium'].includes(caseDraft.provider_summary?.safety_status)) {
+    return { eligible: false, reason: `安全状态 ${caseDraft.provider_summary?.safety_status || 'unknown'} 不可创建导入计划。` }
+  }
+  if (!caseDraft.package_reference?.package_name) return { eligible: false, reason: 'Draft 缺少 package_name。' }
+  if (Number(caseDraft.counts?.evidence || 0) <= 0) return { eligible: false, reason: 'Draft evidence count 必须大于 0。' }
+  if (!['passed', 'warn', 'not_run'].includes(caseDraft.validation?.status)) {
+    return { eligible: false, reason: `Validation status ${caseDraft.validation?.status || 'unknown'} 不可创建导入计划。` }
+  }
+  if (Number(caseDraft.validation?.errors || 0) > 0) {
+    return { eligible: false, reason: 'Draft validation.errors 必须为 0。' }
+  }
+  if (caseDraft.coverage?.not_full_web !== true || caseDraft.coverage?.not_full_platform !== true || caseDraft.coverage?.not_full_thread !== true) {
+    return { eligible: false, reason: 'Draft 必须保留 not_full_web / not_full_platform / not_full_thread。' }
+  }
+  if (
+    caseDraft.privacy?.raw_author_ids_removed !== true ||
+    caseDraft.privacy?.raw_author_names_removed !== true ||
+    caseDraft.privacy?.profile_urls_removed !== true ||
+    caseDraft.privacy?.private_messages_excluded !== true
+  ) {
+    return { eligible: false, reason: 'Draft 隐私移除标记不完整。' }
+  }
+  return { eligible: true, reason: '可生成 Evidence 导入计划。' }
+}
+
+function SummaryList({ title, items }) {
+  return (
+    <Card size="small" title={title}>
+      {items?.length ? (
+        <ul className="compact-list">
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <Text type="secondary">none</Text>
+      )}
+    </Card>
+  )
+}
+
 export function AnalysisRequests() {
   const { message } = AntApp.useApp()
   const [form] = Form.useForm()
@@ -198,32 +246,44 @@ export function AnalysisRequests() {
   const [selectedRequestId, setSelectedRequestId] = useState('')
   const [detail, setDetail] = useState(null)
   const [caseDraft, setCaseDraft] = useState(null)
+  const [importPlan, setImportPlan] = useState(null)
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [draftLoading, setDraftLoading] = useState(false)
+  const [planLoading, setPlanLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
+  const [planError, setPlanError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
     [detail, requests, selectedRequestId],
   )
-  const eligibility = useMemo(() => draftEligibility(selectedRecord), [selectedRecord])
+  const draftGate = useMemo(() => draftEligibility(selectedRecord), [selectedRecord])
+  const planGate = useMemo(() => importPlanEligibility(caseDraft), [caseDraft])
 
-  async function loadDraft(requestId) {
+  async function loadDraftAndPlan(requestId) {
     if (!requestId) {
       setCaseDraft(null)
+      setImportPlan(null)
       setDraftError('')
+      setPlanError('')
       return
     }
     try {
-      const draft = await getAnalysisRequestCaseDraft(requestId)
-      setCaseDraft(draft)
+      setCaseDraft(await getAnalysisRequestCaseDraft(requestId))
       setDraftError('')
     } catch {
       setCaseDraft(null)
       setDraftError('')
+    }
+    try {
+      setImportPlan(await getAnalysisRequestImportPlan(requestId))
+      setPlanError('')
+    } catch {
+      setImportPlan(null)
+      setPlanError('')
     }
   }
 
@@ -241,7 +301,7 @@ export function AnalysisRequests() {
       setSelectedRequestId(fallbackId)
       const nextDetail = fallbackId ? await getAnalysisRequest(fallbackId) : null
       setDetail(nextDetail)
-      await loadDraft(fallbackId)
+      await loadDraftAndPlan(fallbackId)
     } catch (requestError) {
       setError(requestError?.message || 'Unable to load local analysis requests.')
     } finally {
@@ -272,9 +332,10 @@ export function AnalysisRequests() {
     setSelectedRequestId(record.request_id)
     setError('')
     setDraftError('')
+    setPlanError('')
     try {
       setDetail(await getAnalysisRequest(record.request_id))
-      await loadDraft(record.request_id)
+      await loadDraftAndPlan(record.request_id)
     } catch (requestError) {
       setError(requestError?.message || 'Unable to open analysis request.')
     }
@@ -312,6 +373,22 @@ export function AnalysisRequests() {
       setDraftError(String(messageText))
     } finally {
       setDraftLoading(false)
+    }
+  }
+
+  async function handleCreateImportPlan() {
+    if (!selectedRecord?.request_id) return
+    setPlanLoading(true)
+    setPlanError('')
+    try {
+      const plan = await createAnalysisRequestImportPlan(selectedRecord.request_id)
+      setImportPlan(plan)
+      message.success('已生成 Evidence 导入计划')
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import plan.'
+      setPlanError(String(messageText))
+    } finally {
+      setPlanLoading(false)
     }
   }
 
@@ -374,6 +451,7 @@ export function AnalysisRequests() {
   const providerResult = selectedRecord?.provider_result
   const requestJson = selectedRecord?.request ? JSON.stringify(selectedRecord.request, null, 2) : ''
   const draftJson = caseDraft ? JSON.stringify(caseDraft, null, 2) : ''
+  const importPlanJson = importPlan ? JSON.stringify(importPlan, null, 2) : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -388,8 +466,8 @@ export function AnalysisRequests() {
           <Title level={1}>Analysis Requests / 分析任务请求</Title>
           <Paragraph>
             创建本地 <Text code>sentigraph_analysis_request_v1</Text> JSON，读取手动放入的{' '}
-            <Text code>sentigraph_provider_job_result_v1</Text>，并可在 package metadata 合格时生成本地案例草稿
-            handoff。当前页面不会运行 collector，不会导入 Evidence，不会抓取 URL，不会调用真实 API，也不会生成分析或报告。
+            <Text code>sentigraph_provider_job_result_v1</Text>，并在 package metadata 合格时生成本地 case draft
+            handoff 与 Evidence 导入计划。本页不会运行 collector，不会导入 Evidence rows，不会创建正式 case，不会抓取 URL，不会调用真实 API，也不会生成分析或报告。
           </Paragraph>
           <Space wrap>
             <Button type="primary" icon={<RefreshCw size={16} />} loading={loading} onClick={() => loadRequests()}>
@@ -427,7 +505,7 @@ export function AnalysisRequests() {
         type="warning"
         showIcon
         message="Provider output is evidence, not official truth"
-        description="Draft creation does not mean import, verification, analysis, report generation, public page generation, or Sandbox fixture generation."
+        description="Case draft 和 Evidence 导入计划都不是正式导入、官方验证、分析结果、报告、公开事件页或 Sandbox fixture。Evidence rows 需要后续人工导入与复核。"
       />
       {error ? <Alert type="error" showIcon message={error} /> : null}
 
@@ -602,19 +680,19 @@ export function AnalysisRequests() {
                 <Card size="small" title="本地案例草稿 handoff">
                   <Space direction="vertical" size={12} className="full-width">
                     <Alert
-                      type={eligibility.eligible ? 'success' : 'info'}
+                      type={draftGate.eligible ? 'success' : 'info'}
                       showIcon
-                      message={eligibility.eligible ? '可创建本地案例草稿' : '暂不可创建本地案例草稿'}
-                      description={caseDraft ? '已存在本地 handoff 草稿。' : eligibility.reason}
+                      message={draftGate.eligible ? '可创建本地案例草稿' : '暂不可创建本地案例草稿'}
+                      description={caseDraft ? '已存在本地 handoff 草稿。' : draftGate.reason}
                     />
                     <Text type="secondary">
-                      仅生成本地 handoff 草稿，不导入 Evidence，不运行分析，不生成报告。Provider output is evidence, not official truth.
+                      仅生成本地 handoff 草稿，不导入 Evidence rows，不创建正式 case，不运行分析，不生成报告。Provider output is evidence, not official truth.
                     </Text>
                     {draftError ? <Alert type="error" showIcon message={draftError} /> : null}
                     <Space wrap>
                       <Button
                         type="primary"
-                        disabled={!eligibility.eligible && !caseDraft}
+                        disabled={!draftGate.eligible && !caseDraft}
                         loading={draftLoading}
                         onClick={handleCreateCaseDraft}
                       >
@@ -662,11 +740,87 @@ export function AnalysisRequests() {
                             message="Boundary notes"
                             description={(caseDraft.boundary_notes || []).join(' ')}
                           />
-                          <ul className="compact-list">
-                            {(caseDraft.recommended_next_steps || []).map((step) => (
-                              <li key={step}>{step}</li>
-                            ))}
-                          </ul>
+                          <SummaryList title="Recommended next steps" items={caseDraft.recommended_next_steps || []} />
+                        </Space>
+                      </Card>
+                    ) : null}
+                  </Space>
+                </Card>
+
+                <Card size="small" title="Evidence 导入计划 / Manual import planning gate">
+                  <Space direction="vertical" size={12} className="full-width">
+                    <Alert
+                      type={planGate.eligible ? 'success' : 'info'}
+                      showIcon
+                      message={planGate.eligible ? '可生成 Evidence 导入计划' : '暂不可生成 Evidence 导入计划'}
+                      description={importPlan ? '已存在本地 Evidence import plan。' : planGate.reason}
+                    />
+                    <Text type="secondary">
+                      只生成本地导入计划，不导入 Evidence rows，不创建正式 case，不运行分析，不生成 Sandbox，不生成报告。Evidence rows will require manual import and review in a later phase.
+                    </Text>
+                    {planError ? <Alert type="error" showIcon message={planError} /> : null}
+                    <Space wrap>
+                      <Button
+                        type="primary"
+                        disabled={!planGate.eligible && !importPlan}
+                        loading={planLoading}
+                        onClick={handleCreateImportPlan}
+                      >
+                        生成 Evidence 导入计划 / Create import plan
+                      </Button>
+                      {importPlan ? (
+                        <Button
+                          icon={<ClipboardCopy size={16} />}
+                          onClick={() => copyText(importPlanJson, 'Import plan JSON 已复制')}
+                        >
+                          复制 plan JSON
+                        </Button>
+                      ) : null}
+                    </Space>
+                    {importPlan ? (
+                      <Card className="panel-card" size="small">
+                        <Space direction="vertical" size={12} className="full-width">
+                          <Space wrap>
+                            <Tag color="green">{importPlan.readiness?.state || 'ready_for_manual_import_review'}</Tag>
+                            <Tag color="default">can_import_now: {boolText(importPlan.readiness?.can_import_now)}</Tag>
+                            <Tag color="gold">{importPlan.default_evidence_policy?.review_status || 'review_needed'}</Tag>
+                            <Tag color="purple">{importPlan.default_evidence_policy?.trust_label || 'medium_low'}</Tag>
+                          </Space>
+                          <Descriptions column={1} size="small">
+                            <Descriptions.Item label="plan_id">{importPlan.plan_id}</Descriptions.Item>
+                            <Descriptions.Item label="draft_id">{importPlan.draft_id}</Descriptions.Item>
+                            <Descriptions.Item label="package">{importPlan.package_reference?.package_name || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="counts">
+                              evidence={importPlan.counts?.evidence || 0}, comments={importPlan.counts?.comments || 0}, sources={importPlan.counts?.sources || 0}, roots={importPlan.counts?.roots || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="validation">
+                              {importPlan.validation?.status || 'unknown'} / errors {importPlan.validation?.errors || 0} / warnings {importPlan.validation?.warnings || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="coverage limitation">
+                              not_full_web={boolText(importPlan.coverage?.not_full_web)}, not_full_platform={boolText(importPlan.coverage?.not_full_platform)}, not_full_thread={boolText(importPlan.coverage?.not_full_thread)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="privacy">
+                              raw ids removed={boolText(importPlan.privacy?.raw_author_ids_removed)}, raw names removed={boolText(importPlan.privacy?.raw_author_names_removed)}, profile URLs removed={boolText(importPlan.privacy?.profile_urls_removed)}, private messages excluded={boolText(importPlan.privacy?.private_messages_excluded)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="proposed import">
+                              mode={importPlan.proposed_import?.mode || 'manual_review_required'}, target={importPlan.proposed_import?.target || 'future_evidence_layer'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="do-now flags">
+                              import_rows={boolText(importPlan.proposed_import?.import_evidence_rows_now)}, create_case={boolText(importPlan.proposed_import?.create_case_now)}, run_analysis={boolText(importPlan.proposed_import?.run_analysis_now)}, sandbox={boolText(importPlan.proposed_import?.generate_sandbox_now)}, report={boolText(importPlan.proposed_import?.generate_report_now)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="default evidence policy">
+                              verification={importPlan.default_evidence_policy?.verification_status || 'source_url_provided_unverified'}, dedup={boolText(importPlan.default_evidence_policy?.dedup_required)}, audit={boolText(importPlan.default_evidence_policy?.audit_required)}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="Import plan boundary"
+                            description="Import plan does not mean evidence has been imported, case has been created, analysis has finished, or report/Sandbox has been generated."
+                          />
+                          <SummaryList title="Manual review checklist" items={importPlan.manual_review_checklist || []} />
+                          <SummaryList title="Blockers" items={importPlan.blockers || []} />
+                          <SummaryList title="Recommended next steps" items={importPlan.recommended_next_steps || []} />
                         </Space>
                       </Card>
                     ) : null}
@@ -677,7 +831,7 @@ export function AnalysisRequests() {
                   type="info"
                   showIcon
                   message="Coverage / trust note"
-                  description="Provider 输出仍是 evidence，不是 official truth。导入 case 前仍需 validation、trust/provenance、review、dedup、coverage 和 audit。"
+                  description="Provider 输出仍是 evidence，不是 official truth。进入正式 case 前仍需 validation、trust/provenance、review、dedup、coverage 和 audit。"
                 />
                 <Space wrap>
                   <Button icon={<ClipboardCopy size={16} />} onClick={() => copyText(requestJson, 'Request JSON 已复制')}>
@@ -704,8 +858,10 @@ export function AnalysisRequests() {
       <Card className="panel-card" title={<Space><ShieldCheck size={17} />Intentional non-goals</Space>}>
         <Space wrap>
           <Tag>no evidence row import</Tag>
+          <Tag>no production case creation</Tag>
           <Tag>no analysis generation</Tag>
           <Tag>no Sandbox fixture generation</Tag>
+          <Tag>no public event page generation</Tag>
           <Tag>no report generation</Tag>
           <Tag>no provider execution</Tag>
           <Tag>no collector jobs</Tag>

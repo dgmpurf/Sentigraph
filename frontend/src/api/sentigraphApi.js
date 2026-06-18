@@ -90,6 +90,21 @@ export async function createAnalysisRequestCaseDraft(requestId) {
   return normalizeCaseDraftHandoff(data)
 }
 
+export async function listAnalysisRequestImportPlans() {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/import-plans`)
+  return Array.isArray(data) ? data.map(normalizeEvidenceImportPlan).filter(Boolean) : []
+}
+
+export async function getAnalysisRequestImportPlan(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/import-plan`)
+  return normalizeEvidenceImportPlan(data)
+}
+
+export async function createAnalysisRequestImportPlan(requestId) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/import-plan`)
+  return normalizeEvidenceImportPlan(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1162,6 +1177,44 @@ function normalizeCaseDraftHandoff(data) {
     validation: data.validation && typeof data.validation === 'object' ? normalizeSafeObject(data.validation) : {},
     coverage: data.coverage && typeof data.coverage === 'object' ? normalizeSafeObject(data.coverage) : {},
     privacy: data.privacy && typeof data.privacy === 'object' ? normalizeSafeObject(data.privacy) : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeEvidenceImportPlan(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_evidence_import_plan_v1'),
+    plan_id: String(data.plan_id || ''),
+    draft_id: String(data.draft_id || ''),
+    request_id: String(data.request_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    source: String(data.source || 'case_draft_handoff'),
+    package_reference:
+      data.package_reference && typeof data.package_reference === 'object'
+        ? normalizeSafeObject(data.package_reference)
+        : {},
+    counts: data.counts && typeof data.counts === 'object' ? normalizeNumberMap(data.counts) : {},
+    validation: data.validation && typeof data.validation === 'object' ? normalizeSafeObject(data.validation) : {},
+    coverage: data.coverage && typeof data.coverage === 'object' ? normalizeSafeObject(data.coverage) : {},
+    privacy: data.privacy && typeof data.privacy === 'object' ? normalizeSafeObject(data.privacy) : {},
+    proposed_import:
+      data.proposed_import && typeof data.proposed_import === 'object'
+        ? normalizeSafeObject(data.proposed_import)
+        : {},
+    default_evidence_policy:
+      data.default_evidence_policy && typeof data.default_evidence_policy === 'object'
+        ? normalizeSafeObject(data.default_evidence_policy)
+        : {},
+    manual_review_checklist: Array.isArray(data.manual_review_checklist)
+      ? data.manual_review_checklist.map((item) => String(item))
+      : [],
+    blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
     readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
     boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
     recommended_next_steps: Array.isArray(data.recommended_next_steps)
