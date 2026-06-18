@@ -378,7 +378,7 @@ function DongluSunjihaiSampleStatusCard() {
 
 function ClassicViewLegend() {
   const items = [
-    ['大框体', '当前事件舆论生态场；在 Helldivers 模式下仅代表 selected public sample 下的讨论空间。'],
+    ['大框体', '当前事件舆论生态场；在样本模式下仅代表 selected public sample 下的讨论空间。'],
     ['小球', 'PeopleCluster / 匿名人群簇，不是真实个人用户。'],
     ['六边形', 'InfluenceCore / 影响核心、内容核心或叙事核心，不是人群小球。'],
     ['小球靠近六边形', '表示与该叙事核心更接近，不代表真实说服或真实关系链。'],
@@ -527,12 +527,16 @@ export function OpinionEcosystemSandbox() {
     drawCurrentFrame()
   }, [dataSourceMode, drawCurrentFrame, refreshScenario, scenarioKey, timelinePhaseId])
 
+  const recommendedSampleMode = dataSourceMode === 'donglu_sunjihai_sample' ? 'donglu_sunjihai_sample' : 'helldivers_psn_sample'
+  const recommendedSampleLabel =
+    recommendedSampleMode === 'donglu_sunjihai_sample' ? 'Dong/Sun youth football sample' : 'Helldivers PSN sample'
+
   const handleUseRecommendedCombo = useCallback(() => {
     setViewMode('ecology_v2')
-    setDataSourceMode('helldivers_psn_sample')
+    setDataSourceMode(recommendedSampleMode)
     setScenarioKey('natural')
-    setTimelinePhaseId(phaseIdForMode('helldivers_psn_sample', 'natural'))
-  }, [])
+    setTimelinePhaseId(phaseIdForMode(recommendedSampleMode, 'natural'))
+  }, [recommendedSampleMode])
 
   const distributionItems = useMemo(() => {
     const distribution = computeCampDistribution(peopleClustersRef.current)
@@ -610,10 +614,10 @@ export function OpinionEcosystemSandbox() {
                 <Text strong>数据来源 / Data source</Text>
                 <Tag color="gold">推荐试玩组合</Tag>
               </Space>
-              <Paragraph>数据来源决定样本内容；推荐使用 V2 ecology view + Helldivers PSN selected sample。</Paragraph>
+              <Paragraph>数据来源决定样本内容；推荐使用 V2 ecology view + 当前选择或对应事件样本。</Paragraph>
               <Space wrap>
                 <Segmented options={DATA_SOURCE_OPTIONS} value={dataSourceMode} onChange={handleDataSourceModeChange} />
-                <Button onClick={handleUseRecommendedCombo}>使用推荐组合：V2 + Helldivers PSN sample</Button>
+                <Button onClick={handleUseRecommendedCombo}>使用推荐组合：V2 + {recommendedSampleLabel}</Button>
               </Space>
             </div>
           </Col>

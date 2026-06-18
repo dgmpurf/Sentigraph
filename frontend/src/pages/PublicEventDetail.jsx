@@ -35,7 +35,7 @@ const developmentStageLabels = [
 const readingOrderItems = [
   ['1', '先看事件发展脉络', '本页用阶段说明代替精确时间戳，帮助理解争议如何触发、扩散、降压和沉淀。'],
   ['2', '再看样本规模与限制', '当前是 selected public sample 本地演示，不代表全网全量、官方验证或因果证明。'],
-  ['3', '最后打开生态沙盒', '进入 Sandbox 后选择 V2 ecology view 和 Helldivers PSN selected sample，查看 T0-T6 事件节奏。'],
+  ['3', '最后打开生态沙盒', '进入 Sandbox 后选择 V2 ecology view 和当前事件样本，查看 T0-T6 事件节奏。'],
 ]
 
 function CompactMetric({ title, value, suffix }) {
@@ -141,6 +141,15 @@ export function PublicEventDetail({ onNavigate }) {
         </Card>
       </section>
 
+      {!hasBusinessReport ? (
+        <Alert
+          type="info"
+          showIcon
+          message="B-end report sample pending / B 端报告样例待生成"
+          description="当前事件尚未生成 B 端报告样例，也没有链接到其他事件的 B 端报告。现在只提供样本来源边界、生态沙盒和 B 端咨询 mock 入口；后续报告需单独制作。"
+        />
+      ) : null}
+
       {!hasSandbox ? (
         <Alert
           type="info"
@@ -214,14 +223,12 @@ export function PublicEventDetail({ onNavigate }) {
         </Row>
       </Card>
 
-      {!hasSandbox ? (
-        <Alert
-          type="info"
-          showIcon
-          message="Privacy and sensitivity note / 隐私与敏感信息边界"
-          description="本页只展示候选样本摘要：未成年人、家庭和敏感个人细节不在页面中展示；原始作者 ID、原始作者名、主页链接、Cookie、令牌、会话和密钥不进入此页面。所有证据在后续人工复核前仍保持 review_needed 与 source_url_provided_unverified。"
-        />
-      ) : null}
+      <Alert
+        type="info"
+        showIcon
+        message="Privacy and sensitivity note / 隐私与敏感信息边界"
+        description="本页只展示候选样本摘要：未成年人、家庭和敏感个人细节不在页面中展示；原始作者 ID、原始作者名、主页链接、Cookie、令牌、会话和密钥不进入此页面。所有证据在后续人工复核前仍保持 review_needed 与 source_url_provided_unverified。"
+      />
 
       {event.platform_distribution ? (
         <Row gutter={[16, 16]}>
