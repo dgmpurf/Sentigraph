@@ -29,11 +29,13 @@ import {
   createAnalysisRequestImportPlan,
   createAnalysisRequestImportPreview,
   createAnalysisRequestReviewDecision,
+  createAnalysisRequestExecutionPreflight,
   getAnalysisRequest,
   getAnalysisRequestCaseDraft,
   getAnalysisRequestConfig,
   getAnalysisRequestImportPlan,
   getAnalysisRequestImportPreview,
+  listAnalysisRequestExecutionPreflights,
   listAnalysisRequestImportJobs,
   listAnalysisRequestReviewDecisions,
   listAnalysisRequests,
@@ -327,6 +329,32 @@ function importJobEligibility(importPreview, latestReviewDecision) {
   return { eligible: true, reason: 'Ready to create a dry-run import job draft.' }
 }
 
+function executionPreflightEligibility(latestImportJob, latestReviewDecision) {
+  if (!latestImportJob) return { eligible: false, reason: 'Create a dry-run import job draft first.' }
+  if (!latestReviewDecision) return { eligible: false, reason: 'Record an approve_import review decision first.' }
+  if (latestReviewDecision.decision !== 'approve_import') {
+    return { eligible: false, reason: 'Latest review decision must be approve_import.' }
+  }
+  if (latestImportJob.status !== 'draft_not_executed') {
+    return { eligible: false, reason: `Import job status ${latestImportJob.status || 'unknown'} is not eligible.` }
+  }
+  if (latestImportJob.execution_mode !== 'dry_run_gate') {
+    return { eligible: false, reason: `Import job execution_mode ${latestImportJob.execution_mode || 'unknown'} is not eligible.` }
+  }
+  if (latestImportJob.readiness?.state !== 'ready_for_future_manual_import_execution') {
+    return { eligible: false, reason: `Import job readiness ${latestImportJob.readiness?.state || 'unknown'} is not eligible.` }
+  }
+  if (latestImportJob.readiness?.can_execute_now === true) {
+    return { eligible: false, reason: 'Import job must remain can_execute_now=false.' }
+  }
+  const unsafeFlags = latestImportJob.dry_run_result || {}
+  const enabled = Object.entries(unsafeFlags).filter(([, value]) => value === true)
+  if (enabled.length) {
+    return { eligible: false, reason: `Dry-run now flags must remain false: ${enabled.map(([key]) => key).join(', ')}` }
+  }
+  return { eligible: true, reason: 'Ready to create metadata/file-name execution preflight.' }
+}
+
 function SummaryList({ title, items }) {
   return (
     <Card size="small" title={title}>
@@ -357,6 +385,7 @@ export function AnalysisRequests() {
   const [importPreview, setImportPreview] = useState(null)
   const [reviewDecisions, setReviewDecisions] = useState([])
   const [importJobs, setImportJobs] = useState([])
+  const [executionPreflights, setExecutionPreflights] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -365,12 +394,14 @@ export function AnalysisRequests() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [reviewLoading, setReviewLoading] = useState(false)
   const [importJobLoading, setImportJobLoading] = useState(false)
+  const [executionPreflightLoading, setExecutionPreflightLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
   const [previewError, setPreviewError] = useState('')
   const [reviewError, setReviewError] = useState('')
   const [importJobError, setImportJobError] = useState('')
+  const [executionPreflightError, setExecutionPreflightError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -397,12 +428,13 @@ export function AnalysisRequests() {
       setImportPreview(null)
       setReviewDecisions([])
       setImportJobs([])
-      setImportJobs([])
+      setExecutionPreflights([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
       setReviewError('')
       setImportJobError('')
+      setExecutionPreflightError('')
       return
     }
     try {
@@ -439,6 +471,13 @@ export function AnalysisRequests() {
     } catch {
       setImportJobs([])
       setImportJobError('')
+    }
+    try {
+      setExecutionPreflights(await listAnalysisRequestExecutionPreflights(requestId))
+      setExecutionPreflightError('')
+    } catch {
+      setExecutionPreflights([])
+      setExecutionPreflightError('')
     }
   }
 
@@ -491,6 +530,7 @@ export function AnalysisRequests() {
     setPreviewError('')
     setReviewError('')
     setImportJobError('')
+    setExecutionPreflightError('')
     try {
       setDetail(await getAnalysisRequest(record.request_id))
       await loadDraftAndPlan(record.request_id)
@@ -543,6 +583,8 @@ export function AnalysisRequests() {
       setImportPlan(plan)
       setImportPreview(null)
       setReviewDecisions([])
+      setImportJobs([])
+      setExecutionPreflights([])
       message.success('已生成 Evidence 导入计划')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import plan.'
@@ -561,6 +603,7 @@ export function AnalysisRequests() {
       setImportPreview(preview)
       setReviewDecisions([])
       setImportJobs([])
+      setExecutionPreflights([])
       message.success('已生成 metadata-only Evidence 导入预览')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import preview.'
@@ -586,6 +629,7 @@ export function AnalysisRequests() {
       })
       setReviewDecisions(await listAnalysisRequestReviewDecisions(selectedRecord.request_id))
       setImportJobs([])
+      setExecutionPreflights([])
       message.success(`已记录人工审核决策：${decision.decision}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review decision.'
@@ -608,12 +652,32 @@ export function AnalysisRequests() {
       }
       const job = await createAnalysisRequestImportJob(selectedRecord.request_id, payload)
       setImportJobs(await listAnalysisRequestImportJobs(selectedRecord.request_id))
+      setExecutionPreflights([])
       message.success(`Created dry-run import job draft: ${job.job_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create manual import job draft.'
       setImportJobError(String(messageText))
     } finally {
       setImportJobLoading(false)
+    }
+  }
+
+  async function handleCreateExecutionPreflight() {
+    if (!selectedRecord?.request_id) return
+    setExecutionPreflightLoading(true)
+    setExecutionPreflightError('')
+    try {
+      const preflight = await createAnalysisRequestExecutionPreflight(selectedRecord.request_id, {
+        job_id: latestImportJob?.job_id || undefined,
+        created_by: 'sentigraph_local_ui',
+      })
+      setExecutionPreflights(await listAnalysisRequestExecutionPreflights(selectedRecord.request_id))
+      message.success(`Created execution preflight: ${preflight.preflight_id}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create execution preflight.'
+      setExecutionPreflightError(String(messageText))
+    } finally {
+      setExecutionPreflightLoading(false)
     }
   }
 
@@ -686,6 +750,12 @@ export function AnalysisRequests() {
   )
   const latestImportJob = importJobs[0] || null
   const latestImportJobJson = latestImportJob ? JSON.stringify(latestImportJob, null, 2) : ''
+  const executionPreflightGate = useMemo(
+    () => executionPreflightEligibility(latestImportJob, latestReviewDecision),
+    [latestImportJob, latestReviewDecision],
+  )
+  const latestExecutionPreflight = executionPreflights[0] || null
+  const latestExecutionPreflightJson = latestExecutionPreflight ? JSON.stringify(latestExecutionPreflight, null, 2) : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -1395,6 +1465,126 @@ export function AnalysisRequests() {
                         </Space>
                       ) : (
                         <Text type="secondary">No import job drafts yet.</Text>
+                      )}
+                    </Card>
+                  </Space>
+                </Card>
+
+                <Card size="small" title="Manual Import Execution Preflight / 执行前检查">
+                  <Space direction="vertical" size={12} className="full-width">
+                    <Alert
+                      type={executionPreflightGate.eligible ? 'success' : 'info'}
+                      showIcon
+                      message={executionPreflightGate.eligible ? 'Ready to create execution preflight' : 'Execution preflight not ready'}
+                      description={
+                        latestExecutionPreflight
+                          ? 'An append-only execution preflight already exists for this request.'
+                          : executionPreflightGate.reason
+                      }
+                    />
+                    <Text type="secondary">
+                      执行前检查只记录 package metadata 与文件名存在性。它不会打开、读取或解析 evidence row 文件，不会导入 Evidence，
+                      不会创建生产 case，不会运行 dedup/review queue/analysis，也不会生成 Sandbox、公开事件页或报告。
+                    </Text>
+                    {executionPreflightError ? <Alert type="error" showIcon message={executionPreflightError} /> : null}
+                    <Space wrap>
+                      <Button
+                        type="primary"
+                        loading={executionPreflightLoading}
+                        disabled={!executionPreflightGate.eligible}
+                        onClick={handleCreateExecutionPreflight}
+                      >
+                        Create execution preflight / metadata only
+                      </Button>
+                      {latestExecutionPreflight ? (
+                        <Button
+                          icon={<ClipboardCopy size={16} />}
+                          onClick={() => copyText(latestExecutionPreflightJson, 'Execution preflight JSON copied')}
+                        >
+                          Copy latest preflight JSON
+                        </Button>
+                      ) : null}
+                    </Space>
+
+                    {latestExecutionPreflight ? (
+                      <Card className="panel-card" size="small" title="Latest execution preflight">
+                        <Space direction="vertical" size={12} className="full-width">
+                          <Space wrap>
+                            <Tag color={latestExecutionPreflight.status === 'preflight_warn' ? 'gold' : 'green'}>
+                              {latestExecutionPreflight.status}
+                            </Tag>
+                            <Tag color="blue">{latestExecutionPreflight.execution_mode || 'preflight_only'}</Tag>
+                            <Tag color="default">can_execute_now: {boolText(latestExecutionPreflight.readiness?.can_execute_now)}</Tag>
+                            <Tag color="purple">source: {latestExecutionPreflight.source}</Tag>
+                          </Space>
+                          <Descriptions column={1} size="small">
+                            <Descriptions.Item label="preflight_id">{latestExecutionPreflight.preflight_id}</Descriptions.Item>
+                            <Descriptions.Item label="job_id">{latestExecutionPreflight.job_id}</Descriptions.Item>
+                            <Descriptions.Item label="package">{latestExecutionPreflight.package_reference?.package_name || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="file checks">
+                              manifest={boolText(latestExecutionPreflight.package_file_checks?.manifest_present)},
+                              validation_report={boolText(latestExecutionPreflight.package_file_checks?.validation_report_present)},
+                              coverage_note={boolText(latestExecutionPreflight.package_file_checks?.coverage_note_present)},
+                              jsonl={boolText(latestExecutionPreflight.package_file_checks?.evidence_items_jsonl_present)},
+                              csv={boolText(latestExecutionPreflight.package_file_checks?.evidence_items_csv_present)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="row file behavior">
+                              opened={boolText(latestExecutionPreflight.package_file_checks?.row_files_opened)},
+                              parsed={boolText(latestExecutionPreflight.package_file_checks?.row_files_parsed)},
+                              read_rows_now={boolText(latestExecutionPreflight.future_row_reader_plan?.read_rows_now)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="future staging">
+                              stage_rows_now={boolText(latestExecutionPreflight.future_staging_plan?.stage_rows_now)},
+                              default_review={latestExecutionPreflight.future_staging_plan?.default_review_status || 'review_needed'},
+                              analysis_included={boolText(latestExecutionPreflight.future_staging_plan?.analysis_included)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="future governance">
+                              dedup_now={boolText(latestExecutionPreflight.future_governance_plan?.dedup_run_now)},
+                              review_queue_now={boolText(latestExecutionPreflight.future_governance_plan?.review_queue_created_now)},
+                              audit_required={boolText(latestExecutionPreflight.future_governance_plan?.audit_required)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="metadata summary">
+                              evidence={latestExecutionPreflight.metadata_summary?.evidence || 0},
+                              comments={latestExecutionPreflight.metadata_summary?.comments || 0},
+                              sources={latestExecutionPreflight.metadata_summary?.sources || 0},
+                              roots={latestExecutionPreflight.metadata_summary?.roots || 0}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="Preflight boundary"
+                            description="Append-only preflight only: no row read, no row parse, no Evidence Layer write, no production case, no dedup/review queue, no analysis, no report, no provider execution."
+                          />
+                          <SummaryList title="Warnings" items={latestExecutionPreflight.warnings || []} />
+                          <SummaryList title="Boundary notes" items={latestExecutionPreflight.boundary_notes || []} />
+                          <SummaryList title="Recommended next steps" items={latestExecutionPreflight.recommended_next_steps || []} />
+                        </Space>
+                      </Card>
+                    ) : null}
+
+                    <Card size="small" title={`Existing execution preflights (${executionPreflights.length})`}>
+                      {executionPreflights.length ? (
+                        <Space direction="vertical" size={8} className="full-width">
+                          {executionPreflights.map((preflight) => (
+                            <Card size="small" key={preflight.preflight_id}>
+                              <Space direction="vertical" size={4} className="full-width">
+                                <Space wrap>
+                                  <Tag color="blue">{preflight.execution_mode}</Tag>
+                                  <Tag>{preflight.status}</Tag>
+                                  <Text type="secondary">{preflight.preflight_id}</Text>
+                                </Space>
+                                <Text>package: {preflight.package_reference?.package_name || '-'}</Text>
+                                <Text type="secondary">created_at: {preflight.created_at || '-'}</Text>
+                                <Text type="secondary">
+                                  row files opened: {boolText(preflight.package_file_checks?.row_files_opened)} / parsed: {boolText(preflight.package_file_checks?.row_files_parsed)}
+                                </Text>
+                              </Space>
+                            </Card>
+                          ))}
+                        </Space>
+                      ) : (
+                        <Text type="secondary">No execution preflight records yet.</Text>
                       )}
                     </Card>
                   </Space>

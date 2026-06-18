@@ -560,6 +560,124 @@ class ManualEvidenceImportJob(BaseModel):
     )
 
 
+class ManualEvidenceImportExecutionPreflightCreate(BaseModel):
+    job_id: str | None = None
+    created_by: str = "sentigraph_local_ui"
+
+
+class ManualEvidenceImportPackageFileChecks(BaseModel):
+    package_path_checked: bool = False
+    package_path_exists: bool = False
+    manifest_present: bool = False
+    validation_report_present: bool = False
+    coverage_note_present: bool = False
+    readme_present: bool = False
+    evidence_items_jsonl_present: bool = False
+    evidence_items_csv_present: bool = False
+    row_files_opened: bool = False
+    row_files_parsed: bool = False
+
+
+class ManualEvidenceImportTargetCasePreflight(BaseModel):
+    mode: Literal["new_review_case", "existing_case"] = "new_review_case"
+    target_case_id: str | None = None
+    create_case_now: bool = False
+    review_only_required: bool = True
+    analysis_included_default: bool = False
+
+
+class ManualEvidenceImportFutureRowReaderPlan(BaseModel):
+    would_read_rows_in_future_phase: bool = True
+    read_rows_now: bool = False
+    streaming_required: bool = True
+    max_rows_first_mvp: int = 100
+    fail_closed_on_privacy_violation: bool = True
+
+
+class ManualEvidenceImportFutureStagingPlan(BaseModel):
+    would_stage_rows_in_future_phase: bool = True
+    stage_rows_now: bool = False
+    default_review_status: str = "review_needed"
+    default_verification_status: str = "source_url_provided_unverified"
+    default_trust_label: str = "medium_low"
+    analysis_included: bool = False
+
+
+class ManualEvidenceImportFutureGovernancePlan(BaseModel):
+    dedup_required: bool = True
+    dedup_run_now: bool = False
+    review_queue_required: bool = True
+    review_queue_created_now: bool = False
+    audit_required: bool = True
+    rollback_required: bool = True
+
+
+class ManualEvidenceImportExecutionPreflightReadiness(BaseModel):
+    state: str = "ready_for_future_manual_import_execution"
+    can_execute_now: bool = False
+    requires_separate_execution_phase: bool = True
+    reason: str = "Preflight only. Evidence rows are not imported in Phase 6K."
+
+
+class ManualEvidenceImportExecutionPreflight(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_manual_evidence_import_execution_preflight_v1"] = Field(
+        default="sentigraph_manual_evidence_import_execution_preflight_v1",
+        alias="schema",
+    )
+    preflight_id: str
+    job_id: str
+    decision_id: str
+    preview_id: str
+    plan_id: str
+    draft_id: str
+    request_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    source: str = "manual_evidence_import_job_dry_run"
+    execution_mode: str = "preflight_only"
+    status: Literal["preflight_passed", "preflight_warn", "preflight_blocked"] = "preflight_passed"
+    package_reference: CaseDraftPackageReference = Field(default_factory=CaseDraftPackageReference)
+    package_file_checks: ManualEvidenceImportPackageFileChecks = Field(default_factory=ManualEvidenceImportPackageFileChecks)
+    metadata_summary: ProviderJobCounts = Field(default_factory=ProviderJobCounts)
+    validation_summary: ProviderJobValidation = Field(default_factory=ProviderJobValidation)
+    coverage_summary: ProviderJobCoverage = Field(default_factory=ProviderJobCoverage)
+    privacy_summary: ProviderJobPrivacy = Field(default_factory=ProviderJobPrivacy)
+    target_case_preflight: ManualEvidenceImportTargetCasePreflight = Field(default_factory=ManualEvidenceImportTargetCasePreflight)
+    future_row_reader_plan: ManualEvidenceImportFutureRowReaderPlan = Field(default_factory=ManualEvidenceImportFutureRowReaderPlan)
+    future_staging_plan: ManualEvidenceImportFutureStagingPlan = Field(default_factory=ManualEvidenceImportFutureStagingPlan)
+    future_governance_plan: ManualEvidenceImportFutureGovernancePlan = Field(default_factory=ManualEvidenceImportFutureGovernancePlan)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    readiness: ManualEvidenceImportExecutionPreflightReadiness = Field(default_factory=ManualEvidenceImportExecutionPreflightReadiness)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "preflight_only": True,
+            "evidence_rows_opened": False,
+            "evidence_rows_parsed": False,
+            "evidence_rows_imported": False,
+            "production_case_created": False,
+            "evidence_layer_written": False,
+            "review_queue_created": False,
+            "dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

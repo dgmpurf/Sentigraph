@@ -12,6 +12,8 @@ from app.schemas.analysis_request import (
     EvidenceImportPreview,
     EvidenceImportReviewDecision,
     EvidenceImportReviewDecisionCreate,
+    ManualEvidenceImportExecutionPreflight,
+    ManualEvidenceImportExecutionPreflightCreate,
     ManualEvidenceImportJob,
     ManualEvidenceImportJobCreate,
 )
@@ -23,22 +25,26 @@ from app.services.analysis_request_store import (
     create_evidence_import_plan,
     create_evidence_import_preview,
     create_evidence_import_review_decision,
+    create_manual_evidence_import_execution_preflight,
     create_analysis_request,
     create_manual_evidence_import_job,
     get_analysis_request_config,
     list_case_draft_handoffs,
+    list_all_manual_evidence_import_execution_preflights,
     list_all_manual_evidence_import_jobs,
     list_all_evidence_import_review_decisions,
     list_evidence_import_plans,
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
     list_analysis_requests,
+    list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
     read_case_draft_handoff,
     read_evidence_import_plan,
     read_evidence_import_preview,
     read_evidence_import_review_decision,
     read_analysis_request,
+    read_manual_evidence_import_execution_preflight,
     read_manual_evidence_import_job,
 )
 
@@ -83,6 +89,11 @@ def analysis_request_review_decision_all_list() -> list[EvidenceImportReviewDeci
 @router.get("/import-jobs", response_model=list[ManualEvidenceImportJob])
 def analysis_request_import_job_all_list() -> list[ManualEvidenceImportJob]:
     return list_all_manual_evidence_import_jobs()
+
+
+@router.get("/execution-preflights", response_model=list[ManualEvidenceImportExecutionPreflight])
+def analysis_request_execution_preflight_all_list() -> list[ManualEvidenceImportExecutionPreflight]:
+    return list_all_manual_evidence_import_execution_preflights()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -201,6 +212,40 @@ def analysis_request_import_job_create(
 def analysis_request_import_job_detail(request_id: str, job_id: str) -> ManualEvidenceImportJob:
     try:
         return read_manual_evidence_import_job(request_id, job_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/execution-preflights", response_model=list[ManualEvidenceImportExecutionPreflight])
+def analysis_request_execution_preflight_list(request_id: str) -> list[ManualEvidenceImportExecutionPreflight]:
+    try:
+        return list_manual_evidence_import_execution_preflights(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/execution-preflights", response_model=ManualEvidenceImportExecutionPreflight)
+def analysis_request_execution_preflight_create(
+    request_id: str,
+    payload: ManualEvidenceImportExecutionPreflightCreate | None = None,
+) -> ManualEvidenceImportExecutionPreflight:
+    try:
+        return create_manual_evidence_import_execution_preflight(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/execution-preflights/{preflight_id}", response_model=ManualEvidenceImportExecutionPreflight)
+def analysis_request_execution_preflight_detail(
+    request_id: str,
+    preflight_id: str,
+) -> ManualEvidenceImportExecutionPreflight:
+    try:
+        return read_manual_evidence_import_execution_preflight(request_id, preflight_id)
     except AnalysisRequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:

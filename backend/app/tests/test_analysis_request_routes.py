@@ -84,6 +84,13 @@ def create_route_approve_decision(tmp_path: Path, title: str = "Import job route
     return request_id
 
 
+def create_route_import_job(tmp_path: Path, title: str = "Execution preflight route") -> tuple[str, str]:
+    request_id = create_route_approve_decision(tmp_path, title)
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/import-jobs")
+    assert response.status_code == 200
+    return request_id, response.json()["job_id"]
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -642,6 +649,95 @@ def test_analysis_request_import_job_route_blocks_bad_preview(tmp_path: Path, mo
     preview_path.write_text(json.dumps(preview), encoding="utf-8")
 
     response = client.post(f"/api/v1/analysis-requests/{request_id}/import-jobs")
+
+    assert response.status_code == 400
+    assert "validation errors" in response.text
+
+
+def test_analysis_request_execution_preflight_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, job_id = create_route_import_job(tmp_path)
+
+    post_response = client.post(f"/api/v1/analysis-requests/{request_id}/execution-preflights")
+    second_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/execution-preflights",
+        json={"job_id": job_id, "created_by": "second_route_reviewer"},
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/execution-preflights")
+    all_response = client.get("/api/v1/analysis-requests/execution-preflights")
+
+    assert post_response.status_code == 200
+    body = post_response.json()
+    assert body["schema"] == "sentigraph_manual_evidence_import_execution_preflight_v1"
+    assert body["job_id"] == job_id
+    assert body["source"] == "manual_evidence_import_job_dry_run"
+    assert body["execution_mode"] == "preflight_only"
+    assert body["status"] in {"preflight_passed", "preflight_warn"}
+    assert body["package_file_checks"]["row_files_opened"] is False
+    assert body["package_file_checks"]["row_files_parsed"] is False
+    assert body["metadata_summary"]["evidence"] == 581
+    assert body["validation_summary"]["errors"] == 0
+    assert body["coverage_summary"]["not_full_web"] is True
+    assert body["privacy_summary"]["raw_author_ids_removed"] is True
+    assert body["target_case_preflight"]["create_case_now"] is False
+    assert body["target_case_preflight"]["analysis_included_default"] is False
+    assert body["future_row_reader_plan"]["read_rows_now"] is False
+    assert body["future_staging_plan"]["stage_rows_now"] is False
+    assert body["future_staging_plan"]["analysis_included"] is False
+    assert body["future_governance_plan"]["dedup_run_now"] is False
+    assert body["future_governance_plan"]["review_queue_created_now"] is False
+    assert body["readiness"]["can_execute_now"] is False
+    assert body["safe_mode"]["evidence_rows_opened"] is False
+    assert body["safe_mode"]["evidence_rows_parsed"] is False
+    assert body["safe_mode"]["evidence_rows_imported"] is False
+    assert body["safe_mode"]["production_case_created"] is False
+    assert body["safe_mode"]["analysis_generated"] is False
+    assert second_response.status_code == 200
+    assert second_response.json()["preflight_id"] != body["preflight_id"]
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 2
+    assert all_response.status_code == 200
+    assert len(all_response.json()) == 2
+    read_response = client.get(f"/api/v1/analysis-requests/{request_id}/execution-preflights/{body['preflight_id']}")
+    assert read_response.status_code == 200
+    assert read_response.json()["preflight_id"] == body["preflight_id"]
+    assert "raw_author_value" not in post_response.text
+
+
+def test_analysis_request_execution_preflight_route_blocks_missing_job(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id = create_route_approve_decision(tmp_path, "Preflight missing job route")
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/execution-preflights")
+
+    assert response.status_code == 404
+    assert "manual import job" in response.text.lower()
+
+
+def test_analysis_request_execution_preflight_route_blocks_non_approve_latest_decision(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _job_id = create_route_import_job(tmp_path, "Preflight superseded route")
+    reject_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-decisions",
+        json=route_review_payload("reject_import", notes="Reject after job."),
+    )
+    assert reject_response.status_code == 200
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/execution-preflights")
+
+    assert response.status_code == 400
+    assert "approve_import" in response.text
+
+
+def test_analysis_request_execution_preflight_route_blocks_bad_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _job_id = create_route_import_job(tmp_path, "Preflight bad preview route")
+    preview_path = tmp_path / "import_previews" / f"{request_id}.json"
+    preview = json.loads(preview_path.read_text(encoding="utf-8"))
+    preview["validation_summary"]["errors"] = 1
+    preview_path.write_text(json.dumps(preview), encoding="utf-8")
+
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/execution-preflights")
 
     assert response.status_code == 400
     assert "validation errors" in response.text

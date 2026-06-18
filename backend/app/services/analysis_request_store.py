@@ -28,11 +28,19 @@ from app.schemas.analysis_request import (
     EvidenceImportReviewDecision,
     EvidenceImportReviewDecisionCreate,
     EvidenceImportReviewReadiness,
+    ManualEvidenceImportExecutionPreflight,
+    ManualEvidenceImportExecutionPreflightCreate,
+    ManualEvidenceImportExecutionPreflightReadiness,
+    ManualEvidenceImportFutureGovernancePlan,
+    ManualEvidenceImportFutureRowReaderPlan,
+    ManualEvidenceImportFutureStagingPlan,
     ManualEvidenceImportJob,
     ManualEvidenceImportJobCreate,
     ManualEvidenceImportJobReadiness,
+    ManualEvidenceImportPackageFileChecks,
     ManualEvidenceImportPreflightChecks,
     ManualEvidenceImportTargetCase,
+    ManualEvidenceImportTargetCasePreflight,
     ProviderJobResult,
 )
 
@@ -608,6 +616,149 @@ def create_manual_evidence_import_job(
     return read_manual_evidence_import_job(request_id, job_id)
 
 
+def read_manual_evidence_import_execution_preflight(
+    request_id: str,
+    preflight_id: str,
+) -> ManualEvidenceImportExecutionPreflight:
+    preflight_path = _execution_preflight_path(request_id, preflight_id)
+    if not preflight_path.exists():
+        raise AnalysisRequestNotFoundError(f"Manual evidence import execution preflight {preflight_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(preflight_path.read_text(encoding="utf-8-sig"))
+        return ManualEvidenceImportExecutionPreflight.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{preflight_path.name} is not a valid execution preflight: {type(exc).__name__}") from exc
+
+
+def list_manual_evidence_import_execution_preflights(request_id: str) -> list[ManualEvidenceImportExecutionPreflight]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    preflights: list[ManualEvidenceImportExecutionPreflight] = []
+    for path in sorted((root / "execution_preflights").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            preflights.append(ManualEvidenceImportExecutionPreflight.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return preflights
+
+
+def list_all_manual_evidence_import_execution_preflights() -> list[ManualEvidenceImportExecutionPreflight]:
+    root = _ensure_root()
+    preflights: list[ManualEvidenceImportExecutionPreflight] = []
+    for path in sorted((root / "execution_preflights").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            preflights.append(ManualEvidenceImportExecutionPreflight.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return preflights
+
+
+def create_manual_evidence_import_execution_preflight(
+    request_id: str,
+    payload: ManualEvidenceImportExecutionPreflightCreate | dict[str, Any] | None = None,
+) -> ManualEvidenceImportExecutionPreflight:
+    try:
+        preflight_payload = (
+            payload
+            if isinstance(payload, ManualEvidenceImportExecutionPreflightCreate)
+            else ManualEvidenceImportExecutionPreflightCreate.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create execution preflight: invalid preflight payload ({exc}).") from exc
+
+    job = _select_manual_import_job_for_preflight(request_id, preflight_payload.job_id)
+    _validate_execution_preflight_job_eligibility(job)
+    decision = read_evidence_import_review_decision(request_id, job.decision_id)
+    _validate_execution_preflight_decision_eligibility(request_id, decision, job)
+    preview = read_evidence_import_preview(request_id)
+    _validate_execution_preflight_preview_eligibility(preview)
+    package_file_checks, file_warnings = _build_execution_preflight_package_file_checks(job.package_reference)
+
+    if job.target_case.mode not in {"new_review_case", "existing_case"}:
+        raise AnalysisRequestValidationError("Cannot create execution preflight: target_case mode must be new_review_case or existing_case.")
+    if job.target_case.mode == "existing_case" and not job.target_case.target_case_id:
+        raise AnalysisRequestValidationError("Cannot create execution preflight: target_case_id is required for existing_case.")
+
+    preflight_id = _new_execution_preflight_id()
+    status = "preflight_warn" if file_warnings else "preflight_passed"
+    preflight = ManualEvidenceImportExecutionPreflight(
+        preflight_id=preflight_id,
+        job_id=job.job_id,
+        decision_id=job.decision_id,
+        preview_id=job.preview_id,
+        plan_id=job.plan_id,
+        draft_id=job.draft_id,
+        request_id=request_id,
+        created_by=preflight_payload.created_by or "sentigraph_local_ui",
+        status=status,
+        package_reference=job.package_reference,
+        package_file_checks=package_file_checks,
+        metadata_summary=preview.metadata_summary,
+        validation_summary=preview.validation_summary,
+        coverage_summary=preview.coverage_summary,
+        privacy_summary=preview.privacy_summary,
+        target_case_preflight=ManualEvidenceImportTargetCasePreflight(
+            mode=job.target_case.mode,
+            target_case_id=job.target_case.target_case_id,
+            create_case_now=False,
+            review_only_required=True,
+            analysis_included_default=False,
+        ),
+        future_row_reader_plan=ManualEvidenceImportFutureRowReaderPlan(
+            would_read_rows_in_future_phase=True,
+            read_rows_now=False,
+            streaming_required=True,
+            max_rows_first_mvp=100,
+            fail_closed_on_privacy_violation=True,
+        ),
+        future_staging_plan=ManualEvidenceImportFutureStagingPlan(
+            would_stage_rows_in_future_phase=True,
+            stage_rows_now=False,
+            default_review_status="review_needed",
+            default_verification_status="source_url_provided_unverified",
+            default_trust_label="medium_low",
+            analysis_included=False,
+        ),
+        future_governance_plan=ManualEvidenceImportFutureGovernancePlan(
+            dedup_required=True,
+            dedup_run_now=False,
+            review_queue_required=True,
+            review_queue_created_now=False,
+            audit_required=True,
+            rollback_required=True,
+        ),
+        blockers=[],
+        warnings=file_warnings,
+        readiness=ManualEvidenceImportExecutionPreflightReadiness(
+            state="ready_for_future_manual_import_execution" if not file_warnings else "needs_attention",
+            can_execute_now=False,
+            requires_separate_execution_phase=True,
+            reason="Preflight only. Evidence rows are not imported in Phase 6K.",
+        ),
+        boundary_notes=[
+            "Preflight is not import.",
+            "Preflight does not open, read, or parse evidence row files.",
+            "Preflight does not create a production case.",
+            "Preflight does not write to the Evidence Layer.",
+            "Preflight does not run dedup or create review queue items.",
+            "Preflight does not run analysis or generate Sandbox/public event/report output.",
+            "Future execution phase must be separate.",
+            "Provider output remains evidence, not truth.",
+        ],
+        recommended_next_steps=[
+            "Future Phase 6L may implement row reader dry-run with synthetic fixture only.",
+            "Future Phase 6M may implement staging import to a review-only case.",
+            "Import rows only in a separate manual execution phase.",
+            "Dedup and review queue must run before analysis.",
+            "Analysis, Sandbox, public event, and report generation are later explicit actions only.",
+        ],
+    )
+    _write_json(_execution_preflight_path(request_id, preflight_id), preflight.model_dump(mode="json", by_alias=True))
+    return read_manual_evidence_import_execution_preflight(request_id, preflight_id)
+
+
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -890,6 +1041,133 @@ def _validate_import_job_preview_eligibility(preview: EvidenceImportPreview) -> 
         )
 
 
+def _select_manual_import_job_for_preflight(request_id: str, job_id: str | None) -> ManualEvidenceImportJob:
+    if job_id:
+        return read_manual_evidence_import_job(request_id, job_id)
+    jobs = list_manual_evidence_import_jobs(request_id)
+    if not jobs:
+        raise AnalysisRequestNotFoundError(f"manual import job for {request_id} was not found.")
+    return jobs[0]
+
+
+def _validate_execution_preflight_job_eligibility(job: ManualEvidenceImportJob) -> None:
+    if job.status != "draft_not_executed":
+        raise AnalysisRequestValidationError(f"Cannot create execution preflight: job status {job.status} is not eligible.")
+    if job.execution_mode != "dry_run_gate":
+        raise AnalysisRequestValidationError(f"Cannot create execution preflight: job execution_mode {job.execution_mode} is not eligible.")
+    if job.readiness.state != "ready_for_future_manual_import_execution":
+        raise AnalysisRequestValidationError(f"Cannot create execution preflight: job readiness {job.readiness.state} is not eligible.")
+    if job.readiness.can_execute_now:
+        raise AnalysisRequestValidationError("Cannot create execution preflight: job readiness can_execute_now must be false.")
+    if not job.package_reference.package_name:
+        raise AnalysisRequestValidationError("Cannot create execution preflight: package_name is missing.")
+    if not job.package_reference.package_path:
+        raise AnalysisRequestValidationError("Cannot create execution preflight: package_path is missing.")
+
+    unsafe_dry_run_flags = {
+        "import_evidence_rows_now": job.dry_run_result.import_evidence_rows_now,
+        "create_case_now": job.dry_run_result.create_case_now,
+        "run_dedup_now": job.dry_run_result.run_dedup_now,
+        "create_review_queue_now": job.dry_run_result.create_review_queue_now,
+        "run_analysis_now": job.dry_run_result.run_analysis_now,
+        "generate_sandbox_now": job.dry_run_result.generate_sandbox_now,
+        "generate_report_now": job.dry_run_result.generate_report_now,
+    }
+    enabled_dry_run_flags = [name for name, enabled in unsafe_dry_run_flags.items() if enabled]
+    if enabled_dry_run_flags:
+        raise AnalysisRequestValidationError(
+            f"Cannot create execution preflight: dry-run job has unsafe now flags ({', '.join(enabled_dry_run_flags)})."
+        )
+
+    unsafe_safe_mode_flags = {
+        "evidence_rows_read": job.safe_mode.get("evidence_rows_read", False),
+        "evidence_rows_parsed": job.safe_mode.get("evidence_rows_parsed", False),
+        "evidence_rows_imported": job.safe_mode.get("evidence_rows_imported", False),
+        "production_case_created": job.safe_mode.get("production_case_created", False),
+        "analysis_generated": job.safe_mode.get("analysis_generated", False),
+        "sandbox_fixture_generated": job.safe_mode.get("sandbox_fixture_generated", False),
+        "public_event_page_generated": job.safe_mode.get("public_event_page_generated", False),
+        "report_generated": job.safe_mode.get("report_generated", False),
+        "provider_execution": job.safe_mode.get("provider_execution", False),
+        "collector_jobs_run": job.safe_mode.get("collector_jobs_run", False),
+    }
+    enabled_safe_mode_flags = [name for name, enabled in unsafe_safe_mode_flags.items() if enabled]
+    if enabled_safe_mode_flags:
+        raise AnalysisRequestValidationError(
+            f"Cannot create execution preflight: dry-run job suggests execution already happened ({', '.join(enabled_safe_mode_flags)})."
+        )
+
+
+def _validate_execution_preflight_decision_eligibility(
+    request_id: str,
+    decision: EvidenceImportReviewDecision,
+    job: ManualEvidenceImportJob,
+) -> None:
+    latest_decisions = list_evidence_import_review_decisions(request_id)
+    latest_decision = latest_decisions[0] if latest_decisions else None
+    if not latest_decision:
+        raise AnalysisRequestNotFoundError(f"Evidence import review decision for {request_id} was not found.")
+    if latest_decision.decision_id != decision.decision_id:
+        raise AnalysisRequestValidationError("Cannot create execution preflight: selected approval is stale; latest review decision must be approve_import.")
+    if decision.decision != "approve_import":
+        raise AnalysisRequestValidationError("Cannot create execution preflight: latest review decision must be approve_import.")
+    if job.decision_id != decision.decision_id:
+        raise AnalysisRequestValidationError("Cannot create execution preflight: job decision_id does not match selected review decision.")
+    _validate_import_job_decision_eligibility(decision)
+
+
+def _validate_execution_preflight_preview_eligibility(preview: EvidenceImportPreview) -> None:
+    if preview.validation_summary.status not in {"passed", "warn"}:
+        raise AnalysisRequestValidationError(f"Cannot create execution preflight: validation status {preview.validation_summary.status} is not eligible.")
+    _validate_import_job_preview_eligibility(preview)
+
+
+def _build_execution_preflight_package_file_checks(
+    package_reference: CaseDraftPackageReference,
+) -> tuple[ManualEvidenceImportPackageFileChecks, list[str]]:
+    checks = ManualEvidenceImportPackageFileChecks()
+    warnings: list[str] = []
+    package_path_value = (package_reference.package_path or "").strip()
+    if not package_path_value:
+        raise AnalysisRequestValidationError("Cannot create execution preflight: package_path is missing.")
+
+    package_path = Path(package_path_value).expanduser()
+    if not package_path.is_absolute():
+        package_path = (PROJECT_ROOT / package_path).resolve()
+
+    if not package_path.exists() or not package_path.is_dir():
+        warnings.append("Package path is not available locally; preflight used stored metadata only.")
+        return checks, warnings
+
+    checks.package_path_checked = True
+    checks.package_path_exists = True
+    checks.manifest_present = (package_path / "manifest.json").is_file()
+    checks.validation_report_present = (package_path / "validation_report.json").is_file()
+    checks.coverage_note_present = (package_path / "coverage_note.md").is_file()
+    checks.readme_present = (package_path / "README.md").is_file()
+    checks.evidence_items_jsonl_present = (package_path / "evidence_items.jsonl").is_file()
+    checks.evidence_items_csv_present = (package_path / "evidence_items.csv").is_file()
+    checks.row_files_opened = False
+    checks.row_files_parsed = False
+
+    missing_required: list[str] = []
+    if not checks.manifest_present:
+        missing_required.append("manifest.json")
+    if not checks.validation_report_present:
+        missing_required.append("validation_report.json")
+    if not checks.coverage_note_present:
+        missing_required.append("coverage_note.md")
+    if missing_required:
+        raise AnalysisRequestValidationError(
+            f"Cannot create execution preflight: required package files missing ({', '.join(missing_required)})."
+        )
+    if not checks.readme_present:
+        warnings.append("Package README.md is missing; continue only with reviewer-visible package notes.")
+    if not checks.evidence_items_jsonl_present and not checks.evidence_items_csv_present:
+        warnings.append("No evidence row file name was found; future row reader cannot execute without a row file.")
+    return checks, warnings
+
+
 def _read_result_payload(request_id: str) -> dict[str, Any]:
     result_path = _result_path(request_id)
     try:
@@ -915,6 +1193,7 @@ def _ensure_root() -> Path:
     (root / "import_previews").mkdir(parents=True, exist_ok=True)
     (root / "review_decisions").mkdir(parents=True, exist_ok=True)
     (root / "import_jobs").mkdir(parents=True, exist_ok=True)
+    (root / "execution_preflights").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -962,6 +1241,13 @@ def _import_job_path(request_id: str, job_id: str) -> Path:
     return root / "import_jobs" / f"{request_id}_{job_id}.json"
 
 
+def _execution_preflight_path(request_id: str, preflight_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(preflight_id)
+    root = _ensure_root()
+    return root / "execution_preflights" / f"{request_id}_{preflight_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -988,6 +1274,11 @@ def _new_review_decision_id() -> str:
 def _new_import_job_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"manual_import_job_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_execution_preflight_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"manual_import_preflight_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

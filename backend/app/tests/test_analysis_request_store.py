@@ -11,12 +11,14 @@ from app.services.analysis_request_store import (
     create_evidence_import_plan,
     create_evidence_import_preview,
     create_evidence_import_review_decision,
+    create_manual_evidence_import_execution_preflight,
     create_manual_evidence_import_job,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
+    list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
     list_analysis_requests,
     read_analysis_request,
@@ -135,6 +137,33 @@ def create_approved_review_decision(tmp_path: Path, request_id: str) -> dict:
     decision = create_evidence_import_review_decision(request_id, review_payload("approve_import"))
     decision_path = tmp_path / "review_decisions" / f"{request_id}_{decision.decision_id}.json"
     return json.loads(decision_path.read_text(encoding="utf-8"))
+
+
+def create_package_dir(tmp_path: Path, *, include_required: bool = True) -> Path:
+    package_dir = tmp_path / "external_package"
+    package_dir.mkdir(parents=True)
+    if include_required:
+        (package_dir / "manifest.json").write_text("{}", encoding="utf-8")
+        (package_dir / "validation_report.json").write_text('{"errors":0}', encoding="utf-8")
+        (package_dir / "coverage_note.md").write_text("selected public sample only", encoding="utf-8")
+        (package_dir / "README.md").write_text("local package fixture", encoding="utf-8")
+        (package_dir / "evidence_items.jsonl").write_text(
+            '{"raw_author_id":"must_not_be_parsed","comment_text":"forbidden-looking row"}\n{broken',
+            encoding="utf-8",
+        )
+    return package_dir
+
+
+def create_manual_import_job(tmp_path: Path, request_id: str, *, package_dir: Path | None = None) -> dict:
+    create_approved_review_decision(tmp_path, request_id)
+    if package_dir is not None:
+        preview_path = tmp_path / "import_previews" / f"{request_id}.json"
+        preview = json.loads(preview_path.read_text(encoding="utf-8"))
+        preview["package_reference"]["package_path"] = str(package_dir)
+        preview_path.write_text(json.dumps(preview), encoding="utf-8")
+    job = create_manual_evidence_import_job(request_id)
+    job_path = tmp_path / "import_jobs" / f"{request_id}_{job.job_id}.json"
+    return json.loads(job_path.read_text(encoding="utf-8"))
 
 
 def test_create_request_writes_json_with_conservative_defaults(tmp_path: Path, monkeypatch) -> None:
@@ -990,6 +1019,183 @@ def test_manual_import_job_does_not_parse_invalid_evidence_rows(tmp_path: Path, 
     assert job.safe_mode["evidence_rows_parsed"] is False
     assert job.safe_mode["evidence_rows_imported"] is False
     assert not (tmp_path / "cases").exists()
+
+
+def test_manual_import_execution_preflight_checks_job_and_package_without_opening_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Execution preflight happy path"))
+    )
+    package_dir = create_package_dir(tmp_path)
+    job_payload = create_manual_import_job(tmp_path, record.request_id, package_dir=package_dir)
+
+    preflight = create_manual_evidence_import_execution_preflight(record.request_id)
+    second_preflight = create_manual_evidence_import_execution_preflight(
+        record.request_id,
+        {"job_id": job_payload["job_id"], "created_by": "second_reviewer"},
+    )
+    preflight_files = sorted((tmp_path / "execution_preflights").glob(f"{record.request_id}_*.json"))
+    preflight_text = "\n".join(path.read_text(encoding="utf-8") for path in preflight_files)
+
+    assert preflight.schema_ == "sentigraph_manual_evidence_import_execution_preflight_v1"
+    assert preflight.job_id == job_payload["job_id"]
+    assert preflight.decision_id == job_payload["decision_id"]
+    assert preflight.preview_id == job_payload["preview_id"]
+    assert preflight.plan_id == job_payload["plan_id"]
+    assert preflight.draft_id == job_payload["draft_id"]
+    assert preflight.request_id == record.request_id
+    assert preflight.source == "manual_evidence_import_job_dry_run"
+    assert preflight.execution_mode == "preflight_only"
+    assert preflight.status == "preflight_passed"
+    assert preflight.package_reference.package_name == "sample_package"
+    assert preflight.package_file_checks.manifest_present is True
+    assert preflight.package_file_checks.validation_report_present is True
+    assert preflight.package_file_checks.coverage_note_present is True
+    assert preflight.package_file_checks.readme_present is True
+    assert preflight.package_file_checks.evidence_items_jsonl_present is True
+    assert preflight.package_file_checks.evidence_items_csv_present is False
+    assert preflight.package_file_checks.row_files_opened is False
+    assert preflight.package_file_checks.row_files_parsed is False
+    assert preflight.metadata_summary.evidence == 581
+    assert preflight.validation_summary.errors == 0
+    assert preflight.coverage_summary.not_full_web is True
+    assert preflight.privacy_summary.raw_author_ids_removed is True
+    assert preflight.target_case_preflight.mode == "new_review_case"
+    assert preflight.target_case_preflight.create_case_now is False
+    assert preflight.target_case_preflight.review_only_required is True
+    assert preflight.target_case_preflight.analysis_included_default is False
+    assert preflight.future_row_reader_plan.would_read_rows_in_future_phase is True
+    assert preflight.future_row_reader_plan.read_rows_now is False
+    assert preflight.future_row_reader_plan.streaming_required is True
+    assert preflight.future_row_reader_plan.fail_closed_on_privacy_violation is True
+    assert preflight.future_staging_plan.stage_rows_now is False
+    assert preflight.future_staging_plan.default_review_status == "review_needed"
+    assert preflight.future_staging_plan.default_verification_status == "source_url_provided_unverified"
+    assert preflight.future_staging_plan.default_trust_label == "medium_low"
+    assert preflight.future_staging_plan.analysis_included is False
+    assert preflight.future_governance_plan.dedup_required is True
+    assert preflight.future_governance_plan.dedup_run_now is False
+    assert preflight.future_governance_plan.review_queue_created_now is False
+    assert preflight.readiness.state == "ready_for_future_manual_import_execution"
+    assert preflight.readiness.can_execute_now is False
+    assert preflight.readiness.requires_separate_execution_phase is True
+    assert preflight.safe_mode["evidence_rows_opened"] is False
+    assert preflight.safe_mode["evidence_rows_parsed"] is False
+    assert preflight.safe_mode["evidence_rows_imported"] is False
+    assert preflight.safe_mode["production_case_created"] is False
+    assert preflight.safe_mode["analysis_generated"] is False
+    assert second_preflight.preflight_id != preflight.preflight_id
+    assert len(preflight_files) == 2
+    assert len(list_manual_evidence_import_execution_preflights(record.request_id)) == 2
+    assert "must_not_be_parsed" not in preflight_text
+    assert "forbidden-looking row" not in preflight_text
+    assert not (tmp_path / "cases").exists()
+
+
+def test_manual_import_execution_preflight_blocks_missing_or_unsafe_job(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    missing_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Missing job preflight"))
+    )
+    create_approved_review_decision(tmp_path, missing_record.request_id)
+    unsafe_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Unsafe job preflight"))
+    )
+    create_manual_import_job(tmp_path, unsafe_record.request_id)
+    job_path = next((tmp_path / "import_jobs").glob(f"{unsafe_record.request_id}_*.json"))
+    job = json.loads(job_path.read_text(encoding="utf-8"))
+    job["dry_run_result"]["import_evidence_rows_now"] = True
+    job_path.write_text(json.dumps(job), encoding="utf-8")
+
+    cases = [
+        ("Missing job", missing_record.request_id, "manual import job"),
+        ("Unsafe now flag", unsafe_record.request_id, "import_evidence_rows_now"),
+    ]
+    for title, request_id, expected_message in cases:
+        try:
+            create_manual_evidence_import_execution_preflight(request_id)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should block execution preflight")
+
+
+def test_manual_import_execution_preflight_blocks_superseded_decision_and_bad_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    cases = [
+        ("Superseded decision", "decision", lambda record_id: create_evidence_import_review_decision(record_id, review_payload("reject_import", notes="Reject later.")), "approve_import"),
+        ("Validation errors", "preview", lambda preview: preview["validation_summary"].update({"errors": 1}), "validation errors"),
+        ("No evidence", "preview", lambda preview: preview["metadata_summary"].update({"evidence": 0}), "metadata_summary.evidence"),
+        ("Missing package", "preview", lambda preview: preview["package_reference"].update({"package_name": ""}), "package_name"),
+        ("Privacy missing", "preview", lambda preview: preview["privacy_summary"].update({"raw_author_ids_removed": False}), "privacy flags"),
+        ("Full web claim", "preview", lambda preview: preview["coverage_summary"].update({"not_full_web": False}), "coverage"),
+    ]
+
+    for title, target, mutate, expected_message in cases:
+        record = create_analysis_request(
+            AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title=title))
+        )
+        create_manual_import_job(tmp_path, record.request_id)
+        if target == "decision":
+            mutate(record.request_id)
+        else:
+            preview_path = tmp_path / "import_previews" / f"{record.request_id}.json"
+            preview = json.loads(preview_path.read_text(encoding="utf-8"))
+            mutate(preview)
+            preview_path.write_text(json.dumps(preview), encoding="utf-8")
+
+        try:
+            create_manual_evidence_import_execution_preflight(record.request_id)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should block execution preflight")
+
+
+def test_manual_import_execution_preflight_warns_when_package_path_unavailable_and_blocks_missing_required_files(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    warn_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Preflight package path warn"))
+    )
+    create_manual_import_job(tmp_path, warn_record.request_id)
+    warned = create_manual_evidence_import_execution_preflight(warn_record.request_id)
+    assert warned.status == "preflight_warn"
+    assert warned.package_file_checks.package_path_checked is False
+    assert warned.package_file_checks.row_files_opened is False
+
+    blocked_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Preflight missing manifest"))
+    )
+    package_dir = create_package_dir(tmp_path / "missing_required_case", include_required=False)
+    (package_dir / "validation_report.json").write_text("{}", encoding="utf-8")
+    (package_dir / "coverage_note.md").write_text("coverage", encoding="utf-8")
+    create_manual_import_job(tmp_path, blocked_record.request_id, package_dir=package_dir)
+
+    try:
+        create_manual_evidence_import_execution_preflight(blocked_record.request_id)
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "manifest" in str(exc)
+    else:
+        raise AssertionError("Missing manifest should block execution preflight when package path is readable")
+
+
+def test_manual_import_execution_preflight_existing_case_requires_target_id(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Preflight existing case"))
+    )
+    create_approved_review_decision(tmp_path, record.request_id)
+    job = create_manual_evidence_import_job(
+        record.request_id,
+        {"target_case_mode": "existing_case", "target_case_id": "case_review_only_existing"},
+    )
+
+    preflight = create_manual_evidence_import_execution_preflight(record.request_id, {"job_id": job.job_id})
+
+    assert preflight.target_case_preflight.mode == "existing_case"
+    assert preflight.target_case_preflight.target_case_id == "case_review_only_existing"
+    assert preflight.target_case_preflight.create_case_now is False
+    assert preflight.target_case_preflight.analysis_included_default is False
 
 
 def test_invalid_result_json_sets_warning_without_crash(tmp_path: Path, monkeypatch) -> None:
