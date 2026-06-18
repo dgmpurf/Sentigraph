@@ -66,6 +66,7 @@ const FALLBACK_PLATFORM_OPTIONS = [
   { label: 'Toutiao', value: 'toutiao' },
 ]
 const STATIC_PUBLIC_PAGES = [
+  'businessReportDongluSunjihaiSample',
   'businessReportSample',
   'opinionEcosystem',
   'publicDemoGuide',
@@ -101,6 +102,10 @@ const PublicEventPlaza = lazyNamed(() => import('./pages/PublicEventPlaza.jsx'),
 const PublicEventDetail = lazyNamed(() => import('./pages/PublicEventDetail.jsx'), 'PublicEventDetail')
 const PublicEventRequest = lazyNamed(() => import('./pages/PublicEventRequest.jsx'), 'PublicEventRequest')
 const BusinessReportSample = lazyNamed(() => import('./pages/BusinessReportSample.jsx'), 'BusinessReportSample')
+const BusinessReportDongluSunjihaiSample = lazyNamed(
+  () => import('./pages/BusinessReportDongluSunjihaiSample.jsx'),
+  'BusinessReportDongluSunjihaiSample',
+)
 const SelectorRepairTool = lazyNamed(() => import('./pages/SelectorRepairTool.jsx'), 'SelectorRepairTool')
 const LlmAdminStatus = lazyNamed(() => import('./pages/LlmAdminStatus.jsx'), 'LlmAdminStatus')
 const BenchmarkDashboard = lazyNamed(() => import('./pages/BenchmarkDashboard.jsx'), 'BenchmarkDashboard')
@@ -118,6 +123,7 @@ function pageFromHash() {
   if (hash === '#/public-events/helldivers-psn') return 'publicEventDetail'
   if (hash === '#/public-events/donglu-sunjihai-youth-football') return 'publicEventDetail'
   if (hash === '#/reports/helldivers-psn-sample') return 'businessReportSample'
+  if (hash === '#/reports/donglu-sunjihai-youth-football-sample') return 'businessReportDongluSunjihaiSample'
   if (hash === '#/opinion-ecosystem') return 'opinionEcosystem'
   if (hash === '#/external-collector') return 'externalCollectorBridge'
   return 'dashboard'
@@ -702,6 +708,7 @@ function App() {
       publicEventRequest: '#/public-events/request',
       publicEventDetail: '#/public-events/helldivers-psn',
       businessReportSample: '#/reports/helldivers-psn-sample',
+      businessReportDongluSunjihaiSample: '#/reports/donglu-sunjihai-youth-football-sample',
       opinionEcosystem: '#/opinion-ecosystem',
       externalCollectorBridge: '#/external-collector',
     }
@@ -812,6 +819,7 @@ function App() {
     publicEventDetail: <PublicEventDetail onNavigate={handleNavigate} />,
     publicEventRequest: <PublicEventRequest />,
     businessReportSample: <BusinessReportSample />,
+    businessReportDongluSunjihaiSample: <BusinessReportDongluSunjihaiSample />,
     selectorRepair: <SelectorRepairTool />,
     llmSafety: <LlmAdminStatus />,
     benchmarks: <BenchmarkDashboard />,

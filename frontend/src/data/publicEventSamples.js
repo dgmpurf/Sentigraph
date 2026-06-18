@@ -347,7 +347,7 @@ export const PUBLIC_EVENT_PLAZA_EVENTS = [
     user_request_state_mock: 'candidate_sample_available',
     sponsored_state: 'none',
     queue_label: '受控候选公开样本',
-    request_note: '已有本地候选样本摘要和 Sandbox V2 historical replay；B 端报告尚未生成。',
+    request_note: '已有本地候选样本摘要、Sandbox V2 historical replay 和固定 B 端报告样例。',
     request_cta_label: '查看候选样本详情',
     vote_cta_label: '支持后续复核 / mock',
   },

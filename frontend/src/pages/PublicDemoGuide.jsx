@@ -82,6 +82,9 @@ const DEMO_STEPS = [
     title: 'Step 9：查看 B端报告样例',
     buttonLabel: '查看 B端报告样例',
     targetHash: '#/reports/helldivers-psn-sample',
+    secondaryButtonLabel: 'View Dong/Sun B-end report sample',
+    secondaryTargetHash: '#/reports/donglu-sunjihai-youth-football-sample',
+    extraNote: 'Includes Helldivers and Dong Lu / Sun Jihai fixed report samples; both are local demos, not production reports.',
     description: '查看同一个 Helldivers selected public sample 如何被组织成专业报告样例。它不是生产级报告、官方验证或因果证明。',
   },
 ]
@@ -127,11 +130,20 @@ function DemoStepCard({ completed, onOpen, onToggle, step }) {
         <div>
           <Title level={4}>{step.title}</Title>
           <Paragraph>{step.description}</Paragraph>
+          {step.extraNote ? <Text type="secondary">{step.extraNote}</Text> : null}
         </div>
         <Space wrap>
           <Button type="primary" icon={<ExternalLink size={16} />} onClick={() => onOpen(step)}>
             {step.buttonLabel}
           </Button>
+          {step.secondaryTargetHash ? (
+            <Button
+              icon={<ExternalLink size={16} />}
+              onClick={() => onOpen({ ...step, targetHash: step.secondaryTargetHash })}
+            >
+              {step.secondaryButtonLabel}
+            </Button>
+          ) : null}
           <Button onClick={() => onToggle(step.key)}>
             {completed ? '标记为未完成' : '我已试过'}
           </Button>
@@ -402,6 +414,9 @@ export function PublicDemoGuide() {
             </Paragraph>
             <Button icon={<FileText size={16} />} onClick={() => openEvent('#/reports/helldivers-psn-sample')}>
               查看 B端报告样例
+            </Button>
+            <Button icon={<FileText size={16} />} onClick={() => openEvent('#/reports/donglu-sunjihai-youth-football-sample')}>
+              查看 Dong/Sun B端报告样例
             </Button>
           </Card>
         </Col>

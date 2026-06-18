@@ -10,6 +10,17 @@ const PUBLIC_EVENT_DETAILS_BY_HASH = {
   '#/public-events/donglu-sunjihai-youth-football': DONGLU_SUNJIHAI_PUBLIC_EVENT,
 }
 
+const BUSINESS_REPORT_ROUTES_BY_EVENT_ID = {
+  helldivers2_psn_demo: {
+    hash: '#/reports/helldivers-psn-sample',
+    pageKey: 'businessReportSample',
+  },
+  donglu_sunjihai_youth_football_202606: {
+    hash: '#/reports/donglu-sunjihai-youth-football-sample',
+    pageKey: 'businessReportDongluSunjihaiSample',
+  },
+}
+
 const boundaryTags = [
   'frontend-only local demo',
   'selected public sample',
@@ -58,7 +69,8 @@ function SectionTitle({ kicker, title }) {
 export function PublicEventDetail({ onNavigate }) {
   const event = PUBLIC_EVENT_DETAILS_BY_HASH[window.location.hash.split('?')[0]] || HELLDIVERS_PUBLIC_EVENT
   const hasSandbox = event.event_id === 'helldivers2_psn_demo' || Boolean(event.sandbox_route)
-  const hasBusinessReport = event.event_id === 'helldivers2_psn_demo'
+  const businessReportRoute = BUSINESS_REPORT_ROUTES_BY_EVENT_ID[event.event_id]
+  const hasBusinessReport = Boolean(businessReportRoute)
 
   const openSandbox = () => {
     if (!hasSandbox) return
@@ -78,8 +90,8 @@ export function PublicEventDetail({ onNavigate }) {
 
   const openBusinessReport = () => {
     if (!hasBusinessReport) return
-    window.location.hash = '#/reports/helldivers-psn-sample'
-    onNavigate?.('businessReportSample')
+    window.location.hash = businessReportRoute.hash
+    onNavigate?.(businessReportRoute.pageKey)
   }
 
   const openExternalCollector = () => {
