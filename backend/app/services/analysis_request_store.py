@@ -28,6 +28,19 @@ from app.schemas.analysis_request import (
     EvidenceImportReviewDecision,
     EvidenceImportReviewDecisionCreate,
     EvidenceImportReviewReadiness,
+    EvidenceRowReaderCandidate,
+    EvidenceRowReaderCounts,
+    EvidenceRowReaderDryRun,
+    EvidenceRowReaderDryRunCreate,
+    EvidenceRowReaderFixturePolicy,
+    EvidenceRowReaderGovernanceDefaults,
+    EvidenceRowReaderNowFlags,
+    EvidenceRowReaderPreviewRow,
+    EvidenceRowReaderPrivacyCheck,
+    EvidenceRowReaderPrivacyScan,
+    EvidenceRowReaderReadiness,
+    EvidenceRowReaderRowSource,
+    EvidenceRowReaderSummaryItem,
     ManualEvidenceImportExecutionPreflight,
     ManualEvidenceImportExecutionPreflightCreate,
     ManualEvidenceImportExecutionPreflightReadiness,
@@ -49,6 +62,14 @@ ANALYSIS_REQUESTS_ENV_VAR = "SENTIGRAPH_ANALYSIS_REQUESTS_DIR"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_ROOT = PROJECT_ROOT / "runtime" / "analysis_requests"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+ROW_READER_FIXTURE_ROOT = PROJECT_ROOT / "backend" / "app" / "tests" / "fixtures" / "analysis_request_row_reader"
+ROW_READER_FIXTURES = {
+    "safe_evidence_items": "safe_evidence_items.jsonl",
+    "mixed_evidence_items": "mixed_evidence_items.jsonl",
+}
+ROW_READER_FORBIDDEN_FIELDS = {"raw_author_id", "raw_author_name", "profile_url", "private_message"}
+ROW_READER_SECRET_PATTERNS = ("api_key", "access_token", "refresh_token", "client_secret", "password", "cookie", "token")
+ROW_READER_ALLOWED_FIELDS = {"platform", "evidence_type", "source_url", "title", "body_text", "created_at", "language"}
 
 REVIEW_DECISION_STATES = {
     "approve_import": "approved_for_future_manual_import",
@@ -759,6 +780,126 @@ def create_manual_evidence_import_execution_preflight(
     return read_manual_evidence_import_execution_preflight(request_id, preflight_id)
 
 
+def read_evidence_row_reader_dry_run(request_id: str, dry_run_id: str) -> EvidenceRowReaderDryRun:
+    dry_run_path = _row_reader_dry_run_path(request_id, dry_run_id)
+    if not dry_run_path.exists():
+        raise AnalysisRequestNotFoundError(f"Evidence row reader dry-run {dry_run_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(dry_run_path.read_text(encoding="utf-8-sig"))
+        return EvidenceRowReaderDryRun.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{dry_run_path.name} is not a valid row reader dry-run: {type(exc).__name__}") from exc
+
+
+def list_evidence_row_reader_dry_runs(request_id: str) -> list[EvidenceRowReaderDryRun]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    dry_runs: list[EvidenceRowReaderDryRun] = []
+    for path in sorted((root / "row_reader_dry_runs").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            dry_runs.append(EvidenceRowReaderDryRun.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return dry_runs
+
+
+def list_all_evidence_row_reader_dry_runs() -> list[EvidenceRowReaderDryRun]:
+    root = _ensure_root()
+    dry_runs: list[EvidenceRowReaderDryRun] = []
+    for path in sorted((root / "row_reader_dry_runs").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            dry_runs.append(EvidenceRowReaderDryRun.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return dry_runs
+
+
+def create_evidence_row_reader_dry_run(
+    request_id: str,
+    payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
+) -> EvidenceRowReaderDryRun:
+    try:
+        dry_run_payload = (
+            payload
+            if isinstance(payload, EvidenceRowReaderDryRunCreate)
+            else EvidenceRowReaderDryRunCreate.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create row reader dry-run: invalid dry-run payload ({exc}).") from exc
+
+    preflight = _select_execution_preflight_for_row_reader(request_id, dry_run_payload.preflight_id)
+    _validate_row_reader_preflight_eligibility(preflight)
+    _validate_row_reader_payload(dry_run_payload)
+    fixture_path = _resolve_row_reader_fixture_path(dry_run_payload)
+    accepted_rows, quarantine_summary, rejection_summary, counts, privacy_scan = _read_synthetic_fixture_rows(
+        fixture_path,
+        dry_run_payload.max_rows,
+    )
+    status = "warn" if counts.quarantined or counts.rejected or privacy_scan.privacy_stop_triggered else "passed"
+    warnings: list[str] = []
+    if counts.quarantined:
+        warnings.append("One or more synthetic fixture rows were quarantined because forbidden fields were detected.")
+    if counts.rejected:
+        warnings.append("One or more synthetic fixture rows were rejected because JSON parsing failed.")
+    if counts.rows_seen >= dry_run_payload.max_rows:
+        warnings.append("Synthetic fixture row reader stopped at max_rows limit.")
+
+    dry_run_id = _new_row_reader_dry_run_id()
+    dry_run = EvidenceRowReaderDryRun(
+        dry_run_id=dry_run_id,
+        preflight_id=preflight.preflight_id,
+        job_id=preflight.job_id,
+        decision_id=preflight.decision_id,
+        preview_id=preflight.preview_id,
+        plan_id=preflight.plan_id,
+        draft_id=preflight.draft_id,
+        request_id=request_id,
+        created_by=dry_run_payload.created_by or "sentigraph_local_ui",
+        status=status,
+        fixture_policy=EvidenceRowReaderFixturePolicy(max_rows=dry_run_payload.max_rows),
+        row_source=EvidenceRowReaderRowSource(
+            source_type="synthetic_fixture",
+            source_name=dry_run_payload.fixture_name,
+            source_path=str(fixture_path.relative_to(PROJECT_ROOT)).replace("\\", "/"),
+            real_package_path_used=False,
+        ),
+        counts=counts,
+        privacy_scan=privacy_scan,
+        redacted_preview_rows=accepted_rows,
+        quarantine_summary=quarantine_summary,
+        rejection_summary=rejection_summary,
+        governance_defaults=EvidenceRowReaderGovernanceDefaults(),
+        now_flags=EvidenceRowReaderNowFlags(),
+        readiness=EvidenceRowReaderReadiness(
+            state="ready_for_future_real_package_row_preview" if status == "passed" else "warn",
+            can_import_now=False,
+            requires_future_phase=True,
+            reason="Synthetic fixture dry-run only. No real provider package rows were read.",
+        ),
+        blockers=[],
+        warnings=warnings,
+        boundary_notes=[
+            "Synthetic fixture row reader dry-run only.",
+            "Real provider package rows are not read.",
+            "External collector package rows are not read.",
+            "Evidence rows are not imported.",
+            "Redacted preview rows are not analysis input.",
+            "Quarantined rows are not imported.",
+            "Invalid rows are rejected without crashing.",
+            "Future real package row preview requires a separate phase.",
+        ],
+        recommended_next_steps=[
+            "Review quarantine and rejection summaries before designing real package row preview.",
+            "Keep review_needed/source_url_provided_unverified/medium_low defaults for future staged rows.",
+            "Do not run analysis until rows are staged, deduped, reviewed, and explicitly included.",
+        ],
+    )
+    _write_json(_row_reader_dry_run_path(request_id, dry_run_id), dry_run.model_dump(mode="json", by_alias=True))
+    return read_evidence_row_reader_dry_run(request_id, dry_run_id)
+
+
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -1168,6 +1309,203 @@ def _build_execution_preflight_package_file_checks(
     return checks, warnings
 
 
+def _select_execution_preflight_for_row_reader(
+    request_id: str,
+    preflight_id: str | None,
+) -> ManualEvidenceImportExecutionPreflight:
+    if preflight_id:
+        return read_manual_evidence_import_execution_preflight(request_id, preflight_id)
+    preflights = list_manual_evidence_import_execution_preflights(request_id)
+    if not preflights:
+        raise AnalysisRequestNotFoundError(f"execution preflight for {request_id} was not found.")
+    return preflights[0]
+
+
+def _validate_row_reader_preflight_eligibility(preflight: ManualEvidenceImportExecutionPreflight) -> None:
+    if preflight.status not in {"preflight_passed", "preflight_warn"}:
+        raise AnalysisRequestValidationError(f"Cannot create row reader dry-run: execution preflight status {preflight.status} is not eligible.")
+    if not preflight.readiness.requires_separate_execution_phase:
+        raise AnalysisRequestValidationError("Cannot create row reader dry-run: preflight must require a separate execution phase.")
+    if preflight.package_file_checks.row_files_opened or preflight.package_file_checks.row_files_parsed:
+        raise AnalysisRequestValidationError("Cannot create row reader dry-run: preflight already indicates row file access.")
+    if preflight.future_row_reader_plan.read_rows_now:
+        raise AnalysisRequestValidationError("Cannot create row reader dry-run: preflight read_rows_now must be false.")
+    unsafe_flags = {
+        "evidence_rows_opened": preflight.safe_mode.get("evidence_rows_opened", False),
+        "evidence_rows_parsed": preflight.safe_mode.get("evidence_rows_parsed", False),
+        "evidence_rows_imported": preflight.safe_mode.get("evidence_rows_imported", False),
+        "evidence_layer_written": preflight.safe_mode.get("evidence_layer_written", False),
+        "production_case_created": preflight.safe_mode.get("production_case_created", False),
+        "analysis_generated": preflight.safe_mode.get("analysis_generated", False),
+        "sandbox_fixture_generated": preflight.safe_mode.get("sandbox_fixture_generated", False),
+        "public_event_page_generated": preflight.safe_mode.get("public_event_page_generated", False),
+        "report_generated": preflight.safe_mode.get("report_generated", False),
+        "provider_execution": preflight.safe_mode.get("provider_execution", False),
+        "collector_jobs_run": preflight.safe_mode.get("collector_jobs_run", False),
+    }
+    enabled = [name for name, value in unsafe_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(f"Cannot create row reader dry-run: preflight unsafe flags are true ({', '.join(enabled)}).")
+
+
+def _validate_row_reader_payload(payload: EvidenceRowReaderDryRunCreate) -> None:
+    if payload.fixture_mode != "synthetic_fixture":
+        raise AnalysisRequestValidationError("Cannot create row reader dry-run: fixture_mode must be synthetic_fixture.")
+    if payload.fixture_name not in ROW_READER_FIXTURES:
+        raise AnalysisRequestValidationError("Cannot create row reader dry-run: fixture must be an allowed synthetic fixture.")
+    if payload.max_rows > 20:
+        raise AnalysisRequestValidationError("Cannot create row reader dry-run: max_rows must be <= 20.")
+    if payload.row_source_path:
+        raise AnalysisRequestValidationError("Cannot create row reader dry-run: row_source_path is not allowed; use an allowlisted synthetic fixture.")
+    now_flags = EvidenceRowReaderNowFlags.model_validate(payload.now_flags or {})
+    enabled_now_flags = [name for name, value in now_flags.model_dump().items() if value]
+    if enabled_now_flags:
+        raise AnalysisRequestValidationError(f"Cannot create row reader dry-run: now flags must remain false ({', '.join(enabled_now_flags)}).")
+
+
+def _resolve_row_reader_fixture_path(payload: EvidenceRowReaderDryRunCreate) -> Path:
+    fixture_file = ROW_READER_FIXTURES.get(payload.fixture_name)
+    if not fixture_file:
+        raise AnalysisRequestValidationError("Cannot create row reader dry-run: fixture must be an allowed synthetic fixture.")
+    fixture_path = (ROW_READER_FIXTURE_ROOT / fixture_file).resolve()
+    try:
+        fixture_path.relative_to(ROW_READER_FIXTURE_ROOT.resolve())
+    except ValueError as exc:
+        raise AnalysisRequestValidationError("Cannot create row reader dry-run: fixture path must stay inside synthetic fixture directory.") from exc
+    if not fixture_path.is_file():
+        raise AnalysisRequestNotFoundError(f"Synthetic row reader fixture {payload.fixture_name} was not found.")
+    return fixture_path
+
+
+def _read_synthetic_fixture_rows(
+    fixture_path: Path,
+    max_rows: int,
+) -> tuple[list[EvidenceRowReaderPreviewRow], list[EvidenceRowReaderSummaryItem], list[EvidenceRowReaderSummaryItem], EvidenceRowReaderCounts, EvidenceRowReaderPrivacyScan]:
+    accepted_rows: list[EvidenceRowReaderPreviewRow] = []
+    quarantine_summary: list[EvidenceRowReaderSummaryItem] = []
+    rejection_summary: list[EvidenceRowReaderSummaryItem] = []
+    counts = EvidenceRowReaderCounts()
+    privacy_scan = EvidenceRowReaderPrivacyScan()
+
+    try:
+        with fixture_path.open("r", encoding="utf-8-sig") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if counts.rows_seen >= max_rows:
+                    break
+                raw_line = line.strip()
+                if not raw_line:
+                    continue
+                counts.rows_seen += 1
+                try:
+                    parsed = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    counts.rejected += 1
+                    rejection_summary.append(
+                        EvidenceRowReaderSummaryItem(
+                            row_index=line_number,
+                            status="rejected",
+                            reason_code="invalid_json",
+                            message="Synthetic fixture row is not valid JSON.",
+                        )
+                    )
+                    continue
+                if not isinstance(parsed, dict):
+                    counts.rejected += 1
+                    rejection_summary.append(
+                        EvidenceRowReaderSummaryItem(
+                            row_index=line_number,
+                            status="rejected",
+                            reason_code="non_object_json",
+                            message="Synthetic fixture row must be a JSON object.",
+                        )
+                    )
+                    continue
+
+                forbidden_fields = _row_reader_forbidden_fields(parsed)
+                _update_row_reader_privacy_scan(privacy_scan, parsed, forbidden_fields)
+                if forbidden_fields:
+                    counts.quarantined += 1
+                    quarantine_summary.append(
+                        EvidenceRowReaderSummaryItem(
+                            row_index=line_number,
+                            status="quarantined",
+                            reason_code="forbidden_fields_detected",
+                            message="Synthetic fixture row contains forbidden privacy fields and was excluded from preview.",
+                            forbidden_fields_detected=forbidden_fields,
+                        )
+                    )
+                    continue
+
+                counts.accepted_for_preview += 1
+                accepted_rows.append(_build_row_reader_preview_row(line_number, parsed))
+    except OSError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create row reader dry-run: synthetic fixture cannot be read ({type(exc).__name__}).") from exc
+
+    privacy_scan.privacy_stop_triggered = bool(
+        privacy_scan.raw_author_id_detected
+        or privacy_scan.raw_author_name_detected
+        or privacy_scan.profile_url_detected
+        or privacy_scan.private_message_detected
+        or privacy_scan.secret_like_value_detected
+    )
+    return accepted_rows, quarantine_summary, rejection_summary, counts, privacy_scan
+
+
+def _row_reader_forbidden_fields(row: dict[str, Any]) -> list[str]:
+    forbidden_fields = [field for field in sorted(ROW_READER_FORBIDDEN_FIELDS) if field in row]
+    if _row_reader_has_secret_like_value(row):
+        forbidden_fields.append("secret_like_value")
+    return forbidden_fields
+
+
+def _update_row_reader_privacy_scan(
+    privacy_scan: EvidenceRowReaderPrivacyScan,
+    row: dict[str, Any],
+    forbidden_fields: list[str],
+) -> None:
+    if "raw_author_id" in forbidden_fields:
+        privacy_scan.raw_author_id_detected += 1
+    if "raw_author_name" in forbidden_fields:
+        privacy_scan.raw_author_name_detected += 1
+    if "profile_url" in forbidden_fields:
+        privacy_scan.profile_url_detected += 1
+    if "private_message" in forbidden_fields:
+        privacy_scan.private_message_detected += 1
+    if "secret_like_value" in forbidden_fields or _row_reader_has_secret_like_value(row):
+        privacy_scan.secret_like_value_detected += 1
+
+
+def _row_reader_has_secret_like_value(row: dict[str, Any]) -> bool:
+    for key, value in row.items():
+        key_text = str(key).lower()
+        value_text = str(value).lower() if isinstance(value, (str, int, float, bool)) else ""
+        if any(pattern in key_text for pattern in ROW_READER_SECRET_PATTERNS):
+            return True
+        if any(pattern in value_text for pattern in ROW_READER_SECRET_PATTERNS):
+            return True
+    return False
+
+
+def _build_row_reader_preview_row(row_index: int, row: dict[str, Any]) -> EvidenceRowReaderPreviewRow:
+    safe_row = {field: row.get(field) for field in ROW_READER_ALLOWED_FIELDS}
+    body_text = str(safe_row.get("body_text") or "")
+    return EvidenceRowReaderPreviewRow(
+        row_index=row_index,
+        status="accepted_for_preview",
+        evidence_candidate=EvidenceRowReaderCandidate(
+            evidence_type=str(safe_row.get("evidence_type") or ""),
+            platform=str(safe_row.get("platform") or ""),
+            source_url=str(safe_row.get("source_url") or ""),
+            title=str(safe_row.get("title") or ""),
+            body_text_preview=body_text[:160],
+            created_at=str(safe_row.get("created_at") or ""),
+            language=str(safe_row.get("language") or ""),
+        ),
+        governance_defaults=EvidenceRowReaderGovernanceDefaults(),
+        privacy_check=EvidenceRowReaderPrivacyCheck(passed=True, forbidden_fields_detected=[]),
+    )
+
+
 def _read_result_payload(request_id: str) -> dict[str, Any]:
     result_path = _result_path(request_id)
     try:
@@ -1194,6 +1532,7 @@ def _ensure_root() -> Path:
     (root / "review_decisions").mkdir(parents=True, exist_ok=True)
     (root / "import_jobs").mkdir(parents=True, exist_ok=True)
     (root / "execution_preflights").mkdir(parents=True, exist_ok=True)
+    (root / "row_reader_dry_runs").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -1248,6 +1587,13 @@ def _execution_preflight_path(request_id: str, preflight_id: str) -> Path:
     return root / "execution_preflights" / f"{request_id}_{preflight_id}.json"
 
 
+def _row_reader_dry_run_path(request_id: str, dry_run_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(dry_run_id)
+    root = _ensure_root()
+    return root / "row_reader_dry_runs" / f"{request_id}_{dry_run_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -1279,6 +1625,11 @@ def _new_import_job_id() -> str:
 def _new_execution_preflight_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"manual_import_preflight_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_row_reader_dry_run_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"row_reader_dry_run_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

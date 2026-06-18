@@ -12,6 +12,8 @@ from app.schemas.analysis_request import (
     EvidenceImportPreview,
     EvidenceImportReviewDecision,
     EvidenceImportReviewDecisionCreate,
+    EvidenceRowReaderDryRun,
+    EvidenceRowReaderDryRunCreate,
     ManualEvidenceImportExecutionPreflight,
     ManualEvidenceImportExecutionPreflightCreate,
     ManualEvidenceImportJob,
@@ -25,17 +27,20 @@ from app.services.analysis_request_store import (
     create_evidence_import_plan,
     create_evidence_import_preview,
     create_evidence_import_review_decision,
+    create_evidence_row_reader_dry_run,
     create_manual_evidence_import_execution_preflight,
     create_analysis_request,
     create_manual_evidence_import_job,
     get_analysis_request_config,
     list_case_draft_handoffs,
+    list_all_evidence_row_reader_dry_runs,
     list_all_manual_evidence_import_execution_preflights,
     list_all_manual_evidence_import_jobs,
     list_all_evidence_import_review_decisions,
     list_evidence_import_plans,
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
+    list_evidence_row_reader_dry_runs,
     list_analysis_requests,
     list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
@@ -43,6 +48,7 @@ from app.services.analysis_request_store import (
     read_evidence_import_plan,
     read_evidence_import_preview,
     read_evidence_import_review_decision,
+    read_evidence_row_reader_dry_run,
     read_analysis_request,
     read_manual_evidence_import_execution_preflight,
     read_manual_evidence_import_job,
@@ -94,6 +100,11 @@ def analysis_request_import_job_all_list() -> list[ManualEvidenceImportJob]:
 @router.get("/execution-preflights", response_model=list[ManualEvidenceImportExecutionPreflight])
 def analysis_request_execution_preflight_all_list() -> list[ManualEvidenceImportExecutionPreflight]:
     return list_all_manual_evidence_import_execution_preflights()
+
+
+@router.get("/row-reader-dry-runs", response_model=list[EvidenceRowReaderDryRun])
+def analysis_request_row_reader_dry_run_all_list() -> list[EvidenceRowReaderDryRun]:
+    return list_all_evidence_row_reader_dry_runs()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -246,6 +257,40 @@ def analysis_request_execution_preflight_detail(
 ) -> ManualEvidenceImportExecutionPreflight:
     try:
         return read_manual_evidence_import_execution_preflight(request_id, preflight_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/row-reader-dry-runs", response_model=list[EvidenceRowReaderDryRun])
+def analysis_request_row_reader_dry_run_list(request_id: str) -> list[EvidenceRowReaderDryRun]:
+    try:
+        return list_evidence_row_reader_dry_runs(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/row-reader-dry-runs", response_model=EvidenceRowReaderDryRun)
+def analysis_request_row_reader_dry_run_create(
+    request_id: str,
+    payload: EvidenceRowReaderDryRunCreate | None = None,
+) -> EvidenceRowReaderDryRun:
+    try:
+        return create_evidence_row_reader_dry_run(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/row-reader-dry-runs/{dry_run_id}", response_model=EvidenceRowReaderDryRun)
+def analysis_request_row_reader_dry_run_detail(
+    request_id: str,
+    dry_run_id: str,
+) -> EvidenceRowReaderDryRun:
+    try:
+        return read_evidence_row_reader_dry_run(request_id, dry_run_id)
     except AnalysisRequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:

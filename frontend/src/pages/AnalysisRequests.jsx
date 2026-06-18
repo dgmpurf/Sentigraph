@@ -30,6 +30,7 @@ import {
   createAnalysisRequestImportPreview,
   createAnalysisRequestReviewDecision,
   createAnalysisRequestExecutionPreflight,
+  createAnalysisRequestRowReaderDryRun,
   getAnalysisRequest,
   getAnalysisRequestCaseDraft,
   getAnalysisRequestConfig,
@@ -37,6 +38,7 @@ import {
   getAnalysisRequestImportPreview,
   listAnalysisRequestExecutionPreflights,
   listAnalysisRequestImportJobs,
+  listAnalysisRequestRowReaderDryRuns,
   listAnalysisRequestReviewDecisions,
   listAnalysisRequests,
 } from '../api/sentigraphApi.js'
@@ -122,6 +124,11 @@ const TARGET_CASE_MODE_OPTIONS = [
 const IMPORT_JOB_TARGET_CASE_OPTIONS = [
   { value: 'new_review_case', label: 'new_review_case' },
   { value: 'existing_case', label: 'existing_case' },
+]
+
+const ROW_READER_FIXTURE_OPTIONS = [
+  { value: 'safe_evidence_items', label: 'safe fixture / 安全合成样本' },
+  { value: 'mixed_evidence_items', label: 'mixed privacy fixture / 隔离演练样本' },
 ]
 
 const REVIEW_CHECKLIST_ITEMS = [
@@ -355,6 +362,23 @@ function executionPreflightEligibility(latestImportJob, latestReviewDecision) {
   return { eligible: true, reason: 'Ready to create metadata/file-name execution preflight.' }
 }
 
+function rowReaderDryRunEligibility(latestExecutionPreflight) {
+  if (!latestExecutionPreflight) return { eligible: false, reason: 'Create an execution preflight first.' }
+  if (!['preflight_passed', 'preflight_warn'].includes(latestExecutionPreflight.status)) {
+    return { eligible: false, reason: `Execution preflight status ${latestExecutionPreflight.status || 'unknown'} is not eligible.` }
+  }
+  if (latestExecutionPreflight.package_file_checks?.row_files_opened === true || latestExecutionPreflight.package_file_checks?.row_files_parsed === true) {
+    return { eligible: false, reason: 'Execution preflight must show row_files_opened=false and row_files_parsed=false.' }
+  }
+  if (latestExecutionPreflight.future_row_reader_plan?.read_rows_now === true) {
+    return { eligible: false, reason: 'Execution preflight must keep read_rows_now=false.' }
+  }
+  if (latestExecutionPreflight.readiness?.requires_separate_execution_phase === false) {
+    return { eligible: false, reason: 'Execution preflight must require a future/separate phase.' }
+  }
+  return { eligible: true, reason: 'Ready to run synthetic fixture row reader dry-run.' }
+}
+
 function SummaryList({ title, items }) {
   return (
     <Card size="small" title={title}>
@@ -376,6 +400,7 @@ export function AnalysisRequests() {
   const [form] = Form.useForm()
   const [reviewForm] = Form.useForm()
   const [importJobForm] = Form.useForm()
+  const [rowReaderForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -386,6 +411,7 @@ export function AnalysisRequests() {
   const [reviewDecisions, setReviewDecisions] = useState([])
   const [importJobs, setImportJobs] = useState([])
   const [executionPreflights, setExecutionPreflights] = useState([])
+  const [rowReaderDryRuns, setRowReaderDryRuns] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -395,6 +421,7 @@ export function AnalysisRequests() {
   const [reviewLoading, setReviewLoading] = useState(false)
   const [importJobLoading, setImportJobLoading] = useState(false)
   const [executionPreflightLoading, setExecutionPreflightLoading] = useState(false)
+  const [rowReaderDryRunLoading, setRowReaderDryRunLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -402,6 +429,7 @@ export function AnalysisRequests() {
   const [reviewError, setReviewError] = useState('')
   const [importJobError, setImportJobError] = useState('')
   const [executionPreflightError, setExecutionPreflightError] = useState('')
+  const [rowReaderDryRunError, setRowReaderDryRunError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -429,12 +457,14 @@ export function AnalysisRequests() {
       setReviewDecisions([])
       setImportJobs([])
       setExecutionPreflights([])
+      setRowReaderDryRuns([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
       setReviewError('')
       setImportJobError('')
       setExecutionPreflightError('')
+      setRowReaderDryRunError('')
       return
     }
     try {
@@ -478,6 +508,13 @@ export function AnalysisRequests() {
     } catch {
       setExecutionPreflights([])
       setExecutionPreflightError('')
+    }
+    try {
+      setRowReaderDryRuns(await listAnalysisRequestRowReaderDryRuns(requestId))
+      setRowReaderDryRunError('')
+    } catch {
+      setRowReaderDryRuns([])
+      setRowReaderDryRunError('')
     }
   }
 
@@ -531,6 +568,7 @@ export function AnalysisRequests() {
     setReviewError('')
     setImportJobError('')
     setExecutionPreflightError('')
+    setRowReaderDryRunError('')
     try {
       setDetail(await getAnalysisRequest(record.request_id))
       await loadDraftAndPlan(record.request_id)
@@ -585,6 +623,7 @@ export function AnalysisRequests() {
       setReviewDecisions([])
       setImportJobs([])
       setExecutionPreflights([])
+      setRowReaderDryRuns([])
       message.success('已生成 Evidence 导入计划')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import plan.'
@@ -604,6 +643,7 @@ export function AnalysisRequests() {
       setReviewDecisions([])
       setImportJobs([])
       setExecutionPreflights([])
+      setRowReaderDryRuns([])
       message.success('已生成 metadata-only Evidence 导入预览')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import preview.'
@@ -630,6 +670,7 @@ export function AnalysisRequests() {
       setReviewDecisions(await listAnalysisRequestReviewDecisions(selectedRecord.request_id))
       setImportJobs([])
       setExecutionPreflights([])
+      setRowReaderDryRuns([])
       message.success(`已记录人工审核决策：${decision.decision}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review decision.'
@@ -653,6 +694,7 @@ export function AnalysisRequests() {
       const job = await createAnalysisRequestImportJob(selectedRecord.request_id, payload)
       setImportJobs(await listAnalysisRequestImportJobs(selectedRecord.request_id))
       setExecutionPreflights([])
+      setRowReaderDryRuns([])
       message.success(`Created dry-run import job draft: ${job.job_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create manual import job draft.'
@@ -672,12 +714,35 @@ export function AnalysisRequests() {
         created_by: 'sentigraph_local_ui',
       })
       setExecutionPreflights(await listAnalysisRequestExecutionPreflights(selectedRecord.request_id))
+      setRowReaderDryRuns([])
       message.success(`Created execution preflight: ${preflight.preflight_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create execution preflight.'
       setExecutionPreflightError(String(messageText))
     } finally {
       setExecutionPreflightLoading(false)
+    }
+  }
+
+  async function handleCreateRowReaderDryRun(values) {
+    if (!selectedRecord?.request_id) return
+    setRowReaderDryRunLoading(true)
+    setRowReaderDryRunError('')
+    try {
+      const dryRun = await createAnalysisRequestRowReaderDryRun(selectedRecord.request_id, {
+        preflight_id: latestExecutionPreflight?.preflight_id || undefined,
+        fixture_name: values.fixture_name || 'safe_evidence_items',
+        fixture_mode: 'synthetic_fixture',
+        max_rows: Math.min(20, Math.max(1, Number(values.max_rows || 20))),
+        created_by: 'sentigraph_local_ui',
+      })
+      setRowReaderDryRuns(await listAnalysisRequestRowReaderDryRuns(selectedRecord.request_id))
+      message.success(`Created synthetic row reader dry-run: ${dryRun.dry_run_id}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create synthetic row reader dry-run.'
+      setRowReaderDryRunError(String(messageText))
+    } finally {
+      setRowReaderDryRunLoading(false)
     }
   }
 
@@ -756,6 +821,12 @@ export function AnalysisRequests() {
   )
   const latestExecutionPreflight = executionPreflights[0] || null
   const latestExecutionPreflightJson = latestExecutionPreflight ? JSON.stringify(latestExecutionPreflight, null, 2) : ''
+  const rowReaderGate = useMemo(
+    () => rowReaderDryRunEligibility(latestExecutionPreflight),
+    [latestExecutionPreflight],
+  )
+  const latestRowReaderDryRun = rowReaderDryRuns[0] || null
+  const latestRowReaderDryRunJson = latestRowReaderDryRun ? JSON.stringify(latestRowReaderDryRun, null, 2) : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -1585,6 +1656,174 @@ export function AnalysisRequests() {
                         </Space>
                       ) : (
                         <Text type="secondary">No execution preflight records yet.</Text>
+                      )}
+                    </Card>
+                  </Space>
+                </Card>
+
+                <Card size="small" title="Synthetic Row Reader Dry-Run / 合成样本行读取演练">
+                  <Space direction="vertical" size={12} className="full-width">
+                    <Alert
+                      type={rowReaderGate.eligible ? 'success' : 'info'}
+                      showIcon
+                      message={rowReaderGate.eligible ? 'Ready to run synthetic fixture row reader' : 'Synthetic row reader dry-run not ready'}
+                      description={
+                        latestRowReaderDryRun
+                          ? 'An append-only synthetic row reader dry-run already exists for this request.'
+                          : rowReaderGate.reason
+                      }
+                    />
+                    <Text type="secondary">
+                      只读取项目内 synthetic fixture，不读取真实 provider package，不读取外部 collector package，不导入 evidence rows。
+                      Preview rows are redacted; quarantined rows are not imported; invalid rows are rejected. Future real package row preview needs a separate phase.
+                    </Text>
+                    {rowReaderDryRunError ? <Alert type="error" showIcon message={rowReaderDryRunError} /> : null}
+                    <Form
+                      form={rowReaderForm}
+                      layout="vertical"
+                      initialValues={{
+                        fixture_name: 'safe_evidence_items',
+                        max_rows: 20,
+                      }}
+                      onFinish={handleCreateRowReaderDryRun}
+                    >
+                      <Row gutter={[12, 0]}>
+                        <Col span={12}>
+                          <Form.Item name="fixture_name" label="fixture">
+                            <Select options={ROW_READER_FIXTURE_OPTIONS} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item name="max_rows" label="max_rows">
+                            <InputNumber min={1} max={20} className="full-width" />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <Space wrap>
+                        <Button
+                          type="primary"
+                          htmlType="submit"
+                          loading={rowReaderDryRunLoading}
+                          disabled={!rowReaderGate.eligible}
+                        >
+                          运行合成样本行读取演练 / Synthetic only
+                        </Button>
+                        {latestRowReaderDryRun ? (
+                          <Button
+                            icon={<ClipboardCopy size={16} />}
+                            onClick={() => copyText(latestRowReaderDryRunJson, 'Row reader dry-run JSON copied')}
+                          >
+                            Copy latest dry-run JSON
+                          </Button>
+                        ) : null}
+                      </Space>
+                    </Form>
+
+                    {latestRowReaderDryRun ? (
+                      <Card className="panel-card" size="small" title="Latest synthetic row reader dry-run">
+                        <Space direction="vertical" size={12} className="full-width">
+                          <Space wrap>
+                            <Tag color={latestRowReaderDryRun.status === 'passed' ? 'green' : 'gold'}>
+                              {latestRowReaderDryRun.status}
+                            </Tag>
+                            <Tag color="blue">{latestRowReaderDryRun.execution_mode}</Tag>
+                            <Tag color="default">can_import_now: {boolText(latestRowReaderDryRun.readiness?.can_import_now)}</Tag>
+                            <Tag color="purple">{latestRowReaderDryRun.governance_defaults?.trust_label || 'medium_low'}</Tag>
+                          </Space>
+                          <Descriptions column={1} size="small">
+                            <Descriptions.Item label="dry_run_id">{latestRowReaderDryRun.dry_run_id}</Descriptions.Item>
+                            <Descriptions.Item label="preflight_id">{latestRowReaderDryRun.preflight_id}</Descriptions.Item>
+                            <Descriptions.Item label="fixture policy">
+                              synthetic_only={boolText(latestRowReaderDryRun.fixture_policy?.synthetic_fixture_only)},
+                              real_package_allowed={boolText(latestRowReaderDryRun.fixture_policy?.real_provider_package_allowed)},
+                              max_rows={latestRowReaderDryRun.fixture_policy?.max_rows || 20}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="row source">
+                              type={latestRowReaderDryRun.row_source?.source_type || '-'},
+                              name={latestRowReaderDryRun.row_source?.source_name || '-'},
+                              real_package_path_used={boolText(latestRowReaderDryRun.row_source?.real_package_path_used)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="counts">
+                              rows_seen={latestRowReaderDryRun.counts?.rows_seen || 0},
+                              accepted={latestRowReaderDryRun.counts?.accepted_for_preview || 0},
+                              quarantined={latestRowReaderDryRun.counts?.quarantined || 0},
+                              rejected={latestRowReaderDryRun.counts?.rejected || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="privacy scan">
+                              raw_author_id={latestRowReaderDryRun.privacy_scan?.raw_author_id_detected || 0},
+                              raw_author_name={latestRowReaderDryRun.privacy_scan?.raw_author_name_detected || 0},
+                              profile_url={latestRowReaderDryRun.privacy_scan?.profile_url_detected || 0},
+                              private_message={latestRowReaderDryRun.privacy_scan?.private_message_detected || 0},
+                              privacy_stop={boolText(latestRowReaderDryRun.privacy_scan?.privacy_stop_triggered)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="now flags">
+                              import={boolText(latestRowReaderDryRun.now_flags?.import_evidence_rows_now)},
+                              evidence_layer={boolText(latestRowReaderDryRun.now_flags?.write_evidence_layer_now)},
+                              case={boolText(latestRowReaderDryRun.now_flags?.create_case_now)},
+                              review_queue={boolText(latestRowReaderDryRun.now_flags?.create_review_queue_now)},
+                              dedup={boolText(latestRowReaderDryRun.now_flags?.run_dedup_now)},
+                              analysis={boolText(latestRowReaderDryRun.now_flags?.run_analysis_now)},
+                              report={boolText(latestRowReaderDryRun.now_flags?.generate_report_now)}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="Synthetic-only boundary"
+                            description="This dry-run reads only local synthetic fixtures. It does not read real provider packages, import evidence, write the Evidence Layer, create cases, run review/dedup/analysis, or generate Sandbox/public event/report output."
+                          />
+                          <Card size="small" title={`Redacted preview rows (${latestRowReaderDryRun.redacted_preview_rows?.length || 0})`}>
+                            {latestRowReaderDryRun.redacted_preview_rows?.length ? (
+                              <Space direction="vertical" size={8} className="full-width">
+                                {latestRowReaderDryRun.redacted_preview_rows.map((row) => (
+                                  <Card size="small" key={row.row_index}>
+                                    <Space direction="vertical" size={4} className="full-width">
+                                      <Space wrap>
+                                        <Tag>{row.status}</Tag>
+                                        <Tag color="cyan">{row.evidence_candidate?.platform || '-'}</Tag>
+                                        <Tag color="blue">{row.evidence_candidate?.evidence_type || '-'}</Tag>
+                                      </Space>
+                                      <Text strong>{row.evidence_candidate?.title || '-'}</Text>
+                                      <Text type="secondary">{row.evidence_candidate?.body_text_preview || '-'}</Text>
+                                      <Text type="secondary">review_status: {row.governance_defaults?.review_status || 'review_needed'} / analysis_included: {boolText(row.governance_defaults?.analysis_included)}</Text>
+                                    </Space>
+                                  </Card>
+                                ))}
+                              </Space>
+                            ) : (
+                              <Text type="secondary">No accepted preview rows.</Text>
+                            )}
+                          </Card>
+                          <SummaryList title="Quarantine summary" items={(latestRowReaderDryRun.quarantine_summary || []).map((item) => `row ${item.row_index}: ${item.reason_code} (${(item.forbidden_fields_detected || []).join(', ')})`)} />
+                          <SummaryList title="Rejection summary" items={(latestRowReaderDryRun.rejection_summary || []).map((item) => `row ${item.row_index}: ${item.reason_code}`)} />
+                          <SummaryList title="Warnings" items={latestRowReaderDryRun.warnings || []} />
+                          <SummaryList title="Boundary notes" items={latestRowReaderDryRun.boundary_notes || []} />
+                          <SummaryList title="Recommended next steps" items={latestRowReaderDryRun.recommended_next_steps || []} />
+                        </Space>
+                      </Card>
+                    ) : null}
+
+                    <Card size="small" title={`Existing row reader dry-runs (${rowReaderDryRuns.length})`}>
+                      {rowReaderDryRuns.length ? (
+                        <Space direction="vertical" size={8} className="full-width">
+                          {rowReaderDryRuns.map((dryRun) => (
+                            <Card size="small" key={dryRun.dry_run_id}>
+                              <Space direction="vertical" size={4} className="full-width">
+                                <Space wrap>
+                                  <Tag color="blue">{dryRun.execution_mode}</Tag>
+                                  <Tag>{dryRun.status}</Tag>
+                                  <Text type="secondary">{dryRun.dry_run_id}</Text>
+                                </Space>
+                                <Text>fixture: {dryRun.row_source?.source_name || '-'}</Text>
+                                <Text type="secondary">
+                                  accepted={dryRun.counts?.accepted_for_preview || 0}, quarantined={dryRun.counts?.quarantined || 0}, rejected={dryRun.counts?.rejected || 0}
+                                </Text>
+                              </Space>
+                            </Card>
+                          ))}
+                        </Space>
+                      ) : (
+                        <Text type="secondary">No synthetic row reader dry-runs yet.</Text>
                       )}
                     </Card>
                   </Space>

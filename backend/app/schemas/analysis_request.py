@@ -678,6 +678,165 @@ class ManualEvidenceImportExecutionPreflight(BaseModel):
     )
 
 
+class EvidenceRowReaderDryRunCreate(BaseModel):
+    preflight_id: str | None = None
+    fixture_name: str = "safe_evidence_items"
+    fixture_mode: str = "synthetic_fixture"
+    max_rows: int = Field(default=20, ge=1)
+    row_source_path: str | None = None
+    created_by: str = "sentigraph_local_ui"
+    now_flags: dict[str, bool] = Field(default_factory=dict)
+
+
+class EvidenceRowReaderFixturePolicy(BaseModel):
+    synthetic_fixture_only: bool = True
+    real_provider_package_allowed: bool = False
+    external_collector_package_allowed: bool = False
+    max_rows: int = 20
+    redact_author_fields: bool = True
+
+
+class EvidenceRowReaderRowSource(BaseModel):
+    source_type: str = "synthetic_fixture"
+    source_name: str = ""
+    source_path: str = ""
+    real_package_path_used: bool = False
+
+
+class EvidenceRowReaderCounts(BaseModel):
+    rows_seen: int = 0
+    accepted_for_preview: int = 0
+    quarantined: int = 0
+    rejected: int = 0
+
+
+class EvidenceRowReaderPrivacyScan(BaseModel):
+    raw_author_id_detected: int = 0
+    raw_author_name_detected: int = 0
+    profile_url_detected: int = 0
+    private_message_detected: int = 0
+    secret_like_value_detected: int = 0
+    privacy_stop_triggered: bool = False
+
+
+class EvidenceRowReaderGovernanceDefaults(BaseModel):
+    review_status: str = "review_needed"
+    verification_status: str = "source_url_provided_unverified"
+    trust_label: str = "medium_low"
+    analysis_included: bool = False
+    dedup_required_before_analysis: bool = True
+    audit_required: bool = True
+
+
+class EvidenceRowReaderCandidate(BaseModel):
+    evidence_type: str = ""
+    platform: str = ""
+    source_url: str = ""
+    title: str = ""
+    body_text_preview: str = ""
+    created_at: str = ""
+    language: str = ""
+
+
+class EvidenceRowReaderPrivacyCheck(BaseModel):
+    passed: bool = True
+    forbidden_fields_detected: list[str] = Field(default_factory=list)
+
+
+class EvidenceRowReaderPreviewRow(BaseModel):
+    row_index: int
+    status: str = "accepted_for_preview"
+    evidence_candidate: EvidenceRowReaderCandidate = Field(default_factory=EvidenceRowReaderCandidate)
+    governance_defaults: EvidenceRowReaderGovernanceDefaults = Field(default_factory=EvidenceRowReaderGovernanceDefaults)
+    privacy_check: EvidenceRowReaderPrivacyCheck = Field(default_factory=EvidenceRowReaderPrivacyCheck)
+
+
+class EvidenceRowReaderSummaryItem(BaseModel):
+    row_index: int
+    status: str
+    reason_code: str
+    message: str
+    forbidden_fields_detected: list[str] = Field(default_factory=list)
+
+
+class EvidenceRowReaderNowFlags(BaseModel):
+    import_evidence_rows_now: bool = False
+    write_evidence_layer_now: bool = False
+    create_case_now: bool = False
+    create_review_queue_now: bool = False
+    run_dedup_now: bool = False
+    run_analysis_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_report_now: bool = False
+
+
+class EvidenceRowReaderReadiness(BaseModel):
+    state: str = "ready_for_future_real_package_row_preview"
+    can_import_now: bool = False
+    requires_future_phase: bool = True
+    reason: str = "Synthetic fixture dry-run only. No real provider package rows were read."
+
+
+class EvidenceRowReaderDryRun(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_evidence_row_reader_dry_run_v1"] = Field(
+        default="sentigraph_evidence_row_reader_dry_run_v1",
+        alias="schema",
+    )
+    dry_run_id: str
+    preflight_id: str
+    job_id: str
+    decision_id: str
+    preview_id: str
+    plan_id: str
+    draft_id: str
+    request_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    source: str = "execution_preflight"
+    execution_mode: str = "synthetic_fixture_row_reader_dry_run"
+    status: Literal["passed", "warn", "blocked"] = "passed"
+    fixture_policy: EvidenceRowReaderFixturePolicy = Field(default_factory=EvidenceRowReaderFixturePolicy)
+    row_source: EvidenceRowReaderRowSource = Field(default_factory=EvidenceRowReaderRowSource)
+    counts: EvidenceRowReaderCounts = Field(default_factory=EvidenceRowReaderCounts)
+    privacy_scan: EvidenceRowReaderPrivacyScan = Field(default_factory=EvidenceRowReaderPrivacyScan)
+    redacted_preview_rows: list[EvidenceRowReaderPreviewRow] = Field(default_factory=list)
+    quarantine_summary: list[EvidenceRowReaderSummaryItem] = Field(default_factory=list)
+    rejection_summary: list[EvidenceRowReaderSummaryItem] = Field(default_factory=list)
+    governance_defaults: EvidenceRowReaderGovernanceDefaults = Field(default_factory=EvidenceRowReaderGovernanceDefaults)
+    now_flags: EvidenceRowReaderNowFlags = Field(default_factory=EvidenceRowReaderNowFlags)
+    readiness: EvidenceRowReaderReadiness = Field(default_factory=EvidenceRowReaderReadiness)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "synthetic_fixture_only": True,
+            "real_provider_package_rows_parsed": False,
+            "external_collector_package_rows_parsed": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "review_queue_created": False,
+            "dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

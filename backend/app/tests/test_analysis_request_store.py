@@ -13,6 +13,7 @@ from app.services.analysis_request_store import (
     create_evidence_import_review_decision,
     create_manual_evidence_import_execution_preflight,
     create_manual_evidence_import_job,
+    create_evidence_row_reader_dry_run,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
@@ -20,7 +21,9 @@ from app.services.analysis_request_store import (
     list_evidence_import_review_decisions,
     list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
+    list_evidence_row_reader_dry_runs,
     list_analysis_requests,
+    read_evidence_row_reader_dry_run,
     read_analysis_request,
 )
 
@@ -141,7 +144,7 @@ def create_approved_review_decision(tmp_path: Path, request_id: str) -> dict:
 
 def create_package_dir(tmp_path: Path, *, include_required: bool = True) -> Path:
     package_dir = tmp_path / "external_package"
-    package_dir.mkdir(parents=True)
+    package_dir.mkdir(parents=True, exist_ok=True)
     if include_required:
         (package_dir / "manifest.json").write_text("{}", encoding="utf-8")
         (package_dir / "validation_report.json").write_text('{"errors":0}', encoding="utf-8")
@@ -164,6 +167,13 @@ def create_manual_import_job(tmp_path: Path, request_id: str, *, package_dir: Pa
     job = create_manual_evidence_import_job(request_id)
     job_path = tmp_path / "import_jobs" / f"{request_id}_{job.job_id}.json"
     return json.loads(job_path.read_text(encoding="utf-8"))
+
+
+def create_execution_preflight(tmp_path: Path, request_id: str, *, package_dir: Path | None = None) -> dict:
+    create_manual_import_job(tmp_path, request_id, package_dir=package_dir)
+    preflight = create_manual_evidence_import_execution_preflight(request_id)
+    preflight_path = tmp_path / "execution_preflights" / f"{request_id}_{preflight.preflight_id}.json"
+    return json.loads(preflight_path.read_text(encoding="utf-8"))
 
 
 def test_create_request_writes_json_with_conservative_defaults(tmp_path: Path, monkeypatch) -> None:
@@ -1196,6 +1206,132 @@ def test_manual_import_execution_preflight_existing_case_requires_target_id(tmp_
     assert preflight.target_case_preflight.target_case_id == "case_review_only_existing"
     assert preflight.target_case_preflight.create_case_now is False
     assert preflight.target_case_preflight.analysis_included_default is False
+
+
+def test_evidence_row_reader_dry_run_reads_safe_synthetic_fixture_only(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Safe fixture row reader"))
+    )
+    preflight_payload = create_execution_preflight(tmp_path, record.request_id, package_dir=create_package_dir(tmp_path))
+
+    dry_run = create_evidence_row_reader_dry_run(
+        record.request_id,
+        {"preflight_id": preflight_payload["preflight_id"], "fixture_name": "safe_evidence_items", "max_rows": 20},
+    )
+    second_dry_run = create_evidence_row_reader_dry_run(
+        record.request_id,
+        {"preflight_id": preflight_payload["preflight_id"], "fixture_name": "safe_evidence_items", "max_rows": 1},
+    )
+    dry_run_files = sorted((tmp_path / "row_reader_dry_runs").glob(f"{record.request_id}_*.json"))
+    dry_run_text = "\n".join(path.read_text(encoding="utf-8") for path in dry_run_files)
+    read_back = read_evidence_row_reader_dry_run(record.request_id, dry_run.dry_run_id)
+
+    assert dry_run.schema_ == "sentigraph_evidence_row_reader_dry_run_v1"
+    assert dry_run.preflight_id == preflight_payload["preflight_id"]
+    assert dry_run.job_id == preflight_payload["job_id"]
+    assert dry_run.source == "execution_preflight"
+    assert dry_run.execution_mode == "synthetic_fixture_row_reader_dry_run"
+    assert dry_run.status == "passed"
+    assert dry_run.fixture_policy.synthetic_fixture_only is True
+    assert dry_run.fixture_policy.real_provider_package_allowed is False
+    assert dry_run.fixture_policy.external_collector_package_allowed is False
+    assert dry_run.fixture_policy.max_rows == 20
+    assert dry_run.row_source.source_type == "synthetic_fixture"
+    assert dry_run.row_source.real_package_path_used is False
+    assert dry_run.counts.rows_seen == 2
+    assert dry_run.counts.accepted_for_preview == 2
+    assert dry_run.counts.quarantined == 0
+    assert dry_run.counts.rejected == 0
+    assert dry_run.privacy_scan.privacy_stop_triggered is False
+    assert len(dry_run.redacted_preview_rows) == 2
+    assert dry_run.redacted_preview_rows[0].evidence_candidate.body_text_preview
+    assert dry_run.redacted_preview_rows[0].governance_defaults.review_status == "review_needed"
+    assert dry_run.redacted_preview_rows[0].governance_defaults.analysis_included is False
+    assert dry_run.now_flags.import_evidence_rows_now is False
+    assert dry_run.now_flags.write_evidence_layer_now is False
+    assert dry_run.now_flags.create_case_now is False
+    assert dry_run.now_flags.create_review_queue_now is False
+    assert dry_run.now_flags.run_dedup_now is False
+    assert dry_run.now_flags.run_analysis_now is False
+    assert dry_run.now_flags.generate_sandbox_now is False
+    assert dry_run.now_flags.generate_report_now is False
+    assert dry_run.readiness.can_import_now is False
+    assert dry_run.readiness.requires_future_phase is True
+    assert second_dry_run.dry_run_id != dry_run.dry_run_id
+    assert second_dry_run.counts.rows_seen == 1
+    assert len(dry_run_files) == 2
+    assert len(list_evidence_row_reader_dry_runs(record.request_id)) == 2
+    assert read_back.dry_run_id == dry_run.dry_run_id
+    assert "synthetic-user-123" not in dry_run_text
+    assert "Synthetic Name" not in dry_run_text
+    assert "Synthetic private message" not in dry_run_text
+    assert not (tmp_path / "cases").exists()
+
+
+def test_evidence_row_reader_dry_run_quarantines_forbidden_fields_and_rejects_invalid_json(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Mixed fixture row reader"))
+    )
+    preflight_payload = create_execution_preflight(tmp_path, record.request_id, package_dir=create_package_dir(tmp_path))
+
+    dry_run = create_evidence_row_reader_dry_run(
+        record.request_id,
+        {"preflight_id": preflight_payload["preflight_id"], "fixture_name": "mixed_evidence_items", "max_rows": 20},
+    )
+    text = json.dumps(dry_run.model_dump(mode="json", by_alias=True), ensure_ascii=False)
+
+    assert dry_run.status == "warn"
+    assert dry_run.counts.rows_seen == 4
+    assert dry_run.counts.accepted_for_preview == 1
+    assert dry_run.counts.quarantined == 2
+    assert dry_run.counts.rejected == 1
+    assert dry_run.privacy_scan.raw_author_id_detected == 1
+    assert dry_run.privacy_scan.raw_author_name_detected == 1
+    assert dry_run.privacy_scan.profile_url_detected == 1
+    assert dry_run.privacy_scan.private_message_detected == 1
+    assert dry_run.privacy_scan.privacy_stop_triggered is True
+    assert len(dry_run.quarantine_summary) == 2
+    assert len(dry_run.rejection_summary) == 1
+    assert "forbidden_fields_detected" in text
+    assert "synthetic-user-123" not in text
+    assert "Synthetic Name" not in text
+    assert "example.test/profile/synthetic" not in text
+    assert "Synthetic private message" not in text
+
+
+def test_evidence_row_reader_dry_run_blocks_unsafe_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Blocked row reader"))
+    )
+    preflight_payload = create_execution_preflight(tmp_path, record.request_id, package_dir=create_package_dir(tmp_path))
+    preflight_id = preflight_payload["preflight_id"]
+    preflight_path = tmp_path / "execution_preflights" / f"{record.request_id}_{preflight_id}.json"
+    blocked_preflight = dict(preflight_payload)
+    blocked_preflight["status"] = "preflight_blocked"
+    preflight_path.write_text(json.dumps(blocked_preflight), encoding="utf-8")
+
+    cases = [
+        ("Missing preflight", "missing_preflight", {"preflight_id": "manual_import_preflight_missing"}, "execution preflight"),
+        ("Blocked preflight", record.request_id, {"preflight_id": preflight_id}, "preflight_blocked"),
+        ("Too many rows", record.request_id, {"preflight_id": preflight_id, "max_rows": 21}, "max_rows"),
+        ("Path traversal", record.request_id, {"preflight_id": preflight_id, "fixture_name": "../safe_evidence_items"}, "fixture"),
+        ("Real package path", record.request_id, {"preflight_id": preflight_id, "fixture_name": "safe_evidence_items", "row_source_path": str(create_package_dir(tmp_path) / "evidence_items.jsonl")}, "synthetic fixture"),
+        ("Now flag", record.request_id, {"preflight_id": preflight_id, "fixture_name": "safe_evidence_items", "now_flags": {"run_analysis_now": True}}, "now flags"),
+    ]
+    for title, request_id, payload, expected_message in cases:
+        preflight_path.write_text(
+            json.dumps(blocked_preflight if title == "Blocked preflight" else preflight_payload),
+            encoding="utf-8",
+        )
+        try:
+            create_evidence_row_reader_dry_run(request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{title} should block row reader dry-run")
 
 
 def test_invalid_result_json_sets_warning_without_crash(tmp_path: Path, monkeypatch) -> None:

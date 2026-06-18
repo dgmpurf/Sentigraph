@@ -150,6 +150,16 @@ export async function createAnalysisRequestExecutionPreflight(requestId, payload
   return normalizeAnalysisRequestExecutionPreflight(data)
 }
 
+export async function listAnalysisRequestRowReaderDryRuns(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/row-reader-dry-runs`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisRequestRowReaderDryRun).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestRowReaderDryRun(requestId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/row-reader-dry-runs`, payload)
+  return normalizeAnalysisRequestRowReaderDryRun(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1460,6 +1470,106 @@ function normalizeAnalysisRequestExecutionPreflight(data) {
       ? data.recommended_next_steps.map((item) => String(item))
       : [],
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisRequestRowReaderDryRun(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_evidence_row_reader_dry_run_v1'),
+    dry_run_id: String(data.dry_run_id || ''),
+    preflight_id: String(data.preflight_id || ''),
+    job_id: String(data.job_id || ''),
+    decision_id: String(data.decision_id || ''),
+    preview_id: String(data.preview_id || ''),
+    plan_id: String(data.plan_id || ''),
+    draft_id: String(data.draft_id || ''),
+    request_id: String(data.request_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    source: String(data.source || 'execution_preflight'),
+    execution_mode: String(data.execution_mode || 'synthetic_fixture_row_reader_dry_run'),
+    status: String(data.status || 'passed'),
+    fixture_policy:
+      data.fixture_policy && typeof data.fixture_policy === 'object'
+        ? normalizeSafeObject(data.fixture_policy)
+        : {},
+    row_source:
+      data.row_source && typeof data.row_source === 'object'
+        ? normalizeSafeObject(data.row_source)
+        : {},
+    counts:
+      data.counts && typeof data.counts === 'object'
+        ? normalizeNumberMap(data.counts)
+        : {},
+    privacy_scan:
+      data.privacy_scan && typeof data.privacy_scan === 'object'
+        ? normalizeSafeObject(data.privacy_scan)
+        : {},
+    redacted_preview_rows: Array.isArray(data.redacted_preview_rows)
+      ? data.redacted_preview_rows.map(normalizeRowReaderPreviewRow).filter(Boolean)
+      : [],
+    quarantine_summary: Array.isArray(data.quarantine_summary)
+      ? data.quarantine_summary.map(normalizeRowReaderSummaryItem).filter(Boolean)
+      : [],
+    rejection_summary: Array.isArray(data.rejection_summary)
+      ? data.rejection_summary.map(normalizeRowReaderSummaryItem).filter(Boolean)
+      : [],
+    governance_defaults:
+      data.governance_defaults && typeof data.governance_defaults === 'object'
+        ? normalizeSafeObject(data.governance_defaults)
+        : {},
+    now_flags:
+      data.now_flags && typeof data.now_flags === 'object'
+        ? normalizeBooleanMap(data.now_flags)
+        : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeRowReaderPreviewRow(row) {
+  if (!row || typeof row !== 'object') return null
+  const candidate = row.evidence_candidate && typeof row.evidence_candidate === 'object' ? row.evidence_candidate : {}
+  return {
+    row_index: Number(row.row_index || 0),
+    status: String(row.status || 'accepted_for_preview'),
+    evidence_candidate: {
+      evidence_type: String(candidate.evidence_type || ''),
+      platform: String(candidate.platform || ''),
+      source_url: String(candidate.source_url || ''),
+      title: String(candidate.title || ''),
+      body_text_preview: String(candidate.body_text_preview || ''),
+      created_at: String(candidate.created_at || ''),
+      language: String(candidate.language || ''),
+    },
+    governance_defaults:
+      row.governance_defaults && typeof row.governance_defaults === 'object'
+        ? normalizeSafeObject(row.governance_defaults)
+        : {},
+    privacy_check:
+      row.privacy_check && typeof row.privacy_check === 'object'
+        ? normalizeSafeObject(row.privacy_check)
+        : {},
+  }
+}
+
+function normalizeRowReaderSummaryItem(item) {
+  if (!item || typeof item !== 'object') return null
+  return {
+    row_index: Number(item.row_index || 0),
+    status: String(item.status || ''),
+    reason_code: String(item.reason_code || ''),
+    message: String(item.message || ''),
+    forbidden_fields_detected: Array.isArray(item.forbidden_fields_detected)
+      ? item.forbidden_fields_detected.map((field) => String(field))
+      : [],
   }
 }
 

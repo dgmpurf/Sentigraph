@@ -91,6 +91,13 @@ def create_route_import_job(tmp_path: Path, title: str = "Execution preflight ro
     return request_id, response.json()["job_id"]
 
 
+def create_route_execution_preflight(tmp_path: Path, title: str = "Row reader dry-run route") -> tuple[str, str]:
+    request_id, _job_id = create_route_import_job(tmp_path, title)
+    response = client.post(f"/api/v1/analysis-requests/{request_id}/execution-preflights")
+    assert response.status_code == 200
+    return request_id, response.json()["preflight_id"]
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -741,6 +748,86 @@ def test_analysis_request_execution_preflight_route_blocks_bad_preview(tmp_path:
 
     assert response.status_code == 400
     assert "validation errors" in response.text
+
+
+def test_analysis_request_row_reader_dry_run_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, preflight_id = create_route_execution_preflight(tmp_path)
+
+    safe_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/row-reader-dry-runs",
+        json={"preflight_id": preflight_id, "fixture_name": "safe_evidence_items", "max_rows": 20},
+    )
+    mixed_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/row-reader-dry-runs",
+        json={"preflight_id": preflight_id, "fixture_name": "mixed_evidence_items", "max_rows": 20},
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/row-reader-dry-runs")
+    all_response = client.get("/api/v1/analysis-requests/row-reader-dry-runs")
+
+    assert safe_response.status_code == 200
+    safe_body = safe_response.json()
+    assert safe_body["schema"] == "sentigraph_evidence_row_reader_dry_run_v1"
+    assert safe_body["preflight_id"] == preflight_id
+    assert safe_body["execution_mode"] == "synthetic_fixture_row_reader_dry_run"
+    assert safe_body["fixture_policy"]["synthetic_fixture_only"] is True
+    assert safe_body["fixture_policy"]["real_provider_package_allowed"] is False
+    assert safe_body["row_source"]["source_type"] == "synthetic_fixture"
+    assert safe_body["row_source"]["real_package_path_used"] is False
+    assert safe_body["counts"]["accepted_for_preview"] == 2
+    assert safe_body["counts"]["quarantined"] == 0
+    assert safe_body["counts"]["rejected"] == 0
+    assert safe_body["now_flags"]["import_evidence_rows_now"] is False
+    assert safe_body["now_flags"]["write_evidence_layer_now"] is False
+    assert safe_body["now_flags"]["create_case_now"] is False
+    assert safe_body["now_flags"]["run_analysis_now"] is False
+    assert safe_body["readiness"]["can_import_now"] is False
+    assert "synthetic-user-123" not in safe_response.text
+    assert "Synthetic Name" not in safe_response.text
+    assert "Synthetic private message" not in safe_response.text
+
+    assert mixed_response.status_code == 200
+    mixed_body = mixed_response.json()
+    assert mixed_body["status"] == "warn"
+    assert mixed_body["counts"]["accepted_for_preview"] == 1
+    assert mixed_body["counts"]["quarantined"] == 2
+    assert mixed_body["counts"]["rejected"] == 1
+    assert mixed_body["privacy_scan"]["raw_author_id_detected"] == 1
+    assert mixed_body["privacy_scan"]["private_message_detected"] == 1
+    assert "synthetic-user-123" not in mixed_response.text
+    assert "Synthetic Name" not in mixed_response.text
+    assert "Synthetic private message" not in mixed_response.text
+
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 2
+    assert all_response.status_code == 200
+    assert len(all_response.json()) == 2
+    read_response = client.get(f"/api/v1/analysis-requests/{request_id}/row-reader-dry-runs/{safe_body['dry_run_id']}")
+    assert read_response.status_code == 200
+    assert read_response.json()["dry_run_id"] == safe_body["dry_run_id"]
+
+
+def test_analysis_request_row_reader_dry_run_route_blocks_unsafe_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, preflight_id = create_route_execution_preflight(tmp_path, "Row reader route blocks")
+
+    cases = [
+        ({"preflight_id": preflight_id, "max_rows": 21}, "max_rows"),
+        ({"preflight_id": preflight_id, "fixture_name": "../safe_evidence_items"}, "fixture"),
+        ({"preflight_id": preflight_id, "fixture_name": "safe_evidence_items", "row_source_path": str(tmp_path / "evidence_items.jsonl")}, "synthetic fixture"),
+        ({"preflight_id": preflight_id, "fixture_name": "safe_evidence_items", "now_flags": {"run_analysis_now": True}}, "now flags"),
+    ]
+    for payload, expected_message in cases:
+        response = client.post(f"/api/v1/analysis-requests/{request_id}/row-reader-dry-runs", json=payload)
+        assert response.status_code == 400
+        assert expected_message in response.text
+
+    missing_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/row-reader-dry-runs",
+        json={"preflight_id": "manual_import_preflight_missing"},
+    )
+    assert missing_response.status_code == 404
+    assert "execution preflight" in missing_response.text.lower()
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:
