@@ -14,3 +14,4 @@ backend/data/*.json
 backend/data/*.json.tmp
 !backend/data/.gitkeep
 runtime/
+/SENTIGRAPH_PROJECT_SOURCE_*.md
