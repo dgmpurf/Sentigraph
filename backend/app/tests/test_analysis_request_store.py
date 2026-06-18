@@ -79,6 +79,115 @@ def test_list_and_read_requests_with_provider_result(tmp_path: Path, monkeypatch
     assert detail.provider_result.coverage.not_full_web is True
 
 
+def test_provider_result_with_canonical_not_run_parses(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Default provider result"))
+    )
+    result_path = tmp_path / "results" / f"{record.request_id}.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "schema": "sentigraph_provider_job_result_v1",
+                "request_id": record.request_id,
+                "provider_job_id": "local_default",
+                "provider_type": "private_collector",
+                "status": "needs_manual_snapshot",
+                "safety_status": "safe",
+                "counts": {"evidence": 0, "comments": 0, "sources": 0, "roots": 0},
+                "validation": {"status": "not_run", "errors": 0, "warnings": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    detail = read_analysis_request(record.request_id)
+
+    assert detail.result_warning is None
+    assert detail.provider_status == "needs_manual_snapshot"
+    assert detail.safety_status == "safe"
+    assert detail.provider_result is not None
+    assert detail.provider_result.validation.status == "not_run"
+    assert detail.provider_result.counts.evidence == 0
+    assert detail.provider_result.counts.roots == 0
+
+
+def test_provider_result_legacy_aliases_parse_and_normalize(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Legacy provider result"))
+    )
+    result_path = tmp_path / "results" / f"{record.request_id}.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "schema": "sentigraph_provider_job_result_v1",
+                "request_id": record.request_id,
+                "provider_job_id": "local_legacy",
+                "provider_type": "private_collector",
+                "status": "validation_warn",
+                "safety_status": "safe",
+                "counts": {"evidence_items": 581, "comments": 546, "sources": 37, "root_content": 35},
+                "validation": {"status": "warn", "errors_count": 0, "warnings_count": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    detail = read_analysis_request(record.request_id)
+
+    assert detail.result_warning is None
+    assert detail.provider_result is not None
+    assert detail.provider_result.counts.evidence == 581
+    assert detail.provider_result.counts.comments == 546
+    assert detail.provider_result.counts.sources == 37
+    assert detail.provider_result.counts.roots == 35
+    assert detail.provider_result.validation.errors == 0
+    assert detail.provider_result.validation.warnings == 1
+
+
+def test_provider_result_canonical_fields_win_over_legacy_aliases(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Canonical provider result"))
+    )
+    result_path = tmp_path / "results" / f"{record.request_id}.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "schema": "sentigraph_provider_job_result_v1",
+                "request_id": record.request_id,
+                "status": "package_ready",
+                "safety_status": "safe",
+                "counts": {
+                    "evidence": 34,
+                    "evidence_items": 999,
+                    "comments": 28,
+                    "sources": 7,
+                    "roots": 6,
+                    "root_content": 999,
+                },
+                "validation": {
+                    "status": "passed",
+                    "errors": 0,
+                    "errors_count": 999,
+                    "warnings": 0,
+                    "warnings_count": 999,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    detail = read_analysis_request(record.request_id)
+
+    assert detail.provider_result is not None
+    assert detail.provider_result.counts.evidence == 34
+    assert detail.provider_result.counts.roots == 6
+    assert detail.provider_result.validation.errors == 0
+    assert detail.provider_result.validation.warnings == 0
+
+
 def test_invalid_result_json_sets_warning_without_crash(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
     record = create_analysis_request(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 ProviderStatus = Literal[
@@ -119,11 +119,35 @@ class ProviderJobCounts(BaseModel):
     sources: int = 0
     roots: int = 0
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        if "evidence" not in normalized and "evidence_items" in normalized:
+            normalized["evidence"] = normalized.get("evidence_items")
+        if "roots" not in normalized and "root_content" in normalized:
+            normalized["roots"] = normalized.get("root_content")
+        return normalized
+
 
 class ProviderJobValidation(BaseModel):
-    status: Literal["passed", "warn", "failed"] = "warn"
+    status: Literal["not_run", "passed", "warn", "failed"] = "warn"
     errors: int = 0
     warnings: int = 0
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        if "errors" not in normalized and "errors_count" in normalized:
+            normalized["errors"] = normalized.get("errors_count")
+        if "warnings" not in normalized and "warnings_count" in normalized:
+            normalized["warnings"] = normalized.get("warnings_count")
+        return normalized
 
 
 class ProviderJobCoverage(BaseModel):

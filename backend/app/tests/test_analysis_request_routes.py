@@ -95,6 +95,81 @@ def test_analysis_request_route_reads_manual_provider_result(tmp_path: Path, mon
     assert "raw_author_value" not in response.text
 
 
+def test_analysis_request_routes_read_default_result_from_list_and_detail(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Default provider result route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "schema": "sentigraph_provider_job_result_v1",
+                "request_id": request_id,
+                "provider_job_id": "local_default_route",
+                "provider_type": "private_collector",
+                "status": "needs_manual_snapshot",
+                "safety_status": "safe",
+                "counts": {"evidence": 0, "comments": 0, "sources": 0, "roots": 0},
+                "validation": {"status": "not_run", "errors": 0, "warnings": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    list_response = client.get("/api/v1/analysis-requests")
+    detail_response = client.get(f"/api/v1/analysis-requests/{request_id}")
+
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["provider_status"] == "needs_manual_snapshot"
+    assert list_response.json()[0]["safety_status"] == "safe"
+    assert detail_response.status_code == 200
+    body = detail_response.json()
+    assert body["result_warning"] is None
+    assert body["provider_result"]["validation"]["status"] == "not_run"
+    assert body["provider_result"]["counts"]["evidence"] == 0
+    assert body["provider_result"]["counts"]["roots"] == 0
+
+
+def test_analysis_request_route_reads_legacy_provider_result_aliases(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    create_response = client.post(
+        "/api/v1/analysis-requests",
+        json={"case_seed": {"title": "Legacy provider result route"}},
+    )
+    request_id = create_response.json()["request_id"]
+    result_path = tmp_path / "results" / f"{request_id}.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "schema": "sentigraph_provider_job_result_v1",
+                "request_id": request_id,
+                "provider_job_id": "local_legacy_route",
+                "provider_type": "private_collector",
+                "status": "validation_warn",
+                "safety_status": "safe",
+                "package_name": "legacy_package",
+                "counts": {"evidence_items": 581, "comments": 546, "sources": 37, "root_content": 35},
+                "validation": {"status": "warn", "errors_count": 0, "warnings_count": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.get(f"/api/v1/analysis-requests/{request_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result_warning"] is None
+    assert body["provider_result"]["counts"]["evidence"] == 581
+    assert body["provider_result"]["counts"]["comments"] == 546
+    assert body["provider_result"]["counts"]["sources"] == 37
+    assert body["provider_result"]["counts"]["roots"] == 35
+    assert body["provider_result"]["validation"]["warnings"] == 1
+
+
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
     create_response = client.post(
