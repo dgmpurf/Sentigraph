@@ -98,6 +98,81 @@ def create_route_execution_preflight(tmp_path: Path, title: str = "Row reader dr
     return request_id, response.json()["preflight_id"]
 
 
+def create_route_real_preview_package(tmp_path: Path, *, include_rows: bool = True) -> Path:
+    package_dir = tmp_path / "route_real_preview_package"
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "manifest.json").write_text(
+        json.dumps({"package_name": "route_real_preview_package", "package_role": "selected_public_sample"}),
+        encoding="utf-8",
+    )
+    (package_dir / "validation_report.json").write_text(json.dumps({"errors": 0, "warnings": 0}), encoding="utf-8")
+    (package_dir / "coverage_note.md").write_text("selected sample only; not full web", encoding="utf-8")
+    (package_dir / "README.md").write_text("route preview package", encoding="utf-8")
+    if include_rows:
+        (package_dir / "evidence_items.jsonl").write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "platform": "synthetic_forum",
+                            "evidence_type": "comment",
+                            "source_url": "https://example.invalid/route-preview/1",
+                            "title": "Route preview row",
+                            "body_text": "Route preview body.",
+                            "created_at": "2026-06-18T01:00:00Z",
+                            "language": "en",
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "platform": "synthetic_forum",
+                            "evidence_type": "comment",
+                            "source_url": "https://example.invalid/route-preview/2",
+                            "title": "Forbidden route row",
+                            "body_text": "Route row should be quarantined.",
+                            "raw_author_id": "route-raw-author-not-returned",
+                        }
+                    ),
+                ]
+            ),
+            encoding="utf-8",
+        )
+    return package_dir
+
+
+def create_route_real_preview_chain(tmp_path: Path) -> tuple[str, str]:
+    request_id = create_route_approve_decision(tmp_path, "Real package row preview route")
+    package_dir = create_route_real_preview_package(tmp_path)
+    preview_path = tmp_path / "import_previews" / f"{request_id}.json"
+    preview = json.loads(preview_path.read_text(encoding="utf-8"))
+    preview["package_reference"]["package_path"] = str(package_dir)
+    preview["package_reference"]["package_name"] = package_dir.name
+    preview["package_reference"]["package_role"] = "selected_public_sample"
+    preview_path.write_text(json.dumps(preview), encoding="utf-8")
+    job_response = client.post(f"/api/v1/analysis-requests/{request_id}/import-jobs")
+    assert job_response.status_code == 200
+    preflight_response = client.post(f"/api/v1/analysis-requests/{request_id}/execution-preflights")
+    assert preflight_response.status_code == 200
+    preflight_id = preflight_response.json()["preflight_id"]
+    dry_run_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/row-reader-dry-runs",
+        json={"preflight_id": preflight_id, "fixture_name": "safe_evidence_items", "max_rows": 20},
+    )
+    assert dry_run_response.status_code == 200
+    return request_id, preflight_id
+
+
+def route_real_preview_ack_payload(**overrides: object) -> dict:
+    payload = {
+        "acknowledge_real_package_preview": True,
+        "acknowledge_no_import": True,
+        "acknowledge_preview_not_representative": True,
+        "acknowledge_privacy_stop": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -828,6 +903,68 @@ def test_analysis_request_row_reader_dry_run_route_blocks_unsafe_inputs(tmp_path
     )
     assert missing_response.status_code == 404
     assert "execution preflight" in missing_response.text.lower()
+
+
+def test_analysis_request_real_package_row_preview_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, preflight_id = create_route_real_preview_chain(tmp_path)
+
+    first_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=10),
+    )
+    second_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/real-package-row-previews")
+    all_response = client.get("/api/v1/analysis-requests/real-package-row-previews")
+
+    assert first_response.status_code == 200
+    body = first_response.json()
+    assert body["schema"] == "sentigraph_real_package_row_preview_v1"
+    assert body["preflight_id"] == preflight_id
+    assert body["execution_mode"] == "real_package_row_preview_only"
+    assert body["status"] == "warn"
+    assert body["package_reference"]["package_name"] == "route_real_preview_package"
+    assert body["limits"]["max_rows"] == 10
+    assert body["limits"]["hard_max_rows"] == 20
+    assert body["limits"]["full_scan"] is False
+    assert body["limits"]["import_rows"] is False
+    assert body["rows"]["accepted_for_preview"] == 1
+    assert body["rows"]["quarantined"] == 1
+    assert body["now_flags"]["import_evidence_rows_now"] is False
+    assert body["now_flags"]["write_evidence_layer_now"] is False
+    assert body["readiness"]["can_import_now"] is False
+    assert "route-raw-author-not-returned" not in first_response.text
+
+    assert second_response.status_code == 200
+    assert second_response.json()["preview_run_id"] != body["preview_run_id"]
+    assert second_response.json()["rows"]["rows_seen"] == 1
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 2
+    assert all_response.status_code == 200
+    assert len(all_response.json()) == 2
+    read_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews/{body['preview_run_id']}"
+    )
+    assert read_response.status_code == 200
+    assert read_response.json()["preview_run_id"] == body["preview_run_id"]
+
+
+def test_analysis_request_real_package_row_preview_route_blocks_unsafe_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+
+    cases = [
+        (route_real_preview_ack_payload(max_rows=21), "max_rows"),
+        (route_real_preview_ack_payload(acknowledge_privacy_stop=False), "acknowledgement"),
+        (route_real_preview_ack_payload(now_flags={"run_analysis_now": True}), "now flags"),
+    ]
+    for payload, expected_message in cases:
+        response = client.post(f"/api/v1/analysis-requests/{request_id}/real-package-row-previews", json=payload)
+        assert response.status_code == 400
+        assert expected_message in response.text
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:

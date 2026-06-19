@@ -14,6 +14,7 @@ from app.services.analysis_request_store import (
     create_manual_evidence_import_execution_preflight,
     create_manual_evidence_import_job,
     create_evidence_row_reader_dry_run,
+    create_real_package_row_preview,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
@@ -22,8 +23,10 @@ from app.services.analysis_request_store import (
     list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
     list_evidence_row_reader_dry_runs,
+    list_real_package_row_previews,
     list_analysis_requests,
     read_evidence_row_reader_dry_run,
+    read_real_package_row_preview,
     read_analysis_request,
 )
 
@@ -157,6 +160,83 @@ def create_package_dir(tmp_path: Path, *, include_required: bool = True) -> Path
     return package_dir
 
 
+def create_real_preview_package(tmp_path: Path, *, mixed: bool = False, include_rows: bool = True) -> Path:
+    package_dir = tmp_path / ("mixed_real_preview_package" if mixed else "safe_real_preview_package")
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "manifest.json").write_text(
+        json.dumps({"package_name": package_dir.name, "package_role": "selected_public_sample"}),
+        encoding="utf-8",
+    )
+    (package_dir / "validation_report.json").write_text(
+        json.dumps({"validation": {"errors": 0, "warnings": 0}, "errors": 0, "coverage": {"not_full_web": True}}),
+        encoding="utf-8",
+    )
+    (package_dir / "coverage_note.md").write_text(
+        "selected public sample only; not full-web, not full-platform, not full-thread",
+        encoding="utf-8",
+    )
+    (package_dir / "README.md").write_text("local real package preview fixture", encoding="utf-8")
+    if include_rows:
+        if mixed:
+            rows = [
+                {
+                    "platform": "synthetic_forum",
+                    "evidence_type": "comment",
+                    "source_url": "https://example.invalid/real-preview/accepted",
+                    "title": "Accepted future preview row",
+                    "body_text": "Safe future preview text.",
+                    "created_at": "2026-06-18T01:00:00Z",
+                    "language": "en",
+                    "like_count": 3,
+                },
+                {
+                    "platform": "synthetic_forum",
+                    "evidence_type": "comment",
+                    "source_url": "https://example.invalid/real-preview/quarantine",
+                    "title": "Forbidden identity row",
+                    "body_text": "This row should be quarantined.",
+                    "raw_author_id": "real-preview-user-should-not-return",
+                    "raw_author_name": "Real Preview Name Should Not Return",
+                    "profile_url": "https://example.test/profile/real-preview",
+                },
+                "{bad json",
+                {
+                    "platform": "synthetic_forum",
+                    "evidence_type": "comment",
+                    "source_url": "https://example.invalid/real-preview/privacy-stop",
+                    "title": "Private message row",
+                    "body_text": "This row should trigger privacy stop.",
+                    "private_message": "Real preview private message should not return.",
+                },
+            ]
+        else:
+            rows = [
+                {
+                    "platform": "synthetic_forum",
+                    "evidence_type": "comment",
+                    "source_url": "https://example.invalid/real-preview/1",
+                    "title": "Safe local package row",
+                    "body_text": "Safe local package row preview body. " * 12,
+                    "created_at": "2026-06-18T01:00:00Z",
+                    "language": "en",
+                    "like_count": 9,
+                    "reply_count": 2,
+                },
+                {
+                    "platform": "synthetic_news",
+                    "evidence_type": "article",
+                    "source_url": "https://example.invalid/real-preview/2",
+                    "title": "Second safe local package row",
+                    "body_text": "Second safe preview row.",
+                    "created_at": "2026-06-18T02:00:00Z",
+                    "language": "en",
+                },
+            ]
+        lines = [json.dumps(row, ensure_ascii=False) if isinstance(row, dict) else row for row in rows]
+        (package_dir / "evidence_items.jsonl").write_text("\n".join(lines), encoding="utf-8")
+    return package_dir
+
+
 def create_manual_import_job(tmp_path: Path, request_id: str, *, package_dir: Path | None = None) -> dict:
     create_approved_review_decision(tmp_path, request_id)
     if package_dir is not None:
@@ -174,6 +254,26 @@ def create_execution_preflight(tmp_path: Path, request_id: str, *, package_dir: 
     preflight = create_manual_evidence_import_execution_preflight(request_id)
     preflight_path = tmp_path / "execution_preflights" / f"{request_id}_{preflight.preflight_id}.json"
     return json.loads(preflight_path.read_text(encoding="utf-8"))
+
+
+def real_preview_ack_payload(**overrides: object) -> dict:
+    payload = {
+        "acknowledge_real_package_preview": True,
+        "acknowledge_no_import": True,
+        "acknowledge_preview_not_representative": True,
+        "acknowledge_privacy_stop": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def create_real_preview_ready_chain(tmp_path: Path, request_id: str, package_dir: Path) -> dict:
+    preflight_payload = create_execution_preflight(tmp_path, request_id, package_dir=package_dir)
+    create_evidence_row_reader_dry_run(
+        request_id,
+        {"preflight_id": preflight_payload["preflight_id"], "fixture_name": "safe_evidence_items", "max_rows": 20},
+    )
+    return preflight_payload
 
 
 def test_create_request_writes_json_with_conservative_defaults(tmp_path: Path, monkeypatch) -> None:
@@ -1332,6 +1432,131 @@ def test_evidence_row_reader_dry_run_blocks_unsafe_inputs(tmp_path: Path, monkey
             assert expected_message in str(exc)
         else:
             raise AssertionError(f"{title} should block row reader dry-run")
+
+
+def test_real_package_row_preview_reads_limited_local_package_with_redaction_only(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Real package preview safe"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    preflight_payload = create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+    second_preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload(max_rows=1))
+    preview_files = sorted((tmp_path / "real_package_row_previews").glob(f"{record.request_id}_*.json"))
+    read_back = read_real_package_row_preview(record.request_id, preview.preview_run_id)
+
+    assert preview.schema_ == "sentigraph_real_package_row_preview_v1"
+    assert preview.preflight_id == preflight_payload["preflight_id"]
+    assert preview.execution_mode == "real_package_row_preview_only"
+    assert preview.status == "passed"
+    assert preview.package_reference.package_name == package_dir.name
+    assert preview.package_reference.package_role == "selected_public_sample"
+    assert preview.limits.max_rows == 10
+    assert preview.limits.hard_max_rows == 20
+    assert preview.limits.full_scan is False
+    assert preview.limits.import_rows is False
+    assert preview.rows.rows_seen == 2
+    assert preview.rows.accepted_for_preview == 2
+    assert preview.rows.quarantined == 0
+    assert preview.rows.rejected == 0
+    assert len(preview.redacted_preview_rows) == 2
+    assert len(preview.redacted_preview_rows[0].evidence_candidate.body_text_preview) <= 160
+    assert preview.now_flags.import_evidence_rows_now is False
+    assert preview.now_flags.write_evidence_layer_now is False
+    assert preview.now_flags.create_case_now is False
+    assert preview.now_flags.run_analysis_now is False
+    assert preview.readiness.can_import_now is False
+    assert second_preview.preview_run_id != preview.preview_run_id
+    assert second_preview.rows.rows_seen == 1
+    assert len(preview_files) == 2
+    assert len(list_real_package_row_previews(record.request_id)) == 2
+    assert read_back.preview_run_id == preview.preview_run_id
+    assert not (tmp_path / "cases").exists()
+
+
+def test_real_package_row_preview_quarantines_rejects_and_privacy_stops_without_raw_values(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Real package preview mixed"))
+    )
+    package_dir = create_real_preview_package(tmp_path, mixed=True)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload(max_rows=10))
+    text = json.dumps(preview.model_dump(mode="json", by_alias=True), ensure_ascii=False)
+
+    assert preview.status == "privacy_stop"
+    assert preview.rows.rows_seen == 4
+    assert preview.rows.accepted_for_preview == 1
+    assert preview.rows.quarantined == 1
+    assert preview.rows.rejected == 1
+    assert preview.rows.privacy_stop_at_row == 4
+    assert preview.privacy_scan.raw_author_id_detected == 1
+    assert preview.privacy_scan.raw_author_name_detected == 1
+    assert preview.privacy_scan.profile_url_detected == 1
+    assert preview.privacy_scan.private_message_detected == 1
+    assert preview.privacy_scan.privacy_stop_triggered is True
+    assert preview.readiness.state == "privacy_stop"
+    assert "real-preview-user-should-not-return" not in text
+    assert "Real Preview Name Should Not Return" not in text
+    assert "example.test/profile/real-preview" not in text
+    assert "Real preview private message should not return" not in text
+
+
+def test_real_package_row_preview_blocks_unsafe_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Real package preview blocks"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    preflight_payload = create_execution_preflight(tmp_path, record.request_id, package_dir=package_dir)
+
+    cases = [
+        ("No synthetic dry-run", real_preview_ack_payload(), "synthetic row reader"),
+        ("Too many rows", real_preview_ack_payload(max_rows=21), "max_rows"),
+        ("Missing acknowledgement", real_preview_ack_payload(acknowledge_no_import=False), "acknowledgement"),
+    ]
+    for _title, payload, expected_message in cases:
+        try:
+            create_real_package_row_preview(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{_title} should block real package row preview")
+
+    create_evidence_row_reader_dry_run(
+        record.request_id,
+        {"preflight_id": preflight_payload["preflight_id"], "fixture_name": "safe_evidence_items", "max_rows": 20},
+    )
+    reject_decision = create_evidence_import_review_decision(
+        record.request_id,
+        review_payload("reject_import", notes="Supersede approve before preview."),
+    )
+    assert reject_decision.decision == "reject_import"
+    try:
+        create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "approve_import" in str(exc)
+    else:
+        raise AssertionError("Latest non-approve review decision should block real package row preview")
+
+
+def test_real_package_row_preview_blocks_missing_or_unsafe_package_files(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Real package preview missing files"))
+    )
+    package_dir = create_real_preview_package(tmp_path, include_rows=False)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+
+    try:
+        create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "evidence_items.jsonl" in str(exc)
+    else:
+        raise AssertionError("Missing evidence_items.jsonl should block real package row preview")
 
 
 def test_invalid_result_json_sets_warning_without_crash(tmp_path: Path, monkeypatch) -> None:

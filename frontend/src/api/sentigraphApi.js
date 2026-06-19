@@ -160,6 +160,16 @@ export async function createAnalysisRequestRowReaderDryRun(requestId, payload = 
   return normalizeAnalysisRequestRowReaderDryRun(data)
 }
 
+export async function listAnalysisRequestRealPackageRowPreviews(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/real-package-row-previews`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisRequestRealPackageRowPreview).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestRealPackageRowPreview(requestId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/real-package-row-previews`, payload)
+  return normalizeAnalysisRequestRealPackageRowPreview(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1570,6 +1580,93 @@ function normalizeRowReaderSummaryItem(item) {
     forbidden_fields_detected: Array.isArray(item.forbidden_fields_detected)
       ? item.forbidden_fields_detected.map((field) => String(field))
       : [],
+  }
+}
+
+function normalizeAnalysisRequestRealPackageRowPreview(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_real_package_row_preview_v1'),
+    preview_run_id: String(data.preview_run_id || ''),
+    preflight_id: String(data.preflight_id || ''),
+    import_job_id: String(data.import_job_id || ''),
+    decision_id: String(data.decision_id || ''),
+    preview_id: String(data.preview_id || ''),
+    plan_id: String(data.plan_id || ''),
+    draft_id: String(data.draft_id || ''),
+    request_id: String(data.request_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    execution_mode: String(data.execution_mode || 'real_package_row_preview_only'),
+    status: String(data.status || 'passed'),
+    package_reference:
+      data.package_reference && typeof data.package_reference === 'object'
+        ? normalizeSafeObject(data.package_reference)
+        : {},
+    limits:
+      data.limits && typeof data.limits === 'object'
+        ? normalizeSafeObject(data.limits)
+        : {},
+    rows:
+      data.rows && typeof data.rows === 'object'
+        ? normalizeSafeObject(data.rows)
+        : {},
+    privacy_scan:
+      data.privacy_scan && typeof data.privacy_scan === 'object'
+        ? normalizeSafeObject(data.privacy_scan)
+        : {},
+    redacted_preview_rows: Array.isArray(data.redacted_preview_rows)
+      ? data.redacted_preview_rows.map(normalizeRealPackagePreviewRow).filter(Boolean)
+      : [],
+    quarantine_summary: Array.isArray(data.quarantine_summary)
+      ? data.quarantine_summary.map(normalizeRowReaderSummaryItem).filter(Boolean)
+      : [],
+    rejection_summary: Array.isArray(data.rejection_summary)
+      ? data.rejection_summary.map(normalizeRowReaderSummaryItem).filter(Boolean)
+      : [],
+    governance_defaults:
+      data.governance_defaults && typeof data.governance_defaults === 'object'
+        ? normalizeSafeObject(data.governance_defaults)
+        : {},
+    now_flags:
+      data.now_flags && typeof data.now_flags === 'object'
+        ? normalizeBooleanMap(data.now_flags)
+        : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeRealPackagePreviewRow(row) {
+  if (!row || typeof row !== 'object') return null
+  const candidate = row.evidence_candidate && typeof row.evidence_candidate === 'object' ? row.evidence_candidate : {}
+  return {
+    row_index: Number(row.row_index || 0),
+    status: String(row.status || 'accepted_for_preview'),
+    evidence_candidate: {
+      evidence_type: String(candidate.evidence_type || ''),
+      platform: String(candidate.platform || ''),
+      source_url: String(candidate.source_url || ''),
+      title_preview: String(candidate.title_preview || ''),
+      body_text_preview: String(candidate.body_text_preview || ''),
+      created_at: String(candidate.created_at || ''),
+      language: String(candidate.language || ''),
+      counts: candidate.counts && typeof candidate.counts === 'object' ? normalizeNumberMap(candidate.counts) : {},
+    },
+    governance_defaults:
+      row.governance_defaults && typeof row.governance_defaults === 'object'
+        ? normalizeSafeObject(row.governance_defaults)
+        : {},
+    privacy_check:
+      row.privacy_check && typeof row.privacy_check === 'object'
+        ? normalizeSafeObject(row.privacy_check)
+        : {},
   }
 }
 

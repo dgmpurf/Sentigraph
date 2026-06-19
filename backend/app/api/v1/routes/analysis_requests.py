@@ -18,6 +18,8 @@ from app.schemas.analysis_request import (
     ManualEvidenceImportExecutionPreflightCreate,
     ManualEvidenceImportJob,
     ManualEvidenceImportJobCreate,
+    RealPackageRowPreview,
+    RealPackageRowPreviewCreate,
 )
 from app.services.analysis_request_store import (
     AnalysisRequestNotFoundError,
@@ -31,12 +33,14 @@ from app.services.analysis_request_store import (
     create_manual_evidence_import_execution_preflight,
     create_analysis_request,
     create_manual_evidence_import_job,
+    create_real_package_row_preview,
     get_analysis_request_config,
     list_case_draft_handoffs,
     list_all_evidence_row_reader_dry_runs,
     list_all_manual_evidence_import_execution_preflights,
     list_all_manual_evidence_import_jobs,
     list_all_evidence_import_review_decisions,
+    list_all_real_package_row_previews,
     list_evidence_import_plans,
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
@@ -44,6 +48,7 @@ from app.services.analysis_request_store import (
     list_analysis_requests,
     list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
+    list_real_package_row_previews,
     read_case_draft_handoff,
     read_evidence_import_plan,
     read_evidence_import_preview,
@@ -52,6 +57,7 @@ from app.services.analysis_request_store import (
     read_analysis_request,
     read_manual_evidence_import_execution_preflight,
     read_manual_evidence_import_job,
+    read_real_package_row_preview,
 )
 
 router = APIRouter()
@@ -105,6 +111,11 @@ def analysis_request_execution_preflight_all_list() -> list[ManualEvidenceImport
 @router.get("/row-reader-dry-runs", response_model=list[EvidenceRowReaderDryRun])
 def analysis_request_row_reader_dry_run_all_list() -> list[EvidenceRowReaderDryRun]:
     return list_all_evidence_row_reader_dry_runs()
+
+
+@router.get("/real-package-row-previews", response_model=list[RealPackageRowPreview])
+def analysis_request_real_package_row_preview_all_list() -> list[RealPackageRowPreview]:
+    return list_all_real_package_row_previews()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -291,6 +302,40 @@ def analysis_request_row_reader_dry_run_detail(
 ) -> EvidenceRowReaderDryRun:
     try:
         return read_evidence_row_reader_dry_run(request_id, dry_run_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/real-package-row-previews", response_model=list[RealPackageRowPreview])
+def analysis_request_real_package_row_preview_list(request_id: str) -> list[RealPackageRowPreview]:
+    try:
+        return list_real_package_row_previews(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/real-package-row-previews", response_model=RealPackageRowPreview)
+def analysis_request_real_package_row_preview_create(
+    request_id: str,
+    payload: RealPackageRowPreviewCreate | None = None,
+) -> RealPackageRowPreview:
+    try:
+        return create_real_package_row_preview(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/real-package-row-previews/{preview_run_id}", response_model=RealPackageRowPreview)
+def analysis_request_real_package_row_preview_detail(
+    request_id: str,
+    preview_run_id: str,
+) -> RealPackageRowPreview:
+    try:
+        return read_real_package_row_preview(request_id, preview_run_id)
     except AnalysisRequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:

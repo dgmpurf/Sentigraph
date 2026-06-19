@@ -4,6 +4,7 @@ import json
 import os
 import re
 import uuid
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,16 @@ from app.schemas.analysis_request import (
     ManualEvidenceImportTargetCase,
     ManualEvidenceImportTargetCasePreflight,
     ProviderJobResult,
+    RealPackageRowPreview,
+    RealPackageRowPreviewCandidate,
+    RealPackageRowPreviewCreate,
+    RealPackageRowPreviewLimits,
+    RealPackageRowPreviewPackageReference,
+    RealPackageRowPreviewPrivacyCheck,
+    RealPackageRowPreviewPrivacyScan,
+    RealPackageRowPreviewReadiness,
+    RealPackageRowPreviewRow,
+    RealPackageRowPreviewRows,
 )
 
 
@@ -70,6 +81,17 @@ ROW_READER_FIXTURES = {
 ROW_READER_FORBIDDEN_FIELDS = {"raw_author_id", "raw_author_name", "profile_url", "private_message"}
 ROW_READER_SECRET_PATTERNS = ("api_key", "access_token", "refresh_token", "client_secret", "password", "cookie", "token")
 ROW_READER_ALLOWED_FIELDS = {"platform", "evidence_type", "source_url", "title", "body_text", "created_at", "language"}
+REAL_PREVIEW_FORBIDDEN_FIELDS = {
+    "raw_author_id",
+    "raw_author_name",
+    "author_name",
+    "profile_url",
+    "avatar_url",
+    "private_message",
+}
+REAL_PREVIEW_COUNT_FIELDS = {"like_count", "reply_count", "share_count", "view_count", "repost_count"}
+EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+?\d[\d\s().-]{7,}\d)(?!\d)")
 
 REVIEW_DECISION_STATES = {
     "approve_import": "approved_for_future_manual_import",
@@ -816,6 +838,42 @@ def list_all_evidence_row_reader_dry_runs() -> list[EvidenceRowReaderDryRun]:
     return dry_runs
 
 
+def read_real_package_row_preview(request_id: str, preview_run_id: str) -> RealPackageRowPreview:
+    preview_path = _real_package_row_preview_path(request_id, preview_run_id)
+    if not preview_path.exists():
+        raise AnalysisRequestNotFoundError(f"Real package row preview {preview_run_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(preview_path.read_text(encoding="utf-8-sig"))
+        return RealPackageRowPreview.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{preview_path.name} is not a valid real package row preview: {type(exc).__name__}") from exc
+
+
+def list_real_package_row_previews(request_id: str) -> list[RealPackageRowPreview]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    previews: list[RealPackageRowPreview] = []
+    for path in sorted((root / "real_package_row_previews").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            previews.append(RealPackageRowPreview.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return previews
+
+
+def list_all_real_package_row_previews() -> list[RealPackageRowPreview]:
+    root = _ensure_root()
+    previews: list[RealPackageRowPreview] = []
+    for path in sorted((root / "real_package_row_previews").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            previews.append(RealPackageRowPreview.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return previews
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -898,6 +956,93 @@ def create_evidence_row_reader_dry_run(
     )
     _write_json(_row_reader_dry_run_path(request_id, dry_run_id), dry_run.model_dump(mode="json", by_alias=True))
     return read_evidence_row_reader_dry_run(request_id, dry_run_id)
+
+
+def create_real_package_row_preview(
+    request_id: str,
+    payload: RealPackageRowPreviewCreate | dict[str, Any] | None = None,
+) -> RealPackageRowPreview:
+    try:
+        preview_payload = (
+            payload
+            if isinstance(payload, RealPackageRowPreviewCreate)
+            else RealPackageRowPreviewCreate.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create real package row preview: invalid payload ({exc}).") from exc
+
+    preflight = _select_execution_preflight_for_row_reader(request_id, preview_payload.preflight_id)
+    _validate_real_package_preview_preflight_eligibility(preflight)
+    _validate_real_package_preview_payload(preview_payload)
+    _validate_real_package_preview_review_decision(request_id, preflight)
+    _validate_real_package_preview_job(preflight)
+    _validate_real_package_preview_synthetic_dry_run(request_id)
+    package_path = _resolve_real_package_preview_package_path(preflight)
+    _validate_real_package_preview_package_files(package_path, preflight)
+
+    accepted_rows, quarantine_summary, rejection_summary, rows, privacy_scan = _read_real_package_preview_rows(
+        package_path / "evidence_items.jsonl",
+        preview_payload.max_rows,
+    )
+
+    status = "passed"
+    readiness_state = "ready_for_future_staging_import_design"
+    warnings: list[str] = []
+    recommended_next_steps = [
+        "Reviewer may inspect redacted preview rows.",
+        "Future staging import still requires a separate phase and decision.",
+    ]
+    if privacy_scan.privacy_stop_triggered:
+        status = "privacy_stop"
+        readiness_state = "privacy_stop"
+        warnings.append("Privacy stop triggered; future staging import is blocked until privacy/security review.")
+        recommended_next_steps = ["Privacy/security review required before any future staging import design."]
+    elif rows.quarantined or rows.rejected:
+        status = "warn"
+        warnings.append("Some preview rows were quarantined or rejected; inspect summaries before any future phase.")
+    if rows.rows_seen >= preview_payload.max_rows:
+        warnings.append("Real package row preview stopped at max_rows limit.")
+
+    manifest_payload = _read_safe_json_file(package_path / "manifest.json")
+    preview_run_id = _new_real_package_row_preview_id()
+    preview = RealPackageRowPreview(
+        preview_run_id=preview_run_id,
+        preflight_id=preflight.preflight_id,
+        import_job_id=preflight.job_id,
+        decision_id=preflight.decision_id,
+        preview_id=preflight.preview_id,
+        plan_id=preflight.plan_id,
+        draft_id=preflight.draft_id,
+        request_id=request_id,
+        created_by=preview_payload.created_by or "sentigraph_local_ui",
+        status=status,
+        package_reference=RealPackageRowPreviewPackageReference(
+            package_name=str(manifest_payload.get("package_name") or preflight.package_reference.package_name or package_path.name),
+            package_role=str(manifest_payload.get("package_role") or preflight.package_reference.package_role or "selected_public_sample"),
+            package_path=str(package_path),
+            package_hash=None,
+            manifest_hash=_safe_file_sha256(package_path / "manifest.json"),
+        ),
+        limits=RealPackageRowPreviewLimits(max_rows=preview_payload.max_rows),
+        rows=rows,
+        privacy_scan=privacy_scan,
+        redacted_preview_rows=accepted_rows,
+        quarantine_summary=quarantine_summary,
+        rejection_summary=rejection_summary,
+        governance_defaults=EvidenceRowReaderGovernanceDefaults(),
+        now_flags=EvidenceRowReaderNowFlags(),
+        readiness=RealPackageRowPreviewReadiness(state=readiness_state),
+        warnings=warnings,
+        boundary_notes=[
+            "Real package row preview only; evidence rows are not imported.",
+            "Preview rows are redacted and not representative of full package coverage.",
+            "Provider output is evidence, not truth.",
+            "No case, review queue, dedup, analysis, Sandbox, public event, or report is generated.",
+        ],
+        recommended_next_steps=recommended_next_steps,
+    )
+    _write_json(_real_package_row_preview_path(request_id, preview_run_id), preview.model_dump(mode="json", by_alias=True))
+    return read_real_package_row_preview(request_id, preview_run_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -1363,6 +1508,331 @@ def _validate_row_reader_payload(payload: EvidenceRowReaderDryRunCreate) -> None
         raise AnalysisRequestValidationError(f"Cannot create row reader dry-run: now flags must remain false ({', '.join(enabled_now_flags)}).")
 
 
+def _validate_real_package_preview_preflight_eligibility(preflight: ManualEvidenceImportExecutionPreflight) -> None:
+    _validate_row_reader_preflight_eligibility(preflight)
+    if not preflight.package_reference.package_path:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: package_path is missing.")
+    if not preflight.package_file_checks.package_path_exists:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: package path was not confirmed by preflight.")
+    if not preflight.package_file_checks.manifest_present:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: manifest.json is missing.")
+    if not preflight.package_file_checks.validation_report_present:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: validation_report.json is missing.")
+    if not preflight.package_file_checks.coverage_note_present:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: coverage_note.md is missing.")
+    if preflight.validation_summary.errors > 0:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: validation errors must be 0.")
+    if not (preflight.coverage_summary.not_full_web and preflight.coverage_summary.not_full_platform and preflight.coverage_summary.not_full_thread):
+        raise AnalysisRequestValidationError("Cannot create real package row preview: coverage limitations must be explicit.")
+    if not (
+        preflight.privacy_summary.raw_author_ids_removed
+        and preflight.privacy_summary.raw_author_names_removed
+        and preflight.privacy_summary.profile_urls_removed
+        and preflight.privacy_summary.private_messages_excluded
+    ):
+        raise AnalysisRequestValidationError("Cannot create real package row preview: privacy flags are incomplete.")
+
+
+def _validate_real_package_preview_payload(payload: RealPackageRowPreviewCreate) -> None:
+    if payload.max_rows > 20:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: max_rows must be <= 20.")
+    acknowledgements = {
+        "acknowledge_real_package_preview": payload.acknowledge_real_package_preview,
+        "acknowledge_no_import": payload.acknowledge_no_import,
+        "acknowledge_preview_not_representative": payload.acknowledge_preview_not_representative,
+        "acknowledge_privacy_stop": payload.acknowledge_privacy_stop,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(f"Cannot create real package row preview: acknowledgement required ({', '.join(missing)}).")
+    now_flags = EvidenceRowReaderNowFlags.model_validate(payload.now_flags or {})
+    enabled_now_flags = [name for name, value in now_flags.model_dump().items() if value]
+    if enabled_now_flags:
+        raise AnalysisRequestValidationError(f"Cannot create real package row preview: now flags must remain false ({', '.join(enabled_now_flags)}).")
+
+
+def _validate_real_package_preview_review_decision(request_id: str, preflight: ManualEvidenceImportExecutionPreflight) -> None:
+    decisions = list_evidence_import_review_decisions(request_id)
+    if not decisions:
+        raise AnalysisRequestNotFoundError(f"review decision for {request_id} was not found.")
+    latest = decisions[0]
+    if latest.decision != "approve_import":
+        raise AnalysisRequestValidationError("Cannot create real package row preview: latest review decision must be approve_import.")
+    if latest.decision_id != preflight.decision_id:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: execution preflight review decision is stale.")
+
+
+def _validate_real_package_preview_job(preflight: ManualEvidenceImportExecutionPreflight) -> None:
+    job = read_manual_evidence_import_job(preflight.request_id, preflight.job_id)
+    if job.execution_mode != "dry_run_gate":
+        raise AnalysisRequestValidationError("Cannot create real package row preview: import job must remain dry_run_gate.")
+    unsafe_flags = {
+        "evidence_rows_read": job.safe_mode.get("evidence_rows_read", False),
+        "evidence_rows_parsed": job.safe_mode.get("evidence_rows_parsed", False),
+        "evidence_rows_imported": job.safe_mode.get("evidence_rows_imported", False),
+        "production_case_created": job.safe_mode.get("production_case_created", False),
+        "analysis_generated": job.safe_mode.get("analysis_generated", False),
+        "report_generated": job.safe_mode.get("report_generated", False),
+        "provider_execution": job.safe_mode.get("provider_execution", False),
+        "collector_jobs_run": job.safe_mode.get("collector_jobs_run", False),
+    }
+    enabled = [name for name, value in unsafe_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(f"Cannot create real package row preview: import job unsafe flags are true ({', '.join(enabled)}).")
+
+
+def _validate_real_package_preview_synthetic_dry_run(request_id: str) -> None:
+    dry_runs = list_evidence_row_reader_dry_runs(request_id)
+    if not dry_runs:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: synthetic row reader dry-run is required first.")
+    latest = dry_runs[0]
+    if latest.status not in {"passed", "warn"}:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: latest synthetic row reader dry-run must be passed or warn.")
+    if latest.row_source.real_package_path_used:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: synthetic dry-run must not use real package rows.")
+
+
+def _resolve_real_package_preview_package_path(preflight: ManualEvidenceImportExecutionPreflight) -> Path:
+    raw_value = preflight.package_reference.package_path.strip()
+    if not raw_value:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: package_path is missing.")
+    package_path = Path(raw_value).expanduser()
+    if not package_path.is_absolute():
+        package_path = (PROJECT_ROOT / package_path).resolve()
+    else:
+        package_path = package_path.resolve()
+    allowed_roots = [
+        (PROJECT_ROOT / "docs" / "samples").resolve(),
+        _request_root().resolve(),
+        (PROJECT_ROOT / "runtime").resolve(),
+        (PROJECT_ROOT / "exports").resolve(),
+    ]
+    if not any(_is_relative_to(package_path, root) for root in allowed_roots):
+        raise AnalysisRequestValidationError("Cannot create real package row preview: package path must stay inside allowed local package roots.")
+    if not package_path.exists() or not package_path.is_dir():
+        raise AnalysisRequestValidationError("Cannot create real package row preview: package path does not exist.")
+    return package_path
+
+
+def _validate_real_package_preview_package_files(package_path: Path, preflight: ManualEvidenceImportExecutionPreflight) -> None:
+    required_files = ["manifest.json", "validation_report.json", "coverage_note.md", "evidence_items.jsonl"]
+    missing = [name for name in required_files if not (package_path / name).is_file()]
+    if missing:
+        raise AnalysisRequestValidationError(f"Cannot create real package row preview: required package files missing ({', '.join(missing)}).")
+    validation_payload = _read_safe_json_file(package_path / "validation_report.json")
+    validation_errors = _extract_validation_error_count(validation_payload)
+    if validation_errors > 0:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: validation_report errors must be 0.")
+    manifest_payload = _read_safe_json_file(package_path / "manifest.json")
+    package_role = str(manifest_payload.get("package_role") or preflight.package_reference.package_role or "")
+    if package_role and package_role not in {"selected_public_sample", "controlled_candidate_public_sample"}:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: package role must be selected or controlled public sample.")
+    coverage_text = (package_path / "coverage_note.md").read_text(encoding="utf-8-sig", errors="replace").lower()
+    if "full-web coverage" in coverage_text or "full-platform coverage" in coverage_text or "full-thread coverage" in coverage_text:
+        raise AnalysisRequestValidationError("Cannot create real package row preview: coverage note must not claim full coverage.")
+
+
+def _read_real_package_preview_rows(
+    row_file: Path,
+    max_rows: int,
+) -> tuple[list[RealPackageRowPreviewRow], list[EvidenceRowReaderSummaryItem], list[EvidenceRowReaderSummaryItem], RealPackageRowPreviewRows, RealPackageRowPreviewPrivacyScan]:
+    accepted_rows: list[RealPackageRowPreviewRow] = []
+    quarantine_summary: list[EvidenceRowReaderSummaryItem] = []
+    rejection_summary: list[EvidenceRowReaderSummaryItem] = []
+    rows = RealPackageRowPreviewRows()
+    privacy_scan = RealPackageRowPreviewPrivacyScan()
+
+    try:
+        with row_file.open("r", encoding="utf-8-sig") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if rows.rows_seen >= max_rows:
+                    break
+                raw_line = line.strip()
+                if not raw_line:
+                    continue
+                rows.rows_seen += 1
+                try:
+                    parsed = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    rows.rejected += 1
+                    rejection_summary.append(
+                        EvidenceRowReaderSummaryItem(
+                            row_index=line_number,
+                            status="rejected",
+                            reason_code="invalid_json",
+                            message="Real package preview row is not valid JSON.",
+                        )
+                    )
+                    continue
+                if not isinstance(parsed, dict):
+                    rows.rejected += 1
+                    rejection_summary.append(
+                        EvidenceRowReaderSummaryItem(
+                            row_index=line_number,
+                            status="rejected",
+                            reason_code="non_object_json",
+                            message="Real package preview row must be a JSON object.",
+                        )
+                    )
+                    continue
+
+                forbidden_fields = _real_package_preview_forbidden_fields(parsed)
+                _update_real_package_preview_privacy_scan(privacy_scan, parsed, forbidden_fields)
+                severe_fields = _real_package_preview_severe_fields(parsed, forbidden_fields)
+                if severe_fields:
+                    privacy_scan.privacy_stop_triggered = True
+                    rows.privacy_stop_at_row = line_number
+                    quarantine_summary.append(
+                        EvidenceRowReaderSummaryItem(
+                            row_index=line_number,
+                            status="privacy_stop",
+                            reason_code="privacy_stop",
+                            message="Real package preview stopped because severe privacy fields were detected.",
+                            forbidden_fields_detected=severe_fields,
+                        )
+                    )
+                    break
+                if forbidden_fields:
+                    rows.quarantined += 1
+                    quarantine_summary.append(
+                        EvidenceRowReaderSummaryItem(
+                            row_index=line_number,
+                            status="quarantined",
+                            reason_code="forbidden_fields_detected",
+                            message="Real package preview row contains forbidden privacy fields and was excluded from preview.",
+                            forbidden_fields_detected=forbidden_fields,
+                        )
+                    )
+                    continue
+
+                rows.accepted_for_preview += 1
+                accepted_rows.append(_build_real_package_preview_row(line_number, parsed))
+    except OSError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create real package row preview: evidence_items.jsonl cannot be read ({type(exc).__name__}).") from exc
+
+    return accepted_rows, quarantine_summary, rejection_summary, rows, privacy_scan
+
+
+def _real_package_preview_forbidden_fields(row: dict[str, Any]) -> list[str]:
+    forbidden_fields = [field for field in sorted(REAL_PREVIEW_FORBIDDEN_FIELDS) if field in row]
+    if _row_reader_has_secret_like_value(row):
+        forbidden_fields.append("secret_like_value")
+    if _row_has_email_like_value(row):
+        forbidden_fields.append("email")
+    if _row_has_phone_like_value(row):
+        forbidden_fields.append("phone")
+    return forbidden_fields
+
+
+def _real_package_preview_severe_fields(row: dict[str, Any], forbidden_fields: list[str]) -> list[str]:
+    severe = []
+    for field in ("private_message", "secret_like_value", "email", "phone"):
+        if field in forbidden_fields:
+            severe.append(field)
+    return severe
+
+
+def _update_real_package_preview_privacy_scan(
+    privacy_scan: RealPackageRowPreviewPrivacyScan,
+    row: dict[str, Any],
+    forbidden_fields: list[str],
+) -> None:
+    _update_row_reader_privacy_scan(privacy_scan, row, forbidden_fields)
+    if "email" in forbidden_fields:
+        privacy_scan.email_detected += 1
+    if "phone" in forbidden_fields:
+        privacy_scan.phone_detected += 1
+
+
+def _build_real_package_preview_row(row_index: int, row: dict[str, Any]) -> RealPackageRowPreviewRow:
+    body_text = _safe_text_preview(str(row.get("body_text") or row.get("comment_text") or ""))
+    title = _safe_text_preview(str(row.get("title") or ""), limit=120)
+    source_url = _safe_source_url(str(row.get("source_url") or row.get("url") or ""))
+    counts: dict[str, int | float] = {}
+    for field in REAL_PREVIEW_COUNT_FIELDS:
+        value = row.get(field)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            counts[field] = value
+    return RealPackageRowPreviewRow(
+        row_index=row_index,
+        status="accepted_for_preview",
+        evidence_candidate=RealPackageRowPreviewCandidate(
+            evidence_type=str(row.get("evidence_type") or ""),
+            platform=str(row.get("platform") or ""),
+            source_url=source_url,
+            title_preview=title,
+            body_text_preview=body_text,
+            created_at=str(row.get("created_at") or ""),
+            language=str(row.get("language") or ""),
+            counts=counts,
+        ),
+        governance_defaults=EvidenceRowReaderGovernanceDefaults(),
+        privacy_check=RealPackageRowPreviewPrivacyCheck(passed=True, forbidden_fields_detected=[]),
+    )
+
+
+def _safe_text_preview(value: str, *, limit: int = 160) -> str:
+    collapsed = re.sub(r"\s+", " ", value).strip()
+    collapsed = re.sub(r"@\w+", "@[redacted]", collapsed)
+    collapsed = EMAIL_PATTERN.sub("[redacted-email]", collapsed)
+    collapsed = PHONE_PATTERN.sub("[redacted-phone]", collapsed)
+    return collapsed[:limit]
+
+
+def _safe_source_url(value: str) -> str:
+    lowered = value.lower()
+    if not value or "profile" in lowered or "token" in lowered or "session" in lowered or "cookie" in lowered:
+        return ""
+    return value
+
+
+def _row_has_email_like_value(row: dict[str, Any]) -> bool:
+    return any(
+        isinstance(row.get(field), str) and EMAIL_PATTERN.search(str(row.get(field)))
+        for field in ("title", "body_text", "comment_text", "private_message")
+    )
+
+
+def _row_has_phone_like_value(row: dict[str, Any]) -> bool:
+    return any(
+        isinstance(row.get(field), str) and PHONE_PATTERN.search(str(row.get(field)))
+        for field in ("title", "body_text", "comment_text", "private_message")
+    )
+
+
+def _read_safe_json_file(path: Path) -> dict[str, Any]:
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AnalysisRequestValidationError(f"Cannot create real package row preview: {path.name} must be valid JSON.") from exc
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _extract_validation_error_count(payload: dict[str, Any]) -> int:
+    if isinstance(payload.get("validation"), dict):
+        return int(payload["validation"].get("errors") or payload["validation"].get("errors_count") or 0)
+    return int(payload.get("errors") or payload.get("errors_count") or 0)
+
+
+def _safe_file_sha256(path: Path) -> str | None:
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 64), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def _resolve_row_reader_fixture_path(payload: EvidenceRowReaderDryRunCreate) -> Path:
     fixture_file = ROW_READER_FIXTURES.get(payload.fixture_name)
     if not fixture_file:
@@ -1533,6 +2003,7 @@ def _ensure_root() -> Path:
     (root / "import_jobs").mkdir(parents=True, exist_ok=True)
     (root / "execution_preflights").mkdir(parents=True, exist_ok=True)
     (root / "row_reader_dry_runs").mkdir(parents=True, exist_ok=True)
+    (root / "real_package_row_previews").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -1594,6 +2065,13 @@ def _row_reader_dry_run_path(request_id: str, dry_run_id: str) -> Path:
     return root / "row_reader_dry_runs" / f"{request_id}_{dry_run_id}.json"
 
 
+def _real_package_row_preview_path(request_id: str, preview_run_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(preview_run_id)
+    root = _ensure_root()
+    return root / "real_package_row_previews" / f"{request_id}_{preview_run_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -1630,6 +2108,11 @@ def _new_execution_preflight_id() -> str:
 def _new_row_reader_dry_run_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"row_reader_dry_run_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_real_package_row_preview_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"real_package_row_preview_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

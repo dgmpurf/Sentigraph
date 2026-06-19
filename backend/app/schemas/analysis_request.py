@@ -837,6 +837,136 @@ class EvidenceRowReaderDryRun(BaseModel):
     )
 
 
+class RealPackageRowPreviewCreate(BaseModel):
+    preflight_id: str | None = None
+    max_rows: int = Field(default=10, ge=1)
+    acknowledge_real_package_preview: bool = False
+    acknowledge_no_import: bool = False
+    acknowledge_preview_not_representative: bool = False
+    acknowledge_privacy_stop: bool = False
+    created_by: str = "sentigraph_local_ui"
+    now_flags: dict[str, bool] = Field(default_factory=dict)
+
+
+class RealPackageRowPreviewPackageReference(BaseModel):
+    package_name: str = ""
+    package_role: str = ""
+    package_path: str = ""
+    package_hash: str | None = None
+    manifest_hash: str | None = None
+
+
+class RealPackageRowPreviewLimits(BaseModel):
+    max_rows: int = 10
+    hard_max_rows: int = 20
+    full_scan: bool = False
+    import_rows: bool = False
+    analysis: bool = False
+    report: bool = False
+
+
+class RealPackageRowPreviewRows(BaseModel):
+    rows_seen: int = 0
+    accepted_for_preview: int = 0
+    quarantined: int = 0
+    rejected: int = 0
+    privacy_stop_at_row: int | None = None
+
+
+class RealPackageRowPreviewPrivacyScan(EvidenceRowReaderPrivacyScan):
+    email_detected: int = 0
+    phone_detected: int = 0
+
+
+class RealPackageRowPreviewCandidate(BaseModel):
+    evidence_type: str = ""
+    platform: str = ""
+    source_url: str = ""
+    title_preview: str = ""
+    body_text_preview: str = ""
+    created_at: str = ""
+    language: str = ""
+    counts: dict[str, int | float] = Field(default_factory=dict)
+
+
+class RealPackageRowPreviewPrivacyCheck(BaseModel):
+    passed: bool = True
+    forbidden_fields_detected: list[str] = Field(default_factory=list)
+
+
+class RealPackageRowPreviewRow(BaseModel):
+    row_index: int
+    status: str = "accepted_for_preview"
+    evidence_candidate: RealPackageRowPreviewCandidate = Field(default_factory=RealPackageRowPreviewCandidate)
+    governance_defaults: EvidenceRowReaderGovernanceDefaults = Field(default_factory=EvidenceRowReaderGovernanceDefaults)
+    privacy_check: RealPackageRowPreviewPrivacyCheck = Field(default_factory=RealPackageRowPreviewPrivacyCheck)
+
+
+class RealPackageRowPreviewReadiness(BaseModel):
+    state: str = "ready_for_future_staging_import_design"
+    can_import_now: bool = False
+    requires_future_phase: bool = True
+    reason: str = "Real package row preview only. Evidence rows are not imported."
+
+
+class RealPackageRowPreview(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_real_package_row_preview_v1"] = Field(
+        default="sentigraph_real_package_row_preview_v1",
+        alias="schema",
+    )
+    preview_run_id: str
+    preflight_id: str
+    import_job_id: str
+    decision_id: str
+    preview_id: str
+    plan_id: str
+    draft_id: str
+    request_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    execution_mode: str = "real_package_row_preview_only"
+    status: Literal["passed", "warn", "blocked", "privacy_stop"] = "passed"
+    package_reference: RealPackageRowPreviewPackageReference = Field(default_factory=RealPackageRowPreviewPackageReference)
+    limits: RealPackageRowPreviewLimits = Field(default_factory=RealPackageRowPreviewLimits)
+    rows: RealPackageRowPreviewRows = Field(default_factory=RealPackageRowPreviewRows)
+    privacy_scan: RealPackageRowPreviewPrivacyScan = Field(default_factory=RealPackageRowPreviewPrivacyScan)
+    redacted_preview_rows: list[RealPackageRowPreviewRow] = Field(default_factory=list)
+    quarantine_summary: list[EvidenceRowReaderSummaryItem] = Field(default_factory=list)
+    rejection_summary: list[EvidenceRowReaderSummaryItem] = Field(default_factory=list)
+    governance_defaults: EvidenceRowReaderGovernanceDefaults = Field(default_factory=EvidenceRowReaderGovernanceDefaults)
+    now_flags: EvidenceRowReaderNowFlags = Field(default_factory=EvidenceRowReaderNowFlags)
+    readiness: RealPackageRowPreviewReadiness = Field(default_factory=RealPackageRowPreviewReadiness)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "real_package_row_preview_only": True,
+            "full_scan": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "review_queue_created": False,
+            "dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

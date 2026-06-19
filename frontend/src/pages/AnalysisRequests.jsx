@@ -30,6 +30,7 @@ import {
   createAnalysisRequestImportPreview,
   createAnalysisRequestReviewDecision,
   createAnalysisRequestExecutionPreflight,
+  createAnalysisRequestRealPackageRowPreview,
   createAnalysisRequestRowReaderDryRun,
   getAnalysisRequest,
   getAnalysisRequestCaseDraft,
@@ -38,6 +39,7 @@ import {
   getAnalysisRequestImportPreview,
   listAnalysisRequestExecutionPreflights,
   listAnalysisRequestImportJobs,
+  listAnalysisRequestRealPackageRowPreviews,
   listAnalysisRequestRowReaderDryRuns,
   listAnalysisRequestReviewDecisions,
   listAnalysisRequests,
@@ -379,6 +381,24 @@ function rowReaderDryRunEligibility(latestExecutionPreflight) {
   return { eligible: true, reason: 'Ready to run synthetic fixture row reader dry-run.' }
 }
 
+function realPackageRowPreviewEligibility(latestExecutionPreflight, latestRowReaderDryRun, latestReviewDecision) {
+  if (!latestExecutionPreflight) return { eligible: false, reason: 'Create an execution preflight first.' }
+  if (!latestRowReaderDryRun) return { eligible: false, reason: 'Run a synthetic row reader dry-run first.' }
+  if (!['passed', 'warn'].includes(latestRowReaderDryRun.status)) {
+    return { eligible: false, reason: `Synthetic row reader status ${latestRowReaderDryRun.status || 'unknown'} is not eligible.` }
+  }
+  if (!latestReviewDecision || latestReviewDecision.decision !== 'approve_import') {
+    return { eligible: false, reason: 'Latest review decision must remain approve_import.' }
+  }
+  if (!['preflight_passed', 'preflight_warn'].includes(latestExecutionPreflight.status)) {
+    return { eligible: false, reason: `Execution preflight status ${latestExecutionPreflight.status || 'unknown'} is not eligible.` }
+  }
+  if (latestExecutionPreflight.package_file_checks?.evidence_items_jsonl_present !== true) {
+    return { eligible: false, reason: 'Execution preflight must confirm evidence_items.jsonl exists.' }
+  }
+  return { eligible: true, reason: 'Ready to create a limited real package row preview.' }
+}
+
 function SummaryList({ title, items }) {
   return (
     <Card size="small" title={title}>
@@ -401,6 +421,7 @@ export function AnalysisRequests() {
   const [reviewForm] = Form.useForm()
   const [importJobForm] = Form.useForm()
   const [rowReaderForm] = Form.useForm()
+  const [realPackagePreviewForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -412,6 +433,7 @@ export function AnalysisRequests() {
   const [importJobs, setImportJobs] = useState([])
   const [executionPreflights, setExecutionPreflights] = useState([])
   const [rowReaderDryRuns, setRowReaderDryRuns] = useState([])
+  const [realPackagePreviews, setRealPackagePreviews] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -422,6 +444,7 @@ export function AnalysisRequests() {
   const [importJobLoading, setImportJobLoading] = useState(false)
   const [executionPreflightLoading, setExecutionPreflightLoading] = useState(false)
   const [rowReaderDryRunLoading, setRowReaderDryRunLoading] = useState(false)
+  const [realPackagePreviewLoading, setRealPackagePreviewLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -430,6 +453,7 @@ export function AnalysisRequests() {
   const [importJobError, setImportJobError] = useState('')
   const [executionPreflightError, setExecutionPreflightError] = useState('')
   const [rowReaderDryRunError, setRowReaderDryRunError] = useState('')
+  const [realPackagePreviewError, setRealPackagePreviewError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -458,6 +482,7 @@ export function AnalysisRequests() {
       setImportJobs([])
       setExecutionPreflights([])
       setRowReaderDryRuns([])
+      setRealPackagePreviews([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -465,6 +490,7 @@ export function AnalysisRequests() {
       setImportJobError('')
       setExecutionPreflightError('')
       setRowReaderDryRunError('')
+      setRealPackagePreviewError('')
       return
     }
     try {
@@ -515,6 +541,13 @@ export function AnalysisRequests() {
     } catch {
       setRowReaderDryRuns([])
       setRowReaderDryRunError('')
+    }
+    try {
+      setRealPackagePreviews(await listAnalysisRequestRealPackageRowPreviews(requestId))
+      setRealPackagePreviewError('')
+    } catch {
+      setRealPackagePreviews([])
+      setRealPackagePreviewError('')
     }
   }
 
@@ -569,6 +602,7 @@ export function AnalysisRequests() {
     setImportJobError('')
     setExecutionPreflightError('')
     setRowReaderDryRunError('')
+    setRealPackagePreviewError('')
     try {
       setDetail(await getAnalysisRequest(record.request_id))
       await loadDraftAndPlan(record.request_id)
@@ -624,6 +658,7 @@ export function AnalysisRequests() {
       setImportJobs([])
       setExecutionPreflights([])
       setRowReaderDryRuns([])
+      setRealPackagePreviews([])
       message.success('已生成 Evidence 导入计划')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import plan.'
@@ -644,6 +679,7 @@ export function AnalysisRequests() {
       setImportJobs([])
       setExecutionPreflights([])
       setRowReaderDryRuns([])
+      setRealPackagePreviews([])
       message.success('已生成 metadata-only Evidence 导入预览')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import preview.'
@@ -671,6 +707,7 @@ export function AnalysisRequests() {
       setImportJobs([])
       setExecutionPreflights([])
       setRowReaderDryRuns([])
+      setRealPackagePreviews([])
       message.success(`已记录人工审核决策：${decision.decision}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review decision.'
@@ -695,6 +732,7 @@ export function AnalysisRequests() {
       setImportJobs(await listAnalysisRequestImportJobs(selectedRecord.request_id))
       setExecutionPreflights([])
       setRowReaderDryRuns([])
+      setRealPackagePreviews([])
       message.success(`Created dry-run import job draft: ${job.job_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create manual import job draft.'
@@ -715,6 +753,7 @@ export function AnalysisRequests() {
       })
       setExecutionPreflights(await listAnalysisRequestExecutionPreflights(selectedRecord.request_id))
       setRowReaderDryRuns([])
+      setRealPackagePreviews([])
       message.success(`Created execution preflight: ${preflight.preflight_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create execution preflight.'
@@ -737,12 +776,36 @@ export function AnalysisRequests() {
         created_by: 'sentigraph_local_ui',
       })
       setRowReaderDryRuns(await listAnalysisRequestRowReaderDryRuns(selectedRecord.request_id))
+      setRealPackagePreviews([])
       message.success(`Created synthetic row reader dry-run: ${dryRun.dry_run_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create synthetic row reader dry-run.'
       setRowReaderDryRunError(String(messageText))
     } finally {
       setRowReaderDryRunLoading(false)
+    }
+  }
+
+  async function handleCreateRealPackagePreview(values) {
+    if (!selectedRecord?.request_id) return
+    setRealPackagePreviewLoading(true)
+    setRealPackagePreviewError('')
+    try {
+      const preview = await createAnalysisRequestRealPackageRowPreview(selectedRecord.request_id, {
+        max_rows: Math.min(20, Math.max(1, Number(values.max_rows || 10))),
+        acknowledge_real_package_preview: Boolean(values.acknowledge_real_package_preview),
+        acknowledge_no_import: Boolean(values.acknowledge_no_import),
+        acknowledge_preview_not_representative: Boolean(values.acknowledge_preview_not_representative),
+        acknowledge_privacy_stop: Boolean(values.acknowledge_privacy_stop),
+        created_by: 'sentigraph_local_ui',
+      })
+      setRealPackagePreviews(await listAnalysisRequestRealPackageRowPreviews(selectedRecord.request_id))
+      message.success(`Created limited real package row preview: ${preview.status}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create limited real package row preview.'
+      setRealPackagePreviewError(String(messageText))
+    } finally {
+      setRealPackagePreviewLoading(false)
     }
   }
 
@@ -827,6 +890,22 @@ export function AnalysisRequests() {
   )
   const latestRowReaderDryRun = rowReaderDryRuns[0] || null
   const latestRowReaderDryRunJson = latestRowReaderDryRun ? JSON.stringify(latestRowReaderDryRun, null, 2) : ''
+  const realPackagePreviewGate = useMemo(
+    () => realPackageRowPreviewEligibility(latestExecutionPreflight, latestRowReaderDryRun, latestReviewDecision),
+    [latestExecutionPreflight, latestRowReaderDryRun, latestReviewDecision],
+  )
+  const realPackagePreviewAcks = Form.useWatch([], realPackagePreviewForm) || {}
+  const realPackagePreviewSubmitDisabled = useMemo(() => {
+    if (!realPackagePreviewGate.eligible || realPackagePreviewLoading) return true
+    return !(
+      realPackagePreviewAcks.acknowledge_real_package_preview &&
+      realPackagePreviewAcks.acknowledge_no_import &&
+      realPackagePreviewAcks.acknowledge_preview_not_representative &&
+      realPackagePreviewAcks.acknowledge_privacy_stop
+    )
+  }, [realPackagePreviewAcks, realPackagePreviewGate.eligible, realPackagePreviewLoading])
+  const latestRealPackagePreview = realPackagePreviews[0] || null
+  const latestRealPackagePreviewJson = latestRealPackagePreview ? JSON.stringify(latestRealPackagePreview, null, 2) : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -1824,6 +1903,188 @@ export function AnalysisRequests() {
                         </Space>
                       ) : (
                         <Text type="secondary">No synthetic row reader dry-runs yet.</Text>
+                      )}
+                    </Card>
+                  </Space>
+                </Card>
+
+                <Card size="small" title="Limited Real Package Row Preview / 真实包行预览（受限）">
+                  <Space direction="vertical" size={12} className="full-width">
+                    <Alert
+                      type={realPackagePreviewGate.eligible ? 'warning' : 'info'}
+                      showIcon
+                      message={realPackagePreviewGate.eligible ? 'Ready for limited row preview' : 'Limited real package row preview not ready'}
+                      description={
+                        latestRealPackagePreview
+                          ? 'An append-only limited real package row preview already exists for this request.'
+                          : realPackagePreviewGate.reason
+                      }
+                    />
+                    <Text type="secondary">
+                      只读取本地 Evidence Export package 的极少量行用于 redacted safety preview。不会导入、不会建 case、不会创建 review queue、不会 dedup、不会分析或生成报告。Preview rows are not representative; provider output is evidence, not truth.
+                    </Text>
+                    {realPackagePreviewError ? <Alert type="error" showIcon message={realPackagePreviewError} /> : null}
+                    <Form
+                      form={realPackagePreviewForm}
+                      layout="vertical"
+                      initialValues={{
+                        max_rows: 10,
+                        acknowledge_real_package_preview: false,
+                        acknowledge_no_import: false,
+                        acknowledge_preview_not_representative: false,
+                        acknowledge_privacy_stop: false,
+                      }}
+                      onFinish={handleCreateRealPackagePreview}
+                    >
+                      <Row gutter={[12, 0]}>
+                        <Col span={8}>
+                          <Form.Item name="max_rows" label="max_rows">
+                            <InputNumber min={1} max={20} className="full-width" />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <Space direction="vertical" size={4} className="full-width">
+                        <Form.Item name="acknowledge_real_package_preview" valuePropName="checked" noStyle>
+                          <Checkbox>我确认这是 real package preview，不是 import。</Checkbox>
+                        </Form.Item>
+                        <Form.Item name="acknowledge_no_import" valuePropName="checked" noStyle>
+                          <Checkbox>我确认不会导入 Evidence rows，不会写 Evidence Layer。</Checkbox>
+                        </Form.Item>
+                        <Form.Item name="acknowledge_preview_not_representative" valuePropName="checked" noStyle>
+                          <Checkbox>我确认预览样本不代表全量覆盖、全平台覆盖或官方验证。</Checkbox>
+                        </Form.Item>
+                        <Form.Item name="acknowledge_privacy_stop" valuePropName="checked" noStyle>
+                          <Checkbox>我确认如触发 privacy_stop，应停止并进入隐私/安全复核。</Checkbox>
+                        </Form.Item>
+                      </Space>
+                      <Space wrap className="mt-12">
+                        <Button
+                          type="primary"
+                          htmlType="submit"
+                          loading={realPackagePreviewLoading}
+                          disabled={realPackagePreviewSubmitDisabled}
+                        >
+                          生成受限行预览
+                        </Button>
+                        {latestRealPackagePreview ? (
+                          <Button
+                            icon={<ClipboardCopy size={16} />}
+                            onClick={() => copyText(latestRealPackagePreviewJson, 'Real package row preview JSON copied')}
+                          >
+                            Copy latest preview JSON
+                          </Button>
+                        ) : null}
+                      </Space>
+                    </Form>
+
+                    {latestRealPackagePreview ? (
+                      <Card className="panel-card" size="small" title="Latest limited real package row preview">
+                        <Space direction="vertical" size={12} className="full-width">
+                          <Space wrap>
+                            <Tag color={latestRealPackagePreview.status === 'passed' ? 'green' : latestRealPackagePreview.status === 'privacy_stop' ? 'red' : 'gold'}>
+                              {latestRealPackagePreview.status}
+                            </Tag>
+                            <Tag color="blue">{latestRealPackagePreview.execution_mode}</Tag>
+                            <Tag color="default">can_import_now: {boolText(latestRealPackagePreview.readiness?.can_import_now)}</Tag>
+                            <Tag color="purple">{latestRealPackagePreview.governance_defaults?.trust_label || 'medium_low'}</Tag>
+                          </Space>
+                          <Descriptions column={1} size="small">
+                            <Descriptions.Item label="preview_run_id">{latestRealPackagePreview.preview_run_id}</Descriptions.Item>
+                            <Descriptions.Item label="preflight_id">{latestRealPackagePreview.preflight_id}</Descriptions.Item>
+                            <Descriptions.Item label="package">
+                              {latestRealPackagePreview.package_reference?.package_name || '-'} / {latestRealPackagePreview.package_reference?.package_role || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="limits">
+                              max_rows={latestRealPackagePreview.limits?.max_rows || 10},
+                              hard_max_rows={latestRealPackagePreview.limits?.hard_max_rows || 20},
+                              full_scan={boolText(latestRealPackagePreview.limits?.full_scan)},
+                              import_rows={boolText(latestRealPackagePreview.limits?.import_rows)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="row counts">
+                              rows_seen={latestRealPackagePreview.rows?.rows_seen || 0},
+                              accepted={latestRealPackagePreview.rows?.accepted_for_preview || 0},
+                              quarantined={latestRealPackagePreview.rows?.quarantined || 0},
+                              rejected={latestRealPackagePreview.rows?.rejected || 0},
+                              privacy_stop_at_row={latestRealPackagePreview.rows?.privacy_stop_at_row || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="privacy scan">
+                              raw_author_id={latestRealPackagePreview.privacy_scan?.raw_author_id_detected || 0},
+                              raw_author_name={latestRealPackagePreview.privacy_scan?.raw_author_name_detected || 0},
+                              profile_url={latestRealPackagePreview.privacy_scan?.profile_url_detected || 0},
+                              private_message={latestRealPackagePreview.privacy_scan?.private_message_detected || 0},
+                              secret={latestRealPackagePreview.privacy_scan?.secret_like_value_detected || 0},
+                              email={latestRealPackagePreview.privacy_scan?.email_detected || 0},
+                              phone={latestRealPackagePreview.privacy_scan?.phone_detected || 0},
+                              privacy_stop={boolText(latestRealPackagePreview.privacy_scan?.privacy_stop_triggered)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="now flags">
+                              import={boolText(latestRealPackagePreview.now_flags?.import_evidence_rows_now)},
+                              evidence_layer={boolText(latestRealPackagePreview.now_flags?.write_evidence_layer_now)},
+                              case={boolText(latestRealPackagePreview.now_flags?.create_case_now)},
+                              review_queue={boolText(latestRealPackagePreview.now_flags?.create_review_queue_now)},
+                              dedup={boolText(latestRealPackagePreview.now_flags?.run_dedup_now)},
+                              analysis={boolText(latestRealPackagePreview.now_flags?.run_analysis_now)},
+                              report={boolText(latestRealPackagePreview.now_flags?.generate_report_now)}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="Preview-only boundary"
+                            description="This preview reads at most a tiny capped sample from a selected local package. It does not import evidence, write the Evidence Layer, create cases, run review/dedup/analysis, or generate Sandbox/public event/report output."
+                          />
+                          <Card size="small" title={`Redacted preview rows (${latestRealPackagePreview.redacted_preview_rows?.length || 0})`}>
+                            {latestRealPackagePreview.redacted_preview_rows?.length ? (
+                              <Space direction="vertical" size={8} className="full-width">
+                                {latestRealPackagePreview.redacted_preview_rows.map((row) => (
+                                  <Card size="small" key={row.row_index}>
+                                    <Space direction="vertical" size={4} className="full-width">
+                                      <Space wrap>
+                                        <Tag>{row.status}</Tag>
+                                        <Tag color="cyan">{row.evidence_candidate?.platform || '-'}</Tag>
+                                        <Tag color="blue">{row.evidence_candidate?.evidence_type || '-'}</Tag>
+                                      </Space>
+                                      <Text strong>{row.evidence_candidate?.title_preview || '-'}</Text>
+                                      <Text type="secondary">{row.evidence_candidate?.body_text_preview || '-'}</Text>
+                                      <Text type="secondary">review_status: {row.governance_defaults?.review_status || 'review_needed'} / analysis_included: {boolText(row.governance_defaults?.analysis_included)}</Text>
+                                    </Space>
+                                  </Card>
+                                ))}
+                              </Space>
+                            ) : (
+                              <Text type="secondary">No accepted preview rows.</Text>
+                            )}
+                          </Card>
+                          <SummaryList title="Quarantine summary" items={(latestRealPackagePreview.quarantine_summary || []).map((item) => `row ${item.row_index}: ${item.reason_code} (${(item.forbidden_fields_detected || []).join(', ')})`)} />
+                          <SummaryList title="Rejection summary" items={(latestRealPackagePreview.rejection_summary || []).map((item) => `row ${item.row_index}: ${item.reason_code}`)} />
+                          <SummaryList title="Warnings" items={latestRealPackagePreview.warnings || []} />
+                          <SummaryList title="Boundary notes" items={latestRealPackagePreview.boundary_notes || []} />
+                          <SummaryList title="Recommended next steps" items={latestRealPackagePreview.recommended_next_steps || []} />
+                        </Space>
+                      </Card>
+                    ) : null}
+
+                    <Card size="small" title={`Existing limited real package previews (${realPackagePreviews.length})`}>
+                      {realPackagePreviews.length ? (
+                        <Space direction="vertical" size={8} className="full-width">
+                          {realPackagePreviews.map((preview) => (
+                            <Card size="small" key={preview.preview_run_id}>
+                              <Space direction="vertical" size={4} className="full-width">
+                                <Space wrap>
+                                  <Tag color="blue">{preview.execution_mode}</Tag>
+                                  <Tag>{preview.status}</Tag>
+                                  <Text type="secondary">{preview.preview_run_id}</Text>
+                                </Space>
+                                <Text>package: {preview.package_reference?.package_name || '-'}</Text>
+                                <Text type="secondary">
+                                  accepted={preview.rows?.accepted_for_preview || 0}, quarantined={preview.rows?.quarantined || 0}, rejected={preview.rows?.rejected || 0}
+                                </Text>
+                              </Space>
+                            </Card>
+                          ))}
+                        </Space>
+                      ) : (
+                        <Text type="secondary">No limited real package row previews yet.</Text>
                       )}
                     </Card>
                   </Space>
