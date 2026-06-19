@@ -80,6 +80,9 @@ from app.schemas.analysis_request import (
     ReviewOnlyCaseStagingTarget,
     ReviewOnlyCaseTargetReference,
     ReviewOnlyStagedGovernance,
+    ReviewQueueActionAudit,
+    ReviewQueueActionRequest,
+    ReviewQueueActionResult,
     ReviewQueueDefaults,
     ReviewQueueInitialization,
     ReviewQueueInitializationCounts,
@@ -1035,6 +1038,46 @@ def read_review_queue_item_batch(request_id: str, queue_init_id: str) -> ReviewQ
         raise AnalysisRequestValidationError(f"{batch_path.name} is not a valid review queue item batch: {type(exc).__name__}") from exc
 
 
+def read_review_queue_action_audit(request_id: str, audit_id: str) -> ReviewQueueActionAudit:
+    matches = list((_ensure_root() / "review_queue_action_audits").glob(f"{request_id}_*_{audit_id}.json"))
+    if not matches:
+        raise AnalysisRequestNotFoundError(f"Review queue action audit {audit_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(matches[0].read_text(encoding="utf-8-sig"))
+        return ReviewQueueActionAudit.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{matches[0].name} is not a valid review queue action audit: {type(exc).__name__}") from exc
+
+
+def list_review_queue_action_audits(request_id: str) -> list[ReviewQueueActionAudit]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    audits: list[ReviewQueueActionAudit] = []
+    for path in sorted((root / "review_queue_action_audits").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ReviewQueueActionAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def list_all_review_queue_action_audits() -> list[ReviewQueueActionAudit]:
+    root = _ensure_root()
+    audits: list[ReviewQueueActionAudit] = []
+    for path in sorted((root / "review_queue_action_audits").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ReviewQueueActionAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def read_review_queue_action_audits_for_item(request_id: str, review_item_id: str) -> list[ReviewQueueActionAudit]:
+    return [audit for audit in list_review_queue_action_audits(request_id) if audit.review_item_id == review_item_id]
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -1498,6 +1541,104 @@ def create_review_queue_initialization(
     _write_json(_review_queue_initialization_path(request_id, queue_init_id), queue_init.model_dump(mode="json", by_alias=True))
     _write_json(_review_queue_item_batch_path(request_id, queue_init_id), item_batch.model_dump(mode="json", by_alias=True))
     return read_review_queue_initialization(request_id, queue_init_id)
+
+
+def create_review_queue_item_action(
+    request_id: str,
+    review_item_id: str,
+    payload: ReviewQueueActionRequest | dict[str, Any],
+) -> ReviewQueueActionResult:
+    try:
+        action_payload = payload if isinstance(payload, ReviewQueueActionRequest) else ReviewQueueActionRequest.model_validate(payload or {})
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create review queue action: invalid payload ({exc}).") from exc
+
+    _validate_review_queue_action_payload(action_payload)
+    batch_path, batch, item_index = _find_review_queue_item_batch(request_id, review_item_id)
+    item = batch.items[item_index]
+    queue_init = read_review_queue_initialization(request_id, item.queue_init_id)
+    review_case = read_review_only_case(request_id, item.review_case_id)
+    _validate_review_queue_action_eligibility(request_id, queue_init, review_case, batch, item, action_payload)
+
+    previous_status = item.queue_status
+    trust_before = item.governance.trust_label
+    verification_before = item.governance.verification_status
+    new_status, analysis_effect, dedup_effect = _review_queue_action_effect(action_payload.action)
+
+    item.queue_status = new_status
+    item.governance.review_status = new_status
+    item.governance.analysis_included = False
+    item.governance.public_visible = False
+    item.governance.report_visible = False
+    item.governance.sandbox_visible = False
+    if action_payload.action == "reject":
+        item.governance.trust_label = "rejected"
+    elif action_payload.action == "reset_review":
+        item.governance.trust_label = "medium_low"
+        item.governance.verification_status = "source_url_provided_unverified"
+    elif action_payload.action == "mark_weak":
+        item.governance.trust_label = "medium_low"
+    if action_payload.action == "merge_duplicate":
+        item.dedup.dedup_status = "duplicate_candidate_marked"
+        item.dedup.duplicate_group_id = action_payload.duplicate_group_id or f"duplicate_candidate_{review_item_id}"
+        item.dedup.duplicate_count = max(1, int(item.dedup.duplicate_count or 1))
+        item.dedup.may_amplify_risk = False
+    elif action_payload.action == "reset_review":
+        item.dedup.dedup_status = "not_run"
+        item.dedup.duplicate_group_id = None
+        item.dedup.duplicate_count = 1
+        item.dedup.may_amplify_risk = False
+    else:
+        item.dedup.may_amplify_risk = False
+
+    reviewed_at = datetime.now(timezone.utc)
+    audit_id = _new_review_queue_action_audit_id()
+    audit = ReviewQueueActionAudit(
+        audit_id=audit_id,
+        review_item_id=review_item_id,
+        queue_init_id=item.queue_init_id,
+        review_case_id=item.review_case_id,
+        staging_import_id=item.staging_import_id,
+        request_id=request_id,
+        previous_status=previous_status,
+        new_status=new_status,
+        action=action_payload.action,
+        reviewer_label=action_payload.reviewer_label.strip(),
+        reviewed_at=reviewed_at,
+        note=action_payload.note.strip(),
+        analysis_effect=analysis_effect,
+        trust_label_before=trust_before,
+        trust_label_after=item.governance.trust_label,
+        verification_status_before=verification_before,
+        verification_status_after=item.governance.verification_status,
+        dedup_effect=dedup_effect,
+        downstream_blockers=_review_queue_action_downstream_blockers(action_payload.action),
+        boundary_notes=[
+            "Review action updates local review-only queue item status only.",
+            "Item remains analysis-excluded until a future completion and dedup gate.",
+            "No production Evidence Layer write is performed.",
+            "No production case or production review queue is created.",
+            "No dedup, analysis, report, Sandbox, or public event generation is run.",
+        ],
+    )
+    item.audit = ReviewQueueItemAudit(source="review_queue_action", queue_init_id=item.queue_init_id, created_at=reviewed_at)
+    batch.items[item_index] = item
+    _write_json(batch_path, batch.model_dump(mode="json", by_alias=True))
+    _write_json(_review_queue_action_audit_path(request_id, review_item_id, audit_id), audit.model_dump(mode="json", by_alias=True))
+
+    return ReviewQueueActionResult(
+        action_id=f"review_queue_action_{audit_id}",
+        audit_id=audit_id,
+        review_item_id=review_item_id,
+        queue_init_id=item.queue_init_id,
+        review_case_id=item.review_case_id,
+        request_id=request_id,
+        action=action_payload.action,
+        previous_status=previous_status,
+        new_status=new_status,
+        updated_item=item,
+        audit_record=audit,
+    )
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -2542,6 +2683,150 @@ def _review_queue_item_from_staged_candidate(
     )
 
 
+def _find_review_queue_item_batch(request_id: str, review_item_id: str) -> tuple[Path, ReviewQueueItemBatch, int]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    for path in sorted((root / "review_queue_items").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            batch = ReviewQueueItemBatch.model_validate(parsed)
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+        for index, item in enumerate(batch.items):
+            if item.review_item_id == review_item_id:
+                return path, batch, index
+    raise AnalysisRequestNotFoundError(f"Review queue item {review_item_id} for {request_id} was not found.")
+
+
+def _validate_review_queue_action_payload(payload: ReviewQueueActionRequest) -> None:
+    if not payload.reviewer_label or not payload.reviewer_label.strip():
+        raise AnalysisRequestValidationError("Cannot create review queue action: reviewer_label is required.")
+    acknowledgements = {
+        "acknowledge_review_only_action": payload.acknowledge_review_only_action,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_no_dedup": payload.acknowledge_no_dedup,
+        "acknowledge_no_analysis": payload.acknowledge_no_analysis,
+        "acknowledge_no_report": payload.acknowledge_no_report,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(f"Cannot create review queue action: acknowledgement flags are required ({', '.join(missing)}).")
+    note_required_actions = {"reject", "mark_weak", "request_more_source", "merge_duplicate", "hold_for_privacy_review", "reset_review"}
+    if payload.action in note_required_actions and not payload.note.strip():
+        raise AnalysisRequestValidationError("Cannot create review queue action: note is required for this action.")
+    if payload.production_case_id or payload.target_production_case_id:
+        raise AnalysisRequestValidationError("Cannot create review queue action: production_case_id is not allowed.")
+    if payload.trust_label == "high":
+        raise AnalysisRequestValidationError("Cannot create review queue action: trust_label high is not allowed in review-only runtime.")
+    if payload.verification_status and payload.verification_status.startswith("verified_by_"):
+        raise AnalysisRequestValidationError("Cannot create review queue action: verification upgrade is not allowed in review-only runtime.")
+    side_effect_flags = {
+        "production_case_created": payload.production_case_created,
+        "evidence_layer_written": payload.evidence_layer_written,
+        "production_review_queue_created": payload.production_review_queue_created,
+        "analysis_included": payload.analysis_included,
+        "dedup_run": payload.dedup_run,
+        "analysis_run": payload.analysis_run,
+        "report_generated": payload.report_generated,
+        "sandbox_generated": payload.sandbox_generated,
+        "public_event_generated": payload.public_event_generated,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "run_dedup_now": payload.run_dedup_now,
+        "run_analysis_now": payload.run_analysis_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(f"Cannot create review queue action: side effect flags must remain false ({', '.join(enabled)}).")
+
+
+def _validate_review_queue_action_eligibility(
+    request_id: str,
+    queue_init: ReviewQueueInitialization,
+    review_case: ReviewOnlyCase,
+    batch: ReviewQueueItemBatch,
+    item: ReviewQueueItem,
+    payload: ReviewQueueActionRequest,
+) -> None:
+    if item.request_id != request_id or queue_init.request_id != request_id or review_case.request_id != request_id or batch.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create review queue action: request_id mismatch.")
+    if item.queue_init_id != queue_init.queue_init_id or batch.queue_init_id != queue_init.queue_init_id:
+        raise AnalysisRequestValidationError("Cannot create review queue action: queue initialization mismatch.")
+    if item.review_case_id != review_case.review_case_id or queue_init.review_case_id != review_case.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create review queue action: review-only case mismatch.")
+    if queue_init.target.production_case_created or queue_init.target.evidence_layer_written or queue_init.target.production_review_queue_created:
+        raise AnalysisRequestValidationError("Cannot create review queue action: queue initialization has unsafe production flags.")
+    if review_case.production_case_created or review_case.evidence_layer_written or review_case.review_queue_created:
+        raise AnalysisRequestValidationError("Cannot create review queue action: review-only case has unsafe production flags.")
+    if review_case.visibility != "internal_review_only":
+        raise AnalysisRequestValidationError("Cannot create review queue action: review-only case must be internal_review_only.")
+    if item.governance.analysis_included or item.governance.public_visible or item.governance.report_visible or item.governance.sandbox_visible:
+        raise AnalysisRequestValidationError("Cannot create review queue action: item visibility or analysis flags must remain false.")
+    if _review_queue_item_has_forbidden_fields(item):
+        raise AnalysisRequestValidationError("Cannot create review queue action: item contains forbidden raw author, secret, email, phone, or private fields.")
+    allowed_from = {
+        "approve": {"review_needed", "marked_weak", "needs_more_source"},
+        "reject": {"review_needed", "approved", "marked_weak", "needs_more_source"},
+        "mark_weak": {"review_needed", "approved", "needs_more_source"},
+        "request_more_source": {"review_needed", "approved", "marked_weak"},
+        "merge_duplicate": {"review_needed", "approved", "marked_weak"},
+        "hold_for_privacy_review": {"review_needed", "approved", "marked_weak", "needs_more_source", "duplicate_merged"},
+        "reset_review": {"approved", "rejected", "marked_weak", "needs_more_source", "duplicate_merged", "privacy_hold"},
+    }
+    if item.queue_status not in allowed_from[payload.action]:
+        raise AnalysisRequestValidationError(
+            f"Cannot create review queue action: transition from {item.queue_status} via {payload.action} is not allowed."
+        )
+
+
+def _review_queue_item_has_forbidden_fields(item: ReviewQueueItem) -> bool:
+    privacy = item.privacy
+    if not privacy.passed:
+        return True
+    if privacy.raw_author_id_present or privacy.raw_author_name_present or privacy.profile_url_present or privacy.private_message_present:
+        return True
+    candidate_text = " ".join(
+        [
+            item.evidence_candidate.title_preview,
+            item.evidence_candidate.body_text_preview,
+            item.evidence_candidate.source_url,
+        ]
+    )
+    if EMAIL_PATTERN.search(candidate_text) or PHONE_PATTERN.search(candidate_text):
+        return True
+    lowered = candidate_text.lower()
+    return any(pattern in lowered for pattern in ROW_READER_SECRET_PATTERNS)
+
+
+def _review_queue_action_effect(action: str) -> tuple[str, str, str]:
+    if action == "approve":
+        return "approved", "eligible_for_future_dedup", "not_run"
+    if action == "reject":
+        return "rejected", "blocked", "not_run"
+    if action == "mark_weak":
+        return "marked_weak", "still_excluded", "not_run"
+    if action == "request_more_source":
+        return "needs_more_source", "blocked", "not_run"
+    if action == "merge_duplicate":
+        return "duplicate_merged", "still_excluded", "duplicate_candidate_marked"
+    if action == "hold_for_privacy_review":
+        return "privacy_hold", "blocked", "not_run"
+    if action == "reset_review":
+        return "review_needed", "still_excluded", "not_run"
+    raise AnalysisRequestValidationError(f"Cannot create review queue action: action {action} is not supported.")
+
+
+def _review_queue_action_downstream_blockers(action: str) -> list[str]:
+    blockers = ["analysis_not_allowed_now", "dedup_not_run", "production_promotion_not_allowed_now"]
+    if action in {"reject", "request_more_source", "hold_for_privacy_review"}:
+        blockers.append(f"{action}_blocks_promotion")
+    if action == "merge_duplicate":
+        blockers.append("duplicate_requires_future_dedup_gate")
+    if action == "mark_weak":
+        blockers.append("weak_evidence_requires_warning")
+    return blockers
+
+
 def _read_real_package_preview_rows(
     row_file: Path,
     max_rows: int,
@@ -2919,6 +3204,7 @@ def _ensure_root() -> Path:
     (root / "staged_evidence_candidates").mkdir(parents=True, exist_ok=True)
     (root / "review_queue_initializations").mkdir(parents=True, exist_ok=True)
     (root / "review_queue_items").mkdir(parents=True, exist_ok=True)
+    (root / "review_queue_action_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -3022,6 +3308,14 @@ def _review_queue_item_batch_path(request_id: str, queue_init_id: str) -> Path:
     return root / "review_queue_items" / f"{request_id}_{queue_init_id}.json"
 
 
+def _review_queue_action_audit_path(request_id: str, review_item_id: str, audit_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(review_item_id)
+    _validate_request_id(audit_id)
+    root = _ensure_root()
+    return root / "review_queue_action_audits" / f"{request_id}_{review_item_id}_{audit_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -3078,6 +3372,11 @@ def _new_staging_import_id() -> str:
 def _new_review_queue_init_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"review_queue_init_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_review_queue_action_audit_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"review_queue_action_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

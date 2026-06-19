@@ -198,6 +198,22 @@ def route_review_queue_init_ack_payload(**overrides: object) -> dict:
     return payload
 
 
+def route_review_queue_action_payload(action: str = "approve", **overrides: object) -> dict:
+    payload = {
+        "action": action,
+        "reviewer_label": "route_reviewer",
+        "note": f"Route review-only action: {action}.",
+        "acknowledge_review_only_action": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_dedup": True,
+        "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -1312,6 +1328,103 @@ def test_analysis_request_review_queue_initialization_route_blocks_unsafe_inputs
     assert first_response.status_code == 200
     assert duplicate_response.status_code == 400
     assert "already has review queue initialization" in duplicate_response.text
+
+
+def test_analysis_request_review_queue_action_routes_apply_and_list_audits(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    assert preview_response.status_code == 200
+    preview_run_id = preview_response.json()["preview_run_id"]
+    review_case_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_run_id, "target_case_mode": "new_review_case"},
+    )
+    assert review_case_response.status_code == 200
+    review_case_id = review_case_response.json()["review_case_id"]
+    staging_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id, preview_run_id=preview_run_id),
+    )
+    assert staging_response.status_code == 200
+    queue_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations",
+        json=route_review_queue_init_ack_payload(review_case_id=review_case_id, staging_import_id=staging_response.json()["staging_import_id"]),
+    )
+    assert queue_response.status_code == 200
+    queue_init_id = queue_response.json()["queue_init_id"]
+    items_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-queue-initializations/{queue_init_id}/items")
+    assert items_response.status_code == 200
+    review_item_id = items_response.json()["items"][0]["review_item_id"]
+
+    action_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-items/{review_item_id}/actions",
+        json=route_review_queue_action_payload("approve"),
+    )
+    assert action_response.status_code == 200
+    body = action_response.json()
+    assert body["schema"] == "sentigraph_review_queue_action_result_v1"
+    assert body["new_status"] == "approved"
+    assert body["updated_item"]["governance"]["analysis_included"] is False
+    assert body["now_flags"]["run_analysis_now"] is False
+    assert body["now_flags"]["run_dedup_now"] is False
+
+    audits_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-queue-items/{review_item_id}/audits")
+    request_audits_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-queue-action-audits")
+    all_audits_response = client.get("/api/v1/analysis-requests/review-queue-action-audits")
+    updated_items_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-queue-initializations/{queue_init_id}/items")
+    assert audits_response.status_code == 200
+    assert request_audits_response.status_code == 200
+    assert all_audits_response.status_code == 200
+    assert updated_items_response.status_code == 200
+    assert [item["action"] for item in audits_response.json()] == ["approve"]
+    assert request_audits_response.json()[0]["review_item_id"] == review_item_id
+    assert updated_items_response.json()["items"][0]["queue_status"] == "approved"
+
+
+def test_analysis_request_review_queue_action_route_blocks_unsafe_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    assert preview_response.status_code == 200
+    preview_run_id = preview_response.json()["preview_run_id"]
+    review_case_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_run_id, "target_case_mode": "new_review_case"},
+    )
+    review_case_id = review_case_response.json()["review_case_id"]
+    staging_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id, preview_run_id=preview_run_id),
+    )
+    queue_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations",
+        json=route_review_queue_init_ack_payload(review_case_id=review_case_id, staging_import_id=staging_response.json()["staging_import_id"]),
+    )
+    items_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations/{queue_response.json()['queue_init_id']}/items"
+    )
+    review_item_id = items_response.json()["items"][0]["review_item_id"]
+
+    unsafe_payloads = [
+        route_review_queue_action_payload("approve", reviewer_label=""),
+        route_review_queue_action_payload("approve", acknowledge_no_analysis=False),
+        route_review_queue_action_payload("approve", analysis_included=True),
+        route_review_queue_action_payload("approve", trust_label="high"),
+        route_review_queue_action_payload("approve", production_case_id="case_prod_unsafe"),
+    ]
+    for payload in unsafe_payloads:
+        response = client.post(
+            f"/api/v1/analysis-requests/{request_id}/review-queue-items/{review_item_id}/actions",
+            json=payload,
+        )
+        assert response.status_code == 400
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:

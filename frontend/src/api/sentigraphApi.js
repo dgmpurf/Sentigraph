@@ -228,6 +228,26 @@ export async function getAnalysisRequestReviewQueueItems(requestId, queueInitId)
   return normalizeAnalysisRequestReviewQueueItemBatch(data)
 }
 
+export async function createAnalysisRequestReviewQueueItemAction(requestId, reviewItemId, payload = {}) {
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-items/${encodeURIComponent(reviewItemId)}/actions`,
+    payload,
+  )
+  return normalizeReviewQueueActionResult(data)
+}
+
+export async function listAnalysisRequestReviewQueueItemAudits(requestId, reviewItemId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-items/${encodeURIComponent(reviewItemId)}/audits`,
+  )
+  return Array.isArray(data) ? data.map(normalizeReviewQueueActionAudit).filter(Boolean) : []
+}
+
+export async function listAnalysisRequestReviewQueueActionAudits(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-action-audits`)
+  return Array.isArray(data) ? data.map(normalizeReviewQueueActionAudit).filter(Boolean) : []
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1910,6 +1930,54 @@ function normalizeReviewQueueItem(row) {
     privacy: row.privacy && typeof row.privacy === 'object' ? normalizeSafeObject(row.privacy) : {},
     dedup: row.dedup && typeof row.dedup === 'object' ? normalizeSafeObject(row.dedup) : {},
     audit: row.audit && typeof row.audit === 'object' ? normalizeSafeObject(row.audit) : {},
+  }
+}
+
+function normalizeReviewQueueActionAudit(row) {
+  if (!row || typeof row !== 'object') return null
+  return {
+    schema: String(row.schema || 'sentigraph_review_queue_action_audit_v1'),
+    audit_id: String(row.audit_id || ''),
+    review_item_id: String(row.review_item_id || ''),
+    queue_init_id: String(row.queue_init_id || ''),
+    review_case_id: String(row.review_case_id || ''),
+    staging_import_id: String(row.staging_import_id || ''),
+    request_id: String(row.request_id || ''),
+    previous_status: String(row.previous_status || ''),
+    new_status: String(row.new_status || ''),
+    action: String(row.action || ''),
+    reviewer_label: String(row.reviewer_label || ''),
+    reviewed_at: row.reviewed_at ? String(row.reviewed_at) : '',
+    note: String(row.note || ''),
+    analysis_effect: String(row.analysis_effect || 'still_excluded'),
+    trust_label_before: String(row.trust_label_before || ''),
+    trust_label_after: String(row.trust_label_after || ''),
+    verification_status_before: String(row.verification_status_before || ''),
+    verification_status_after: String(row.verification_status_after || ''),
+    dedup_effect: String(row.dedup_effect || 'not_run'),
+    downstream_blockers: Array.isArray(row.downstream_blockers) ? row.downstream_blockers.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(row.boundary_notes) ? row.boundary_notes.map((item) => String(item)) : [],
+    safe_mode: row.safe_mode && typeof row.safe_mode === 'object' ? normalizeBooleanMap(row.safe_mode) : {},
+  }
+}
+
+function normalizeReviewQueueActionResult(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_review_queue_action_result_v1'),
+    action_id: String(data.action_id || ''),
+    audit_id: String(data.audit_id || ''),
+    review_item_id: String(data.review_item_id || ''),
+    queue_init_id: String(data.queue_init_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    request_id: String(data.request_id || ''),
+    action: String(data.action || ''),
+    previous_status: String(data.previous_status || ''),
+    new_status: String(data.new_status || ''),
+    updated_item: normalizeReviewQueueItem(data.updated_item),
+    audit_record: normalizeReviewQueueActionAudit(data.audit_record),
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
   }
 }
 

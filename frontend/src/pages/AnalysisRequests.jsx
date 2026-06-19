@@ -32,6 +32,7 @@ import {
   createAnalysisRequestExecutionPreflight,
   createAnalysisRequestRealPackageRowPreview,
   createAnalysisRequestReviewOnlyCase,
+  createAnalysisRequestReviewQueueItemAction,
   createAnalysisRequestReviewQueueInitialization,
   createAnalysisRequestRowReaderDryRun,
   createAnalysisRequestStagingImport,
@@ -46,6 +47,7 @@ import {
   listAnalysisRequestImportJobs,
   listAnalysisRequestRealPackageRowPreviews,
   listAnalysisRequestReviewOnlyCases,
+  listAnalysisRequestReviewQueueActionAudits,
   listAnalysisRequestReviewQueueInitializations,
   listAnalysisRequestRowReaderDryRuns,
   listAnalysisRequestReviewDecisions,
@@ -546,6 +548,7 @@ export function AnalysisRequests() {
   const [reviewOnlyCaseForm] = Form.useForm()
   const [stagingImportForm] = Form.useForm()
   const [reviewQueueInitForm] = Form.useForm()
+  const [reviewQueueActionForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -563,6 +566,7 @@ export function AnalysisRequests() {
   const [stagedCandidateBatch, setStagedCandidateBatch] = useState(null)
   const [reviewQueueInitializations, setReviewQueueInitializations] = useState([])
   const [reviewQueueItemBatch, setReviewQueueItemBatch] = useState(null)
+  const [reviewQueueActionAudits, setReviewQueueActionAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -577,6 +581,7 @@ export function AnalysisRequests() {
   const [reviewOnlyCaseLoading, setReviewOnlyCaseLoading] = useState(false)
   const [stagingImportLoading, setStagingImportLoading] = useState(false)
   const [reviewQueueInitLoading, setReviewQueueInitLoading] = useState(false)
+  const [reviewQueueActionLoading, setReviewQueueActionLoading] = useState('')
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -589,6 +594,7 @@ export function AnalysisRequests() {
   const [reviewOnlyCaseError, setReviewOnlyCaseError] = useState('')
   const [stagingImportError, setStagingImportError] = useState('')
   const [reviewQueueInitError, setReviewQueueInitError] = useState('')
+  const [reviewQueueActionError, setReviewQueueActionError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -623,6 +629,8 @@ export function AnalysisRequests() {
       setStagedCandidateBatch(null)
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
+      setReviewQueueActionAudits([])
+      setReviewQueueActionAudits([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -634,6 +642,7 @@ export function AnalysisRequests() {
       setReviewOnlyCaseError('')
       setStagingImportError('')
       setReviewQueueInitError('')
+      setReviewQueueActionError('')
       return
     }
     try {
@@ -726,10 +735,13 @@ export function AnalysisRequests() {
       } else {
         setReviewQueueItemBatch(null)
       }
+      setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
+      setReviewQueueActionAudits([])
       setReviewQueueInitError('')
+      setReviewQueueActionError('')
     }
   }
 
@@ -992,6 +1004,7 @@ export function AnalysisRequests() {
       setStagedCandidateBatch(null)
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
+      setReviewQueueActionAudits([])
       message.success(`Created limited real package row preview: ${preview.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create limited real package row preview.'
@@ -1048,6 +1061,7 @@ export function AnalysisRequests() {
       )
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
+      setReviewQueueActionAudits([])
       message.success(`Created review-only staging import: ${stagingImport.staging_import_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review-only staging import.'
@@ -1078,12 +1092,46 @@ export function AnalysisRequests() {
       setReviewQueueItemBatch(
         await getAnalysisRequestReviewQueueItems(selectedRecord.request_id, queueInit.queue_init_id),
       )
+      setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(selectedRecord.request_id))
       message.success(`Initialized review-only queue: ${queueInit.queue_init_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to initialize review-only queue.'
       setReviewQueueInitError(String(messageText))
     } finally {
       setReviewQueueInitLoading(false)
+    }
+  }
+
+  async function handleReviewQueueAction(item, action) {
+    if (!selectedRecord?.request_id || !item?.review_item_id) return
+    setReviewQueueActionLoading(`${item.review_item_id}:${action}`)
+    setReviewQueueActionError('')
+    try {
+      const values = reviewQueueActionForm.getFieldsValue()
+      const result = await createAnalysisRequestReviewQueueItemAction(selectedRecord.request_id, item.review_item_id, {
+        action,
+        reviewer_label: String(values.reviewer_label || '').trim(),
+        note: String(values.note || '').trim(),
+        duplicate_group_id: action === 'merge_duplicate' ? String(values.duplicate_group_id || '').trim() || undefined : undefined,
+        duplicate_of_review_item_id:
+          action === 'merge_duplicate' ? String(values.duplicate_of_review_item_id || '').trim() || undefined : undefined,
+        acknowledge_review_only_action: Boolean(values.acknowledge_review_only_action),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_no_dedup: Boolean(values.acknowledge_no_dedup),
+        acknowledge_no_analysis: Boolean(values.acknowledge_no_analysis),
+        acknowledge_no_report: Boolean(values.acknowledge_no_report),
+      })
+      setReviewQueueItemBatch(
+        await getAnalysisRequestReviewQueueItems(selectedRecord.request_id, result.queue_init_id || item.queue_init_id),
+      )
+      setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(selectedRecord.request_id))
+      message.success(`Recorded review action: ${action}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record review queue action.'
+      setReviewQueueActionError(String(messageText))
+    } finally {
+      setReviewQueueActionLoading('')
     }
   }
 
@@ -1270,6 +1318,27 @@ export function AnalysisRequests() {
     queueNoAnalysisAck,
     queueNoReportAck,
   ])
+  const reviewQueueActionValues = Form.useWatch([], reviewQueueActionForm) || {}
+  const reviewQueueActionReady = useMemo(() => {
+    return Boolean(
+      String(reviewQueueActionValues.reviewer_label || '').trim() &&
+        reviewQueueActionValues.acknowledge_review_only_action &&
+        reviewQueueActionValues.acknowledge_no_evidence_layer_write &&
+        reviewQueueActionValues.acknowledge_no_production_case &&
+        reviewQueueActionValues.acknowledge_no_dedup &&
+        reviewQueueActionValues.acknowledge_no_analysis &&
+        reviewQueueActionValues.acknowledge_no_report,
+    )
+  }, [reviewQueueActionValues])
+  const reviewQueueAuditsByItem = useMemo(() => {
+    return reviewQueueActionAudits.reduce((acc, audit) => {
+      const key = audit.review_item_id || 'unknown'
+      if (!acc[key]) acc[key] = []
+      acc[key].push(audit)
+      return acc
+    }, {})
+  }, [reviewQueueActionAudits])
+  const reviewQueueActionAuditsJson = reviewQueueActionAudits.length ? JSON.stringify(reviewQueueActionAudits, null, 2) : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -2936,31 +3005,154 @@ export function AnalysisRequests() {
                         ) : null}
 
                         <Card size="small" title={`Review queue items (${reviewQueueItemBatch?.items?.length || 0})`}>
-                          {reviewQueueItemBatch?.items?.length ? (
-                            <Space direction="vertical" size={8} className="full-width">
-                              {reviewQueueItemBatch.items.slice(0, 5).map((item) => (
-                                <Card size="small" key={item.review_item_id}>
-                                  <Space direction="vertical" size={4} className="full-width">
-                                    <Space wrap>
-                                      <Tag color="gold">{item.queue_status}</Tag>
-                                      <Tag color="default">analysis_included: {boolText(item.governance?.analysis_included)}</Tag>
-                                      <Tag color="default">dedup_status: {item.dedup?.dedup_status || 'not_run'}</Tag>
-                                      <Tag color="default">may_amplify_risk: {boolText(item.dedup?.may_amplify_risk)}</Tag>
-                                    </Space>
-                                    <Text strong>{item.evidence_candidate?.title_preview || 'Untitled review queue item'}</Text>
-                                    <Text type="secondary">{item.evidence_candidate?.body_text_preview || '-'}</Text>
-                                    <Text type="secondary">
-                                      source_url={item.evidence_candidate?.source_url || '-'}; verification=
-                                      {item.governance?.verification_status || 'source_url_provided_unverified'}; trust=
-                                      {item.governance?.trust_label || 'medium_low'}
-                                    </Text>
-                                  </Space>
-                                </Card>
-                              ))}
-                            </Space>
-                          ) : (
-                            <Text type="secondary">No review queue items yet.</Text>
-                          )}
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Review action boundary"
+                              description="Approve only makes an item eligible for future dedup; it does not include it in analysis. Reject keeps the item audit-visible but analysis-excluded. Weak evidence remains warning-marked. Duplicate merge does not run dedup and must not amplify risk. Privacy hold blocks all downstream steps."
+                            />
+                            {reviewQueueActionError ? <Alert type="error" showIcon message={reviewQueueActionError} /> : null}
+                            <Form
+                              form={reviewQueueActionForm}
+                              layout="vertical"
+                              initialValues={{
+                                reviewer_label: 'human_reviewer',
+                                acknowledge_review_only_action: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_no_dedup: true,
+                                acknowledge_no_analysis: true,
+                                acknowledge_no_report: true,
+                              }}
+                            >
+                              <Row gutter={[12, 0]}>
+                                <Col span={8}>
+                                  <Form.Item label="reviewer_label" name="reviewer_label">
+                                    <Input placeholder="human_reviewer" />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                  <Form.Item label="duplicate_group_id" name="duplicate_group_id">
+                                    <Input placeholder="optional for merge_duplicate" />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                  <Form.Item label="duplicate_of_review_item_id" name="duplicate_of_review_item_id">
+                                    <Input placeholder="optional for merge_duplicate" />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={24}>
+                                  <Form.Item label="review note" name="note">
+                                    <TextArea rows={2} placeholder="Required for reject, mark weak, request more source, merge duplicate, hold, and reset." />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={[12, 0]}>
+                                <Col span={12}>
+                                  <Form.Item name="acknowledge_review_only_action" valuePropName="checked">
+                                    <Checkbox>Confirm this is a review-only action.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_no_evidence_layer_write" valuePropName="checked">
+                                    <Checkbox>Confirm no Evidence Layer write.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_no_production_case" valuePropName="checked">
+                                    <Checkbox>Confirm no production case update.</Checkbox>
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item name="acknowledge_no_dedup" valuePropName="checked">
+                                    <Checkbox>Confirm no dedup run.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_no_analysis" valuePropName="checked">
+                                    <Checkbox>Confirm no analysis run.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_no_report" valuePropName="checked">
+                                    <Checkbox>Confirm no report, Sandbox, or public event output.</Checkbox>
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                            </Form>
+                            {reviewQueueItemBatch?.items?.length ? (
+                              <Space direction="vertical" size={8} className="full-width">
+                                {reviewQueueItemBatch.items.slice(0, 5).map((item) => {
+                                  const itemAudits = reviewQueueAuditsByItem[item.review_item_id] || []
+                                  const loadingPrefix = `${item.review_item_id}:`
+                                  return (
+                                    <Card size="small" key={item.review_item_id}>
+                                      <Space direction="vertical" size={8} className="full-width">
+                                        <Space wrap>
+                                          <Tag color={item.queue_status === 'approved' ? 'green' : item.queue_status === 'rejected' ? 'red' : 'gold'}>
+                                            {item.queue_status}
+                                          </Tag>
+                                          <Tag color="default">analysis_included: {boolText(item.governance?.analysis_included)}</Tag>
+                                          <Tag color="default">dedup_status: {item.dedup?.dedup_status || 'not_run'}</Tag>
+                                          <Tag color="default">may_amplify_risk: {boolText(item.dedup?.may_amplify_risk)}</Tag>
+                                          <Tag color="blue">audits: {itemAudits.length}</Tag>
+                                        </Space>
+                                        <Text type="secondary">{item.review_item_id}</Text>
+                                        <Text strong>{item.evidence_candidate?.title_preview || 'Untitled review queue item'}</Text>
+                                        <Text type="secondary">{item.evidence_candidate?.body_text_preview || '-'}</Text>
+                                        <Text type="secondary">
+                                          source_url={item.evidence_candidate?.source_url || '-'}; verification=
+                                          {item.governance?.verification_status || 'source_url_provided_unverified'}; trust=
+                                          {item.governance?.trust_label || 'medium_low'}
+                                        </Text>
+                                        <Space wrap>
+                                          {[
+                                            ['approve', 'Approve'],
+                                            ['reject', 'Reject'],
+                                            ['mark_weak', 'Mark weak'],
+                                            ['request_more_source', 'Request source'],
+                                            ['merge_duplicate', 'Merge duplicate'],
+                                            ['hold_for_privacy_review', 'Privacy hold'],
+                                            ['reset_review', 'Reset review'],
+                                          ].map(([action, label]) => (
+                                            <Button
+                                              key={action}
+                                              size="small"
+                                              danger={action === 'reject' || action === 'hold_for_privacy_review'}
+                                              loading={reviewQueueActionLoading === `${item.review_item_id}:${action}`}
+                                              disabled={!reviewQueueActionReady || reviewQueueActionLoading.startsWith(loadingPrefix)}
+                                              onClick={() => handleReviewQueueAction(item, action)}
+                                            >
+                                              {label}
+                                            </Button>
+                                          ))}
+                                        </Space>
+                                        {itemAudits.length ? (
+                                          <Card size="small" title="Audit timeline">
+                                            <Space direction="vertical" size={4} className="full-width">
+                                              {itemAudits.map((audit) => (
+                                                <Text type="secondary" key={audit.audit_id}>
+                                                  {audit.reviewed_at || '-'} / {audit.action}: {audit.previous_status} -&gt; {audit.new_status}; effect=
+                                                  {audit.analysis_effect}; reviewer={audit.reviewer_label || '-'}
+                                                </Text>
+                                              ))}
+                                            </Space>
+                                          </Card>
+                                        ) : null}
+                                      </Space>
+                                    </Card>
+                                  )
+                                })}
+                              </Space>
+                            ) : (
+                              <Text type="secondary">No review queue items yet.</Text>
+                            )}
+                            {reviewQueueActionAudits.length ? (
+                              <Space wrap>
+                                <Tag color="blue">request audits: {reviewQueueActionAudits.length}</Tag>
+                                <Button
+                                  size="small"
+                                  icon={<ClipboardCopy size={16} />}
+                                  onClick={() => copyText(reviewQueueActionAuditsJson, 'Review queue audit JSON copied')}
+                                >
+                                  Copy audit timeline JSON
+                                </Button>
+                              </Space>
+                            ) : null}
+                          </Space>
                         </Card>
 
                         <Card size="small" title={`Existing review queue initializations (${reviewQueueInitializations.length})`}>

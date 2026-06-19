@@ -18,6 +18,7 @@ from app.services.analysis_request_store import (
     create_review_only_case,
     create_review_only_case_staging_import,
     create_review_queue_initialization,
+    create_review_queue_item_action,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
@@ -29,12 +30,14 @@ from app.services.analysis_request_store import (
     list_real_package_row_previews,
     list_review_only_cases,
     list_review_only_case_staging_imports,
+    list_review_queue_action_audits,
     list_review_queue_initializations,
     list_analysis_requests,
     read_evidence_row_reader_dry_run,
     read_real_package_row_preview,
     read_review_only_case,
     read_review_only_case_staging_import,
+    read_review_queue_action_audits_for_item,
     read_review_queue_initialization,
     read_review_queue_item_batch,
     read_staged_evidence_candidate_batch,
@@ -301,6 +304,42 @@ def review_queue_init_ack_payload(**overrides: object) -> dict:
     }
     payload.update(overrides)
     return payload
+
+
+def review_queue_action_payload(action: str = "approve", **overrides: object) -> dict:
+    payload = {
+        "action": action,
+        "reviewer_label": "local_reviewer",
+        "note": f"Local review-only action: {action}.",
+        "acknowledge_review_only_action": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_dedup": True,
+        "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def create_review_queue_ready_chain(tmp_path: Path, request_id: str):
+    package_dir = create_real_preview_package(tmp_path)
+    create_real_preview_ready_chain(tmp_path, request_id, package_dir)
+    preview = create_real_package_row_preview(request_id, real_preview_ack_payload())
+    review_case = create_review_only_case(request_id)
+    staging_import = create_review_only_case_staging_import(
+        request_id,
+        staging_import_ack_payload(review_case_id=review_case.review_case_id, preview_run_id=preview.preview_run_id),
+    )
+    queue_init = create_review_queue_initialization(
+        request_id,
+        review_queue_init_ack_payload(
+            review_case_id=review_case.review_case_id,
+            staging_import_id=staging_import.staging_import_id,
+        ),
+    )
+    item_batch = read_review_queue_item_batch(request_id, queue_init.queue_init_id)
+    return review_case, staging_import, queue_init, item_batch
 
 
 def create_real_preview_ready_chain(tmp_path: Path, request_id: str, package_dir: Path) -> dict:
@@ -2196,6 +2235,138 @@ def test_cancel_does_not_change_package_ready_result(tmp_path: Path, monkeypatch
     assert result.warning
     assert result.safe_mode["provider_cancel_called"] is False
     assert detail.request_status == "draft"
+
+
+def test_review_queue_action_approve_updates_local_item_and_appends_audit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review queue action approve")))
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id)
+    review_item_id = item_batch.items[0].review_item_id
+
+    result = create_review_queue_item_action(record.request_id, review_item_id, review_queue_action_payload("approve"))
+    updated_batch = read_review_queue_item_batch(record.request_id, queue_init.queue_init_id)
+    updated_item = [item for item in updated_batch.items if item.review_item_id == review_item_id][0]
+    audits = read_review_queue_action_audits_for_item(record.request_id, review_item_id)
+
+    assert result.schema_ == "sentigraph_review_queue_action_result_v1"
+    assert result.action == "approve"
+    assert result.previous_status == "review_needed"
+    assert result.new_status == "approved"
+    assert updated_item.queue_status == "approved"
+    assert updated_item.governance.review_status == "approved"
+    assert updated_item.governance.analysis_included is False
+    assert updated_item.governance.public_visible is False
+    assert updated_item.governance.report_visible is False
+    assert updated_item.governance.sandbox_visible is False
+    assert updated_item.governance.trust_label == "medium_low"
+    assert updated_item.dedup.dedup_status == "not_run"
+    assert updated_item.dedup.may_amplify_risk is False
+    assert result.now_flags["run_analysis_now"] is False
+    assert result.now_flags["run_dedup_now"] is False
+    assert result.readiness["can_run_analysis_now"] is False
+    assert len(audits) == 1
+    assert audits[0].analysis_effect == "eligible_for_future_dedup"
+    assert audits[0].safe_mode["no_url_fetch"] is True
+    assert audits[0].safe_mode["no_secret_exposed"] is True
+
+
+def test_review_queue_actions_append_audit_and_preserve_exclusion(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review queue action statuses")))
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id)
+    first_item_id = item_batch.items[0].review_item_id
+    second_item_id = item_batch.items[1].review_item_id
+
+    reject_result = create_review_queue_item_action(record.request_id, first_item_id, review_queue_action_payload("reject", note="Reject this weak source."))
+    reset_result = create_review_queue_item_action(record.request_id, first_item_id, review_queue_action_payload("reset_review", note="Reset for second pass."))
+    weak_result = create_review_queue_item_action(record.request_id, first_item_id, review_queue_action_payload("mark_weak", note="Keep as weak evidence."))
+    source_result = create_review_queue_item_action(record.request_id, first_item_id, review_queue_action_payload("request_more_source", note="Need source context."))
+    hold_result = create_review_queue_item_action(record.request_id, first_item_id, review_queue_action_payload("hold_for_privacy_review", note="Privacy hold until reviewer checks."))
+    duplicate_result = create_review_queue_item_action(
+        record.request_id,
+        second_item_id,
+        review_queue_action_payload(
+            "merge_duplicate",
+            note="Likely duplicate cluster.",
+            duplicate_group_id="dup_group_demo",
+            duplicate_of_review_item_id=first_item_id,
+        ),
+    )
+
+    updated_batch = read_review_queue_item_batch(record.request_id, queue_init.queue_init_id)
+    item_map = {item.review_item_id: item for item in updated_batch.items}
+    first_audits = read_review_queue_action_audits_for_item(record.request_id, first_item_id)
+    all_audits = list_review_queue_action_audits(record.request_id)
+
+    assert reject_result.new_status == "rejected"
+    assert reset_result.previous_status == "rejected"
+    assert reset_result.new_status == "review_needed"
+    assert weak_result.new_status == "marked_weak"
+    assert source_result.new_status == "needs_more_source"
+    assert hold_result.new_status == "privacy_hold"
+    assert duplicate_result.new_status == "duplicate_merged"
+    assert item_map[first_item_id].queue_status == "privacy_hold"
+    assert item_map[first_item_id].governance.analysis_included is False
+    assert item_map[first_item_id].governance.trust_label == "medium_low"
+    assert item_map[second_item_id].queue_status == "duplicate_merged"
+    assert item_map[second_item_id].dedup.dedup_status == "duplicate_candidate_marked"
+    assert item_map[second_item_id].dedup.duplicate_group_id == "dup_group_demo"
+    assert item_map[second_item_id].dedup.may_amplify_risk is False
+    assert [audit.action for audit in first_audits] == [
+        "reject",
+        "reset_review",
+        "mark_weak",
+        "request_more_source",
+        "hold_for_privacy_review",
+    ]
+    assert len(all_audits) == 6
+
+
+def test_review_queue_action_blocks_unsafe_payloads_and_transitions(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review queue action blocks")))
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id)
+    review_item_id = item_batch.items[0].review_item_id
+
+    unsafe_cases = [
+        (review_queue_action_payload("approve", reviewer_label=""), "reviewer_label"),
+        (review_queue_action_payload("approve", acknowledge_no_analysis=False), "acknowledgement"),
+        (review_queue_action_payload("approve", analysis_included=True), "side effect"),
+        (review_queue_action_payload("approve", trust_label="high"), "trust_label"),
+        (review_queue_action_payload("approve", verification_status="verified_by_official_api"), "verification"),
+        (review_queue_action_payload("approve", production_case_id="case_prod_unsafe"), "production_case_id"),
+        (review_queue_action_payload("reset_review"), "transition"),
+    ]
+    for payload, expected in unsafe_cases:
+        try:
+            create_review_queue_item_action(record.request_id, review_item_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected in str(exc)
+        else:
+            raise AssertionError(f"{expected} should block review queue action")
+
+    create_review_queue_item_action(record.request_id, review_item_id, review_queue_action_payload("hold_for_privacy_review", note="hold"))
+    try:
+        create_review_queue_item_action(record.request_id, review_item_id, review_queue_action_payload("approve"))
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "transition" in str(exc)
+    else:
+        raise AssertionError("approval from privacy_hold should be blocked")
+
+    batch_path = tmp_path / "review_queue_items" / f"{record.request_id}_{queue_init.queue_init_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["items"][0]["privacy"]["raw_author_id_present"] = True
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+    try:
+        create_review_queue_item_action(
+            record.request_id,
+            review_item_id,
+            review_queue_action_payload("reset_review", note="reset unsafe item"),
+        )
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "forbidden" in str(exc) or "raw_author" in str(exc)
+    else:
+        raise AssertionError("raw author flag should block review action")
 
 
 def test_config_uses_default_runtime_label_without_absolute_path(monkeypatch) -> None:

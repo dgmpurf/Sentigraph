@@ -1466,6 +1466,136 @@ class ReviewQueueItemBatch(BaseModel):
     items: list[ReviewQueueItem] = Field(default_factory=list)
 
 
+ReviewQueueActionName = Literal[
+    "approve",
+    "reject",
+    "mark_weak",
+    "request_more_source",
+    "merge_duplicate",
+    "hold_for_privacy_review",
+    "reset_review",
+]
+
+
+class ReviewQueueActionRequest(BaseModel):
+    action: ReviewQueueActionName
+    reviewer_label: str = ""
+    note: str = ""
+    duplicate_group_id: str | None = None
+    duplicate_of_review_item_id: str | None = None
+    acknowledge_review_only_action: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_no_dedup: bool = False
+    acknowledge_no_analysis: bool = False
+    acknowledge_no_report: bool = False
+    production_case_id: str | None = None
+    target_production_case_id: str | None = None
+    trust_label: str | None = None
+    verification_status: str | None = None
+    production_case_created: bool = False
+    evidence_layer_written: bool = False
+    production_review_queue_created: bool = False
+    analysis_included: bool = False
+    dedup_run: bool = False
+    analysis_run: bool = False
+    report_generated: bool = False
+    sandbox_generated: bool = False
+    public_event_generated: bool = False
+    write_evidence_layer_now: bool = False
+    run_dedup_now: bool = False
+    run_analysis_now: bool = False
+
+
+class ReviewQueueActionAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_review_queue_action_audit_v1"] = Field(
+        default="sentigraph_review_queue_action_audit_v1",
+        alias="schema",
+    )
+    audit_id: str
+    review_item_id: str
+    queue_init_id: str
+    review_case_id: str
+    staging_import_id: str
+    request_id: str
+    previous_status: str
+    new_status: str
+    action: ReviewQueueActionName
+    reviewer_label: str
+    reviewed_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    analysis_effect: Literal["still_excluded", "eligible_for_future_dedup", "blocked"] = "still_excluded"
+    trust_label_before: str = "medium_low"
+    trust_label_after: str = "medium_low"
+    verification_status_before: str = "source_url_provided_unverified"
+    verification_status_after: str = "source_url_provided_unverified"
+    dedup_effect: Literal["not_run", "duplicate_candidate_marked"] = "not_run"
+    downstream_blockers: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "review_only_action": True,
+            "no_ai_verification": True,
+            "no_url_fetch": True,
+            "no_secret_exposed": True,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "dedup_run": False,
+            "analysis_generated": False,
+            "report_generated": False,
+            "sandbox_generated": False,
+            "public_event_generated": False,
+            "real_api_calls": False,
+            "scraping": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class ReviewQueueActionResult(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_review_queue_action_result_v1"] = Field(
+        default="sentigraph_review_queue_action_result_v1",
+        alias="schema",
+    )
+    action_id: str
+    audit_id: str
+    review_item_id: str
+    queue_init_id: str
+    review_case_id: str
+    request_id: str
+    action: ReviewQueueActionName
+    previous_status: str
+    new_status: str
+    updated_item: ReviewQueueItem
+    audit_record: ReviewQueueActionAudit
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "create_production_review_queue_now": False,
+            "run_dedup_now": False,
+            "run_analysis_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    readiness: dict[str, bool | str] = Field(
+        default_factory=lambda: {
+            "state": "review_action_recorded",
+            "can_run_analysis_now": False,
+            "can_generate_report_now": False,
+            "requires_completion_gate": True,
+            "requires_dedup_phase": True,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
