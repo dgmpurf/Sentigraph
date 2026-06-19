@@ -170,6 +170,16 @@ export async function createAnalysisRequestRealPackageRowPreview(requestId, payl
   return normalizeAnalysisRequestRealPackageRowPreview(data)
 }
 
+export async function listAnalysisRequestReviewOnlyCases(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-only-cases`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisRequestReviewOnlyCase).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestReviewOnlyCase(requestId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-only-cases`, payload)
+  return normalizeAnalysisRequestReviewOnlyCase(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1639,6 +1649,65 @@ function normalizeAnalysisRequestRealPackageRowPreview(data) {
     recommended_next_steps: Array.isArray(data.recommended_next_steps)
       ? data.recommended_next_steps.map((item) => String(item))
       : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisRequestReviewOnlyCase(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_review_only_case_v1'),
+    review_case_id: String(data.review_case_id || ''),
+    request_id: String(data.request_id || ''),
+    source_import_job_id: String(data.source_import_job_id || ''),
+    source_preview_run_id: String(data.source_preview_run_id || ''),
+    source_preflight_id: String(data.source_preflight_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    status: String(data.status || 'staging_pending'),
+    visibility: String(data.visibility || 'internal_review_only'),
+    analysis_included: Boolean(data.analysis_included),
+    public_visible: Boolean(data.public_visible),
+    report_allowed: Boolean(data.report_allowed),
+    sandbox_allowed: Boolean(data.sandbox_allowed),
+    strategy_lab_allowed: Boolean(data.strategy_lab_allowed),
+    production_case_created: Boolean(data.production_case_created),
+    evidence_rows_imported: Boolean(data.evidence_rows_imported),
+    evidence_layer_written: Boolean(data.evidence_layer_written),
+    review_queue_created: Boolean(data.review_queue_created),
+    dedup_run: Boolean(data.dedup_run),
+    analysis_run: Boolean(data.analysis_run),
+    package_reference:
+      data.package_reference && typeof data.package_reference === 'object'
+        ? normalizeSafeObject(data.package_reference)
+        : {},
+    source_preview_summary:
+      data.source_preview_summary && typeof data.source_preview_summary === 'object'
+        ? normalizeSafeObject(data.source_preview_summary)
+        : {},
+    coverage:
+      data.coverage && typeof data.coverage === 'object'
+        ? normalizeSafeObject(data.coverage)
+        : {},
+    governance_defaults:
+      data.governance_defaults && typeof data.governance_defaults === 'object'
+        ? normalizeSafeObject(data.governance_defaults)
+        : {},
+    target_case_reference:
+      data.target_case_reference && typeof data.target_case_reference === 'object'
+        ? normalizeSafeObject(data.target_case_reference)
+        : {},
+    allowed_actions: Array.isArray(data.allowed_actions) ? data.allowed_actions.map((item) => String(item)) : [],
+    blocked_actions: Array.isArray(data.blocked_actions) ? data.blocked_actions.map((item) => String(item)) : [],
+    promotion_requirements: Array.isArray(data.promotion_requirements)
+      ? data.promotion_requirements.map((item) => String(item))
+      : [],
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    audit: data.audit && typeof data.audit === 'object' ? normalizeSafeObject(data.audit) : {},
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }

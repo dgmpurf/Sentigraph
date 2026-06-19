@@ -66,6 +66,13 @@ from app.schemas.analysis_request import (
     RealPackageRowPreviewReadiness,
     RealPackageRowPreviewRow,
     RealPackageRowPreviewRows,
+    ReviewOnlyCase,
+    ReviewOnlyCaseAudit,
+    ReviewOnlyCaseCreate,
+    ReviewOnlyCaseGovernanceDefaults,
+    ReviewOnlyCaseReadiness,
+    ReviewOnlyCaseSourcePreviewSummary,
+    ReviewOnlyCaseTargetReference,
 )
 
 
@@ -874,6 +881,42 @@ def list_all_real_package_row_previews() -> list[RealPackageRowPreview]:
     return previews
 
 
+def read_review_only_case(request_id: str, review_case_id: str) -> ReviewOnlyCase:
+    review_case_path = _review_only_case_path(request_id, review_case_id)
+    if not review_case_path.exists():
+        raise AnalysisRequestNotFoundError(f"Review-only case {review_case_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(review_case_path.read_text(encoding="utf-8-sig"))
+        return ReviewOnlyCase.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{review_case_path.name} is not a valid review-only case: {type(exc).__name__}") from exc
+
+
+def list_review_only_cases(request_id: str) -> list[ReviewOnlyCase]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    review_cases: list[ReviewOnlyCase] = []
+    for path in sorted((root / "review_only_cases").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            review_cases.append(ReviewOnlyCase.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return review_cases
+
+
+def list_all_review_only_cases() -> list[ReviewOnlyCase]:
+    root = _ensure_root()
+    review_cases: list[ReviewOnlyCase] = []
+    for path in sorted((root / "review_only_cases").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            review_cases.append(ReviewOnlyCase.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return review_cases
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -1043,6 +1086,107 @@ def create_real_package_row_preview(
     )
     _write_json(_real_package_row_preview_path(request_id, preview_run_id), preview.model_dump(mode="json", by_alias=True))
     return read_real_package_row_preview(request_id, preview_run_id)
+
+
+def create_review_only_case(
+    request_id: str,
+    payload: ReviewOnlyCaseCreate | dict[str, Any] | None = None,
+) -> ReviewOnlyCase:
+    try:
+        review_case_payload = (
+            payload
+            if isinstance(payload, ReviewOnlyCaseCreate)
+            else ReviewOnlyCaseCreate.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create review-only case: invalid payload ({exc}).") from exc
+
+    _validate_review_only_case_payload(review_case_payload)
+    preview = _select_review_only_case_preview(request_id, review_case_payload.source_preview_run_id)
+    preflight = read_manual_evidence_import_execution_preflight(request_id, preview.preflight_id)
+    job = read_manual_evidence_import_job(request_id, preview.import_job_id)
+    _validate_review_only_case_eligibility(request_id, preview, preflight, job)
+
+    review_case_id = _new_review_only_case_id()
+    created_at = datetime.now(timezone.utc)
+    review_case = ReviewOnlyCase(
+        review_case_id=review_case_id,
+        request_id=request_id,
+        source_import_job_id=preview.import_job_id,
+        source_preview_run_id=preview.preview_run_id,
+        source_preflight_id=preview.preflight_id,
+        created_at=created_at,
+        created_by=review_case_payload.created_by or "sentigraph_local_ui",
+        status="staging_pending",
+        package_reference=preview.package_reference,
+        source_preview_summary=ReviewOnlyCaseSourcePreviewSummary(
+            preview_run_id=preview.preview_run_id,
+            status=preview.status,
+            rows_seen=preview.rows.rows_seen,
+            accepted_for_preview=preview.rows.accepted_for_preview,
+            quarantined=preview.rows.quarantined,
+            rejected=preview.rows.rejected,
+            privacy_stop_triggered=preview.privacy_scan.privacy_stop_triggered,
+        ),
+        coverage=preflight.coverage_summary,
+        governance_defaults=ReviewOnlyCaseGovernanceDefaults(),
+        target_case_reference=ReviewOnlyCaseTargetReference(
+            mode=review_case_payload.target_case_mode,
+            target_case_id=review_case_payload.target_case_id,
+            attach_to_production_case_now=False,
+        ),
+        allowed_actions=[
+            "inspect package metadata",
+            "inspect limited redacted preview",
+            "prepare future staging import",
+            "view coverage / validation / privacy notes",
+            "create future staging import design/action after another phase",
+        ],
+        blocked_actions=[
+            "import evidence rows now",
+            "write Evidence Layer now",
+            "create production case now",
+            "create review queue now",
+            "run dedup now",
+            "run analysis now",
+            "generate Sandbox now",
+            "generate public event now",
+            "generate B-end report now",
+            "run Strategy Lab now",
+        ],
+        promotion_requirements=[
+            "future staging import completed",
+            "review queue initialized and completed or threshold met",
+            "dedup completed",
+            "rejected evidence excluded",
+            "weak evidence marked",
+            "coverage acknowledged",
+            "audit complete",
+            "no privacy blockers",
+            "separate promotion decision",
+        ],
+        readiness=ReviewOnlyCaseReadiness(),
+        boundary_notes=[
+            "Review-only case is not a production case.",
+            "Evidence rows are not imported.",
+            "Analysis, Sandbox, public event, and report generation remain disabled.",
+            "Provider output is evidence, not truth.",
+            "Package validation is structural/safety/coverage metadata, not official verification.",
+            "Coverage remains selected sample only; do not claim full-web, full-platform, or full-thread coverage.",
+        ],
+        recommended_next_steps=[
+            "Design future staging import before moving beyond this container.",
+            "Keep review_needed/source_url_provided_unverified/medium_low defaults.",
+            "Do not run analysis until future staging, review, dedup, audit, and promotion gates are complete.",
+        ],
+        audit=ReviewOnlyCaseAudit(
+            created_by=review_case_payload.created_by or "sentigraph_local_ui",
+            created_at=created_at,
+            source="limited_real_package_row_preview",
+        ),
+    )
+    _write_json(_review_only_case_path(request_id, review_case_id), review_case.model_dump(mode="json", by_alias=True))
+    return read_review_only_case(request_id, review_case_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -1632,6 +1776,110 @@ def _validate_real_package_preview_package_files(package_path: Path, preflight: 
         raise AnalysisRequestValidationError("Cannot create real package row preview: coverage note must not claim full coverage.")
 
 
+def _select_review_only_case_preview(request_id: str, preview_run_id: str | None) -> RealPackageRowPreview:
+    if preview_run_id:
+        return read_real_package_row_preview(request_id, preview_run_id)
+    previews = list_real_package_row_previews(request_id)
+    if not previews:
+        raise AnalysisRequestNotFoundError(f"Real package row preview for {request_id} was not found.")
+    return previews[0]
+
+
+def _validate_review_only_case_payload(payload: ReviewOnlyCaseCreate) -> None:
+    if payload.target_case_mode not in {"new_review_case", "existing_case_review_wrapper"}:
+        raise AnalysisRequestValidationError("Cannot create review-only case: target_case_mode is invalid.")
+    if payload.target_case_mode == "existing_case_review_wrapper" and not (payload.target_case_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create review-only case: target_case_id is required for existing_case_review_wrapper.")
+    side_effect_flags = {
+        "analysis_included": payload.analysis_included,
+        "production_case_created": payload.production_case_created,
+        "evidence_rows_imported": payload.evidence_rows_imported,
+        "evidence_layer_written": payload.evidence_layer_written,
+        "review_queue_created": payload.review_queue_created,
+        "dedup_run": payload.dedup_run,
+        "analysis_run": payload.analysis_run,
+        "report_allowed": payload.report_allowed,
+        "sandbox_allowed": payload.sandbox_allowed,
+        "public_visible": payload.public_visible,
+        "strategy_lab_allowed": payload.strategy_lab_allowed,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(f"Cannot create review-only case: side effect flags must remain false ({', '.join(enabled)}).")
+
+
+def _validate_review_only_case_eligibility(
+    request_id: str,
+    preview: RealPackageRowPreview,
+    preflight: ManualEvidenceImportExecutionPreflight,
+    job: ManualEvidenceImportJob,
+) -> None:
+    if preview.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create review-only case: preview request_id mismatch.")
+    if preview.status not in {"passed", "warn"}:
+        raise AnalysisRequestValidationError(f"Cannot create review-only case: real package row preview status {preview.status} is not eligible.")
+    if preview.status in {"privacy_stop", "blocked"} or preview.privacy_scan.privacy_stop_triggered:
+        raise AnalysisRequestValidationError("Cannot create review-only case: privacy_stop preview blocks review-only case creation.")
+    if preview.readiness.can_import_now:
+        raise AnalysisRequestValidationError("Cannot create review-only case: preview can_import_now must remain false.")
+    enabled_now_flags = [name for name, value in preview.now_flags.model_dump().items() if value]
+    if enabled_now_flags:
+        raise AnalysisRequestValidationError(f"Cannot create review-only case: preview now flags must remain false ({', '.join(enabled_now_flags)}).")
+    if not preview.package_reference.package_name:
+        raise AnalysisRequestValidationError("Cannot create review-only case: package_name is missing.")
+    if preview.rows.accepted_for_preview <= 0:
+        raise AnalysisRequestValidationError("Cannot create review-only case: preview must contain at least one accepted redacted row.")
+    privacy_hits = (
+        preview.privacy_scan.raw_author_id_detected
+        + preview.privacy_scan.raw_author_name_detected
+        + preview.privacy_scan.profile_url_detected
+        + preview.privacy_scan.private_message_detected
+        + preview.privacy_scan.secret_like_value_detected
+        + preview.privacy_scan.email_detected
+        + preview.privacy_scan.phone_detected
+    )
+    if privacy_hits:
+        raise AnalysisRequestValidationError("Cannot create review-only case: preview detected raw forbidden values or privacy risk.")
+    decisions = list_evidence_import_review_decisions(request_id)
+    if not decisions:
+        raise AnalysisRequestNotFoundError(f"review decision for {request_id} was not found.")
+    latest_decision = decisions[0]
+    if latest_decision.decision != "approve_import":
+        raise AnalysisRequestValidationError("Cannot create review-only case: latest review decision must be approve_import.")
+    if latest_decision.decision_id != preview.decision_id:
+        raise AnalysisRequestValidationError("Cannot create review-only case: preview review decision is stale.")
+    if preflight.status not in {"preflight_passed", "preflight_warn"}:
+        raise AnalysisRequestValidationError("Cannot create review-only case: execution preflight is not eligible.")
+    if preflight.preflight_id != preview.preflight_id:
+        raise AnalysisRequestValidationError("Cannot create review-only case: preflight_id mismatch.")
+    if preflight.validation_summary.errors > 0:
+        raise AnalysisRequestValidationError("Cannot create review-only case: validation errors must be 0.")
+    if not (preflight.coverage_summary.not_full_web and preflight.coverage_summary.not_full_platform and preflight.coverage_summary.not_full_thread):
+        raise AnalysisRequestValidationError("Cannot create review-only case: coverage limitations must be explicit.")
+    if not (
+        preflight.privacy_summary.raw_author_ids_removed
+        and preflight.privacy_summary.raw_author_names_removed
+        and preflight.privacy_summary.profile_urls_removed
+        and preflight.privacy_summary.private_messages_excluded
+    ):
+        raise AnalysisRequestValidationError("Cannot create review-only case: privacy flags are incomplete.")
+    if job.job_id != preview.import_job_id or job.execution_mode != "dry_run_gate":
+        raise AnalysisRequestValidationError("Cannot create review-only case: dry-run import job is missing or invalid.")
+    unsafe_job_flags = {
+        "evidence_rows_read": job.safe_mode.get("evidence_rows_read", False),
+        "evidence_rows_parsed": job.safe_mode.get("evidence_rows_parsed", False),
+        "evidence_rows_imported": job.safe_mode.get("evidence_rows_imported", False),
+        "production_case_created": job.safe_mode.get("production_case_created", False),
+        "analysis_generated": job.safe_mode.get("analysis_generated", False),
+        "report_generated": job.safe_mode.get("report_generated", False),
+        "provider_execution": job.safe_mode.get("provider_execution", False),
+        "collector_jobs_run": job.safe_mode.get("collector_jobs_run", False),
+    }
+    enabled_job_flags = [name for name, value in unsafe_job_flags.items() if value]
+    if enabled_job_flags:
+        raise AnalysisRequestValidationError(f"Cannot create review-only case: import job unsafe flags are true ({', '.join(enabled_job_flags)}).")
+
+
 def _read_real_package_preview_rows(
     row_file: Path,
     max_rows: int,
@@ -2004,6 +2252,7 @@ def _ensure_root() -> Path:
     (root / "execution_preflights").mkdir(parents=True, exist_ok=True)
     (root / "row_reader_dry_runs").mkdir(parents=True, exist_ok=True)
     (root / "real_package_row_previews").mkdir(parents=True, exist_ok=True)
+    (root / "review_only_cases").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -2072,6 +2321,13 @@ def _real_package_row_preview_path(request_id: str, preview_run_id: str) -> Path
     return root / "real_package_row_previews" / f"{request_id}_{preview_run_id}.json"
 
 
+def _review_only_case_path(request_id: str, review_case_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(review_case_id)
+    root = _ensure_root()
+    return root / "review_only_cases" / f"{request_id}_{review_case_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -2113,6 +2369,11 @@ def _new_row_reader_dry_run_id() -> str:
 def _new_real_package_row_preview_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"real_package_row_preview_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_review_only_case_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"review_only_case_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

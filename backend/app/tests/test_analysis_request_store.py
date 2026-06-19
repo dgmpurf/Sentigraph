@@ -15,6 +15,7 @@ from app.services.analysis_request_store import (
     create_manual_evidence_import_job,
     create_evidence_row_reader_dry_run,
     create_real_package_row_preview,
+    create_review_only_case,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
@@ -24,9 +25,11 @@ from app.services.analysis_request_store import (
     list_manual_evidence_import_jobs,
     list_evidence_row_reader_dry_runs,
     list_real_package_row_previews,
+    list_review_only_cases,
     list_analysis_requests,
     read_evidence_row_reader_dry_run,
     read_real_package_row_preview,
+    read_review_only_case,
     read_analysis_request,
 )
 
@@ -1557,6 +1560,139 @@ def test_real_package_row_preview_blocks_missing_or_unsafe_package_files(tmp_pat
         assert "evidence_items.jsonl" in str(exc)
     else:
         raise AssertionError("Missing evidence_items.jsonl should block real package row preview")
+
+
+def test_review_only_case_creates_internal_container_after_safe_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review-only case safe"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+
+    review_case = create_review_only_case(
+        record.request_id,
+        {"source_preview_run_id": preview.preview_run_id, "target_case_mode": "new_review_case"},
+    )
+    read_back = read_review_only_case(record.request_id, review_case.review_case_id)
+    cases = list_review_only_cases(record.request_id)
+    payload_text = json.dumps(review_case.model_dump(mode="json", by_alias=True), ensure_ascii=False)
+
+    assert review_case.schema_ == "sentigraph_review_only_case_v1"
+    assert review_case.request_id == record.request_id
+    assert review_case.source_preview_run_id == preview.preview_run_id
+    assert review_case.source_import_job_id == preview.import_job_id
+    assert review_case.source_preflight_id == preview.preflight_id
+    assert review_case.status == "staging_pending"
+    assert review_case.visibility == "internal_review_only"
+    assert review_case.analysis_included is False
+    assert review_case.public_visible is False
+    assert review_case.report_allowed is False
+    assert review_case.sandbox_allowed is False
+    assert review_case.strategy_lab_allowed is False
+    assert review_case.production_case_created is False
+    assert review_case.evidence_rows_imported is False
+    assert review_case.evidence_layer_written is False
+    assert review_case.review_queue_created is False
+    assert review_case.dedup_run is False
+    assert review_case.analysis_run is False
+    assert review_case.package_reference.package_name == package_dir.name
+    assert review_case.source_preview_summary.accepted_for_preview == 2
+    assert review_case.source_preview_summary.privacy_stop_triggered is False
+    assert review_case.coverage.not_full_web is True
+    assert review_case.coverage.not_full_platform is True
+    assert review_case.coverage.not_full_thread is True
+    assert review_case.governance_defaults.review_status == "review_needed"
+    assert review_case.governance_defaults.verification_status == "source_url_provided_unverified"
+    assert review_case.governance_defaults.trust_label == "medium_low"
+    assert review_case.governance_defaults.analysis_included is False
+    assert review_case.target_case_reference.mode == "new_review_case"
+    assert review_case.target_case_reference.attach_to_production_case_now is False
+    assert review_case.readiness.can_import_rows_now is False
+    assert review_case.readiness.can_run_analysis_now is False
+    assert review_case.readiness.can_generate_report_now is False
+    assert review_case.readiness.requires_future_staging_import_phase is True
+    assert "run analysis now" in review_case.blocked_actions
+    assert "future staging import completed" in review_case.promotion_requirements
+    assert "provider output is evidence, not truth" in " ".join(review_case.boundary_notes).lower()
+    assert read_back.review_case_id == review_case.review_case_id
+    assert len(cases) == 1
+    assert not (tmp_path / "cases").exists()
+    assert "real-preview-user-should-not-return" not in payload_text
+
+
+def test_review_only_case_blocks_privacy_stop_and_latest_non_approve_decision(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review-only case blocked"))
+    )
+    package_dir = create_real_preview_package(tmp_path, mixed=True)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+
+    try:
+        create_review_only_case(record.request_id, {"source_preview_run_id": preview.preview_run_id})
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "privacy_stop" in str(exc)
+    else:
+        raise AssertionError("privacy_stop preview should block review-only case creation")
+
+    safe_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review-only case stale decision"))
+    )
+    safe_package_dir = create_real_preview_package(tmp_path / "safe")
+    create_real_preview_ready_chain(tmp_path, safe_record.request_id, safe_package_dir)
+    safe_preview = create_real_package_row_preview(safe_record.request_id, real_preview_ack_payload())
+    create_evidence_import_review_decision(
+        safe_record.request_id,
+        review_payload("request_more_source", notes="Supersede approve before review-only case."),
+    )
+
+    try:
+        create_review_only_case(safe_record.request_id, {"source_preview_run_id": safe_preview.preview_run_id})
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "approve_import" in str(exc)
+    else:
+        raise AssertionError("latest non-approve decision should block review-only case creation")
+
+
+def test_review_only_case_blocks_invalid_target_and_requested_side_effects(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review-only target blocks"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+
+    cases = [
+        ({"source_preview_run_id": preview.preview_run_id, "target_case_mode": "production_case"}, "target_case_mode"),
+        ({"source_preview_run_id": preview.preview_run_id, "target_case_mode": "existing_case_review_wrapper"}, "target_case_id"),
+        ({"source_preview_run_id": preview.preview_run_id, "analysis_included": True}, "analysis_included"),
+        ({"source_preview_run_id": preview.preview_run_id, "production_case_created": True}, "production_case_created"),
+        ({"source_preview_run_id": preview.preview_run_id, "evidence_rows_imported": True}, "evidence_rows_imported"),
+    ]
+    for payload, expected_message in cases:
+        try:
+            create_review_only_case(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{expected_message} should block review-only case creation")
+
+    wrapper = create_review_only_case(
+        record.request_id,
+        {
+            "source_preview_run_id": preview.preview_run_id,
+            "target_case_mode": "existing_case_review_wrapper",
+            "target_case_id": "case_existing_review_target",
+        },
+    )
+    assert wrapper.target_case_reference.mode == "existing_case_review_wrapper"
+    assert wrapper.target_case_reference.target_case_id == "case_existing_review_target"
+    assert wrapper.production_case_created is False
+    assert wrapper.evidence_rows_imported is False
 
 
 def test_invalid_result_json_sets_warning_without_crash(tmp_path: Path, monkeypatch) -> None:

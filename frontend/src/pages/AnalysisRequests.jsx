@@ -31,6 +31,7 @@ import {
   createAnalysisRequestReviewDecision,
   createAnalysisRequestExecutionPreflight,
   createAnalysisRequestRealPackageRowPreview,
+  createAnalysisRequestReviewOnlyCase,
   createAnalysisRequestRowReaderDryRun,
   getAnalysisRequest,
   getAnalysisRequestCaseDraft,
@@ -40,6 +41,7 @@ import {
   listAnalysisRequestExecutionPreflights,
   listAnalysisRequestImportJobs,
   listAnalysisRequestRealPackageRowPreviews,
+  listAnalysisRequestReviewOnlyCases,
   listAnalysisRequestRowReaderDryRuns,
   listAnalysisRequestReviewDecisions,
   listAnalysisRequests,
@@ -399,6 +401,42 @@ function realPackageRowPreviewEligibility(latestExecutionPreflight, latestRowRea
   return { eligible: true, reason: 'Ready to create a limited real package row preview.' }
 }
 
+function reviewOnlyCaseEligibility(latestRealPackagePreview, latestReviewDecision) {
+  if (!latestRealPackagePreview) return { eligible: false, reason: 'Create a limited real package row preview first.' }
+  if (!['passed', 'warn'].includes(latestRealPackagePreview.status)) {
+    return { eligible: false, reason: `Real package preview status ${latestRealPackagePreview.status || 'unknown'} is not eligible.` }
+  }
+  if (latestRealPackagePreview.status === 'privacy_stop') {
+    return { eligible: false, reason: 'Privacy stop preview blocks review-only case creation.' }
+  }
+  if (latestRealPackagePreview.privacy_scan?.privacy_stop_triggered === true) {
+    return { eligible: false, reason: 'Privacy stop is triggered; privacy/security review is required first.' }
+  }
+  const privacyScan = latestRealPackagePreview.privacy_scan || {}
+  const privacyHits = [
+    privacyScan.raw_author_id_detected,
+    privacyScan.raw_author_name_detected,
+    privacyScan.profile_url_detected,
+    privacyScan.private_message_detected,
+    privacyScan.secret_like_value_detected,
+    privacyScan.email_detected,
+    privacyScan.phone_detected,
+  ].some((value) => Number(value || 0) > 0)
+  if (privacyHits) {
+    return { eligible: false, reason: 'Preview detected forbidden/privacy fields; do not create a review-only case.' }
+  }
+  if (Number(latestRealPackagePreview.rows?.accepted_for_preview || 0) <= 0) {
+    return { eligible: false, reason: 'Preview must contain at least one accepted redacted row.' }
+  }
+  if (latestRealPackagePreview.readiness?.can_import_now === true) {
+    return { eligible: false, reason: 'Preview must remain can_import_now=false.' }
+  }
+  if (!latestReviewDecision || latestReviewDecision.decision !== 'approve_import') {
+    return { eligible: false, reason: 'Latest review decision must remain approve_import.' }
+  }
+  return { eligible: true, reason: 'Ready to create a review-only governance container.' }
+}
+
 function SummaryList({ title, items }) {
   return (
     <Card size="small" title={title}>
@@ -422,6 +460,7 @@ export function AnalysisRequests() {
   const [importJobForm] = Form.useForm()
   const [rowReaderForm] = Form.useForm()
   const [realPackagePreviewForm] = Form.useForm()
+  const [reviewOnlyCaseForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -434,6 +473,7 @@ export function AnalysisRequests() {
   const [executionPreflights, setExecutionPreflights] = useState([])
   const [rowReaderDryRuns, setRowReaderDryRuns] = useState([])
   const [realPackagePreviews, setRealPackagePreviews] = useState([])
+  const [reviewOnlyCases, setReviewOnlyCases] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -445,6 +485,7 @@ export function AnalysisRequests() {
   const [executionPreflightLoading, setExecutionPreflightLoading] = useState(false)
   const [rowReaderDryRunLoading, setRowReaderDryRunLoading] = useState(false)
   const [realPackagePreviewLoading, setRealPackagePreviewLoading] = useState(false)
+  const [reviewOnlyCaseLoading, setReviewOnlyCaseLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -454,6 +495,7 @@ export function AnalysisRequests() {
   const [executionPreflightError, setExecutionPreflightError] = useState('')
   const [rowReaderDryRunError, setRowReaderDryRunError] = useState('')
   const [realPackagePreviewError, setRealPackagePreviewError] = useState('')
+  const [reviewOnlyCaseError, setReviewOnlyCaseError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -483,6 +525,8 @@ export function AnalysisRequests() {
       setExecutionPreflights([])
       setRowReaderDryRuns([])
       setRealPackagePreviews([])
+      setReviewOnlyCases([])
+      setReviewOnlyCases([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -491,6 +535,7 @@ export function AnalysisRequests() {
       setExecutionPreflightError('')
       setRowReaderDryRunError('')
       setRealPackagePreviewError('')
+      setReviewOnlyCaseError('')
       return
     }
     try {
@@ -548,6 +593,13 @@ export function AnalysisRequests() {
     } catch {
       setRealPackagePreviews([])
       setRealPackagePreviewError('')
+    }
+    try {
+      setReviewOnlyCases(await listAnalysisRequestReviewOnlyCases(requestId))
+      setReviewOnlyCaseError('')
+    } catch {
+      setReviewOnlyCases([])
+      setReviewOnlyCaseError('')
     }
   }
 
@@ -659,6 +711,7 @@ export function AnalysisRequests() {
       setExecutionPreflights([])
       setRowReaderDryRuns([])
       setRealPackagePreviews([])
+      setReviewOnlyCases([])
       message.success('已生成 Evidence 导入计划')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import plan.'
@@ -680,6 +733,7 @@ export function AnalysisRequests() {
       setExecutionPreflights([])
       setRowReaderDryRuns([])
       setRealPackagePreviews([])
+      setReviewOnlyCases([])
       message.success('已生成 metadata-only Evidence 导入预览')
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create evidence import preview.'
@@ -708,6 +762,7 @@ export function AnalysisRequests() {
       setExecutionPreflights([])
       setRowReaderDryRuns([])
       setRealPackagePreviews([])
+      setReviewOnlyCases([])
       message.success(`已记录人工审核决策：${decision.decision}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review decision.'
@@ -754,6 +809,7 @@ export function AnalysisRequests() {
       setExecutionPreflights(await listAnalysisRequestExecutionPreflights(selectedRecord.request_id))
       setRowReaderDryRuns([])
       setRealPackagePreviews([])
+      setReviewOnlyCases([])
       message.success(`Created execution preflight: ${preflight.preflight_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create execution preflight.'
@@ -777,6 +833,7 @@ export function AnalysisRequests() {
       })
       setRowReaderDryRuns(await listAnalysisRequestRowReaderDryRuns(selectedRecord.request_id))
       setRealPackagePreviews([])
+      setReviewOnlyCases([])
       message.success(`Created synthetic row reader dry-run: ${dryRun.dry_run_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create synthetic row reader dry-run.'
@@ -800,12 +857,34 @@ export function AnalysisRequests() {
         created_by: 'sentigraph_local_ui',
       })
       setRealPackagePreviews(await listAnalysisRequestRealPackageRowPreviews(selectedRecord.request_id))
+      setReviewOnlyCases([])
       message.success(`Created limited real package row preview: ${preview.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create limited real package row preview.'
       setRealPackagePreviewError(String(messageText))
     } finally {
       setRealPackagePreviewLoading(false)
+    }
+  }
+
+  async function handleCreateReviewOnlyCase(values) {
+    if (!selectedRecord?.request_id) return
+    setReviewOnlyCaseLoading(true)
+    setReviewOnlyCaseError('')
+    try {
+      const reviewCase = await createAnalysisRequestReviewOnlyCase(selectedRecord.request_id, {
+        source_preview_run_id: latestRealPackagePreview?.preview_run_id || undefined,
+        target_case_mode: values.target_case_mode || 'new_review_case',
+        target_case_id: values.target_case_mode === 'existing_case_review_wrapper' ? String(values.target_case_id || '').trim() : null,
+        created_by: 'sentigraph_local_ui',
+      })
+      setReviewOnlyCases(await listAnalysisRequestReviewOnlyCases(selectedRecord.request_id))
+      message.success(`Created review-only case container: ${reviewCase.review_case_id}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review-only case container.'
+      setReviewOnlyCaseError(String(messageText))
+    } finally {
+      setReviewOnlyCaseLoading(false)
     }
   }
 
@@ -906,6 +985,21 @@ export function AnalysisRequests() {
   }, [realPackagePreviewAcks, realPackagePreviewGate.eligible, realPackagePreviewLoading])
   const latestRealPackagePreview = realPackagePreviews[0] || null
   const latestRealPackagePreviewJson = latestRealPackagePreview ? JSON.stringify(latestRealPackagePreview, null, 2) : ''
+  const reviewOnlyCaseGate = useMemo(
+    () => reviewOnlyCaseEligibility(latestRealPackagePreview, latestReviewDecision),
+    [latestRealPackagePreview, latestReviewDecision],
+  )
+  const latestReviewOnlyCase = reviewOnlyCases[0] || null
+  const latestReviewOnlyCaseJson = latestReviewOnlyCase ? JSON.stringify(latestReviewOnlyCase, null, 2) : ''
+  const watchedReviewOnlyCaseMode = Form.useWatch('target_case_mode', reviewOnlyCaseForm)
+  const watchedReviewOnlyTargetCaseId = Form.useWatch('target_case_id', reviewOnlyCaseForm)
+  const reviewOnlyCaseSubmitDisabled = useMemo(() => {
+    if (!reviewOnlyCaseGate.eligible || reviewOnlyCaseLoading) return true
+    if (watchedReviewOnlyCaseMode === 'existing_case_review_wrapper') {
+      return !String(watchedReviewOnlyTargetCaseId || '').trim()
+    }
+    return false
+  }, [reviewOnlyCaseGate.eligible, reviewOnlyCaseLoading, watchedReviewOnlyCaseMode, watchedReviewOnlyTargetCaseId])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -2085,6 +2179,159 @@ export function AnalysisRequests() {
                         </Space>
                       ) : (
                         <Text type="secondary">No limited real package row previews yet.</Text>
+                      )}
+                    </Card>
+                  </Space>
+                </Card>
+
+                <Card size="small" title="Review-only Case / 复核专用 Case 容器">
+                  <Space direction="vertical" size={12} className="full-width">
+                    <Alert
+                      type={reviewOnlyCaseGate.eligible ? 'warning' : 'info'}
+                      showIcon
+                      message={reviewOnlyCaseGate.eligible ? 'Ready to create review-only container' : 'Review-only case not ready'}
+                      description={
+                        latestReviewOnlyCase
+                          ? 'A review-only governance container already exists for this request.'
+                          : reviewOnlyCaseGate.reason
+                      }
+                    />
+                    <Text type="secondary">
+                      Only creates an internal governance container. It does not import evidence rows, write the Evidence Layer,
+                      create a production case, create review queue items, run dedup, run analysis, generate Sandbox output,
+                      generate public event pages, or generate reports. Provider output is evidence, not official truth.
+                    </Text>
+                    {reviewOnlyCaseError ? <Alert type="error" showIcon message={reviewOnlyCaseError} /> : null}
+                    <Form
+                      form={reviewOnlyCaseForm}
+                      layout="vertical"
+                      initialValues={{ target_case_mode: 'new_review_case', target_case_id: '' }}
+                      onFinish={handleCreateReviewOnlyCase}
+                    >
+                      <Row gutter={[12, 0]}>
+                        <Col span={12}>
+                          <Form.Item name="target_case_mode" label="target_case_mode">
+                            <Select
+                              options={[
+                                { value: 'new_review_case', label: 'new_review_case' },
+                                { value: 'existing_case_review_wrapper', label: 'existing_case_review_wrapper' },
+                              ]}
+                            />
+                          </Form.Item>
+                        </Col>
+                        {watchedReviewOnlyCaseMode === 'existing_case_review_wrapper' ? (
+                          <Col span={12}>
+                            <Form.Item name="target_case_id" label="target_case_id">
+                              <Input placeholder="case_xxx for review wrapper only" />
+                            </Form.Item>
+                          </Col>
+                        ) : null}
+                      </Row>
+                      <Space wrap>
+                        <Button
+                          type="primary"
+                          htmlType="submit"
+                          loading={reviewOnlyCaseLoading}
+                          disabled={reviewOnlyCaseSubmitDisabled}
+                        >
+                          Create Review-only Case container
+                        </Button>
+                        {latestReviewOnlyCase ? (
+                          <Button
+                            icon={<ClipboardCopy size={16} />}
+                            onClick={() => copyText(latestReviewOnlyCaseJson, 'Review-only case JSON copied')}
+                          >
+                            Copy latest review-only case JSON
+                          </Button>
+                        ) : null}
+                      </Space>
+                    </Form>
+
+                    {latestReviewOnlyCase ? (
+                      <Card className="panel-card" size="small" title="Latest review-only case container">
+                        <Space direction="vertical" size={12} className="full-width">
+                          <Space wrap>
+                            <Tag color="gold">{latestReviewOnlyCase.status}</Tag>
+                            <Tag color="blue">{latestReviewOnlyCase.visibility}</Tag>
+                            <Tag color="default">analysis_included: {boolText(latestReviewOnlyCase.analysis_included)}</Tag>
+                            <Tag color="default">public_visible: {boolText(latestReviewOnlyCase.public_visible)}</Tag>
+                            <Tag color="default">evidence_rows_imported: {boolText(latestReviewOnlyCase.evidence_rows_imported)}</Tag>
+                          </Space>
+                          <Descriptions column={1} size="small">
+                            <Descriptions.Item label="review_case_id">{latestReviewOnlyCase.review_case_id}</Descriptions.Item>
+                            <Descriptions.Item label="source_preview_run_id">{latestReviewOnlyCase.source_preview_run_id}</Descriptions.Item>
+                            <Descriptions.Item label="source_preflight_id">{latestReviewOnlyCase.source_preflight_id}</Descriptions.Item>
+                            <Descriptions.Item label="package">
+                              {latestReviewOnlyCase.package_reference?.package_name || '-'} / {latestReviewOnlyCase.package_reference?.package_role || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="preview summary">
+                              status={latestReviewOnlyCase.source_preview_summary?.status || '-'},
+                              rows_seen={latestReviewOnlyCase.source_preview_summary?.rows_seen || 0},
+                              accepted={latestReviewOnlyCase.source_preview_summary?.accepted_for_preview || 0},
+                              quarantined={latestReviewOnlyCase.source_preview_summary?.quarantined || 0},
+                              rejected={latestReviewOnlyCase.source_preview_summary?.rejected || 0},
+                              privacy_stop={boolText(latestReviewOnlyCase.source_preview_summary?.privacy_stop_triggered)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="coverage">
+                              level={latestReviewOnlyCase.coverage?.coverage_level || '-'},
+                              not_full_web={boolText(latestReviewOnlyCase.coverage?.not_full_web)},
+                              not_full_platform={boolText(latestReviewOnlyCase.coverage?.not_full_platform)},
+                              not_full_thread={boolText(latestReviewOnlyCase.coverage?.not_full_thread)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="governance defaults">
+                              review_status={latestReviewOnlyCase.governance_defaults?.review_status || 'review_needed'},
+                              verification_status={latestReviewOnlyCase.governance_defaults?.verification_status || 'source_url_provided_unverified'},
+                              trust_label={latestReviewOnlyCase.governance_defaults?.trust_label || 'medium_low'},
+                              analysis_included={boolText(latestReviewOnlyCase.governance_defaults?.analysis_included)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="target case">
+                              mode={latestReviewOnlyCase.target_case_reference?.mode || 'new_review_case'},
+                              target_case_id={latestReviewOnlyCase.target_case_reference?.target_case_id || '-'},
+                              attach_now={boolText(latestReviewOnlyCase.target_case_reference?.attach_to_production_case_now)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="readiness">
+                              state={latestReviewOnlyCase.readiness?.state || '-'},
+                              can_import_rows_now={boolText(latestReviewOnlyCase.readiness?.can_import_rows_now)},
+                              can_run_analysis_now={boolText(latestReviewOnlyCase.readiness?.can_run_analysis_now)},
+                              can_generate_report_now={boolText(latestReviewOnlyCase.readiness?.can_generate_report_now)}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="Review-only boundary"
+                            description="This is not a production case, not analysis-ready, not public, not full-web coverage, and not official verification. Analysis, Sandbox, public event and report generation remain disabled until future staging, review, dedup, audit and promotion gates."
+                          />
+                          <SummaryList title="Allowed actions" items={latestReviewOnlyCase.allowed_actions || []} />
+                          <SummaryList title="Blocked actions" items={latestReviewOnlyCase.blocked_actions || []} />
+                          <SummaryList title="Promotion requirements" items={latestReviewOnlyCase.promotion_requirements || []} />
+                          <SummaryList title="Boundary notes" items={latestReviewOnlyCase.boundary_notes || []} />
+                          <SummaryList title="Recommended next steps" items={latestReviewOnlyCase.recommended_next_steps || []} />
+                        </Space>
+                      </Card>
+                    ) : null}
+
+                    <Card size="small" title={`Existing review-only case containers (${reviewOnlyCases.length})`}>
+                      {reviewOnlyCases.length ? (
+                        <Space direction="vertical" size={8} className="full-width">
+                          {reviewOnlyCases.map((reviewCase) => (
+                            <Card size="small" key={reviewCase.review_case_id}>
+                              <Space direction="vertical" size={4} className="full-width">
+                                <Space wrap>
+                                  <Tag color="gold">{reviewCase.status}</Tag>
+                                  <Tag color="blue">{reviewCase.visibility}</Tag>
+                                  <Text type="secondary">{reviewCase.review_case_id}</Text>
+                                </Space>
+                                <Text>package: {reviewCase.package_reference?.package_name || '-'}</Text>
+                                <Text type="secondary">
+                                  analysis_included={boolText(reviewCase.analysis_included)}, production_case_created={boolText(reviewCase.production_case_created)}, evidence_rows_imported={boolText(reviewCase.evidence_rows_imported)}
+                                </Text>
+                              </Space>
+                            </Card>
+                          ))}
+                        </Space>
+                      ) : (
+                        <Text type="secondary">No review-only case containers yet.</Text>
                       )}
                     </Card>
                   </Space>

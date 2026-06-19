@@ -967,6 +967,128 @@ class RealPackageRowPreview(BaseModel):
     )
 
 
+class ReviewOnlyCaseCreate(BaseModel):
+    source_preview_run_id: str | None = None
+    target_case_mode: str = "new_review_case"
+    target_case_id: str | None = None
+    created_by: str = "sentigraph_local_ui"
+    analysis_included: bool = False
+    production_case_created: bool = False
+    evidence_rows_imported: bool = False
+    evidence_layer_written: bool = False
+    review_queue_created: bool = False
+    dedup_run: bool = False
+    analysis_run: bool = False
+    report_allowed: bool = False
+    sandbox_allowed: bool = False
+    public_visible: bool = False
+    strategy_lab_allowed: bool = False
+
+
+class ReviewOnlyCaseSourcePreviewSummary(BaseModel):
+    preview_run_id: str = ""
+    status: str = ""
+    rows_seen: int = 0
+    accepted_for_preview: int = 0
+    quarantined: int = 0
+    rejected: int = 0
+    privacy_stop_triggered: bool = False
+
+
+class ReviewOnlyCaseGovernanceDefaults(BaseModel):
+    review_status: str = "review_needed"
+    verification_status: str = "source_url_provided_unverified"
+    trust_label: str = "medium_low"
+    dedup_required: bool = True
+    audit_required: bool = True
+    analysis_included: bool = False
+
+
+class ReviewOnlyCaseTargetReference(BaseModel):
+    mode: Literal["new_review_case", "existing_case_review_wrapper"] = "new_review_case"
+    target_case_id: str | None = None
+    attach_to_production_case_now: bool = False
+
+
+class ReviewOnlyCaseReadiness(BaseModel):
+    state: str = "review_only_case_created"
+    can_import_rows_now: bool = False
+    can_run_analysis_now: bool = False
+    can_generate_report_now: bool = False
+    requires_future_staging_import_phase: bool = True
+    reason: str = "Review-only case container only. No evidence rows are imported in Phase 6P."
+
+
+class ReviewOnlyCaseAudit(BaseModel):
+    created_by: str = "sentigraph_local_ui"
+    created_at: datetime = Field(default_factory=utc_now)
+    source: str = "limited_real_package_row_preview"
+
+
+class ReviewOnlyCase(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_review_only_case_v1"] = Field(
+        default="sentigraph_review_only_case_v1",
+        alias="schema",
+    )
+    review_case_id: str
+    request_id: str
+    source_import_job_id: str
+    source_preview_run_id: str
+    source_preflight_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    status: Literal["draft", "staging_pending", "privacy_hold", "rejected", "archived"] = "staging_pending"
+    visibility: str = "internal_review_only"
+    analysis_included: bool = False
+    public_visible: bool = False
+    report_allowed: bool = False
+    sandbox_allowed: bool = False
+    strategy_lab_allowed: bool = False
+    production_case_created: bool = False
+    evidence_rows_imported: bool = False
+    evidence_layer_written: bool = False
+    review_queue_created: bool = False
+    dedup_run: bool = False
+    analysis_run: bool = False
+    package_reference: RealPackageRowPreviewPackageReference = Field(default_factory=RealPackageRowPreviewPackageReference)
+    source_preview_summary: ReviewOnlyCaseSourcePreviewSummary = Field(default_factory=ReviewOnlyCaseSourcePreviewSummary)
+    coverage: ProviderJobCoverage = Field(default_factory=ProviderJobCoverage)
+    governance_defaults: ReviewOnlyCaseGovernanceDefaults = Field(default_factory=ReviewOnlyCaseGovernanceDefaults)
+    target_case_reference: ReviewOnlyCaseTargetReference = Field(default_factory=ReviewOnlyCaseTargetReference)
+    allowed_actions: list[str] = Field(default_factory=list)
+    blocked_actions: list[str] = Field(default_factory=list)
+    promotion_requirements: list[str] = Field(default_factory=list)
+    readiness: ReviewOnlyCaseReadiness = Field(default_factory=ReviewOnlyCaseReadiness)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    audit: ReviewOnlyCaseAudit = Field(default_factory=ReviewOnlyCaseAudit)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "review_only_case_container_only": True,
+            "evidence_rows_imported": False,
+            "evidence_rows_parsed": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "review_queue_created": False,
+            "dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

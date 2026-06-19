@@ -967,6 +967,89 @@ def test_analysis_request_real_package_row_preview_route_blocks_unsafe_inputs(tm
         assert expected_message in response.text
 
 
+def test_analysis_request_review_only_case_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    assert preview_response.status_code == 200
+    preview_run_id = preview_response.json()["preview_run_id"]
+
+    create_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_run_id, "target_case_mode": "new_review_case"},
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-only-cases")
+    all_response = client.get("/api/v1/analysis-requests/review-only-cases")
+
+    assert create_response.status_code == 200
+    body = create_response.json()
+    assert body["schema"] == "sentigraph_review_only_case_v1"
+    assert body["request_id"] == request_id
+    assert body["source_preview_run_id"] == preview_run_id
+    assert body["status"] == "staging_pending"
+    assert body["visibility"] == "internal_review_only"
+    assert body["analysis_included"] is False
+    assert body["public_visible"] is False
+    assert body["report_allowed"] is False
+    assert body["sandbox_allowed"] is False
+    assert body["strategy_lab_allowed"] is False
+    assert body["production_case_created"] is False
+    assert body["evidence_rows_imported"] is False
+    assert body["evidence_layer_written"] is False
+    assert body["review_queue_created"] is False
+    assert body["dedup_run"] is False
+    assert body["analysis_run"] is False
+    assert body["governance_defaults"]["review_status"] == "review_needed"
+    assert body["governance_defaults"]["verification_status"] == "source_url_provided_unverified"
+    assert body["governance_defaults"]["trust_label"] == "medium_low"
+    assert body["readiness"]["can_import_rows_now"] is False
+    assert body["readiness"]["can_run_analysis_now"] is False
+    assert body["readiness"]["can_generate_report_now"] is False
+    assert body["target_case_reference"]["attach_to_production_case_now"] is False
+    assert "route-raw-author-not-returned" not in create_response.text
+
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+    assert all_response.status_code == 200
+    assert len(all_response.json()) == 1
+    read_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-only-cases/{body['review_case_id']}")
+    assert read_response.status_code == 200
+    assert read_response.json()["review_case_id"] == body["review_case_id"]
+
+
+def test_analysis_request_review_only_case_route_blocks_unsafe_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    assert preview_response.status_code == 200
+    preview_run_id = preview_response.json()["preview_run_id"]
+
+    cases = [
+        ({"source_preview_run_id": preview_run_id, "target_case_mode": "production_case"}, "target_case_mode"),
+        ({"source_preview_run_id": preview_run_id, "target_case_mode": "existing_case_review_wrapper"}, "target_case_id"),
+        ({"source_preview_run_id": preview_run_id, "analysis_included": True}, "analysis_included"),
+        ({"source_preview_run_id": preview_run_id, "production_case_created": True}, "production_case_created"),
+        ({"source_preview_run_id": preview_run_id, "evidence_rows_imported": True}, "evidence_rows_imported"),
+    ]
+    for payload, expected_message in cases:
+        response = client.post(f"/api/v1/analysis-requests/{request_id}/review-only-cases", json=payload)
+        assert response.status_code == 400
+        assert expected_message in response.text
+
+    missing_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": "real_package_row_preview_missing"},
+    )
+    assert missing_response.status_code == 404
+    assert "row preview" in missing_response.text.lower()
+
+
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
     create_response = client.post(
