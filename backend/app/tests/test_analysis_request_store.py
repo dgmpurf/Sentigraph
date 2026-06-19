@@ -18,6 +18,7 @@ from app.services.analysis_request_store import (
     create_review_only_case,
     create_review_only_case_staging_import,
     create_review_queue_initialization,
+    create_review_queue_completion_gate,
     create_review_queue_item_action,
     create_analysis_request,
     get_analysis_request_config,
@@ -31,6 +32,7 @@ from app.services.analysis_request_store import (
     list_review_only_cases,
     list_review_only_case_staging_imports,
     list_review_queue_action_audits,
+    list_review_queue_completion_gates,
     list_review_queue_initializations,
     list_analysis_requests,
     read_evidence_row_reader_dry_run,
@@ -38,6 +40,7 @@ from app.services.analysis_request_store import (
     read_review_only_case,
     read_review_only_case_staging_import,
     read_review_queue_action_audits_for_item,
+    read_review_queue_completion_gate,
     read_review_queue_initialization,
     read_review_queue_item_batch,
     read_staged_evidence_candidate_batch,
@@ -251,6 +254,39 @@ def create_real_preview_package(tmp_path: Path, *, mixed: bool = False, include_
     return package_dir
 
 
+def create_many_row_preview_package(tmp_path: Path, *, row_count: int = 4) -> Path:
+    package_dir = tmp_path / "many_safe_real_preview_package"
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "manifest.json").write_text(
+        json.dumps({"package_name": package_dir.name, "package_role": "selected_public_sample"}),
+        encoding="utf-8",
+    )
+    (package_dir / "validation_report.json").write_text(json.dumps({"errors": 0, "warnings": 0}), encoding="utf-8")
+    (package_dir / "coverage_note.md").write_text(
+        "selected public sample only; not full-web, not full-platform, not full-thread",
+        encoding="utf-8",
+    )
+    (package_dir / "README.md").write_text("local many-row preview fixture", encoding="utf-8")
+    rows = [
+        {
+            "platform": "synthetic_forum",
+            "evidence_type": "comment",
+            "source_url": f"https://example.invalid/real-preview/many/{index}",
+            "title": f"Safe local package row {index}",
+            "body_text": f"Safe local package row preview body {index}.",
+            "created_at": "2026-06-18T01:00:00Z",
+            "language": "en",
+            "like_count": index,
+        }
+        for index in range(1, row_count + 1)
+    ]
+    (package_dir / "evidence_items.jsonl").write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows),
+        encoding="utf-8",
+    )
+    return package_dir
+
+
 def create_manual_import_job(tmp_path: Path, request_id: str, *, package_dir: Path | None = None) -> dict:
     create_approved_review_decision(tmp_path, request_id)
     if package_dir is not None:
@@ -322,8 +358,23 @@ def review_queue_action_payload(action: str = "approve", **overrides: object) ->
     return payload
 
 
-def create_review_queue_ready_chain(tmp_path: Path, request_id: str):
-    package_dir = create_real_preview_package(tmp_path)
+def review_queue_completion_gate_payload(**overrides: object) -> dict:
+    payload = {
+        "minimum_reviewed_ratio": 1.0,
+        "allow_deferred_items": False,
+        "acknowledge_completion_is_not_dedup": True,
+        "acknowledge_completion_is_not_analysis": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def create_review_queue_ready_chain(tmp_path: Path, request_id: str, *, package_dir: Path | None = None):
+    if package_dir is None:
+        package_dir = create_real_preview_package(tmp_path)
     create_real_preview_ready_chain(tmp_path, request_id, package_dir)
     preview = create_real_package_row_preview(request_id, real_preview_ack_payload())
     review_case = create_review_only_case(request_id)
@@ -2367,6 +2418,173 @@ def test_review_queue_action_blocks_unsafe_payloads_and_transitions(tmp_path: Pa
         assert "forbidden" in str(exc) or "raw_author" in str(exc)
     else:
         raise AssertionError("raw author flag should block review action")
+
+
+def test_review_queue_completion_gate_passes_complete_mixed_reviewed_queue(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Completion gate complete")))
+    package_dir = create_many_row_preview_package(tmp_path)
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id, package_dir=package_dir)
+    item_ids = [item.review_item_id for item in item_batch.items]
+
+    create_review_queue_item_action(record.request_id, item_ids[0], review_queue_action_payload("approve"))
+    create_review_queue_item_action(record.request_id, item_ids[1], review_queue_action_payload("reject", note="Reject weak source."))
+    create_review_queue_item_action(record.request_id, item_ids[2], review_queue_action_payload("mark_weak", note="Keep weak with warning."))
+    create_review_queue_item_action(
+        record.request_id,
+        item_ids[3],
+        review_queue_action_payload("merge_duplicate", note="Merge duplicate candidate.", duplicate_group_id="dup_completion_gate"),
+    )
+
+    gate = create_review_queue_completion_gate(
+        record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+    gates = list_review_queue_completion_gates(record.request_id)
+    read_back = read_review_queue_completion_gate(record.request_id, gate.completion_gate_id)
+    updated_batch = read_review_queue_item_batch(record.request_id, queue_init.queue_init_id)
+    item_map = {item.review_item_id: item for item in updated_batch.items}
+
+    assert gate.schema_ == "sentigraph_review_queue_completion_gate_v1"
+    assert gate.status == "complete_enough_for_future_dedup_preview"
+    assert gate.counts.total_items == 4
+    assert gate.counts.approved == 1
+    assert gate.counts.rejected == 1
+    assert gate.counts.marked_weak == 1
+    assert gate.counts.duplicate_merged == 1
+    assert gate.counts.reviewed_ratio == 1.0
+    assert gate.audit_summary.items_with_audit == 4
+    assert gate.audit_summary.items_missing_audit == 0
+    assert gate.downstream_eligibility.eligible_for_future_dedup_preview is True
+    assert gate.downstream_eligibility.can_run_dedup_now is False
+    assert gate.downstream_eligibility.can_run_analysis_now is False
+    assert gate.now_flags["run_dedup_now"] is False
+    assert gate.now_flags["run_analysis_now"] is False
+    assert item_map[item_ids[0]].governance.analysis_included is False
+    assert item_map[item_ids[1]].governance.analysis_included is False
+    assert item_map[item_ids[2]].governance.analysis_included is False
+    assert item_map[item_ids[2]].queue_status == "marked_weak"
+    assert item_map[item_ids[3]].dedup.may_amplify_risk is False
+    assert gates[0].completion_gate_id == gate.completion_gate_id
+    assert read_back.completion_gate_id == gate.completion_gate_id
+
+
+def test_review_queue_completion_gate_reports_incomplete_privacy_and_deferred_states(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+
+    incomplete_record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Completion incomplete")))
+    _case, _staging, incomplete_queue, _items = create_review_queue_ready_chain(tmp_path, incomplete_record.request_id)
+    incomplete_gate = create_review_queue_completion_gate(
+        incomplete_record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=incomplete_queue.queue_init_id, review_case_id=incomplete_queue.review_case_id),
+    )
+    assert incomplete_gate.status == "incomplete"
+    assert incomplete_gate.counts.review_needed == 2
+    assert "reviewed_ratio_below_minimum" in incomplete_gate.blocked_reasons
+
+    privacy_record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Completion privacy hold")))
+    _case, _staging, privacy_queue, privacy_items = create_review_queue_ready_chain(tmp_path, privacy_record.request_id)
+    create_review_queue_item_action(
+        privacy_record.request_id,
+        privacy_items.items[0].review_item_id,
+        review_queue_action_payload("hold_for_privacy_review", note="Hold for privacy."),
+    )
+    privacy_gate = create_review_queue_completion_gate(
+        privacy_record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=privacy_queue.queue_init_id, review_case_id=privacy_queue.review_case_id),
+    )
+    assert privacy_gate.status == "privacy_hold"
+    assert "privacy_hold_items_present" in privacy_gate.blocked_reasons
+
+    deferred_record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Completion deferred")))
+    _case, _staging, deferred_queue, deferred_items = create_review_queue_ready_chain(tmp_path, deferred_record.request_id)
+    for item in deferred_items.items:
+        create_review_queue_item_action(
+            deferred_record.request_id,
+            item.review_item_id,
+            review_queue_action_payload("request_more_source", note="Defer pending source follow-up."),
+        )
+    blocked_deferred_gate = create_review_queue_completion_gate(
+        deferred_record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=deferred_queue.queue_init_id, review_case_id=deferred_queue.review_case_id),
+    )
+    allowed_deferred_gate = create_review_queue_completion_gate(
+        deferred_record.request_id,
+        review_queue_completion_gate_payload(
+            queue_init_id=deferred_queue.queue_init_id,
+            review_case_id=deferred_queue.review_case_id,
+            allow_deferred_items=True,
+        ),
+    )
+    assert blocked_deferred_gate.status == "incomplete"
+    assert "needs_more_source_items_present" in blocked_deferred_gate.blocked_reasons
+    assert allowed_deferred_gate.status == "complete_enough_for_future_dedup_preview"
+    assert any("deferred" in warning for warning in allowed_deferred_gate.warnings)
+
+
+def test_review_queue_completion_gate_blocks_unsafe_items_and_payloads(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Completion gate blocks")))
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id)
+    first_item_id = item_batch.items[0].review_item_id
+
+    unsafe_payloads = [
+        (review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, acknowledge_no_report=False), "acknowledgement"),
+        (review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, run_analysis_now=True), "side effect"),
+        (review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, dedup_run=True), "side effect"),
+    ]
+    for payload, expected in unsafe_payloads:
+        try:
+            create_review_queue_completion_gate(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected in str(exc)
+        else:
+            raise AssertionError(f"{expected} should block completion gate request")
+
+    create_review_queue_item_action(record.request_id, first_item_id, review_queue_action_payload("approve"))
+    batch_path = tmp_path / "review_queue_items" / f"{record.request_id}_{queue_init.queue_init_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["items"][0]["queue_status"] = "duplicate_merged"
+    batch_payload["items"][0]["governance"]["review_status"] = "duplicate_merged"
+    batch_payload["items"][0]["dedup"]["dedup_status"] = "duplicate_candidate_marked"
+    batch_payload["items"][0]["dedup"]["may_amplify_risk"] = True
+    batch_payload["items"][1]["queue_status"] = "approved"
+    batch_payload["items"][1]["governance"]["review_status"] = "approved"
+    batch_payload["items"][1]["privacy"]["raw_author_id_present"] = True
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+
+    gate = create_review_queue_completion_gate(
+        record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+
+    assert gate.status == "blocked"
+    assert "duplicate_may_amplify_risk" in gate.blocked_reasons
+    assert "raw_forbidden_field_risk" in gate.blocked_reasons
+    assert "missing_action_audit_for_reviewed_item" in gate.blocked_reasons
+    assert gate.downstream_eligibility.eligible_for_future_dedup_preview is False
+
+
+def test_review_queue_completion_gate_records_are_append_only(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Completion append-only")))
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id)
+    for item in item_batch.items:
+        create_review_queue_item_action(record.request_id, item.review_item_id, review_queue_action_payload("approve"))
+
+    first_gate = create_review_queue_completion_gate(
+        record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+    second_gate = create_review_queue_completion_gate(
+        record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+    gates = list_review_queue_completion_gates(record.request_id)
+
+    assert first_gate.completion_gate_id != second_gate.completion_gate_id
+    assert {gate.completion_gate_id for gate in gates} >= {first_gate.completion_gate_id, second_gate.completion_gate_id}
+    assert len(gates) == 2
 
 
 def test_config_uses_default_runtime_label_without_absolute_path(monkeypatch) -> None:

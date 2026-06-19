@@ -27,6 +27,8 @@ from app.schemas.analysis_request import (
     ReviewQueueActionAudit,
     ReviewQueueActionRequest,
     ReviewQueueActionResult,
+    ReviewQueueCompletionGate,
+    ReviewQueueCompletionGateRequest,
     ReviewQueueInitialization,
     ReviewQueueInitializationCreate,
     ReviewQueueItemBatch,
@@ -47,6 +49,7 @@ from app.services.analysis_request_store import (
     create_real_package_row_preview,
     create_review_only_case,
     create_review_only_case_staging_import,
+    create_review_queue_completion_gate,
     create_review_queue_item_action,
     create_review_queue_initialization,
     get_analysis_request_config,
@@ -59,6 +62,7 @@ from app.services.analysis_request_store import (
     list_all_review_only_cases,
     list_all_review_only_case_staging_imports,
     list_all_review_queue_action_audits,
+    list_all_review_queue_completion_gates,
     list_all_review_queue_initializations,
     list_evidence_import_plans,
     list_evidence_import_previews,
@@ -71,6 +75,7 @@ from app.services.analysis_request_store import (
     list_review_only_cases,
     list_review_only_case_staging_imports,
     list_review_queue_action_audits,
+    list_review_queue_completion_gates,
     list_review_queue_initializations,
     read_case_draft_handoff,
     read_evidence_import_plan,
@@ -84,6 +89,7 @@ from app.services.analysis_request_store import (
     read_review_only_case,
     read_review_only_case_staging_import,
     read_review_queue_action_audits_for_item,
+    read_review_queue_completion_gate,
     read_review_queue_initialization,
     read_review_queue_item_batch,
     read_staged_evidence_candidate_batch,
@@ -165,6 +171,11 @@ def analysis_request_review_queue_initialization_all_list() -> list[ReviewQueueI
 @router.get("/review-queue-action-audits", response_model=list[ReviewQueueActionAudit])
 def analysis_request_review_queue_action_audit_all_list() -> list[ReviewQueueActionAudit]:
     return list_all_review_queue_action_audits()
+
+
+@router.get("/review-queue-completion-gates", response_model=list[ReviewQueueCompletionGate])
+def analysis_request_review_queue_completion_gate_all_list() -> list[ReviewQueueCompletionGate]:
+    return list_all_review_queue_completion_gates()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -554,6 +565,40 @@ def analysis_request_review_queue_item_action_audit_list(
 ) -> list[ReviewQueueActionAudit]:
     try:
         return read_review_queue_action_audits_for_item(request_id, review_item_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/review-queue-completion-gates", response_model=list[ReviewQueueCompletionGate])
+def analysis_request_review_queue_completion_gate_list(request_id: str) -> list[ReviewQueueCompletionGate]:
+    try:
+        return list_review_queue_completion_gates(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/review-queue-completion-gates", response_model=ReviewQueueCompletionGate)
+def analysis_request_review_queue_completion_gate_create(
+    request_id: str,
+    payload: ReviewQueueCompletionGateRequest,
+) -> ReviewQueueCompletionGate:
+    try:
+        return create_review_queue_completion_gate(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/review-queue-completion-gates/{completion_gate_id}", response_model=ReviewQueueCompletionGate)
+def analysis_request_review_queue_completion_gate_detail(
+    request_id: str,
+    completion_gate_id: str,
+) -> ReviewQueueCompletionGate:
+    try:
+        return read_review_queue_completion_gate(request_id, completion_gate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

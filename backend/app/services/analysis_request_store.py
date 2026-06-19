@@ -83,6 +83,11 @@ from app.schemas.analysis_request import (
     ReviewQueueActionAudit,
     ReviewQueueActionRequest,
     ReviewQueueActionResult,
+    ReviewQueueCompletionGate,
+    ReviewQueueCompletionGateAuditSummary,
+    ReviewQueueCompletionGateCounts,
+    ReviewQueueCompletionGateDownstreamEligibility,
+    ReviewQueueCompletionGateRequest,
     ReviewQueueDefaults,
     ReviewQueueInitialization,
     ReviewQueueInitializationCounts,
@@ -1078,6 +1083,42 @@ def read_review_queue_action_audits_for_item(request_id: str, review_item_id: st
     return [audit for audit in list_review_queue_action_audits(request_id) if audit.review_item_id == review_item_id]
 
 
+def read_review_queue_completion_gate(request_id: str, completion_gate_id: str) -> ReviewQueueCompletionGate:
+    gate_path = _review_queue_completion_gate_path(request_id, completion_gate_id)
+    if not gate_path.exists():
+        raise AnalysisRequestNotFoundError(f"Review queue completion gate {completion_gate_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(gate_path.read_text(encoding="utf-8-sig"))
+        return ReviewQueueCompletionGate.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{gate_path.name} is not a valid review queue completion gate: {type(exc).__name__}") from exc
+
+
+def list_review_queue_completion_gates(request_id: str) -> list[ReviewQueueCompletionGate]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    gates: list[ReviewQueueCompletionGate] = []
+    for path in sorted((root / "review_queue_completion_gates").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            gates.append(ReviewQueueCompletionGate.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return gates
+
+
+def list_all_review_queue_completion_gates() -> list[ReviewQueueCompletionGate]:
+    root = _ensure_root()
+    gates: list[ReviewQueueCompletionGate] = []
+    for path in sorted((root / "review_queue_completion_gates").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            gates.append(ReviewQueueCompletionGate.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return gates
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -1639,6 +1680,28 @@ def create_review_queue_item_action(
         updated_item=item,
         audit_record=audit,
     )
+
+
+def create_review_queue_completion_gate(
+    request_id: str,
+    payload: ReviewQueueCompletionGateRequest | dict[str, Any],
+) -> ReviewQueueCompletionGate:
+    try:
+        gate_payload = payload if isinstance(payload, ReviewQueueCompletionGateRequest) else ReviewQueueCompletionGateRequest.model_validate(payload or {})
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create review queue completion gate: invalid payload ({exc}).") from exc
+
+    _validate_review_queue_completion_gate_payload(gate_payload)
+    queue_init = read_review_queue_initialization(request_id, gate_payload.queue_init_id or "")
+    review_case_id = gate_payload.review_case_id or queue_init.review_case_id
+    review_case = read_review_only_case(request_id, review_case_id)
+    batch = read_review_queue_item_batch(request_id, queue_init.queue_init_id)
+    gate = _build_review_queue_completion_gate(request_id, gate_payload, queue_init, review_case, batch)
+    _write_json(
+        _review_queue_completion_gate_path(request_id, gate.completion_gate_id),
+        gate.model_dump(mode="json", by_alias=True),
+    )
+    return read_review_queue_completion_gate(request_id, gate.completion_gate_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -2827,6 +2890,227 @@ def _review_queue_action_downstream_blockers(action: str) -> list[str]:
     return blockers
 
 
+def _validate_review_queue_completion_gate_payload(payload: ReviewQueueCompletionGateRequest) -> None:
+    if not payload.queue_init_id or not payload.queue_init_id.strip():
+        raise AnalysisRequestValidationError("Cannot create review queue completion gate: queue_init_id is required.")
+    acknowledgements = {
+        "acknowledge_completion_is_not_dedup": payload.acknowledge_completion_is_not_dedup,
+        "acknowledge_completion_is_not_analysis": payload.acknowledge_completion_is_not_analysis,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_no_report": payload.acknowledge_no_report,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(f"Cannot create review queue completion gate: acknowledgement flags are required ({', '.join(missing)}).")
+    if payload.production_case_id or payload.target_production_case_id:
+        raise AnalysisRequestValidationError("Cannot create review queue completion gate: production_case_id is not allowed.")
+    side_effect_flags = {
+        "production_case_created": payload.production_case_created,
+        "evidence_layer_written": payload.evidence_layer_written,
+        "production_review_queue_created": payload.production_review_queue_created,
+        "analysis_included": payload.analysis_included,
+        "dedup_run": payload.dedup_run,
+        "analysis_run": payload.analysis_run,
+        "report_generated": payload.report_generated,
+        "sandbox_generated": payload.sandbox_generated,
+        "public_event_generated": payload.public_event_generated,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "create_production_review_queue_now": payload.create_production_review_queue_now,
+        "run_dedup_now": payload.run_dedup_now,
+        "run_analysis_now": payload.run_analysis_now,
+        "generate_report_now": payload.generate_report_now,
+        "generate_sandbox_now": payload.generate_sandbox_now,
+        "generate_public_event_now": payload.generate_public_event_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(f"Cannot create review queue completion gate: side effect flags must remain false ({', '.join(enabled)}).")
+
+
+def _build_review_queue_completion_gate(
+    request_id: str,
+    payload: ReviewQueueCompletionGateRequest,
+    queue_init: ReviewQueueInitialization,
+    review_case: ReviewOnlyCase,
+    batch: ReviewQueueItemBatch,
+) -> ReviewQueueCompletionGate:
+    created_at = datetime.now(timezone.utc)
+    counts = ReviewQueueCompletionGateCounts(total_items=len(batch.items))
+    hard_blockers: list[str] = []
+    incomplete_reasons: list[str] = []
+    warnings: list[str] = []
+
+    if queue_init.request_id != request_id or review_case.request_id != request_id or batch.request_id != request_id:
+        hard_blockers.append("request_id_mismatch")
+    if payload.review_case_id and payload.review_case_id != queue_init.review_case_id:
+        hard_blockers.append("review_case_id_mismatch")
+    if queue_init.queue_init_id != batch.queue_init_id:
+        hard_blockers.append("queue_init_batch_mismatch")
+    if queue_init.review_case_id != review_case.review_case_id or batch.review_case_id != review_case.review_case_id:
+        hard_blockers.append("review_only_case_mismatch")
+    if review_case.status not in {"draft", "staging_pending"}:
+        hard_blockers.append(f"review_only_case_status_{review_case.status}")
+    if review_case.visibility != "internal_review_only":
+        hard_blockers.append("review_only_case_not_internal")
+    if review_case.production_case_created or review_case.evidence_layer_written or review_case.review_queue_created:
+        hard_blockers.append("review_only_case_unsafe_production_flags")
+    if review_case.dedup_run or review_case.analysis_run or review_case.analysis_included:
+        hard_blockers.append("review_only_case_unsafe_analysis_flags")
+    if queue_init.target.production_case_created or queue_init.target.evidence_layer_written or queue_init.target.production_review_queue_created:
+        hard_blockers.append("queue_init_unsafe_production_flags")
+    if counts.total_items == 0:
+        incomplete_reasons.append("no_review_queue_items")
+
+    audits = list_review_queue_action_audits(request_id)
+    audits_by_item: dict[str, list[ReviewQueueActionAudit]] = {}
+    for audit in audits:
+        if audit.queue_init_id != queue_init.queue_init_id:
+            continue
+        audits_by_item.setdefault(audit.review_item_id, []).append(audit)
+
+    reviewer_labels = sorted({audit.reviewer_label for item_audits in audits_by_item.values() for audit in item_audits if audit.reviewer_label})
+    latest_action_at = max(
+        (audit.reviewed_at for item_audits in audits_by_item.values() for audit in item_audits),
+        default=None,
+    )
+    items_with_audit = 0
+    items_missing_audit = 0
+
+    known_statuses = {
+        "review_needed",
+        "approved",
+        "rejected",
+        "marked_weak",
+        "needs_more_source",
+        "duplicate_merged",
+        "privacy_hold",
+    }
+    for item in batch.items:
+        status = item.queue_status
+        if status not in known_statuses:
+            hard_blockers.append("unknown_review_queue_status")
+            continue
+        setattr(counts, status, getattr(counts, status) + 1)
+        if status != "review_needed":
+            counts.reviewed_count += 1
+            if audits_by_item.get(item.review_item_id):
+                items_with_audit += 1
+            else:
+                items_missing_audit += 1
+                incomplete_reasons.append("missing_action_audit_for_reviewed_item")
+        if item.request_id != request_id or item.queue_init_id != queue_init.queue_init_id or item.review_case_id != review_case.review_case_id:
+            hard_blockers.append("review_queue_item_parent_mismatch")
+        if item.governance.analysis_included or item.governance.public_visible or item.governance.report_visible or item.governance.sandbox_visible:
+            hard_blockers.append("item_visibility_or_analysis_flag_true")
+        if _review_queue_item_has_forbidden_fields(item):
+            hard_blockers.append("raw_forbidden_field_risk")
+        if status == "needs_more_source" and not payload.allow_deferred_items:
+            incomplete_reasons.append("needs_more_source_items_present")
+        if status == "needs_more_source" and payload.allow_deferred_items:
+            warnings.append("needs_more_source items were treated as deferred for this local completion gate.")
+        if status == "marked_weak":
+            warnings.append("marked_weak evidence remains warning-marked and analysis-excluded.")
+        if status == "rejected" and item.governance.analysis_included:
+            hard_blockers.append("rejected_item_analysis_included")
+        if status == "approved" and item.governance.analysis_included:
+            hard_blockers.append("approved_item_analysis_included")
+        if status == "duplicate_merged" and item.dedup.may_amplify_risk:
+            hard_blockers.append("duplicate_may_amplify_risk")
+        if status == "duplicate_merged" and item.dedup.dedup_status != "duplicate_candidate_marked":
+            warnings.append("duplicate_merged item is marked for future dedup preview but dedup has not run.")
+
+    counts.reviewed_ratio = round(counts.reviewed_count / counts.total_items, 4) if counts.total_items else 0.0
+    if counts.reviewed_ratio < payload.minimum_reviewed_ratio:
+        incomplete_reasons.append("reviewed_ratio_below_minimum")
+    if items_missing_audit:
+        warnings.append("Reviewed items without action audit cannot pass completion gate.")
+
+    status = "complete_enough_for_future_dedup_preview"
+    if hard_blockers:
+        status = "blocked"
+    elif counts.privacy_hold:
+        status = "privacy_hold"
+        incomplete_reasons.append("privacy_hold_items_present")
+    elif incomplete_reasons:
+        status = "incomplete"
+
+    blocked_reasons = _unique_preserve_order([*hard_blockers, *incomplete_reasons])
+    eligible = status == "complete_enough_for_future_dedup_preview"
+    gate_id = _new_review_queue_completion_gate_id()
+    return ReviewQueueCompletionGate(
+        completion_gate_id=gate_id,
+        request_id=request_id,
+        review_case_id=review_case.review_case_id,
+        queue_init_id=queue_init.queue_init_id,
+        created_at=created_at,
+        created_by=payload.created_by or "sentigraph_local_ui",
+        status=status,
+        counts=counts,
+        audit_summary=ReviewQueueCompletionGateAuditSummary(
+            items_with_audit=items_with_audit,
+            items_missing_audit=items_missing_audit,
+            latest_action_at=latest_action_at,
+            reviewer_labels=reviewer_labels,
+        ),
+        downstream_eligibility=ReviewQueueCompletionGateDownstreamEligibility(
+            eligible_for_future_dedup_preview=eligible,
+            can_run_dedup_now=False,
+            can_run_analysis_now=False,
+            can_generate_report_now=False,
+            can_generate_sandbox_now=False,
+            can_create_public_event_now=False,
+        ),
+        blocked_reasons=blocked_reasons,
+        warnings=_unique_preserve_order(warnings),
+        boundary_notes=[
+            "Completion gate evaluates local review-only queue status only.",
+            "Completion does not run dedup.",
+            "Completion does not run analysis.",
+            "Completion does not make items public.",
+            "Completion does not write the production Evidence Layer.",
+            "Completion only allows future dedup preview consideration when eligible.",
+            "Rejected evidence remains audit-visible but analysis-excluded.",
+            "Weak evidence remains warning-marked.",
+            "Duplicate evidence must not amplify risk.",
+        ],
+        recommended_next_steps=_review_queue_completion_next_steps(status),
+    )
+
+
+def _unique_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
+def _review_queue_completion_next_steps(status: str) -> list[str]:
+    if status == "complete_enough_for_future_dedup_preview":
+        return [
+            "Design Phase 6W future dedup preview gate.",
+            "Keep all items analysis-excluded until a future dedup and promotion phase.",
+        ]
+    if status == "privacy_hold":
+        return [
+            "Resolve privacy hold items before future dedup preview.",
+            "Do not promote or analyze any review-only item.",
+        ]
+    if status == "blocked":
+        return [
+            "Inspect blocked_reasons and remove unsafe local-only queue state.",
+            "Do not run dedup, analysis, report, Sandbox, or public event generation.",
+        ]
+    return [
+        "Complete human review actions or explicitly defer source follow-up items.",
+        "Re-run completion gate only after required review action audits exist.",
+    ]
+
+
 def _read_real_package_preview_rows(
     row_file: Path,
     max_rows: int,
@@ -3205,6 +3489,7 @@ def _ensure_root() -> Path:
     (root / "review_queue_initializations").mkdir(parents=True, exist_ok=True)
     (root / "review_queue_items").mkdir(parents=True, exist_ok=True)
     (root / "review_queue_action_audits").mkdir(parents=True, exist_ok=True)
+    (root / "review_queue_completion_gates").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -3316,6 +3601,13 @@ def _review_queue_action_audit_path(request_id: str, review_item_id: str, audit_
     return root / "review_queue_action_audits" / f"{request_id}_{review_item_id}_{audit_id}.json"
 
 
+def _review_queue_completion_gate_path(request_id: str, completion_gate_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(completion_gate_id)
+    root = _ensure_root()
+    return root / "review_queue_completion_gates" / f"{request_id}_{completion_gate_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -3377,6 +3669,11 @@ def _new_review_queue_init_id() -> str:
 def _new_review_queue_action_audit_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"review_queue_action_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_review_queue_completion_gate_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"review_queue_completion_gate_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

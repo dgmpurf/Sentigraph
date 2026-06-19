@@ -248,6 +248,26 @@ export async function listAnalysisRequestReviewQueueActionAudits(requestId) {
   return Array.isArray(data) ? data.map(normalizeReviewQueueActionAudit).filter(Boolean) : []
 }
 
+export async function listAnalysisRequestReviewQueueCompletionGates(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-completion-gates`)
+  return Array.isArray(data) ? data.map(normalizeReviewQueueCompletionGate).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestReviewQueueCompletionGate(requestId, payload = {}) {
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-completion-gates`,
+    payload,
+  )
+  return normalizeReviewQueueCompletionGate(data)
+}
+
+export async function getAnalysisRequestReviewQueueCompletionGate(requestId, completionGateId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-completion-gates/${encodeURIComponent(completionGateId)}`,
+  )
+  return normalizeReviewQueueCompletionGate(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1978,6 +1998,34 @@ function normalizeReviewQueueActionResult(data) {
     audit_record: normalizeReviewQueueActionAudit(data.audit_record),
     now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
     readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+  }
+}
+
+function normalizeReviewQueueCompletionGate(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_review_queue_completion_gate_v1'),
+    completion_gate_id: String(data.completion_gate_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    queue_init_id: String(data.queue_init_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    status: String(data.status || 'incomplete'),
+    counts: data.counts && typeof data.counts === 'object' ? normalizeSafeObject(data.counts) : {},
+    audit_summary: data.audit_summary && typeof data.audit_summary === 'object' ? normalizeSafeObject(data.audit_summary) : {},
+    downstream_eligibility:
+      data.downstream_eligibility && typeof data.downstream_eligibility === 'object'
+        ? normalizeSafeObject(data.downstream_eligibility)
+        : {},
+    blocked_reasons: Array.isArray(data.blocked_reasons) ? data.blocked_reasons.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }
 

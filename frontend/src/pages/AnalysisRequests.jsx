@@ -32,6 +32,7 @@ import {
   createAnalysisRequestExecutionPreflight,
   createAnalysisRequestRealPackageRowPreview,
   createAnalysisRequestReviewOnlyCase,
+  createAnalysisRequestReviewQueueCompletionGate,
   createAnalysisRequestReviewQueueItemAction,
   createAnalysisRequestReviewQueueInitialization,
   createAnalysisRequestRowReaderDryRun,
@@ -48,6 +49,7 @@ import {
   listAnalysisRequestRealPackageRowPreviews,
   listAnalysisRequestReviewOnlyCases,
   listAnalysisRequestReviewQueueActionAudits,
+  listAnalysisRequestReviewQueueCompletionGates,
   listAnalysisRequestReviewQueueInitializations,
   listAnalysisRequestRowReaderDryRuns,
   listAnalysisRequestReviewDecisions,
@@ -549,6 +551,7 @@ export function AnalysisRequests() {
   const [stagingImportForm] = Form.useForm()
   const [reviewQueueInitForm] = Form.useForm()
   const [reviewQueueActionForm] = Form.useForm()
+  const [reviewQueueCompletionGateForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -567,6 +570,7 @@ export function AnalysisRequests() {
   const [reviewQueueInitializations, setReviewQueueInitializations] = useState([])
   const [reviewQueueItemBatch, setReviewQueueItemBatch] = useState(null)
   const [reviewQueueActionAudits, setReviewQueueActionAudits] = useState([])
+  const [reviewQueueCompletionGates, setReviewQueueCompletionGates] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -582,6 +586,7 @@ export function AnalysisRequests() {
   const [stagingImportLoading, setStagingImportLoading] = useState(false)
   const [reviewQueueInitLoading, setReviewQueueInitLoading] = useState(false)
   const [reviewQueueActionLoading, setReviewQueueActionLoading] = useState('')
+  const [reviewQueueCompletionGateLoading, setReviewQueueCompletionGateLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -595,6 +600,7 @@ export function AnalysisRequests() {
   const [stagingImportError, setStagingImportError] = useState('')
   const [reviewQueueInitError, setReviewQueueInitError] = useState('')
   const [reviewQueueActionError, setReviewQueueActionError] = useState('')
+  const [reviewQueueCompletionGateError, setReviewQueueCompletionGateError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -630,7 +636,7 @@ export function AnalysisRequests() {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
       setReviewQueueActionAudits([])
-      setReviewQueueActionAudits([])
+      setReviewQueueCompletionGates([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -643,6 +649,7 @@ export function AnalysisRequests() {
       setStagingImportError('')
       setReviewQueueInitError('')
       setReviewQueueActionError('')
+      setReviewQueueCompletionGateError('')
       return
     }
     try {
@@ -736,12 +743,15 @@ export function AnalysisRequests() {
         setReviewQueueItemBatch(null)
       }
       setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(requestId))
+      setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
       setReviewQueueActionAudits([])
+      setReviewQueueCompletionGates([])
       setReviewQueueInitError('')
       setReviewQueueActionError('')
+      setReviewQueueCompletionGateError('')
     }
   }
 
@@ -1062,6 +1072,7 @@ export function AnalysisRequests() {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
       setReviewQueueActionAudits([])
+      setReviewQueueCompletionGates([])
       message.success(`Created review-only staging import: ${stagingImport.staging_import_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review-only staging import.'
@@ -1093,6 +1104,7 @@ export function AnalysisRequests() {
         await getAnalysisRequestReviewQueueItems(selectedRecord.request_id, queueInit.queue_init_id),
       )
       setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(selectedRecord.request_id))
+      setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(selectedRecord.request_id))
       message.success(`Initialized review-only queue: ${queueInit.queue_init_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to initialize review-only queue.'
@@ -1126,12 +1138,40 @@ export function AnalysisRequests() {
         await getAnalysisRequestReviewQueueItems(selectedRecord.request_id, result.queue_init_id || item.queue_init_id),
       )
       setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(selectedRecord.request_id))
+      setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(selectedRecord.request_id))
       message.success(`Recorded review action: ${action}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record review queue action.'
       setReviewQueueActionError(String(messageText))
     } finally {
       setReviewQueueActionLoading('')
+    }
+  }
+
+  async function handleCreateReviewQueueCompletionGate(values) {
+    if (!selectedRecord?.request_id) return
+    setReviewQueueCompletionGateLoading(true)
+    setReviewQueueCompletionGateError('')
+    try {
+      const gate = await createAnalysisRequestReviewQueueCompletionGate(selectedRecord.request_id, {
+        queue_init_id: values.queue_init_id || latestReviewQueueInitialization?.queue_init_id || undefined,
+        review_case_id: values.review_case_id || latestReviewQueueInitialization?.review_case_id || undefined,
+        minimum_reviewed_ratio: Number(values.minimum_reviewed_ratio ?? 1),
+        allow_deferred_items: Boolean(values.allow_deferred_items),
+        acknowledge_completion_is_not_dedup: Boolean(values.acknowledge_completion_is_not_dedup),
+        acknowledge_completion_is_not_analysis: Boolean(values.acknowledge_completion_is_not_analysis),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_no_report: Boolean(values.acknowledge_no_report),
+        created_by: 'sentigraph_local_ui',
+      })
+      setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(selectedRecord.request_id))
+      message.success(`Evaluated completion gate: ${gate.status}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to evaluate review queue completion gate.'
+      setReviewQueueCompletionGateError(String(messageText))
+    } finally {
+      setReviewQueueCompletionGateLoading(false)
     }
   }
 
@@ -1339,6 +1379,24 @@ export function AnalysisRequests() {
     }, {})
   }, [reviewQueueActionAudits])
   const reviewQueueActionAuditsJson = reviewQueueActionAudits.length ? JSON.stringify(reviewQueueActionAudits, null, 2) : ''
+  const latestReviewQueueCompletionGate = reviewQueueCompletionGates[0] || null
+  const latestReviewQueueCompletionGateJson = latestReviewQueueCompletionGate
+    ? JSON.stringify(latestReviewQueueCompletionGate, null, 2)
+    : ''
+  const reviewQueueCompletionGatesJson = reviewQueueCompletionGates.length
+    ? JSON.stringify(reviewQueueCompletionGates, null, 2)
+    : ''
+  const reviewQueueCompletionValues = Form.useWatch([], reviewQueueCompletionGateForm) || {}
+  const reviewQueueCompletionReady = useMemo(() => {
+    return Boolean(
+      latestReviewQueueInitialization?.queue_init_id &&
+        reviewQueueCompletionValues.acknowledge_completion_is_not_dedup &&
+        reviewQueueCompletionValues.acknowledge_completion_is_not_analysis &&
+        reviewQueueCompletionValues.acknowledge_no_evidence_layer_write &&
+        reviewQueueCompletionValues.acknowledge_no_production_case &&
+        reviewQueueCompletionValues.acknowledge_no_report,
+    )
+  }, [latestReviewQueueInitialization?.queue_init_id, reviewQueueCompletionValues])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -3151,6 +3209,178 @@ export function AnalysisRequests() {
                                   Copy audit timeline JSON
                                 </Button>
                               </Space>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Review Queue Completion Gate / 复核完成门">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Completion gate boundary"
+                              description="Completion gate only evaluates whether local review-only queue status can be considered for a future dedup preview. It does not run dedup, does not run analysis, does not write the Evidence Layer, does not make items public, and does not generate reports, Sandbox fixtures, or public event pages."
+                            />
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="Safe interpretation"
+                              description="Rejected evidence remains audit-visible but analysis-excluded. Weak evidence remains warning-marked. Duplicate evidence must not amplify risk. A complete gate is not evidence verification and is not analysis readiness."
+                            />
+                            {reviewQueueCompletionGateError ? <Alert type="error" showIcon message={reviewQueueCompletionGateError} /> : null}
+                            <Form
+                              form={reviewQueueCompletionGateForm}
+                              layout="vertical"
+                              initialValues={{
+                                queue_init_id: latestReviewQueueInitialization?.queue_init_id || '',
+                                review_case_id: latestReviewQueueInitialization?.review_case_id || '',
+                                minimum_reviewed_ratio: 1,
+                                allow_deferred_items: false,
+                                acknowledge_completion_is_not_dedup: true,
+                                acknowledge_completion_is_not_analysis: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_no_report: true,
+                              }}
+                              onFinish={handleCreateReviewQueueCompletionGate}
+                            >
+                              <Row gutter={[12, 0]}>
+                                <Col span={12}>
+                                  <Form.Item label="queue_init_id" name="queue_init_id">
+                                    <Select
+                                      placeholder="Select review queue initialization"
+                                      options={reviewQueueInitializations.map((item) => ({
+                                        value: item.queue_init_id,
+                                        label: item.queue_init_id,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item label="review_case_id" name="review_case_id">
+                                    <Input placeholder={latestReviewQueueInitialization?.review_case_id || 'review_only_case_id'} />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item label="minimum_reviewed_ratio" name="minimum_reviewed_ratio">
+                                    <InputNumber min={0} max={1} step={0.05} className="full-width" />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item name="allow_deferred_items" valuePropName="checked">
+                                    <Checkbox>Allow needs_more_source items only as explicitly deferred local review items.</Checkbox>
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={[12, 0]}>
+                                <Col span={12}>
+                                  <Form.Item name="acknowledge_completion_is_not_dedup" valuePropName="checked">
+                                    <Checkbox>Completion is not dedup.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_completion_is_not_analysis" valuePropName="checked">
+                                    <Checkbox>Completion is not analysis.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_no_evidence_layer_write" valuePropName="checked">
+                                    <Checkbox>No Evidence Layer write.</Checkbox>
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item name="acknowledge_no_production_case" valuePropName="checked">
+                                    <Checkbox>No production case creation or update.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_no_report" valuePropName="checked">
+                                    <Checkbox>No report, Sandbox, or public event generation.</Checkbox>
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  loading={reviewQueueCompletionGateLoading}
+                                  disabled={!reviewQueueCompletionReady || reviewQueueCompletionGateLoading}
+                                >
+                                  Evaluate review completion gate
+                                </Button>
+                                {latestReviewQueueCompletionGate ? (
+                                  <Button
+                                    icon={<ClipboardCopy size={16} />}
+                                    onClick={() => copyText(latestReviewQueueCompletionGateJson, 'Review completion gate JSON copied')}
+                                  >
+                                    Copy latest completion gate JSON
+                                  </Button>
+                                ) : null}
+                                {reviewQueueCompletionGates.length ? (
+                                  <Button
+                                    icon={<ClipboardCopy size={16} />}
+                                    onClick={() => copyText(reviewQueueCompletionGatesJson, 'Review completion gate history JSON copied')}
+                                  >
+                                    Copy completion gate history JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+
+                            {latestReviewQueueCompletionGate ? (
+                              <Card size="small" title="Latest completion gate">
+                                <Space direction="vertical" size={10} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={latestReviewQueueCompletionGate.status === 'complete_enough_for_future_dedup_preview' ? 'green' : latestReviewQueueCompletionGate.status === 'blocked' ? 'red' : 'gold'}>
+                                      {latestReviewQueueCompletionGate.status}
+                                    </Tag>
+                                    <Tag color="default">eligible_for_future_dedup_preview: {boolText(latestReviewQueueCompletionGate.downstream_eligibility?.eligible_for_future_dedup_preview)}</Tag>
+                                    <Tag color="default">run_dedup_now: {boolText(latestReviewQueueCompletionGate.now_flags?.run_dedup_now)}</Tag>
+                                    <Tag color="default">run_analysis_now: {boolText(latestReviewQueueCompletionGate.now_flags?.run_analysis_now)}</Tag>
+                                  </Space>
+                                  <Descriptions column={1} size="small">
+                                    <Descriptions.Item label="completion_gate_id">{latestReviewQueueCompletionGate.completion_gate_id}</Descriptions.Item>
+                                    <Descriptions.Item label="counts">
+                                      total={latestReviewQueueCompletionGate.counts?.total_items || 0},
+                                      reviewed={latestReviewQueueCompletionGate.counts?.reviewed_count || 0},
+                                      ratio={latestReviewQueueCompletionGate.counts?.reviewed_ratio || 0},
+                                      review_needed={latestReviewQueueCompletionGate.counts?.review_needed || 0},
+                                      approved={latestReviewQueueCompletionGate.counts?.approved || 0},
+                                      rejected={latestReviewQueueCompletionGate.counts?.rejected || 0},
+                                      weak={latestReviewQueueCompletionGate.counts?.marked_weak || 0},
+                                      duplicate_merged={latestReviewQueueCompletionGate.counts?.duplicate_merged || 0},
+                                      privacy_hold={latestReviewQueueCompletionGate.counts?.privacy_hold || 0}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="audit_summary">
+                                      items_with_audit={latestReviewQueueCompletionGate.audit_summary?.items_with_audit || 0},
+                                      missing_audit={latestReviewQueueCompletionGate.audit_summary?.items_missing_audit || 0},
+                                      latest_action_at={latestReviewQueueCompletionGate.audit_summary?.latest_action_at || '-'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="downstream">
+                                      can_run_dedup_now={boolText(latestReviewQueueCompletionGate.downstream_eligibility?.can_run_dedup_now)},
+                                      can_run_analysis_now={boolText(latestReviewQueueCompletionGate.downstream_eligibility?.can_run_analysis_now)},
+                                      can_generate_report_now={boolText(latestReviewQueueCompletionGate.downstream_eligibility?.can_generate_report_now)}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <SummaryList title="Blocked reasons" items={latestReviewQueueCompletionGate.blocked_reasons || []} />
+                                  <SummaryList title="Warnings" items={latestReviewQueueCompletionGate.warnings || []} />
+                                  <SummaryList title="Boundary notes" items={latestReviewQueueCompletionGate.boundary_notes || []} />
+                                  <SummaryList title="Recommended next steps" items={latestReviewQueueCompletionGate.recommended_next_steps || []} />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No completion gate record yet.</Text>
+                            )}
+
+                            {reviewQueueCompletionGates.length ? (
+                              <Card size="small" title={`Existing completion gate records (${reviewQueueCompletionGates.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {reviewQueueCompletionGates.map((item) => (
+                                    <Space wrap key={item.completion_gate_id}>
+                                      <Tag color={item.status === 'complete_enough_for_future_dedup_preview' ? 'green' : item.status === 'blocked' ? 'red' : 'gold'}>
+                                        {item.status}
+                                      </Tag>
+                                      <Text type="secondary">{item.completion_gate_id}</Text>
+                                      <Text type="secondary">reviewed_ratio={item.counts?.reviewed_ratio || 0}</Text>
+                                      <Text type="secondary">created_at={item.created_at || '-'}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
                             ) : null}
                           </Space>
                         </Card>

@@ -1596,6 +1596,132 @@ class ReviewQueueActionResult(BaseModel):
     )
 
 
+class ReviewQueueCompletionGateRequest(BaseModel):
+    queue_init_id: str | None = None
+    review_case_id: str | None = None
+    minimum_reviewed_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
+    allow_deferred_items: bool = False
+    created_by: str = "sentigraph_local_ui"
+    acknowledge_completion_is_not_dedup: bool = False
+    acknowledge_completion_is_not_analysis: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_no_report: bool = False
+    production_case_id: str | None = None
+    target_production_case_id: str | None = None
+    production_case_created: bool = False
+    evidence_layer_written: bool = False
+    production_review_queue_created: bool = False
+    analysis_included: bool = False
+    dedup_run: bool = False
+    analysis_run: bool = False
+    report_generated: bool = False
+    sandbox_generated: bool = False
+    public_event_generated: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    create_production_review_queue_now: bool = False
+    run_dedup_now: bool = False
+    run_analysis_now: bool = False
+    generate_report_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_public_event_now: bool = False
+
+
+class ReviewQueueCompletionGateCounts(BaseModel):
+    total_items: int = 0
+    review_needed: int = 0
+    approved: int = 0
+    rejected: int = 0
+    marked_weak: int = 0
+    needs_more_source: int = 0
+    duplicate_merged: int = 0
+    privacy_hold: int = 0
+    reviewed_count: int = 0
+    reviewed_ratio: float = 0.0
+
+
+class ReviewQueueCompletionGateAuditSummary(BaseModel):
+    items_with_audit: int = 0
+    items_missing_audit: int = 0
+    latest_action_at: datetime | None = None
+    reviewer_labels: list[str] = Field(default_factory=list)
+
+
+class ReviewQueueCompletionGateDownstreamEligibility(BaseModel):
+    eligible_for_future_dedup_preview: bool = False
+    can_run_dedup_now: bool = False
+    can_run_analysis_now: bool = False
+    can_generate_report_now: bool = False
+    can_generate_sandbox_now: bool = False
+    can_create_public_event_now: bool = False
+
+
+class ReviewQueueCompletionGate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_review_queue_completion_gate_v1"] = Field(
+        default="sentigraph_review_queue_completion_gate_v1",
+        alias="schema",
+    )
+    completion_gate_id: str
+    request_id: str
+    review_case_id: str
+    queue_init_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    status: Literal[
+        "complete_enough_for_future_dedup_preview",
+        "incomplete",
+        "blocked",
+        "privacy_hold",
+    ] = "incomplete"
+    counts: ReviewQueueCompletionGateCounts = Field(default_factory=ReviewQueueCompletionGateCounts)
+    audit_summary: ReviewQueueCompletionGateAuditSummary = Field(default_factory=ReviewQueueCompletionGateAuditSummary)
+    downstream_eligibility: ReviewQueueCompletionGateDownstreamEligibility = Field(
+        default_factory=ReviewQueueCompletionGateDownstreamEligibility
+    )
+    blocked_reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "create_production_review_queue_now": False,
+            "run_dedup_now": False,
+            "run_analysis_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "review_queue_completion_gate_only": True,
+            "original_package_rows_re_read": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
