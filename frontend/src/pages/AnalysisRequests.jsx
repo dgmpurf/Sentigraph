@@ -33,6 +33,8 @@ import {
   createAnalysisRequestRealPackageRowPreview,
   createAnalysisRequestReviewOnlyCase,
   createAnalysisRequestRowReaderDryRun,
+  createAnalysisRequestStagingImport,
+  getAnalysisRequestStagingImportCandidates,
   getAnalysisRequest,
   getAnalysisRequestCaseDraft,
   getAnalysisRequestConfig,
@@ -44,6 +46,7 @@ import {
   listAnalysisRequestReviewOnlyCases,
   listAnalysisRequestRowReaderDryRuns,
   listAnalysisRequestReviewDecisions,
+  listAnalysisRequestStagingImports,
   listAnalysisRequests,
 } from '../api/sentigraphApi.js'
 
@@ -437,6 +440,45 @@ function reviewOnlyCaseEligibility(latestRealPackagePreview, latestReviewDecisio
   return { eligible: true, reason: 'Ready to create a review-only governance container.' }
 }
 
+function stagingImportEligibility(latestReviewOnlyCase, latestRealPackagePreview, latestReviewDecision, stagingImports) {
+  if (!latestReviewOnlyCase) return { eligible: false, reason: 'Create a review-only case container first.' }
+  if (stagingImports?.length) return { eligible: false, reason: 'A review-only staging import already exists for this request.' }
+  if (!['draft', 'staging_pending'].includes(latestReviewOnlyCase.status)) {
+    return { eligible: false, reason: `Review-only case status ${latestReviewOnlyCase.status || 'unknown'} is not eligible.` }
+  }
+  if (latestReviewOnlyCase.visibility !== 'internal_review_only') {
+    return { eligible: false, reason: 'Review-only case must remain internal_review_only.' }
+  }
+  if (
+    latestReviewOnlyCase.analysis_included ||
+    latestReviewOnlyCase.production_case_created ||
+    latestReviewOnlyCase.evidence_rows_imported ||
+    latestReviewOnlyCase.evidence_layer_written ||
+    latestReviewOnlyCase.review_queue_created ||
+    latestReviewOnlyCase.dedup_run ||
+    latestReviewOnlyCase.analysis_run
+  ) {
+    return { eligible: false, reason: 'Review-only case has unsafe side-effect flags.' }
+  }
+  if (!latestRealPackagePreview) return { eligible: false, reason: 'Create a limited real package row preview first.' }
+  if (latestReviewOnlyCase.source_preview_run_id !== latestRealPackagePreview.preview_run_id) {
+    return { eligible: false, reason: 'Latest preview does not match the review-only case source preview.' }
+  }
+  if (!['passed', 'warn'].includes(latestRealPackagePreview.status)) {
+    return { eligible: false, reason: `Real package preview status ${latestRealPackagePreview.status || 'unknown'} is not eligible.` }
+  }
+  if (latestRealPackagePreview.status === 'privacy_stop' || latestRealPackagePreview.privacy_scan?.privacy_stop_triggered) {
+    return { eligible: false, reason: 'Privacy stop preview blocks staging import.' }
+  }
+  if (Number(latestRealPackagePreview.rows?.accepted_for_preview || 0) <= 0) {
+    return { eligible: false, reason: 'Preview must contain accepted redacted rows.' }
+  }
+  if (!latestReviewDecision || latestReviewDecision.decision !== 'approve_import') {
+    return { eligible: false, reason: 'Latest review decision must remain approve_import.' }
+  }
+  return { eligible: true, reason: 'Ready to create review-only staging import from redacted preview rows.' }
+}
+
 function SummaryList({ title, items }) {
   return (
     <Card size="small" title={title}>
@@ -461,6 +503,7 @@ export function AnalysisRequests() {
   const [rowReaderForm] = Form.useForm()
   const [realPackagePreviewForm] = Form.useForm()
   const [reviewOnlyCaseForm] = Form.useForm()
+  const [stagingImportForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -474,6 +517,8 @@ export function AnalysisRequests() {
   const [rowReaderDryRuns, setRowReaderDryRuns] = useState([])
   const [realPackagePreviews, setRealPackagePreviews] = useState([])
   const [reviewOnlyCases, setReviewOnlyCases] = useState([])
+  const [stagingImports, setStagingImports] = useState([])
+  const [stagedCandidateBatch, setStagedCandidateBatch] = useState(null)
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -486,6 +531,7 @@ export function AnalysisRequests() {
   const [rowReaderDryRunLoading, setRowReaderDryRunLoading] = useState(false)
   const [realPackagePreviewLoading, setRealPackagePreviewLoading] = useState(false)
   const [reviewOnlyCaseLoading, setReviewOnlyCaseLoading] = useState(false)
+  const [stagingImportLoading, setStagingImportLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -496,6 +542,7 @@ export function AnalysisRequests() {
   const [rowReaderDryRunError, setRowReaderDryRunError] = useState('')
   const [realPackagePreviewError, setRealPackagePreviewError] = useState('')
   const [reviewOnlyCaseError, setReviewOnlyCaseError] = useState('')
+  const [stagingImportError, setStagingImportError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -526,7 +573,8 @@ export function AnalysisRequests() {
       setRowReaderDryRuns([])
       setRealPackagePreviews([])
       setReviewOnlyCases([])
-      setReviewOnlyCases([])
+      setStagingImports([])
+      setStagedCandidateBatch(null)
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -536,6 +584,7 @@ export function AnalysisRequests() {
       setRowReaderDryRunError('')
       setRealPackagePreviewError('')
       setReviewOnlyCaseError('')
+      setStagingImportError('')
       return
     }
     try {
@@ -600,6 +649,22 @@ export function AnalysisRequests() {
     } catch {
       setReviewOnlyCases([])
       setReviewOnlyCaseError('')
+    }
+    try {
+      const nextStagingImports = await listAnalysisRequestStagingImports(requestId)
+      setStagingImports(nextStagingImports)
+      setStagingImportError('')
+      if (nextStagingImports[0]?.staging_import_id) {
+        setStagedCandidateBatch(
+          await getAnalysisRequestStagingImportCandidates(requestId, nextStagingImports[0].staging_import_id),
+        )
+      } else {
+        setStagedCandidateBatch(null)
+      }
+    } catch {
+      setStagingImports([])
+      setStagedCandidateBatch(null)
+      setStagingImportError('')
     }
   }
 
@@ -858,6 +923,8 @@ export function AnalysisRequests() {
       })
       setRealPackagePreviews(await listAnalysisRequestRealPackageRowPreviews(selectedRecord.request_id))
       setReviewOnlyCases([])
+      setStagingImports([])
+      setStagedCandidateBatch(null)
       message.success(`Created limited real package row preview: ${preview.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create limited real package row preview.'
@@ -879,12 +946,43 @@ export function AnalysisRequests() {
         created_by: 'sentigraph_local_ui',
       })
       setReviewOnlyCases(await listAnalysisRequestReviewOnlyCases(selectedRecord.request_id))
+      setStagingImports([])
+      setStagedCandidateBatch(null)
       message.success(`Created review-only case container: ${reviewCase.review_case_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review-only case container.'
       setReviewOnlyCaseError(String(messageText))
     } finally {
       setReviewOnlyCaseLoading(false)
+    }
+  }
+
+  async function handleCreateStagingImport(values) {
+    if (!selectedRecord?.request_id) return
+    setStagingImportLoading(true)
+    setStagingImportError('')
+    try {
+      const stagingImport = await createAnalysisRequestStagingImport(selectedRecord.request_id, {
+        review_case_id: values.review_case_id || latestReviewOnlyCase?.review_case_id || undefined,
+        preview_run_id: values.preview_run_id || latestReviewOnlyCase?.source_preview_run_id || undefined,
+        acknowledge_review_only_staging: Boolean(values.acknowledge_review_only_staging),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_no_analysis: Boolean(values.acknowledge_no_analysis),
+        acknowledge_no_report: Boolean(values.acknowledge_no_report),
+        created_by: 'sentigraph_local_ui',
+      })
+      const nextStagingImports = await listAnalysisRequestStagingImports(selectedRecord.request_id)
+      setStagingImports(nextStagingImports)
+      setStagedCandidateBatch(
+        await getAnalysisRequestStagingImportCandidates(selectedRecord.request_id, stagingImport.staging_import_id),
+      )
+      message.success(`Created review-only staging import: ${stagingImport.staging_import_id}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review-only staging import.'
+      setStagingImportError(String(messageText))
+    } finally {
+      setStagingImportLoading(false)
     }
   }
 
@@ -1000,6 +1098,36 @@ export function AnalysisRequests() {
     }
     return false
   }, [reviewOnlyCaseGate.eligible, reviewOnlyCaseLoading, watchedReviewOnlyCaseMode, watchedReviewOnlyTargetCaseId])
+  const latestStagingImport = stagingImports[0] || null
+  const latestStagingImportJson = latestStagingImport ? JSON.stringify(latestStagingImport, null, 2) : ''
+  const stagedCandidateBatchJson = stagedCandidateBatch ? JSON.stringify(stagedCandidateBatch, null, 2) : ''
+  const stagingImportGate = useMemo(
+    () => stagingImportEligibility(latestReviewOnlyCase, latestRealPackagePreview, latestReviewDecision, stagingImports),
+    [latestReviewOnlyCase, latestRealPackagePreview, latestReviewDecision, stagingImports],
+  )
+  const stagingReviewAck = Form.useWatch('acknowledge_review_only_staging', stagingImportForm)
+  const stagingNoEvidenceLayerAck = Form.useWatch('acknowledge_no_evidence_layer_write', stagingImportForm)
+  const stagingNoProductionCaseAck = Form.useWatch('acknowledge_no_production_case', stagingImportForm)
+  const stagingNoAnalysisAck = Form.useWatch('acknowledge_no_analysis', stagingImportForm)
+  const stagingNoReportAck = Form.useWatch('acknowledge_no_report', stagingImportForm)
+  const stagingImportSubmitDisabled = useMemo(() => {
+    if (!stagingImportGate.eligible || stagingImportLoading) return true
+    return !(
+      stagingReviewAck &&
+      stagingNoEvidenceLayerAck &&
+      stagingNoProductionCaseAck &&
+      stagingNoAnalysisAck &&
+      stagingNoReportAck
+    )
+  }, [
+    stagingImportGate.eligible,
+    stagingImportLoading,
+    stagingReviewAck,
+    stagingNoEvidenceLayerAck,
+    stagingNoProductionCaseAck,
+    stagingNoAnalysisAck,
+    stagingNoReportAck,
+  ])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -2310,6 +2438,209 @@ export function AnalysisRequests() {
                         </Space>
                       </Card>
                     ) : null}
+
+                    <Card size="small" title="Review-only Staging Import / 复核暂存导入">
+                      <Space direction="vertical" size={12} className="full-width">
+                        <Alert
+                          type={stagingImportGate.eligible ? 'warning' : 'info'}
+                          showIcon
+                          message={stagingImportGate.eligible ? 'Ready for review-only staging import' : 'Review-only staging import not ready'}
+                          description={
+                            latestStagingImport
+                              ? 'A review-only staging import already exists for this request.'
+                              : stagingImportGate.reason
+                          }
+                        />
+                        <Alert
+                          type="warning"
+                          showIcon
+                          message="Review-only staging boundary"
+                          description="Only accepted redacted preview rows become review-only staged evidence candidates. This does not write the production Evidence Layer, create a production case, create a review queue, run dedup, run analysis, generate reports, generate Sandbox output, or make provider output official truth."
+                        />
+                        {stagingImportError ? <Alert type="error" showIcon message={stagingImportError} /> : null}
+                        <Form
+                          form={stagingImportForm}
+                          layout="vertical"
+                          initialValues={{
+                            review_case_id: latestReviewOnlyCase?.review_case_id || '',
+                            preview_run_id: latestReviewOnlyCase?.source_preview_run_id || latestRealPackagePreview?.preview_run_id || '',
+                          }}
+                          onFinish={handleCreateStagingImport}
+                        >
+                          <Row gutter={[12, 0]}>
+                            <Col span={12}>
+                              <Form.Item name="review_case_id" label="review_case_id">
+                                <Select
+                                  placeholder={latestReviewOnlyCase?.review_case_id || 'select review-only case'}
+                                  options={reviewOnlyCases.map((reviewCase) => ({
+                                    value: reviewCase.review_case_id,
+                                    label: reviewCase.review_case_id,
+                                  }))}
+                                />
+                              </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                              <Form.Item name="preview_run_id" label="preview_run_id">
+                                <Select
+                                  placeholder={latestReviewOnlyCase?.source_preview_run_id || latestRealPackagePreview?.preview_run_id || 'select preview'}
+                                  options={realPackagePreviews.map((preview) => ({
+                                    value: preview.preview_run_id,
+                                    label: `${preview.preview_run_id} / ${preview.status}`,
+                                  }))}
+                                />
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                          <Row gutter={[12, 0]}>
+                            <Col span={12}>
+                              <Form.Item name="acknowledge_review_only_staging" valuePropName="checked">
+                                <Checkbox>Confirm this is review-only staging, not production import.</Checkbox>
+                              </Form.Item>
+                              <Form.Item name="acknowledge_no_evidence_layer_write" valuePropName="checked">
+                                <Checkbox>Confirm no production Evidence Layer write.</Checkbox>
+                              </Form.Item>
+                              <Form.Item name="acknowledge_no_production_case" valuePropName="checked">
+                                <Checkbox>Confirm no production case creation.</Checkbox>
+                              </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                              <Form.Item name="acknowledge_no_analysis" valuePropName="checked">
+                                <Checkbox>Confirm no analysis, dedup, or review queue run now.</Checkbox>
+                              </Form.Item>
+                              <Form.Item name="acknowledge_no_report" valuePropName="checked">
+                                <Checkbox>Confirm no report, Sandbox, or public event output.</Checkbox>
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                          <Space wrap>
+                            <Button
+                              type="primary"
+                              htmlType="submit"
+                              loading={stagingImportLoading}
+                              disabled={stagingImportSubmitDisabled}
+                            >
+                              Create review-only staging import
+                            </Button>
+                            {latestStagingImport ? (
+                              <Button
+                                icon={<ClipboardCopy size={16} />}
+                                onClick={() => copyText(latestStagingImportJson, 'Staging import JSON copied')}
+                              >
+                                Copy latest staging import JSON
+                              </Button>
+                            ) : null}
+                            {stagedCandidateBatch ? (
+                              <Button
+                                icon={<ClipboardCopy size={16} />}
+                                onClick={() => copyText(stagedCandidateBatchJson, 'Staged candidates JSON copied')}
+                              >
+                                Copy staged candidates JSON
+                              </Button>
+                            ) : null}
+                          </Space>
+                        </Form>
+
+                        {latestStagingImport ? (
+                          <Card className="panel-card" size="small" title="Latest review-only staging import">
+                            <Space direction="vertical" size={12} className="full-width">
+                              <Space wrap>
+                                <Tag color={latestStagingImport.status === 'completed' ? 'green' : 'gold'}>
+                                  {latestStagingImport.status}
+                                </Tag>
+                                <Tag color="blue">{latestStagingImport.execution_mode}</Tag>
+                                <Tag color="default">analysis_included: {boolText(latestStagingImport.default_governance?.analysis_included)}</Tag>
+                                <Tag color="default">evidence_layer_written: {boolText(latestStagingImport.target?.evidence_layer_written)}</Tag>
+                              </Space>
+                              <Descriptions column={1} size="small">
+                                <Descriptions.Item label="staging_import_id">{latestStagingImport.staging_import_id}</Descriptions.Item>
+                                <Descriptions.Item label="review_case_id">{latestStagingImport.review_case_id}</Descriptions.Item>
+                                <Descriptions.Item label="source_preview_run_id">{latestStagingImport.source_preview_run_id}</Descriptions.Item>
+                                <Descriptions.Item label="package">{latestStagingImport.package_name || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="counts">
+                                  preview_seen={latestStagingImport.counts?.preview_rows_seen || 0},
+                                  accepted={latestStagingImport.counts?.accepted_for_staging || 0},
+                                  quarantined={latestStagingImport.counts?.quarantined_from_staging || 0},
+                                  rejected={latestStagingImport.counts?.rejected_from_staging || 0},
+                                  privacy_stop={boolText(latestStagingImport.counts?.privacy_stop)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="governance">
+                                  review_status={latestStagingImport.default_governance?.review_status || 'review_needed'},
+                                  verification={latestStagingImport.default_governance?.verification_status || 'source_url_provided_unverified'},
+                                  trust={latestStagingImport.default_governance?.trust_label || 'medium_low'},
+                                  dedup_required={boolText(latestStagingImport.default_governance?.dedup_required)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="readiness">
+                                  state={latestStagingImport.readiness?.state || '-'},
+                                  can_run_analysis_now={boolText(latestStagingImport.readiness?.can_run_analysis_now)},
+                                  can_generate_report_now={boolText(latestStagingImport.readiness?.can_generate_report_now)},
+                                  requires_review_queue_phase={boolText(latestStagingImport.readiness?.requires_review_queue_phase)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="rollback">
+                                  available={boolText(latestStagingImport.rollback?.rollback_available)},
+                                  rollback_id={latestStagingImport.rollback?.rollback_id || '-'},
+                                  required_before_analysis={boolText(latestStagingImport.rollback?.rollback_required_before_analysis)}
+                                </Descriptions.Item>
+                              </Descriptions>
+                              <SummaryList title="Boundary notes" items={latestStagingImport.boundary_notes || []} />
+                              <SummaryList title="Recommended next steps" items={latestStagingImport.recommended_next_steps || []} />
+                            </Space>
+                          </Card>
+                        ) : null}
+
+                        <Card size="small" title={`Staged evidence candidates (${stagedCandidateBatch?.candidates?.length || 0})`}>
+                          {stagedCandidateBatch?.candidates?.length ? (
+                            <Space direction="vertical" size={8} className="full-width">
+                              {stagedCandidateBatch.candidates.slice(0, 5).map((candidate) => (
+                                <Card size="small" key={candidate.staging_id}>
+                                  <Space direction="vertical" size={4} className="full-width">
+                                    <Space wrap>
+                                      <Tag color="gold">{candidate.row_status}</Tag>
+                                      <Tag color="default">review_status: {candidate.governance?.review_status || 'review_needed'}</Tag>
+                                      <Tag color="default">analysis_included: {boolText(candidate.governance?.analysis_included)}</Tag>
+                                      <Tag color="default">dedup_required: {boolText(candidate.governance?.dedup_required)}</Tag>
+                                    </Space>
+                                    <Text strong>{candidate.evidence_candidate?.title_preview || 'Untitled staged candidate'}</Text>
+                                    <Text type="secondary">{candidate.evidence_candidate?.body_text_preview || '-'}</Text>
+                                    <Text type="secondary">
+                                      source_url={candidate.evidence_candidate?.source_url || '-'}; verification=
+                                      {candidate.governance?.verification_status || 'source_url_provided_unverified'}; trust=
+                                      {candidate.governance?.trust_label || 'medium_low'}
+                                    </Text>
+                                  </Space>
+                                </Card>
+                              ))}
+                            </Space>
+                          ) : (
+                            <Text type="secondary">No staged evidence candidates yet.</Text>
+                          )}
+                        </Card>
+
+                        <Card size="small" title={`Existing staging imports (${stagingImports.length})`}>
+                          {stagingImports.length ? (
+                            <Space direction="vertical" size={8} className="full-width">
+                              {stagingImports.map((item) => (
+                                <Card size="small" key={item.staging_import_id}>
+                                  <Space direction="vertical" size={4} className="full-width">
+                                    <Space wrap>
+                                      <Tag color={item.status === 'completed' ? 'green' : 'gold'}>{item.status}</Tag>
+                                      <Text type="secondary">{item.staging_import_id}</Text>
+                                    </Space>
+                                    <Text>package: {item.package_name || '-'}</Text>
+                                    <Text type="secondary">
+                                      accepted_for_staging={item.counts?.accepted_for_staging || 0}, analysis_included=
+                                      {boolText(item.default_governance?.analysis_included)}, evidence_layer_written=
+                                      {boolText(item.target?.evidence_layer_written)}
+                                    </Text>
+                                  </Space>
+                                </Card>
+                              ))}
+                            </Space>
+                          ) : (
+                            <Text type="secondary">No review-only staging imports yet.</Text>
+                          )}
+                        </Card>
+                      </Space>
+                    </Card>
 
                     <Card size="small" title={`Existing review-only case containers (${reviewOnlyCases.length})`}>
                       {reviewOnlyCases.length ? (

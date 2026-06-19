@@ -22,6 +22,9 @@ from app.schemas.analysis_request import (
     RealPackageRowPreviewCreate,
     ReviewOnlyCase,
     ReviewOnlyCaseCreate,
+    ReviewOnlyCaseStagingImport,
+    ReviewOnlyCaseStagingImportCreate,
+    StagedEvidenceCandidateBatch,
 )
 from app.services.analysis_request_store import (
     AnalysisRequestNotFoundError,
@@ -37,6 +40,7 @@ from app.services.analysis_request_store import (
     create_manual_evidence_import_job,
     create_real_package_row_preview,
     create_review_only_case,
+    create_review_only_case_staging_import,
     get_analysis_request_config,
     list_case_draft_handoffs,
     list_all_evidence_row_reader_dry_runs,
@@ -45,6 +49,7 @@ from app.services.analysis_request_store import (
     list_all_evidence_import_review_decisions,
     list_all_real_package_row_previews,
     list_all_review_only_cases,
+    list_all_review_only_case_staging_imports,
     list_evidence_import_plans,
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
@@ -54,6 +59,7 @@ from app.services.analysis_request_store import (
     list_manual_evidence_import_jobs,
     list_real_package_row_previews,
     list_review_only_cases,
+    list_review_only_case_staging_imports,
     read_case_draft_handoff,
     read_evidence_import_plan,
     read_evidence_import_preview,
@@ -64,6 +70,8 @@ from app.services.analysis_request_store import (
     read_manual_evidence_import_job,
     read_real_package_row_preview,
     read_review_only_case,
+    read_review_only_case_staging_import,
+    read_staged_evidence_candidate_batch,
 )
 
 router = APIRouter()
@@ -127,6 +135,11 @@ def analysis_request_real_package_row_preview_all_list() -> list[RealPackageRowP
 @router.get("/review-only-cases", response_model=list[ReviewOnlyCase])
 def analysis_request_review_only_case_all_list() -> list[ReviewOnlyCase]:
     return list_all_review_only_cases()
+
+
+@router.get("/staging-imports", response_model=list[ReviewOnlyCaseStagingImport])
+def analysis_request_staging_import_all_list() -> list[ReviewOnlyCaseStagingImport]:
+    return list_all_review_only_case_staging_imports()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -381,6 +394,56 @@ def analysis_request_review_only_case_detail(
 ) -> ReviewOnlyCase:
     try:
         return read_review_only_case(request_id, review_case_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/staging-imports", response_model=list[ReviewOnlyCaseStagingImport])
+def analysis_request_staging_import_list(request_id: str) -> list[ReviewOnlyCaseStagingImport]:
+    try:
+        return list_review_only_case_staging_imports(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/staging-imports", response_model=ReviewOnlyCaseStagingImport)
+def analysis_request_staging_import_create(
+    request_id: str,
+    payload: ReviewOnlyCaseStagingImportCreate | None = None,
+) -> ReviewOnlyCaseStagingImport:
+    try:
+        return create_review_only_case_staging_import(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/staging-imports/{staging_import_id}", response_model=ReviewOnlyCaseStagingImport)
+def analysis_request_staging_import_detail(
+    request_id: str,
+    staging_import_id: str,
+) -> ReviewOnlyCaseStagingImport:
+    try:
+        return read_review_only_case_staging_import(request_id, staging_import_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/staging-imports/{staging_import_id}/candidates",
+    response_model=StagedEvidenceCandidateBatch,
+)
+def analysis_request_staging_import_candidates(
+    request_id: str,
+    staging_import_id: str,
+) -> StagedEvidenceCandidateBatch:
+    try:
+        return read_staged_evidence_candidate_batch(request_id, staging_import_id)
     except AnalysisRequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:

@@ -173,6 +173,18 @@ def route_real_preview_ack_payload(**overrides: object) -> dict:
     return payload
 
 
+def route_staging_import_ack_payload(**overrides: object) -> dict:
+    payload = {
+        "acknowledge_review_only_staging": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -1048,6 +1060,117 @@ def test_analysis_request_review_only_case_route_blocks_unsafe_inputs(tmp_path: 
     )
     assert missing_response.status_code == 404
     assert "row preview" in missing_response.text.lower()
+
+
+def test_analysis_request_review_only_staging_import_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    assert preview_response.status_code == 200
+    preview_run_id = preview_response.json()["preview_run_id"]
+    review_case_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_run_id, "target_case_mode": "new_review_case"},
+    )
+    assert review_case_response.status_code == 200
+    review_case_id = review_case_response.json()["review_case_id"]
+
+    create_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id, preview_run_id=preview_run_id),
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/staging-imports")
+    all_response = client.get("/api/v1/analysis-requests/staging-imports")
+
+    assert create_response.status_code == 200
+    body = create_response.json()
+    assert body["schema"] == "sentigraph_review_only_case_staging_import_v1"
+    assert body["request_id"] == request_id
+    assert body["review_case_id"] == review_case_id
+    assert body["source_preview_run_id"] == preview_run_id
+    assert body["execution_mode"] == "review_only_redacted_preview_staging"
+    assert body["status"] == "completed"
+    assert body["limits"]["read_package_rows_now"] is False
+    assert body["limits"]["analysis_inclusion"] is False
+    assert body["target"]["production_case_created"] is False
+    assert body["target"]["evidence_layer_written"] is False
+    assert body["readiness"]["can_run_analysis_now"] is False
+    assert body["readiness"]["requires_review_queue_phase"] is True
+    assert body["counts"]["accepted_for_staging"] == 1
+
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+    assert all_response.status_code == 200
+    assert len(all_response.json()) == 1
+    read_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports/{body['staging_import_id']}"
+    )
+    candidates_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports/{body['staging_import_id']}/candidates"
+    )
+    assert read_response.status_code == 200
+    assert read_response.json()["staging_import_id"] == body["staging_import_id"]
+    assert candidates_response.status_code == 200
+    candidates_body = candidates_response.json()
+    assert candidates_body["schema"] == "sentigraph_staged_evidence_candidate_batch_v1"
+    assert len(candidates_body["candidates"]) == 1
+    candidate_text = json.dumps(candidates_body, ensure_ascii=False)
+    assert candidates_body["candidates"][0]["governance"]["review_status"] == "review_needed"
+    assert candidates_body["candidates"][0]["governance"]["verification_status"] == "source_url_provided_unverified"
+    assert candidates_body["candidates"][0]["governance"]["analysis_included"] is False
+    assert candidates_body["candidates"][0]["privacy"]["from_redacted_preview"] is True
+    assert "route-raw-author-not-returned" not in candidate_text
+
+
+def test_analysis_request_review_only_staging_import_route_blocks_unsafe_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    assert preview_response.status_code == 200
+    preview_run_id = preview_response.json()["preview_run_id"]
+    review_case_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_run_id, "target_case_mode": "new_review_case"},
+    )
+    assert review_case_response.status_code == 200
+    review_case_id = review_case_response.json()["review_case_id"]
+
+    cases = [
+        (route_staging_import_ack_payload(acknowledge_no_report=False), "acknowledgement", 400),
+        (route_staging_import_ack_payload(package_path="runtime/private/evidence_items.jsonl"), "package_path", 400),
+        (route_staging_import_ack_payload(run_analysis_now=True), "side effect", 400),
+        (route_staging_import_ack_payload(target_production_case_id="case_prod_unsafe"), "production_case_id", 400),
+        (
+            route_staging_import_ack_payload(
+                review_case_id=review_case_id,
+                preview_run_id="real_package_row_preview_missing",
+            ),
+            "row preview",
+            404,
+        ),
+    ]
+    for payload, expected_message, expected_status in cases:
+        response = client.post(f"/api/v1/analysis-requests/{request_id}/staging-imports", json=payload)
+        assert response.status_code == expected_status
+        assert expected_message in response.text
+
+    first_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id),
+    )
+    duplicate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id),
+    )
+    assert first_response.status_code == 200
+    assert duplicate_response.status_code == 400
+    assert "already has staging import" in duplicate_response.text
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:

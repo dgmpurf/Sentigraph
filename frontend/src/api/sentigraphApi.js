@@ -180,6 +180,30 @@ export async function createAnalysisRequestReviewOnlyCase(requestId, payload = {
   return normalizeAnalysisRequestReviewOnlyCase(data)
 }
 
+export async function listAnalysisRequestStagingImports(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/staging-imports`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisRequestStagingImport).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestStagingImport(requestId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/staging-imports`, payload)
+  return normalizeAnalysisRequestStagingImport(data)
+}
+
+export async function getAnalysisRequestStagingImport(requestId, stagingImportId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/staging-imports/${encodeURIComponent(stagingImportId)}`,
+  )
+  return normalizeAnalysisRequestStagingImport(data)
+}
+
+export async function getAnalysisRequestStagingImportCandidates(requestId, stagingImportId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/staging-imports/${encodeURIComponent(stagingImportId)}/candidates`,
+  )
+  return normalizeAnalysisRequestStagedEvidenceCandidateBatch(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1709,6 +1733,85 @@ function normalizeAnalysisRequestReviewOnlyCase(data) {
       : [],
     audit: data.audit && typeof data.audit === 'object' ? normalizeSafeObject(data.audit) : {},
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisRequestStagingImport(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_review_only_case_staging_import_v1'),
+    staging_import_id: String(data.staging_import_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    request_id: String(data.request_id || ''),
+    package_name: String(data.package_name || ''),
+    source_preview_run_id: String(data.source_preview_run_id || ''),
+    source_import_job_id: String(data.source_import_job_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    execution_mode: String(data.execution_mode || 'review_only_redacted_preview_staging'),
+    status: String(data.status || 'completed'),
+    limits: data.limits && typeof data.limits === 'object' ? normalizeSafeObject(data.limits) : {},
+    counts: data.counts && typeof data.counts === 'object' ? normalizeSafeObject(data.counts) : {},
+    default_governance:
+      data.default_governance && typeof data.default_governance === 'object'
+        ? normalizeSafeObject(data.default_governance)
+        : {},
+    target: data.target && typeof data.target === 'object' ? normalizeSafeObject(data.target) : {},
+    rollback: data.rollback && typeof data.rollback === 'object' ? normalizeSafeObject(data.rollback) : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisRequestStagedEvidenceCandidateBatch(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_staged_evidence_candidate_batch_v1'),
+    staging_import_id: String(data.staging_import_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    request_id: String(data.request_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    candidates: Array.isArray(data.candidates)
+      ? data.candidates.map(normalizeStagedEvidenceCandidate).filter(Boolean)
+      : [],
+  }
+}
+
+function normalizeStagedEvidenceCandidate(row) {
+  if (!row || typeof row !== 'object') return null
+  const candidate =
+    row.evidence_candidate && typeof row.evidence_candidate === 'object' ? row.evidence_candidate : {}
+  return {
+    schema: String(row.schema || 'sentigraph_staged_evidence_candidate_v1'),
+    staging_id: String(row.staging_id || ''),
+    staging_import_id: String(row.staging_import_id || ''),
+    review_case_id: String(row.review_case_id || ''),
+    request_id: String(row.request_id || ''),
+    package_name: String(row.package_name || ''),
+    source_preview_run_id: String(row.source_preview_run_id || ''),
+    source_preview_row_index: Number(row.source_preview_row_index || 0),
+    created_at: row.created_at ? String(row.created_at) : '',
+    row_status: String(row.row_status || 'accepted_for_review'),
+    evidence_candidate: {
+      evidence_type: String(candidate.evidence_type || ''),
+      platform: String(candidate.platform || ''),
+      source_url: String(candidate.source_url || ''),
+      title_preview: String(candidate.title_preview || ''),
+      body_text_preview: String(candidate.body_text_preview || ''),
+      created_at: String(candidate.created_at || ''),
+      language: String(candidate.language || ''),
+      safe_counts: candidate.safe_counts && typeof candidate.safe_counts === 'object' ? normalizeNumberMap(candidate.safe_counts) : {},
+    },
+    governance: row.governance && typeof row.governance === 'object' ? normalizeSafeObject(row.governance) : {},
+    privacy: row.privacy && typeof row.privacy === 'object' ? normalizeSafeObject(row.privacy) : {},
+    dedup: row.dedup && typeof row.dedup === 'object' ? normalizeSafeObject(row.dedup) : {},
+    audit: row.audit && typeof row.audit === 'object' ? normalizeSafeObject(row.audit) : {},
   }
 }
 

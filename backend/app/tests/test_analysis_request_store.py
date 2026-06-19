@@ -16,6 +16,7 @@ from app.services.analysis_request_store import (
     create_evidence_row_reader_dry_run,
     create_real_package_row_preview,
     create_review_only_case,
+    create_review_only_case_staging_import,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
@@ -26,10 +27,13 @@ from app.services.analysis_request_store import (
     list_evidence_row_reader_dry_runs,
     list_real_package_row_previews,
     list_review_only_cases,
+    list_review_only_case_staging_imports,
     list_analysis_requests,
     read_evidence_row_reader_dry_run,
     read_real_package_row_preview,
     read_review_only_case,
+    read_review_only_case_staging_import,
+    read_staged_evidence_candidate_batch,
     read_analysis_request,
 )
 
@@ -265,6 +269,18 @@ def real_preview_ack_payload(**overrides: object) -> dict:
         "acknowledge_no_import": True,
         "acknowledge_preview_not_representative": True,
         "acknowledge_privacy_stop": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def staging_import_ack_payload(**overrides: object) -> dict:
+    payload = {
+        "acknowledge_review_only_staging": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
     }
     payload.update(overrides)
     return payload
@@ -1693,6 +1709,205 @@ def test_review_only_case_blocks_invalid_target_and_requested_side_effects(tmp_p
     assert wrapper.target_case_reference.target_case_id == "case_existing_review_target"
     assert wrapper.production_case_created is False
     assert wrapper.evidence_rows_imported is False
+
+
+def test_review_only_staging_import_creates_candidates_from_redacted_preview_only(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review-only staging safe"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+    (package_dir / "evidence_items.jsonl").write_text(
+        '{"raw_author_id":"must_not_be_opened_after_preview","body_text":"unsafe raw package row"}\n',
+        encoding="utf-8",
+    )
+    review_case = create_review_only_case(
+        record.request_id,
+        {"source_preview_run_id": preview.preview_run_id, "target_case_mode": "new_review_case"},
+    )
+
+    staging_import = create_review_only_case_staging_import(
+        record.request_id,
+        staging_import_ack_payload(
+            review_case_id=review_case.review_case_id,
+            preview_run_id=preview.preview_run_id,
+        ),
+    )
+    read_back = read_review_only_case_staging_import(record.request_id, staging_import.staging_import_id)
+    imports = list_review_only_case_staging_imports(record.request_id)
+    batch = read_staged_evidence_candidate_batch(record.request_id, staging_import.staging_import_id)
+    payload_text = json.dumps(batch.model_dump(mode="json", by_alias=True), ensure_ascii=False)
+
+    assert staging_import.schema_ == "sentigraph_review_only_case_staging_import_v1"
+    assert staging_import.execution_mode == "review_only_redacted_preview_staging"
+    assert staging_import.status == "completed"
+    assert staging_import.review_case_id == review_case.review_case_id
+    assert staging_import.source_preview_run_id == preview.preview_run_id
+    assert staging_import.source_import_job_id == preview.import_job_id
+    assert staging_import.limits.source == "limited_real_package_row_preview"
+    assert staging_import.limits.max_rows_from_preview == 20
+    assert staging_import.limits.full_scan is False
+    assert staging_import.limits.read_package_rows_now is False
+    assert staging_import.limits.analysis_inclusion is False
+    assert staging_import.limits.public_visibility is False
+    assert staging_import.counts.preview_rows_seen == 2
+    assert staging_import.counts.accepted_for_staging == 2
+    assert staging_import.counts.quarantined_from_staging == 0
+    assert staging_import.counts.rejected_from_staging == 0
+    assert staging_import.counts.privacy_stop is False
+    assert staging_import.default_governance.review_status == "review_needed"
+    assert staging_import.default_governance.verification_status == "source_url_provided_unverified"
+    assert staging_import.default_governance.trust_label == "medium_low"
+    assert staging_import.default_governance.analysis_included is False
+    assert staging_import.default_governance.public_visible is False
+    assert staging_import.default_governance.report_visible is False
+    assert staging_import.default_governance.sandbox_visible is False
+    assert staging_import.target.production_case_id is None
+    assert staging_import.target.production_case_created is False
+    assert staging_import.target.evidence_layer_written is False
+    assert staging_import.rollback.rollback_available is True
+    assert staging_import.readiness.state == "staged_for_review_only"
+    assert staging_import.readiness.can_run_analysis_now is False
+    assert staging_import.readiness.can_generate_report_now is False
+    assert staging_import.readiness.requires_review_queue_phase is True
+    assert read_back.staging_import_id == staging_import.staging_import_id
+    assert [item.staging_import_id for item in imports] == [staging_import.staging_import_id]
+
+    assert batch.schema_ == "sentigraph_staged_evidence_candidate_batch_v1"
+    assert batch.staging_import_id == staging_import.staging_import_id
+    assert len(batch.candidates) == 2
+    assert batch.candidates[0].schema_ == "sentigraph_staged_evidence_candidate_v1"
+    assert batch.candidates[0].source_preview_row_index == preview.redacted_preview_rows[0].row_index
+    assert batch.candidates[0].evidence_candidate.title_preview == "Safe local package row"
+    assert batch.candidates[0].governance.review_status == "review_needed"
+    assert batch.candidates[0].governance.verification_status == "source_url_provided_unverified"
+    assert batch.candidates[0].governance.trust_label == "medium_low"
+    assert batch.candidates[0].governance.analysis_included is False
+    assert batch.candidates[0].governance.public_visible is False
+    assert batch.candidates[0].governance.report_visible is False
+    assert batch.candidates[0].governance.sandbox_visible is False
+    assert batch.candidates[0].privacy.from_redacted_preview is True
+    assert batch.candidates[0].privacy.raw_author_id_present is False
+    assert batch.candidates[0].privacy.raw_author_name_present is False
+    assert batch.candidates[0].privacy.profile_url_present is False
+    assert batch.candidates[0].privacy.private_message_present is False
+    assert batch.candidates[0].privacy.passed is True
+    assert batch.candidates[0].dedup.computed_now is False
+    assert batch.candidates[0].dedup.required_before_analysis is True
+    assert batch.candidates[0].dedup.content_hash is None
+    assert "must_not_be_opened_after_preview" not in payload_text
+    assert "real-preview-user-should-not-return" not in payload_text
+    assert "Real Preview Name Should Not Return" not in payload_text
+    assert "example.test/profile/real-preview" not in payload_text
+    assert "Real preview private message should not return" not in payload_text
+    assert not (tmp_path / "cases").exists()
+
+
+def test_review_only_staging_import_blocks_unsafe_inputs_and_duplicate_import(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review-only staging blocks"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+    review_case = create_review_only_case(record.request_id, {"source_preview_run_id": preview.preview_run_id})
+
+    cases = [
+        (staging_import_ack_payload(acknowledge_no_analysis=False), "acknowledgement"),
+        (staging_import_ack_payload(package_path=str(package_dir / "evidence_items.jsonl")), "package_path"),
+        (staging_import_ack_payload(write_evidence_layer_now=True), "side effect"),
+        (staging_import_ack_payload(target_production_case_id="case_prod_unsafe"), "production_case_id"),
+        (
+            staging_import_ack_payload(
+                review_case_id=review_case.review_case_id,
+                preview_run_id="real_package_row_preview_missing",
+            ),
+            "row preview",
+        ),
+    ]
+    for payload, expected_message in cases:
+        try:
+            create_review_only_case_staging_import(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{expected_message} should block staging import")
+
+    first = create_review_only_case_staging_import(
+        record.request_id,
+        staging_import_ack_payload(review_case_id=review_case.review_case_id),
+    )
+    try:
+        create_review_only_case_staging_import(
+            record.request_id,
+            staging_import_ack_payload(review_case_id=review_case.review_case_id),
+        )
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "already has staging import" in str(exc)
+    else:
+        raise AssertionError("Duplicate staging import should be blocked")
+    assert len(list_review_only_case_staging_imports(record.request_id)) == 1
+    assert first.staging_import_id
+
+
+def test_review_only_staging_import_blocks_privacy_stop_and_latest_non_approve_decision(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Staging latest decision blocks"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+    review_case = create_review_only_case(record.request_id, {"source_preview_run_id": preview.preview_run_id})
+    create_evidence_import_review_decision(
+        record.request_id,
+        review_payload("hold_for_privacy_review", notes="Supersede approve before staging."),
+    )
+
+    try:
+        create_review_only_case_staging_import(
+            record.request_id,
+            staging_import_ack_payload(review_case_id=review_case.review_case_id),
+        )
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "approve_import" in str(exc)
+    else:
+        raise AssertionError("Latest non-approve review decision should block staging import")
+
+    privacy_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Staging privacy stop blocks"))
+    )
+    privacy_package = create_real_preview_package(tmp_path / "privacy", mixed=True)
+    create_real_preview_ready_chain(tmp_path, privacy_record.request_id, privacy_package)
+    privacy_preview = create_real_package_row_preview(privacy_record.request_id, real_preview_ack_payload())
+    assert privacy_preview.status == "privacy_stop"
+    unsafe_case_path = tmp_path / "review_only_cases" / f"{privacy_record.request_id}_review_only_case_unsafe.json"
+    unsafe_case_path.write_text(
+        json.dumps(
+            {
+                "schema": "sentigraph_review_only_case_v1",
+                "review_case_id": "review_only_case_unsafe",
+                "request_id": privacy_record.request_id,
+                "source_import_job_id": privacy_preview.import_job_id,
+                "source_preview_run_id": privacy_preview.preview_run_id,
+                "source_preflight_id": privacy_preview.preflight_id,
+                "status": "staging_pending",
+            }
+        ),
+        encoding="utf-8",
+    )
+    try:
+        create_review_only_case_staging_import(
+            privacy_record.request_id,
+            staging_import_ack_payload(review_case_id="review_only_case_unsafe"),
+        )
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "privacy_stop" in str(exc)
+    else:
+        raise AssertionError("privacy_stop preview should block staging import")
 
 
 def test_invalid_result_json_sets_warning_without_crash(tmp_path: Path, monkeypatch) -> None:

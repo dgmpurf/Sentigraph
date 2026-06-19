@@ -1089,6 +1089,202 @@ class ReviewOnlyCase(BaseModel):
     )
 
 
+class ReviewOnlyCaseStagingImportCreate(BaseModel):
+    review_case_id: str | None = None
+    preview_run_id: str | None = None
+    created_by: str = "sentigraph_local_ui"
+    acknowledge_review_only_staging: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_no_analysis: bool = False
+    acknowledge_no_report: bool = False
+    package_path: str | None = None
+    target_production_case_id: str | None = None
+    production_case_created: bool = False
+    evidence_rows_imported: bool = False
+    evidence_layer_written: bool = False
+    review_queue_created: bool = False
+    dedup_run: bool = False
+    analysis_run: bool = False
+    report_generated: bool = False
+    sandbox_generated: bool = False
+    public_event_generated: bool = False
+    write_evidence_layer_now: bool = False
+    run_analysis_now: bool = False
+
+
+class ReviewOnlyCaseStagingImportLimits(BaseModel):
+    source: str = "limited_real_package_row_preview"
+    max_rows_from_preview: int = 20
+    full_scan: bool = False
+    read_package_rows_now: bool = False
+    analysis_inclusion: bool = False
+    public_visibility: bool = False
+
+
+class ReviewOnlyCaseStagingImportCounts(BaseModel):
+    preview_rows_seen: int = 0
+    accepted_for_staging: int = 0
+    quarantined_from_staging: int = 0
+    rejected_from_staging: int = 0
+    privacy_stop: bool = False
+
+
+class ReviewOnlyStagedGovernance(BaseModel):
+    review_status: str = "review_needed"
+    verification_status: str = "source_url_provided_unverified"
+    trust_label: str = "medium_low"
+    analysis_included: bool = False
+    public_visible: bool = False
+    report_visible: bool = False
+    sandbox_visible: bool = False
+    dedup_required: bool = True
+    audit_required: bool = True
+
+
+class ReviewOnlyCaseStagingTarget(BaseModel):
+    target_type: str = "review_only_case_staging"
+    review_case_id: str = ""
+    production_case_id: str | None = None
+    production_case_created: bool = False
+    evidence_layer_written: bool = False
+
+
+class ReviewOnlyCaseStagingRollback(BaseModel):
+    rollback_available: bool = True
+    rollback_id: str = ""
+    rollback_required_before_analysis: bool = True
+
+
+class ReviewOnlyCaseStagingReadiness(BaseModel):
+    state: str = "staged_for_review_only"
+    can_run_analysis_now: bool = False
+    can_generate_report_now: bool = False
+    requires_review_queue_phase: bool = True
+    reason: str = "Rows are staged as review-only candidates from redacted preview rows only."
+
+
+class ReviewOnlyCaseStagingImport(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_review_only_case_staging_import_v1"] = Field(
+        default="sentigraph_review_only_case_staging_import_v1",
+        alias="schema",
+    )
+    staging_import_id: str
+    review_case_id: str
+    request_id: str
+    package_name: str
+    source_preview_run_id: str
+    source_import_job_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    execution_mode: str = "review_only_redacted_preview_staging"
+    status: Literal["completed", "partial", "blocked", "privacy_stop"] = "completed"
+    limits: ReviewOnlyCaseStagingImportLimits = Field(default_factory=ReviewOnlyCaseStagingImportLimits)
+    counts: ReviewOnlyCaseStagingImportCounts = Field(default_factory=ReviewOnlyCaseStagingImportCounts)
+    default_governance: ReviewOnlyStagedGovernance = Field(default_factory=ReviewOnlyStagedGovernance)
+    target: ReviewOnlyCaseStagingTarget = Field(default_factory=ReviewOnlyCaseStagingTarget)
+    rollback: ReviewOnlyCaseStagingRollback = Field(default_factory=ReviewOnlyCaseStagingRollback)
+    readiness: ReviewOnlyCaseStagingReadiness = Field(default_factory=ReviewOnlyCaseStagingReadiness)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "review_only_redacted_preview_staging": True,
+            "original_package_rows_re_read": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "review_queue_created": False,
+            "dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class StagedEvidenceCandidatePreview(BaseModel):
+    evidence_type: str = ""
+    platform: str = ""
+    source_url: str = ""
+    title_preview: str = ""
+    body_text_preview: str = ""
+    created_at: str = ""
+    language: str = ""
+    safe_counts: dict[str, int | float] = Field(default_factory=dict)
+
+
+class StagedEvidenceCandidatePrivacy(BaseModel):
+    from_redacted_preview: bool = True
+    raw_author_id_present: bool = False
+    raw_author_name_present: bool = False
+    profile_url_present: bool = False
+    private_message_present: bool = False
+    passed: bool = True
+
+
+class StagedEvidenceCandidateDedup(BaseModel):
+    computed_now: bool = False
+    required_before_analysis: bool = True
+    content_hash: str | None = None
+
+
+class StagedEvidenceCandidateAudit(BaseModel):
+    source: str = "review_only_staging_import"
+    staging_import_id: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class StagedEvidenceCandidate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_staged_evidence_candidate_v1"] = Field(
+        default="sentigraph_staged_evidence_candidate_v1",
+        alias="schema",
+    )
+    staging_id: str
+    staging_import_id: str
+    review_case_id: str
+    request_id: str
+    package_name: str
+    source_preview_run_id: str
+    source_preview_row_index: int
+    created_at: datetime = Field(default_factory=utc_now)
+    row_status: Literal["accepted_for_review"] = "accepted_for_review"
+    evidence_candidate: StagedEvidenceCandidatePreview = Field(default_factory=StagedEvidenceCandidatePreview)
+    governance: ReviewOnlyStagedGovernance = Field(default_factory=ReviewOnlyStagedGovernance)
+    privacy: StagedEvidenceCandidatePrivacy = Field(default_factory=StagedEvidenceCandidatePrivacy)
+    dedup: StagedEvidenceCandidateDedup = Field(default_factory=StagedEvidenceCandidateDedup)
+    audit: StagedEvidenceCandidateAudit = Field(default_factory=StagedEvidenceCandidateAudit)
+
+
+class StagedEvidenceCandidateBatch(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_staged_evidence_candidate_batch_v1"] = Field(
+        default="sentigraph_staged_evidence_candidate_batch_v1",
+        alias="schema",
+    )
+    staging_import_id: str
+    review_case_id: str
+    request_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    candidates: list[StagedEvidenceCandidate] = Field(default_factory=list)
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

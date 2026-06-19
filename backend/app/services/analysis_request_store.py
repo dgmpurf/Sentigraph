@@ -72,7 +72,20 @@ from app.schemas.analysis_request import (
     ReviewOnlyCaseGovernanceDefaults,
     ReviewOnlyCaseReadiness,
     ReviewOnlyCaseSourcePreviewSummary,
+    ReviewOnlyCaseStagingImport,
+    ReviewOnlyCaseStagingImportCounts,
+    ReviewOnlyCaseStagingImportCreate,
+    ReviewOnlyCaseStagingReadiness,
+    ReviewOnlyCaseStagingRollback,
+    ReviewOnlyCaseStagingTarget,
     ReviewOnlyCaseTargetReference,
+    ReviewOnlyStagedGovernance,
+    StagedEvidenceCandidate,
+    StagedEvidenceCandidateAudit,
+    StagedEvidenceCandidateBatch,
+    StagedEvidenceCandidateDedup,
+    StagedEvidenceCandidatePreview,
+    StagedEvidenceCandidatePrivacy,
 )
 
 
@@ -917,6 +930,53 @@ def list_all_review_only_cases() -> list[ReviewOnlyCase]:
     return review_cases
 
 
+def read_review_only_case_staging_import(request_id: str, staging_import_id: str) -> ReviewOnlyCaseStagingImport:
+    staging_path = _staging_import_path(request_id, staging_import_id)
+    if not staging_path.exists():
+        raise AnalysisRequestNotFoundError(f"Review-only staging import {staging_import_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(staging_path.read_text(encoding="utf-8-sig"))
+        return ReviewOnlyCaseStagingImport.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{staging_path.name} is not a valid review-only staging import: {type(exc).__name__}") from exc
+
+
+def list_review_only_case_staging_imports(request_id: str) -> list[ReviewOnlyCaseStagingImport]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    imports: list[ReviewOnlyCaseStagingImport] = []
+    for path in sorted((root / "staging_imports").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            imports.append(ReviewOnlyCaseStagingImport.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return imports
+
+
+def list_all_review_only_case_staging_imports() -> list[ReviewOnlyCaseStagingImport]:
+    root = _ensure_root()
+    imports: list[ReviewOnlyCaseStagingImport] = []
+    for path in sorted((root / "staging_imports").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            imports.append(ReviewOnlyCaseStagingImport.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return imports
+
+
+def read_staged_evidence_candidate_batch(request_id: str, staging_import_id: str) -> StagedEvidenceCandidateBatch:
+    batch_path = _staged_candidate_batch_path(request_id, staging_import_id)
+    if not batch_path.exists():
+        raise AnalysisRequestNotFoundError(f"Staged evidence candidate batch {staging_import_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(batch_path.read_text(encoding="utf-8-sig"))
+        return StagedEvidenceCandidateBatch.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{batch_path.name} is not a valid staged evidence candidate batch: {type(exc).__name__}") from exc
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -1187,6 +1247,106 @@ def create_review_only_case(
     )
     _write_json(_review_only_case_path(request_id, review_case_id), review_case.model_dump(mode="json", by_alias=True))
     return read_review_only_case(request_id, review_case_id)
+
+
+def create_review_only_case_staging_import(
+    request_id: str,
+    payload: ReviewOnlyCaseStagingImportCreate | dict[str, Any] | None = None,
+) -> ReviewOnlyCaseStagingImport:
+    try:
+        staging_payload = (
+            payload
+            if isinstance(payload, ReviewOnlyCaseStagingImportCreate)
+            else ReviewOnlyCaseStagingImportCreate.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create review-only staging import: invalid payload ({exc}).") from exc
+
+    _validate_staging_import_payload(staging_payload)
+    review_case = _select_staging_import_review_case(request_id, staging_payload.review_case_id)
+    preview = _select_staging_import_preview(request_id, review_case, staging_payload.preview_run_id)
+    _validate_staging_import_eligibility(request_id, review_case, preview)
+
+    staging_import_id = _new_staging_import_id()
+    created_at = datetime.now(timezone.utc)
+    candidates = [
+        _candidate_from_redacted_preview_row(
+            row,
+            staging_import_id=staging_import_id,
+            review_case=review_case,
+            preview=preview,
+            created_at=created_at,
+        )
+        for row in preview.redacted_preview_rows
+        if row.status == "accepted_for_preview" and row.privacy_check.passed
+    ]
+    if not candidates:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: no accepted redacted preview rows are available.")
+
+    status = "completed"
+    warnings: list[str] = []
+    if preview.rows.quarantined or preview.rows.rejected:
+        status = "partial"
+        warnings.append("Some preview rows were quarantined or rejected and were not staged.")
+
+    staging_import = ReviewOnlyCaseStagingImport(
+        staging_import_id=staging_import_id,
+        review_case_id=review_case.review_case_id,
+        request_id=request_id,
+        package_name=preview.package_reference.package_name,
+        source_preview_run_id=preview.preview_run_id,
+        source_import_job_id=preview.import_job_id,
+        created_at=created_at,
+        created_by=staging_payload.created_by or "sentigraph_local_ui",
+        status=status,
+        counts=ReviewOnlyCaseStagingImportCounts(
+            preview_rows_seen=len(preview.redacted_preview_rows),
+            accepted_for_staging=len(candidates),
+            quarantined_from_staging=preview.rows.quarantined,
+            rejected_from_staging=preview.rows.rejected,
+            privacy_stop=False,
+        ),
+        default_governance=ReviewOnlyStagedGovernance(),
+        target=ReviewOnlyCaseStagingTarget(
+            review_case_id=review_case.review_case_id,
+            production_case_id=None,
+            production_case_created=False,
+            evidence_layer_written=False,
+        ),
+        rollback=ReviewOnlyCaseStagingRollback(
+            rollback_available=True,
+            rollback_id=f"rollback_{staging_import_id}",
+            rollback_required_before_analysis=True,
+        ),
+        readiness=ReviewOnlyCaseStagingReadiness(),
+        warnings=warnings,
+        boundary_notes=[
+            "Review-only staging import uses redacted preview rows only.",
+            "Original package evidence rows are not re-read.",
+            "Staged candidates are not production evidence.",
+            "Staged candidates are not analysis-included.",
+            "Review queue is not created yet.",
+            "Dedup is not run yet.",
+            "Reports, Sandbox, public event, and production case generation remain disabled.",
+            "Provider output is evidence, not truth.",
+        ],
+        recommended_next_steps=[
+            "Initialize review queue in a future explicit phase.",
+            "Run dedup preview before any analysis-ready promotion.",
+            "Keep rejected or weak evidence analysis-excluded until governance is complete.",
+            "Rollback staged candidates before any unsafe promotion attempt.",
+        ],
+    )
+    candidate_batch = StagedEvidenceCandidateBatch(
+        staging_import_id=staging_import_id,
+        review_case_id=review_case.review_case_id,
+        request_id=request_id,
+        created_at=created_at,
+        candidates=candidates,
+    )
+    _write_json(_staging_import_path(request_id, staging_import_id), staging_import.model_dump(mode="json", by_alias=True))
+    _write_json(_staged_candidate_batch_path(request_id, staging_import_id), candidate_batch.model_dump(mode="json", by_alias=True))
+    return read_review_only_case_staging_import(request_id, staging_import_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -1880,6 +2040,167 @@ def _validate_review_only_case_eligibility(
         raise AnalysisRequestValidationError(f"Cannot create review-only case: import job unsafe flags are true ({', '.join(enabled_job_flags)}).")
 
 
+def _select_staging_import_review_case(request_id: str, review_case_id: str | None) -> ReviewOnlyCase:
+    if review_case_id:
+        return read_review_only_case(request_id, review_case_id)
+    review_cases = list_review_only_cases(request_id)
+    if not review_cases:
+        raise AnalysisRequestNotFoundError(f"Review-only case for {request_id} was not found.")
+    return review_cases[0]
+
+
+def _select_staging_import_preview(
+    request_id: str,
+    review_case: ReviewOnlyCase,
+    preview_run_id: str | None,
+) -> RealPackageRowPreview:
+    selected_preview_id = preview_run_id or review_case.source_preview_run_id
+    if not selected_preview_id:
+        raise AnalysisRequestNotFoundError(f"Real package row preview for review-only case {review_case.review_case_id} was not found.")
+    preview = read_real_package_row_preview(request_id, selected_preview_id)
+    if preview.preview_run_id != review_case.source_preview_run_id:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: preview_run_id must match the review-only case source preview.")
+    return preview
+
+
+def _validate_staging_import_payload(payload: ReviewOnlyCaseStagingImportCreate) -> None:
+    acknowledgements = {
+        "acknowledge_review_only_staging": payload.acknowledge_review_only_staging,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_no_analysis": payload.acknowledge_no_analysis,
+        "acknowledge_no_report": payload.acknowledge_no_report,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(f"Cannot create review-only staging import: acknowledgement flags are required ({', '.join(missing)}).")
+    if payload.package_path:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: package_path is not accepted; staging uses redacted preview rows only.")
+    if payload.target_production_case_id:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: production_case_id is not allowed.")
+    side_effect_flags = {
+        "production_case_created": payload.production_case_created,
+        "evidence_rows_imported": payload.evidence_rows_imported,
+        "evidence_layer_written": payload.evidence_layer_written,
+        "review_queue_created": payload.review_queue_created,
+        "dedup_run": payload.dedup_run,
+        "analysis_run": payload.analysis_run,
+        "report_generated": payload.report_generated,
+        "sandbox_generated": payload.sandbox_generated,
+        "public_event_generated": payload.public_event_generated,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "run_analysis_now": payload.run_analysis_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(f"Cannot create review-only staging import: side effect flags must remain false ({', '.join(enabled)}).")
+
+
+def _validate_staging_import_eligibility(
+    request_id: str,
+    review_case: ReviewOnlyCase,
+    preview: RealPackageRowPreview,
+) -> None:
+    if review_case.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: review-only case request_id mismatch.")
+    if review_case.status not in {"draft", "staging_pending"}:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: review-only case status is not eligible.")
+    if review_case.visibility != "internal_review_only":
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: review-only case must be internal_review_only.")
+    review_case_flags = {
+        "analysis_included": review_case.analysis_included,
+        "production_case_created": review_case.production_case_created,
+        "evidence_rows_imported": review_case.evidence_rows_imported,
+        "evidence_layer_written": review_case.evidence_layer_written,
+        "review_queue_created": review_case.review_queue_created,
+        "dedup_run": review_case.dedup_run,
+        "analysis_run": review_case.analysis_run,
+    }
+    enabled_review_case_flags = [name for name, value in review_case_flags.items() if value]
+    if enabled_review_case_flags:
+        raise AnalysisRequestValidationError(
+            f"Cannot create review-only staging import: review-only case unsafe flags must remain false ({', '.join(enabled_review_case_flags)})."
+        )
+    if list_review_only_case_staging_imports(request_id):
+        matching = [item for item in list_review_only_case_staging_imports(request_id) if item.review_case_id == review_case.review_case_id]
+        if matching:
+            raise AnalysisRequestValidationError("Cannot create review-only staging import: review-only case already has staging import.")
+    if preview.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: preview request_id mismatch.")
+    if preview.status not in {"passed", "warn"}:
+        raise AnalysisRequestValidationError(f"Cannot create review-only staging import: real package row preview status {preview.status} is not eligible.")
+    if preview.status in {"privacy_stop", "blocked"} or preview.privacy_scan.privacy_stop_triggered:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: privacy_stop preview blocks staging.")
+    if not preview.redacted_preview_rows or preview.rows.accepted_for_preview <= 0:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: no accepted redacted preview rows are available.")
+    enabled_now_flags = [name for name, value in preview.now_flags.model_dump().items() if value]
+    if enabled_now_flags:
+        raise AnalysisRequestValidationError(f"Cannot create review-only staging import: preview now flags must remain false ({', '.join(enabled_now_flags)}).")
+    if review_case.source_import_job_id != preview.import_job_id:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: import_job_id mismatch.")
+    decisions = list_evidence_import_review_decisions(request_id)
+    if not decisions:
+        raise AnalysisRequestNotFoundError(f"review decision for {request_id} was not found.")
+    latest_decision = decisions[0]
+    if latest_decision.decision != "approve_import":
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: latest review decision must be approve_import.")
+    if latest_decision.decision_id != preview.decision_id:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: preview review decision is stale.")
+    privacy_hits = (
+        preview.privacy_scan.raw_author_id_detected
+        + preview.privacy_scan.raw_author_name_detected
+        + preview.privacy_scan.profile_url_detected
+        + preview.privacy_scan.private_message_detected
+        + preview.privacy_scan.secret_like_value_detected
+        + preview.privacy_scan.email_detected
+        + preview.privacy_scan.phone_detected
+    )
+    if privacy_hits:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: preview detected raw forbidden values or privacy risk.")
+    forbidden_preview_rows = [
+        row.row_index
+        for row in preview.redacted_preview_rows
+        if row.status != "accepted_for_preview" or not row.privacy_check.passed or row.privacy_check.forbidden_fields_detected
+    ]
+    if forbidden_preview_rows:
+        raise AnalysisRequestValidationError("Cannot create review-only staging import: preview rows contain forbidden fields.")
+
+
+def _candidate_from_redacted_preview_row(
+    row: RealPackageRowPreviewRow,
+    *,
+    staging_import_id: str,
+    review_case: ReviewOnlyCase,
+    preview: RealPackageRowPreview,
+    created_at: datetime,
+) -> StagedEvidenceCandidate:
+    staging_id = f"staged_candidate_{row.row_index}_{uuid.uuid4().hex[:8]}"
+    return StagedEvidenceCandidate(
+        staging_id=staging_id,
+        staging_import_id=staging_import_id,
+        review_case_id=review_case.review_case_id,
+        request_id=review_case.request_id,
+        package_name=preview.package_reference.package_name,
+        source_preview_run_id=preview.preview_run_id,
+        source_preview_row_index=row.row_index,
+        created_at=created_at,
+        evidence_candidate=StagedEvidenceCandidatePreview(
+            evidence_type=row.evidence_candidate.evidence_type,
+            platform=row.evidence_candidate.platform,
+            source_url=row.evidence_candidate.source_url,
+            title_preview=row.evidence_candidate.title_preview,
+            body_text_preview=row.evidence_candidate.body_text_preview,
+            created_at=row.evidence_candidate.created_at,
+            language=row.evidence_candidate.language,
+            safe_counts=row.evidence_candidate.counts,
+        ),
+        governance=ReviewOnlyStagedGovernance(),
+        privacy=StagedEvidenceCandidatePrivacy(),
+        dedup=StagedEvidenceCandidateDedup(),
+        audit=StagedEvidenceCandidateAudit(staging_import_id=staging_import_id, created_at=created_at),
+    )
+
+
 def _read_real_package_preview_rows(
     row_file: Path,
     max_rows: int,
@@ -2253,6 +2574,8 @@ def _ensure_root() -> Path:
     (root / "row_reader_dry_runs").mkdir(parents=True, exist_ok=True)
     (root / "real_package_row_previews").mkdir(parents=True, exist_ok=True)
     (root / "review_only_cases").mkdir(parents=True, exist_ok=True)
+    (root / "staging_imports").mkdir(parents=True, exist_ok=True)
+    (root / "staged_evidence_candidates").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -2328,6 +2651,20 @@ def _review_only_case_path(request_id: str, review_case_id: str) -> Path:
     return root / "review_only_cases" / f"{request_id}_{review_case_id}.json"
 
 
+def _staging_import_path(request_id: str, staging_import_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(staging_import_id)
+    root = _ensure_root()
+    return root / "staging_imports" / f"{request_id}_{staging_import_id}.json"
+
+
+def _staged_candidate_batch_path(request_id: str, staging_import_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(staging_import_id)
+    root = _ensure_root()
+    return root / "staged_evidence_candidates" / f"{request_id}_{staging_import_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -2374,6 +2711,11 @@ def _new_real_package_row_preview_id() -> str:
 def _new_review_only_case_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"review_only_case_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_staging_import_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"review_only_staging_import_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:
