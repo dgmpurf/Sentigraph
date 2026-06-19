@@ -228,6 +228,20 @@ def route_review_queue_completion_gate_payload(**overrides: object) -> dict:
     return payload
 
 
+def route_dedup_preview_payload(**overrides: object) -> dict:
+    payload = {
+        "include_marked_weak": True,
+        "include_duplicate_merged": True,
+        "acknowledge_dedup_preview_only": True,
+        "acknowledge_no_production_dedup": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -1532,6 +1546,71 @@ def test_analysis_request_review_queue_completion_gate_route_blocks_unsafe_paylo
             json=payload,
         )
         assert response.status_code == 400
+
+
+def test_analysis_request_dedup_preview_routes_create_list_read(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    review_case_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_response.json()["preview_run_id"], "target_case_mode": "new_review_case"},
+    )
+    review_case_id = review_case_response.json()["review_case_id"]
+    staging_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id),
+    )
+    queue_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations",
+        json=route_review_queue_init_ack_payload(review_case_id=review_case_id, staging_import_id=staging_response.json()["staging_import_id"]),
+    )
+    queue_init_id = queue_response.json()["queue_init_id"]
+    items_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-queue-initializations/{queue_init_id}/items")
+    review_item_id = items_response.json()["items"][0]["review_item_id"]
+    action_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-items/{review_item_id}/actions",
+        json=route_review_queue_action_payload("approve"),
+    )
+    assert action_response.status_code == 200
+    gate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-completion-gates",
+        json=route_review_queue_completion_gate_payload(queue_init_id=queue_init_id, review_case_id=review_case_id),
+    )
+    assert gate_response.status_code == 200
+    completion_gate_id = gate_response.json()["completion_gate_id"]
+
+    preview_create_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/dedup-previews",
+        json=route_dedup_preview_payload(queue_init_id=queue_init_id, review_case_id=review_case_id, completion_gate_id=completion_gate_id),
+    )
+    assert preview_create_response.status_code == 200
+    body = preview_create_response.json()
+    assert body["schema"] == "sentigraph_dedup_preview_v1"
+    assert body["status"] == "preview_ready"
+    assert body["readiness"]["can_run_dedup_now"] is False
+    assert body["readiness"]["can_run_analysis_now"] is False
+    assert body["now_flags"]["run_analysis_now"] is False
+    assert body["counts"]["items_seen"] == 1
+    assert body["counts"]["items_eligible_for_preview"] == 1
+
+    read_response = client.get(f"/api/v1/analysis-requests/{request_id}/dedup-previews/{body['dedup_preview_id']}")
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/dedup-previews")
+    all_response = client.get("/api/v1/analysis-requests/dedup-previews")
+    assert read_response.status_code == 200
+    assert list_response.status_code == 200
+    assert all_response.status_code == 200
+    assert read_response.json()["dedup_preview_id"] == body["dedup_preview_id"]
+    assert list_response.json()[0]["dedup_preview_id"] == body["dedup_preview_id"]
+
+    unsafe_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/dedup-previews",
+        json=route_dedup_preview_payload(queue_init_id=queue_init_id, completion_gate_id=completion_gate_id, run_dedup_now=True),
+    )
+    assert unsafe_response.status_code == 400
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:

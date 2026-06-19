@@ -268,6 +268,26 @@ export async function getAnalysisRequestReviewQueueCompletionGate(requestId, com
   return normalizeReviewQueueCompletionGate(data)
 }
 
+export async function listAnalysisRequestDedupPreviews(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/dedup-previews`)
+  return Array.isArray(data) ? data.map(normalizeDedupPreview).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestDedupPreview(requestId, payload = {}) {
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/dedup-previews`,
+    payload,
+  )
+  return normalizeDedupPreview(data)
+}
+
+export async function getAnalysisRequestDedupPreview(requestId, dedupPreviewId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/dedup-previews/${encodeURIComponent(dedupPreviewId)}`,
+  )
+  return normalizeDedupPreview(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -2026,6 +2046,64 @@ function normalizeReviewQueueCompletionGate(data) {
       : [],
     now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeDedupPreview(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_dedup_preview_v1'),
+    dedup_preview_id: String(data.dedup_preview_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    queue_init_id: String(data.queue_init_id || ''),
+    completion_gate_id: String(data.completion_gate_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    execution_mode: String(data.execution_mode || 'review_only_dedup_preview'),
+    status: String(data.status || 'incomplete'),
+    input_scope: data.input_scope && typeof data.input_scope === 'object' ? normalizeSafeObject(data.input_scope) : {},
+    counts: data.counts && typeof data.counts === 'object' ? normalizeSafeObject(data.counts) : {},
+    dedup_signals: data.dedup_signals && typeof data.dedup_signals === 'object' ? normalizeBooleanMap(data.dedup_signals) : {},
+    groups: Array.isArray(data.groups) ? data.groups.map(normalizeDedupGroupCandidate).filter(Boolean) : [],
+    excluded_items: Array.isArray(data.excluded_items)
+      ? data.excluded_items.map((item) => ({
+          review_item_id: String(item?.review_item_id || ''),
+          reason: String(item?.reason || ''),
+          queue_status: String(item?.queue_status || ''),
+          review_status: String(item?.review_status || ''),
+        }))
+      : [],
+    privacy_scan: data.privacy_scan && typeof data.privacy_scan === 'object' ? normalizeBooleanMap(data.privacy_scan) : {},
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeDedupGroupCandidate(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_dedup_group_candidate_v1'),
+    group_candidate_id: String(data.group_candidate_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    queue_init_id: String(data.queue_init_id || ''),
+    dedup_preview_id: String(data.dedup_preview_id || ''),
+    reason: String(data.reason || ''),
+    confidence: String(data.confidence || ''),
+    item_ids: Array.isArray(data.item_ids) ? data.item_ids.map((item) => String(item)) : [],
+    representative_item_id: String(data.representative_item_id || ''),
+    duplicate_count_preview: Number(data.duplicate_count_preview || 0),
+    may_amplify_risk: Boolean(data.may_amplify_risk),
+    human_confirmation_required: Boolean(data.human_confirmation_required),
+    analysis_effect: String(data.analysis_effect || ''),
+    notes: Array.isArray(data.notes) ? data.notes.map((item) => String(item)) : [],
   }
 }
 

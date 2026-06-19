@@ -25,6 +25,7 @@ import {
   cancelAnalysisRequest,
   createAnalysisRequest,
   createAnalysisRequestCaseDraft,
+  createAnalysisRequestDedupPreview,
   createAnalysisRequestImportJob,
   createAnalysisRequestImportPlan,
   createAnalysisRequestImportPreview,
@@ -45,6 +46,7 @@ import {
   getAnalysisRequestImportPlan,
   getAnalysisRequestImportPreview,
   listAnalysisRequestExecutionPreflights,
+  listAnalysisRequestDedupPreviews,
   listAnalysisRequestImportJobs,
   listAnalysisRequestRealPackageRowPreviews,
   listAnalysisRequestReviewOnlyCases,
@@ -552,6 +554,7 @@ export function AnalysisRequests() {
   const [reviewQueueInitForm] = Form.useForm()
   const [reviewQueueActionForm] = Form.useForm()
   const [reviewQueueCompletionGateForm] = Form.useForm()
+  const [dedupPreviewForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -571,6 +574,7 @@ export function AnalysisRequests() {
   const [reviewQueueItemBatch, setReviewQueueItemBatch] = useState(null)
   const [reviewQueueActionAudits, setReviewQueueActionAudits] = useState([])
   const [reviewQueueCompletionGates, setReviewQueueCompletionGates] = useState([])
+  const [dedupPreviews, setDedupPreviews] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -587,6 +591,7 @@ export function AnalysisRequests() {
   const [reviewQueueInitLoading, setReviewQueueInitLoading] = useState(false)
   const [reviewQueueActionLoading, setReviewQueueActionLoading] = useState('')
   const [reviewQueueCompletionGateLoading, setReviewQueueCompletionGateLoading] = useState(false)
+  const [dedupPreviewLoading, setDedupPreviewLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -601,6 +606,7 @@ export function AnalysisRequests() {
   const [reviewQueueInitError, setReviewQueueInitError] = useState('')
   const [reviewQueueActionError, setReviewQueueActionError] = useState('')
   const [reviewQueueCompletionGateError, setReviewQueueCompletionGateError] = useState('')
+  const [dedupPreviewError, setDedupPreviewError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -637,6 +643,8 @@ export function AnalysisRequests() {
       setReviewQueueItemBatch(null)
       setReviewQueueActionAudits([])
       setReviewQueueCompletionGates([])
+      setDedupPreviews([])
+      setDedupPreviews([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -650,6 +658,7 @@ export function AnalysisRequests() {
       setReviewQueueInitError('')
       setReviewQueueActionError('')
       setReviewQueueCompletionGateError('')
+      setDedupPreviewError('')
       return
     }
     try {
@@ -744,14 +753,17 @@ export function AnalysisRequests() {
       }
       setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(requestId))
       setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(requestId))
+      setDedupPreviews(await listAnalysisRequestDedupPreviews(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
       setReviewQueueActionAudits([])
       setReviewQueueCompletionGates([])
+      setDedupPreviews([])
       setReviewQueueInitError('')
       setReviewQueueActionError('')
       setReviewQueueCompletionGateError('')
+      setDedupPreviewError('')
     }
   }
 
@@ -1105,6 +1117,7 @@ export function AnalysisRequests() {
       )
       setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(selectedRecord.request_id))
       setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(selectedRecord.request_id))
+      setDedupPreviews([])
       message.success(`Initialized review-only queue: ${queueInit.queue_init_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to initialize review-only queue.'
@@ -1139,6 +1152,7 @@ export function AnalysisRequests() {
       )
       setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(selectedRecord.request_id))
       setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(selectedRecord.request_id))
+      setDedupPreviews([])
       message.success(`Recorded review action: ${action}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record review queue action.'
@@ -1166,12 +1180,41 @@ export function AnalysisRequests() {
         created_by: 'sentigraph_local_ui',
       })
       setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(selectedRecord.request_id))
+      setDedupPreviews(await listAnalysisRequestDedupPreviews(selectedRecord.request_id))
       message.success(`Evaluated completion gate: ${gate.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to evaluate review queue completion gate.'
       setReviewQueueCompletionGateError(String(messageText))
     } finally {
       setReviewQueueCompletionGateLoading(false)
+    }
+  }
+
+  async function handleCreateDedupPreview(values) {
+    if (!selectedRecord?.request_id) return
+    setDedupPreviewLoading(true)
+    setDedupPreviewError('')
+    try {
+      const preview = await createAnalysisRequestDedupPreview(selectedRecord.request_id, {
+        review_case_id: values.review_case_id || latestReviewQueueCompletionGate?.review_case_id || undefined,
+        queue_init_id: values.queue_init_id || latestReviewQueueCompletionGate?.queue_init_id || undefined,
+        completion_gate_id: values.completion_gate_id || latestReviewQueueCompletionGate?.completion_gate_id || undefined,
+        include_marked_weak: Boolean(values.include_marked_weak),
+        include_duplicate_merged: Boolean(values.include_duplicate_merged),
+        acknowledge_dedup_preview_only: Boolean(values.acknowledge_dedup_preview_only),
+        acknowledge_no_production_dedup: Boolean(values.acknowledge_no_production_dedup),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_analysis: Boolean(values.acknowledge_no_analysis),
+        acknowledge_no_report: Boolean(values.acknowledge_no_report),
+        created_by: 'sentigraph_local_ui',
+      })
+      setDedupPreviews(await listAnalysisRequestDedupPreviews(selectedRecord.request_id))
+      message.success(`Created dedup preview: ${preview.status}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create dedup preview.'
+      setDedupPreviewError(String(messageText))
+    } finally {
+      setDedupPreviewLoading(false)
     }
   }
 
@@ -1395,8 +1438,23 @@ export function AnalysisRequests() {
         reviewQueueCompletionValues.acknowledge_no_evidence_layer_write &&
         reviewQueueCompletionValues.acknowledge_no_production_case &&
         reviewQueueCompletionValues.acknowledge_no_report,
-    )
+      )
   }, [latestReviewQueueInitialization?.queue_init_id, reviewQueueCompletionValues])
+  const latestDedupPreview = dedupPreviews[0] || null
+  const latestDedupPreviewJson = latestDedupPreview ? JSON.stringify(latestDedupPreview, null, 2) : ''
+  const dedupPreviewsJson = dedupPreviews.length ? JSON.stringify(dedupPreviews, null, 2) : ''
+  const dedupPreviewValues = Form.useWatch([], dedupPreviewForm) || {}
+  const dedupPreviewReady = useMemo(() => {
+    return Boolean(
+      latestReviewQueueCompletionGate?.completion_gate_id &&
+        latestReviewQueueCompletionGate?.status === 'complete_enough_for_future_dedup_preview' &&
+        dedupPreviewValues.acknowledge_dedup_preview_only &&
+        dedupPreviewValues.acknowledge_no_production_dedup &&
+        dedupPreviewValues.acknowledge_no_evidence_layer_write &&
+        dedupPreviewValues.acknowledge_no_analysis &&
+        dedupPreviewValues.acknowledge_no_report,
+    )
+  }, [dedupPreviewValues, latestReviewQueueCompletionGate?.completion_gate_id, latestReviewQueueCompletionGate?.status])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -3376,6 +3434,222 @@ export function AnalysisRequests() {
                                       </Tag>
                                       <Text type="secondary">{item.completion_gate_id}</Text>
                                       <Text type="secondary">reviewed_ratio={item.counts?.reviewed_ratio || 0}</Text>
+                                      <Text type="secondary">created_at={item.created_at || '-'}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Dedup Preview / 重复证据预览">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Dedup preview boundary"
+                              description="Dedup preview only creates duplicate group candidates from local review-only queue items. It does not run production dedup, does not write the Evidence Layer, does not run analysis, does not generate reports, and does not make evidence verified or analysis-ready."
+                            />
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="Safe interpretation"
+                              description="Duplicate evidence must not amplify risk, sentiment, coverage, or conclusions. Human confirmation and a later analysis promotion gate are required before any merge or analysis effect."
+                            />
+                            {dedupPreviewError ? <Alert type="error" showIcon message={dedupPreviewError} /> : null}
+                            <Form
+                              form={dedupPreviewForm}
+                              layout="vertical"
+                              initialValues={{
+                                completion_gate_id: latestReviewQueueCompletionGate?.completion_gate_id || '',
+                                queue_init_id: latestReviewQueueCompletionGate?.queue_init_id || '',
+                                review_case_id: latestReviewQueueCompletionGate?.review_case_id || '',
+                                include_marked_weak: true,
+                                include_duplicate_merged: true,
+                                acknowledge_dedup_preview_only: true,
+                                acknowledge_no_production_dedup: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_analysis: true,
+                                acknowledge_no_report: true,
+                              }}
+                              onFinish={handleCreateDedupPreview}
+                            >
+                              <Row gutter={[12, 0]}>
+                                <Col span={12}>
+                                  <Form.Item label="completion_gate_id" name="completion_gate_id">
+                                    <Select
+                                      placeholder="Select completion gate"
+                                      options={reviewQueueCompletionGates.map((item) => ({
+                                        value: item.completion_gate_id,
+                                        label: `${item.status} / ${item.completion_gate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item label="queue_init_id" name="queue_init_id">
+                                    <Input placeholder={latestReviewQueueCompletionGate?.queue_init_id || 'review_queue_init_id'} />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item label="review_case_id" name="review_case_id">
+                                    <Input placeholder={latestReviewQueueCompletionGate?.review_case_id || 'review_only_case_id'} />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item name="include_marked_weak" valuePropName="checked">
+                                    <Checkbox>Include marked_weak items as warning-marked preview candidates.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="include_duplicate_merged" valuePropName="checked">
+                                    <Checkbox>Include duplicate_merged items as reviewer merge hints.</Checkbox>
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={[12, 0]}>
+                                <Col span={12}>
+                                  <Form.Item name="acknowledge_dedup_preview_only" valuePropName="checked">
+                                    <Checkbox>Dedup Preview is preview only.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_no_production_dedup" valuePropName="checked">
+                                    <Checkbox>No production dedup or merge effect.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_no_evidence_layer_write" valuePropName="checked">
+                                    <Checkbox>No Evidence Layer write.</Checkbox>
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item name="acknowledge_no_analysis" valuePropName="checked">
+                                    <Checkbox>No analysis and no analysis-ready promotion.</Checkbox>
+                                  </Form.Item>
+                                  <Form.Item name="acknowledge_no_report" valuePropName="checked">
+                                    <Checkbox>No report, Sandbox, or public event generation.</Checkbox>
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  loading={dedupPreviewLoading}
+                                  disabled={!dedupPreviewReady || dedupPreviewLoading}
+                                >
+                                  Generate Dedup Preview
+                                </Button>
+                                {latestDedupPreview ? (
+                                  <Button
+                                    icon={<ClipboardCopy size={16} />}
+                                    onClick={() => copyText(latestDedupPreviewJson, 'Dedup preview JSON copied')}
+                                  >
+                                    Copy latest dedup preview JSON
+                                  </Button>
+                                ) : null}
+                                {dedupPreviews.length ? (
+                                  <Button
+                                    icon={<ClipboardCopy size={16} />}
+                                    onClick={() => copyText(dedupPreviewsJson, 'Dedup preview history JSON copied')}
+                                  >
+                                    Copy dedup preview history JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+
+                            {latestDedupPreview ? (
+                              <Card size="small" title="Latest dedup preview">
+                                <Space direction="vertical" size={10} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={latestDedupPreview.status === 'preview_ready' ? 'green' : latestDedupPreview.status === 'blocked' ? 'red' : 'gold'}>
+                                      {latestDedupPreview.status}
+                                    </Tag>
+                                    <Tag color="default">can_run_dedup_now: {boolText(latestDedupPreview.readiness?.can_run_dedup_now)}</Tag>
+                                    <Tag color="default">can_run_analysis_now: {boolText(latestDedupPreview.readiness?.can_run_analysis_now)}</Tag>
+                                    <Tag color="default">human_confirmation_required: {boolText(latestDedupPreview.readiness?.requires_human_dedup_confirmation)}</Tag>
+                                  </Space>
+                                  <Descriptions column={1} size="small">
+                                    <Descriptions.Item label="dedup_preview_id">{latestDedupPreview.dedup_preview_id}</Descriptions.Item>
+                                    <Descriptions.Item label="counts">
+                                      seen={latestDedupPreview.counts?.items_seen || 0},
+                                      eligible={latestDedupPreview.counts?.items_eligible_for_preview || 0},
+                                      excluded={latestDedupPreview.counts?.items_excluded || 0},
+                                      groups={latestDedupPreview.counts?.duplicate_group_candidates || 0},
+                                      unique_candidates={latestDedupPreview.counts?.unique_candidate_count || 0}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="signals">
+                                      exact_url={boolText(latestDedupPreview.dedup_signals?.exact_url_match)},
+                                      normalized_url={boolText(latestDedupPreview.dedup_signals?.normalized_url_match)},
+                                      content_hash={boolText(latestDedupPreview.dedup_signals?.content_preview_hash_match)},
+                                      lineage={boolText(latestDedupPreview.dedup_signals?.lineage_match)},
+                                      reviewer_hint={boolText(latestDedupPreview.dedup_signals?.reviewer_merge_hint)},
+                                      semantic_llm={boolText(latestDedupPreview.dedup_signals?.semantic_llm_match)}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  {latestDedupPreview.groups?.length ? (
+                                    <Space direction="vertical" size={8} className="full-width">
+                                      {latestDedupPreview.groups.map((group) => (
+                                        <Card size="small" key={group.group_candidate_id}>
+                                          <Space direction="vertical" size={4} className="full-width">
+                                            <Space wrap>
+                                              <Tag color="blue">{group.reason}</Tag>
+                                              <Tag color={group.confidence === 'high' ? 'green' : group.confidence === 'low' ? 'gold' : 'cyan'}>
+                                                {group.confidence}
+                                              </Tag>
+                                              <Text type="secondary">{group.group_candidate_id}</Text>
+                                            </Space>
+                                            <Text>representative: {group.representative_item_id || '-'}</Text>
+                                            <Text type="secondary">
+                                              items: {(group.item_ids || []).join(', ') || '-'}
+                                            </Text>
+                                            <Text type="secondary">
+                                              duplicate_count_preview={group.duplicate_count_preview || 0}, may_amplify_risk=
+                                              {boolText(group.may_amplify_risk)}, analysis_effect={group.analysis_effect}
+                                            </Text>
+                                            <SummaryList title="Notes" items={group.notes || []} />
+                                          </Space>
+                                        </Card>
+                                      ))}
+                                    </Space>
+                                  ) : (
+                                    <Text type="secondary">No duplicate group candidates found in latest preview.</Text>
+                                  )}
+                                  {latestDedupPreview.excluded_items?.length ? (
+                                    <Card size="small" title="Excluded items">
+                                      <Space direction="vertical" size={4} className="full-width">
+                                        {latestDedupPreview.excluded_items.map((item) => (
+                                          <Text type="secondary" key={`${item.review_item_id}:${item.reason}`}>
+                                            {item.review_item_id}: {item.reason} / status={item.queue_status || '-'}
+                                          </Text>
+                                        ))}
+                                      </Space>
+                                    </Card>
+                                  ) : null}
+                                  <Descriptions column={1} size="small">
+                                    <Descriptions.Item label="privacy_scan">
+                                      raw_identifier_found={boolText(latestDedupPreview.privacy_scan?.raw_identifier_found)},
+                                      secret_like_found={boolText(latestDedupPreview.privacy_scan?.secret_like_found)},
+                                      privacy_stop={boolText(latestDedupPreview.privacy_scan?.privacy_stop)}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <SummaryList title="Blockers" items={latestDedupPreview.blockers || []} />
+                                  <SummaryList title="Warnings" items={latestDedupPreview.warnings || []} />
+                                  <SummaryList title="Boundary notes" items={latestDedupPreview.boundary_notes || []} />
+                                  <SummaryList title="Recommended next steps" items={latestDedupPreview.recommended_next_steps || []} />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No dedup preview record yet.</Text>
+                            )}
+
+                            {dedupPreviews.length ? (
+                              <Card size="small" title={`Existing dedup preview records (${dedupPreviews.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {dedupPreviews.map((item) => (
+                                    <Space wrap key={item.dedup_preview_id}>
+                                      <Tag color={item.status === 'preview_ready' ? 'green' : item.status === 'blocked' ? 'red' : 'gold'}>
+                                        {item.status}
+                                      </Tag>
+                                      <Text type="secondary">{item.dedup_preview_id}</Text>
+                                      <Text type="secondary">groups={item.counts?.duplicate_group_candidates || 0}</Text>
                                       <Text type="secondary">created_at={item.created_at || '-'}</Text>
                                     </Space>
                                   ))}

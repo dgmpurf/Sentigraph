@@ -1722,6 +1722,171 @@ class ReviewQueueCompletionGate(BaseModel):
     )
 
 
+class DedupPreviewRequest(BaseModel):
+    review_case_id: str | None = None
+    queue_init_id: str | None = None
+    completion_gate_id: str | None = None
+    include_marked_weak: bool = True
+    include_duplicate_merged: bool = True
+    created_by: str = "sentigraph_local_ui"
+    acknowledge_dedup_preview_only: bool = False
+    acknowledge_no_production_dedup: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_analysis: bool = False
+    acknowledge_no_report: bool = False
+    production_case_id: str | None = None
+    target_production_case_id: str | None = None
+    evidence_layer_written: bool = False
+    production_case_created: bool = False
+    production_review_queue_created: bool = False
+    production_dedup_run: bool = False
+    analysis_included: bool = False
+    analysis_run: bool = False
+    report_generated: bool = False
+    sandbox_generated: bool = False
+    public_event_generated: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    create_production_review_queue_now: bool = False
+    run_dedup_now: bool = False
+    run_analysis_now: bool = False
+    generate_report_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_public_event_now: bool = False
+
+
+class DedupPreviewInputScope(BaseModel):
+    source: Literal["review_only_queue_items"] = "review_only_queue_items"
+    include_statuses: list[str] = Field(default_factory=lambda: ["approved", "marked_weak", "duplicate_merged"])
+    exclude_statuses: list[str] = Field(default_factory=lambda: ["rejected", "needs_more_source", "privacy_hold", "review_needed"])
+    analysis_included: bool = False
+
+
+class DedupPreviewCounts(BaseModel):
+    items_seen: int = 0
+    items_eligible_for_preview: int = 0
+    items_excluded: int = 0
+    duplicate_group_candidates: int = 0
+    unique_candidate_count: int = 0
+
+
+class DedupPreviewSignals(BaseModel):
+    exact_url_match: bool = True
+    normalized_url_match: bool = True
+    content_preview_hash_match: bool = True
+    lineage_match: bool = True
+    reviewer_merge_hint: bool = True
+    semantic_llm_match: bool = False
+
+
+class DedupPreviewPrivacyScan(BaseModel):
+    raw_identifier_found: bool = False
+    secret_like_found: bool = False
+    privacy_stop: bool = False
+
+
+class DedupPreviewReadiness(BaseModel):
+    state: Literal["dedup_preview_ready", "blocked", "privacy_hold", "incomplete"] = "incomplete"
+    can_run_dedup_now: bool = False
+    can_run_analysis_now: bool = False
+    requires_human_dedup_confirmation: bool = True
+    requires_analysis_promotion_gate: bool = True
+
+
+class DedupPreviewExcludedItem(BaseModel):
+    review_item_id: str
+    reason: str
+    queue_status: str = ""
+    review_status: str = ""
+
+
+class DedupGroupCandidate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_dedup_group_candidate_v1"] = Field(
+        default="sentigraph_dedup_group_candidate_v1",
+        alias="schema",
+    )
+    group_candidate_id: str
+    review_case_id: str
+    queue_init_id: str
+    dedup_preview_id: str
+    reason: Literal["exact_url_match", "normalized_url_match", "content_preview_hash_match", "lineage_match", "reviewer_merge_hint", "mixed"]
+    confidence: Literal["high", "medium", "low"] = "medium"
+    item_ids: list[str] = Field(default_factory=list)
+    representative_item_id: str = ""
+    duplicate_count_preview: int = 0
+    may_amplify_risk: bool = False
+    human_confirmation_required: bool = True
+    analysis_effect: Literal["preview_only_no_analysis_effect"] = "preview_only_no_analysis_effect"
+    notes: list[str] = Field(default_factory=list)
+
+
+class DedupPreview(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_dedup_preview_v1"] = Field(
+        default="sentigraph_dedup_preview_v1",
+        alias="schema",
+    )
+    dedup_preview_id: str
+    request_id: str
+    review_case_id: str
+    queue_init_id: str
+    completion_gate_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    execution_mode: Literal["review_only_dedup_preview"] = "review_only_dedup_preview"
+    status: Literal["preview_ready", "incomplete", "blocked", "privacy_hold"] = "incomplete"
+    input_scope: DedupPreviewInputScope = Field(default_factory=DedupPreviewInputScope)
+    counts: DedupPreviewCounts = Field(default_factory=DedupPreviewCounts)
+    dedup_signals: DedupPreviewSignals = Field(default_factory=DedupPreviewSignals)
+    groups: list[DedupGroupCandidate] = Field(default_factory=list)
+    excluded_items: list[DedupPreviewExcludedItem] = Field(default_factory=list)
+    privacy_scan: DedupPreviewPrivacyScan = Field(default_factory=DedupPreviewPrivacyScan)
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "create_production_review_queue_now": False,
+            "run_production_dedup_now": False,
+            "run_analysis_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    readiness: DedupPreviewReadiness = Field(default_factory=DedupPreviewReadiness)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "dedup_preview_only": True,
+            "source_review_only_queue_items_only": True,
+            "original_package_rows_re_read": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

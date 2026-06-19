@@ -21,6 +21,14 @@ from app.schemas.analysis_request import (
     CaseDraftPackageReference,
     CaseDraftProviderSummary,
     CaseDraftReadiness,
+    DedupGroupCandidate,
+    DedupPreview,
+    DedupPreviewCounts,
+    DedupPreviewExcludedItem,
+    DedupPreviewInputScope,
+    DedupPreviewPrivacyScan,
+    DedupPreviewReadiness,
+    DedupPreviewRequest,
     EvidenceImportPlan,
     EvidenceImportPlanReadiness,
     EvidenceImportPreview,
@@ -1119,6 +1127,42 @@ def list_all_review_queue_completion_gates() -> list[ReviewQueueCompletionGate]:
     return gates
 
 
+def read_dedup_preview(request_id: str, dedup_preview_id: str) -> DedupPreview:
+    preview_path = _dedup_preview_path(request_id, dedup_preview_id)
+    if not preview_path.exists():
+        raise AnalysisRequestNotFoundError(f"Dedup preview {dedup_preview_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(preview_path.read_text(encoding="utf-8-sig"))
+        return DedupPreview.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{preview_path.name} is not a valid dedup preview: {type(exc).__name__}") from exc
+
+
+def list_dedup_previews(request_id: str) -> list[DedupPreview]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    previews: list[DedupPreview] = []
+    for path in sorted((root / "dedup_previews").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            previews.append(DedupPreview.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return previews
+
+
+def list_all_dedup_previews() -> list[DedupPreview]:
+    root = _ensure_root()
+    previews: list[DedupPreview] = []
+    for path in sorted((root / "dedup_previews").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            previews.append(DedupPreview.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return previews
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -1702,6 +1746,43 @@ def create_review_queue_completion_gate(
         gate.model_dump(mode="json", by_alias=True),
     )
     return read_review_queue_completion_gate(request_id, gate.completion_gate_id)
+
+
+def create_dedup_preview(
+    request_id: str,
+    payload: DedupPreviewRequest | dict[str, Any],
+) -> DedupPreview:
+    try:
+        preview_payload = payload if isinstance(payload, DedupPreviewRequest) else DedupPreviewRequest.model_validate(payload or {})
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create dedup preview: invalid payload ({exc}).") from exc
+
+    _validate_dedup_preview_payload(preview_payload)
+    gate = read_review_queue_completion_gate(request_id, preview_payload.completion_gate_id or "")
+    if gate.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create dedup preview: completion gate request_id mismatch.")
+    if gate.status != "complete_enough_for_future_dedup_preview":
+        raise AnalysisRequestValidationError("Cannot create dedup preview: completion gate is not complete_enough_for_future_dedup_preview.")
+    if not gate.downstream_eligibility.eligible_for_future_dedup_preview:
+        raise AnalysisRequestValidationError("Cannot create dedup preview: completion gate is not eligible for future dedup preview.")
+    if gate.counts.privacy_hold:
+        raise AnalysisRequestValidationError("Cannot create dedup preview: completion gate contains privacy_hold items.")
+
+    queue_init_id = preview_payload.queue_init_id or gate.queue_init_id
+    review_case_id = preview_payload.review_case_id or gate.review_case_id
+    if queue_init_id != gate.queue_init_id:
+        raise AnalysisRequestValidationError("Cannot create dedup preview: queue_init_id does not match completion gate.")
+    if review_case_id != gate.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create dedup preview: review_case_id does not match completion gate.")
+
+    queue_init = read_review_queue_initialization(request_id, queue_init_id)
+    review_case = read_review_only_case(request_id, review_case_id)
+    batch = read_review_queue_item_batch(request_id, queue_init_id)
+    preview = _build_dedup_preview(request_id, preview_payload, gate, queue_init, review_case, batch)
+    if preview.status != "preview_ready":
+        raise AnalysisRequestValidationError(f"Cannot create dedup preview: {', '.join(preview.blockers) or preview.status}.")
+    _write_json(_dedup_preview_path(request_id, preview.dedup_preview_id), preview.model_dump(mode="json", by_alias=True))
+    return read_dedup_preview(request_id, preview.dedup_preview_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -3079,6 +3160,370 @@ def _build_review_queue_completion_gate(
     )
 
 
+def _validate_dedup_preview_payload(payload: DedupPreviewRequest) -> None:
+    if not payload.completion_gate_id or not payload.completion_gate_id.strip():
+        raise AnalysisRequestValidationError("Cannot create dedup preview: completion_gate_id is required.")
+    acknowledgements = {
+        "acknowledge_dedup_preview_only": payload.acknowledge_dedup_preview_only,
+        "acknowledge_no_production_dedup": payload.acknowledge_no_production_dedup,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_analysis": payload.acknowledge_no_analysis,
+        "acknowledge_no_report": payload.acknowledge_no_report,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(f"Cannot create dedup preview: acknowledgement flags are required ({', '.join(missing)}).")
+    if payload.production_case_id or payload.target_production_case_id:
+        raise AnalysisRequestValidationError("Cannot create dedup preview: production_case_id is not allowed.")
+    side_effect_flags = {
+        "evidence_layer_written": payload.evidence_layer_written,
+        "production_case_created": payload.production_case_created,
+        "production_review_queue_created": payload.production_review_queue_created,
+        "production_dedup_run": payload.production_dedup_run,
+        "analysis_included": payload.analysis_included,
+        "analysis_run": payload.analysis_run,
+        "report_generated": payload.report_generated,
+        "sandbox_generated": payload.sandbox_generated,
+        "public_event_generated": payload.public_event_generated,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "create_production_review_queue_now": payload.create_production_review_queue_now,
+        "run_dedup_now": payload.run_dedup_now,
+        "run_analysis_now": payload.run_analysis_now,
+        "generate_report_now": payload.generate_report_now,
+        "generate_sandbox_now": payload.generate_sandbox_now,
+        "generate_public_event_now": payload.generate_public_event_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(f"Cannot create dedup preview: side effect flags must remain false ({', '.join(enabled)}).")
+
+
+def _build_dedup_preview(
+    request_id: str,
+    payload: DedupPreviewRequest,
+    gate: ReviewQueueCompletionGate,
+    queue_init: ReviewQueueInitialization,
+    review_case: ReviewOnlyCase,
+    batch: ReviewQueueItemBatch,
+) -> DedupPreview:
+    preview_id = _new_dedup_preview_id()
+    allowed_statuses = ["approved"]
+    if payload.include_marked_weak:
+        allowed_statuses.append("marked_weak")
+    if payload.include_duplicate_merged:
+        allowed_statuses.append("duplicate_merged")
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    excluded_items: list[DedupPreviewExcludedItem] = []
+    eligible_items: list[ReviewQueueItem] = []
+    privacy_scan = DedupPreviewPrivacyScan()
+
+    if gate.request_id != request_id or queue_init.request_id != request_id or review_case.request_id != request_id or batch.request_id != request_id:
+        blockers.append("request_id_mismatch")
+    if gate.queue_init_id != queue_init.queue_init_id or batch.queue_init_id != queue_init.queue_init_id:
+        blockers.append("queue_init_mismatch")
+    if gate.review_case_id != review_case.review_case_id or batch.review_case_id != review_case.review_case_id:
+        blockers.append("review_case_mismatch")
+    if gate.status != "complete_enough_for_future_dedup_preview":
+        blockers.append("completion_gate_not_complete")
+    if not gate.downstream_eligibility.eligible_for_future_dedup_preview:
+        blockers.append("completion_gate_not_eligible")
+    if gate.counts.privacy_hold:
+        blockers.append("completion_gate_privacy_hold")
+        privacy_scan.privacy_stop = True
+    if review_case.production_case_created or review_case.evidence_layer_written or review_case.review_queue_created:
+        blockers.append("review_only_case_unsafe_production_flags")
+    if review_case.dedup_run or review_case.analysis_run or review_case.analysis_included:
+        blockers.append("review_only_case_unsafe_analysis_flags")
+    if queue_init.target.production_case_created or queue_init.target.evidence_layer_written or queue_init.target.production_review_queue_created:
+        blockers.append("queue_init_unsafe_production_flags")
+
+    for item in batch.items:
+        exclude_reason = ""
+        if item.request_id != request_id or item.queue_init_id != queue_init.queue_init_id or item.review_case_id != review_case.review_case_id:
+            blockers.append("review_queue_item_parent_mismatch")
+            exclude_reason = "parent_mismatch"
+        elif item.governance.analysis_included or item.governance.public_visible or item.governance.report_visible or item.governance.sandbox_visible:
+            blockers.append("item_visibility_or_analysis_flag_true")
+            exclude_reason = "unsafe_visibility_or_analysis_flag"
+        elif _review_queue_item_has_forbidden_fields(item):
+            privacy_scan.raw_identifier_found = True
+            privacy_scan.secret_like_found = True
+            privacy_scan.privacy_stop = True
+            blockers.append("raw_forbidden_field_risk")
+            exclude_reason = "privacy_scan_failed"
+        elif not _dedup_item_has_safe_content(item):
+            exclude_reason = "missing_safe_content"
+        elif item.queue_status == "marked_weak" and not payload.include_marked_weak:
+            exclude_reason = "marked_weak_not_included"
+        elif item.queue_status == "duplicate_merged" and not payload.include_duplicate_merged:
+            exclude_reason = "duplicate_merged_not_included"
+        elif item.queue_status not in allowed_statuses:
+            exclude_reason = f"status_{item.queue_status}"
+
+        if exclude_reason:
+            excluded_items.append(
+                DedupPreviewExcludedItem(
+                    review_item_id=item.review_item_id,
+                    reason=exclude_reason,
+                    queue_status=item.queue_status,
+                    review_status=item.governance.review_status,
+                )
+            )
+        else:
+            eligible_items.append(item)
+
+    groups = _build_dedup_group_candidates(preview_id, review_case.review_case_id, queue_init.queue_init_id, eligible_items)
+    duplicate_item_ids = {item_id for group in groups for item_id in group.item_ids}
+    unique_candidate_count = len(groups) + sum(1 for item in eligible_items if item.review_item_id not in duplicate_item_ids)
+    status = "preview_ready"
+    if blockers:
+        status = "privacy_hold" if privacy_scan.privacy_stop else "blocked"
+    readiness_state = "dedup_preview_ready" if status == "preview_ready" else status
+    if not groups:
+        warnings.append("No duplicate group candidates were found in eligible review-only queue items.")
+
+    return DedupPreview(
+        dedup_preview_id=preview_id,
+        request_id=request_id,
+        review_case_id=review_case.review_case_id,
+        queue_init_id=queue_init.queue_init_id,
+        completion_gate_id=gate.completion_gate_id,
+        created_at=datetime.now(timezone.utc),
+        created_by=payload.created_by or "sentigraph_local_ui",
+        status=status,
+        input_scope=DedupPreviewInputScope(
+            include_statuses=allowed_statuses,
+            exclude_statuses=["rejected", "needs_more_source", "privacy_hold", "review_needed"],
+            analysis_included=False,
+        ),
+        counts=DedupPreviewCounts(
+            items_seen=len(batch.items),
+            items_eligible_for_preview=len(eligible_items),
+            items_excluded=len(excluded_items),
+            duplicate_group_candidates=len(groups),
+            unique_candidate_count=unique_candidate_count,
+        ),
+        groups=groups,
+        excluded_items=excluded_items,
+        privacy_scan=privacy_scan,
+        readiness=DedupPreviewReadiness(
+            state=readiness_state,
+            can_run_dedup_now=False,
+            can_run_analysis_now=False,
+            requires_human_dedup_confirmation=True,
+            requires_analysis_promotion_gate=True,
+        ),
+        blockers=_unique_preserve_order(blockers),
+        warnings=_unique_preserve_order(warnings),
+        boundary_notes=[
+            "Dedup preview uses local review-only queue item safe fields only.",
+            "Dedup preview does not run production dedup.",
+            "Dedup preview does not write the production Evidence Layer.",
+            "Dedup preview does not make items analysis-ready.",
+            "Dedup preview does not run analysis or generate reports.",
+            "Duplicate evidence must not amplify risk, sentiment, coverage, or conclusions.",
+            "Human confirmation is required before any future merge effect.",
+            "Provider output is evidence, not truth.",
+        ],
+        recommended_next_steps=_dedup_preview_next_steps(status, bool(groups)),
+    )
+
+
+def _build_dedup_group_candidates(
+    dedup_preview_id: str,
+    review_case_id: str,
+    queue_init_id: str,
+    items: list[ReviewQueueItem],
+) -> list[DedupGroupCandidate]:
+    item_by_id = {item.review_item_id: item for item in items}
+    parent = {item.review_item_id: item.review_item_id for item in items}
+    reasons_by_root: dict[str, set[str]] = {}
+
+    def find(item_id: str) -> str:
+        while parent[item_id] != item_id:
+            parent[item_id] = parent[parent[item_id]]
+            item_id = parent[item_id]
+        return item_id
+
+    def union(ids: list[str], reason: str) -> None:
+        ids = sorted(set(ids))
+        if len(ids) < 2:
+            return
+        base = find(ids[0])
+        for item_id in ids[1:]:
+            other = find(item_id)
+            if other != base:
+                parent[other] = base
+        root = find(base)
+        reasons_by_root.setdefault(root, set()).add(reason)
+
+    signal_maps: dict[str, dict[str, list[str]]] = {
+        "exact_url_match": {},
+        "normalized_url_match": {},
+        "content_preview_hash_match": {},
+        "lineage_match": {},
+        "reviewer_merge_hint": {},
+    }
+    for item in items:
+        candidate = item.evidence_candidate
+        if candidate.source_url.strip():
+            signal_maps["exact_url_match"].setdefault(candidate.source_url.strip(), []).append(item.review_item_id)
+            normalized_url = _normalize_dedup_url(candidate.source_url)
+            if normalized_url:
+                signal_maps["normalized_url_match"].setdefault(normalized_url, []).append(item.review_item_id)
+        content_hash = _dedup_content_preview_hash(candidate.title_preview, candidate.body_text_preview)
+        if content_hash:
+            signal_maps["content_preview_hash_match"].setdefault(content_hash, []).append(item.review_item_id)
+        if item.staging_id.strip():
+            signal_maps["lineage_match"].setdefault(item.staging_id.strip(), []).append(item.review_item_id)
+        if item.dedup.duplicate_group_id:
+            signal_maps["reviewer_merge_hint"].setdefault(item.dedup.duplicate_group_id, []).append(item.review_item_id)
+
+    for reason, values in signal_maps.items():
+        for ids in values.values():
+            union(ids, reason)
+
+    grouped_ids: dict[str, list[str]] = {}
+    for item_id in parent:
+        grouped_ids.setdefault(find(item_id), []).append(item_id)
+    groups: list[DedupGroupCandidate] = []
+    for root, ids in grouped_ids.items():
+        ids = sorted(set(ids))
+        if len(ids) < 2:
+            continue
+        reasons = set()
+        for item_id in ids:
+            reasons.update(reasons_by_root.get(find(item_id), set()))
+        reason = _dedup_group_reason(reasons)
+        representative = _select_dedup_representative([item_by_id[item_id] for item_id in ids])
+        group_hash = hashlib.sha256("|".join(ids).encode("utf-8")).hexdigest()[:12]
+        groups.append(
+            DedupGroupCandidate(
+                group_candidate_id=f"dedup_group_candidate_{group_hash}",
+                review_case_id=review_case_id,
+                queue_init_id=queue_init_id,
+                dedup_preview_id=dedup_preview_id,
+                reason=reason,
+                confidence=_dedup_group_confidence(reason, reasons),
+                item_ids=ids,
+                representative_item_id=representative.review_item_id if representative else ids[0],
+                duplicate_count_preview=len(ids),
+                may_amplify_risk=False,
+                human_confirmation_required=True,
+                analysis_effect="preview_only_no_analysis_effect",
+                notes=[
+                    "Preview-only duplicate candidate.",
+                    "Human confirmation required before future merge effect.",
+                    "Duplicate count is not risk or truth strength.",
+                ],
+            )
+        )
+    return sorted(groups, key=lambda group: (group.reason, group.group_candidate_id))
+
+
+def _dedup_item_has_safe_content(item: ReviewQueueItem) -> bool:
+    candidate = item.evidence_candidate
+    return any(
+        value.strip()
+        for value in [
+            candidate.source_url,
+            candidate.title_preview,
+            candidate.body_text_preview,
+            item.staging_id,
+            item.dedup.duplicate_group_id or "",
+        ]
+    )
+
+
+def _normalize_dedup_url(url: str) -> str:
+    text = url.strip()
+    if not text:
+        return ""
+    fragmentless = text.split("#", 1)[0]
+    base, _, query = fragmentless.partition("?")
+    match = re.match(r"^(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)(?P<host>[^/]+)(?P<path>/.*)?$", base)
+    if match:
+        scheme = match.group("scheme").lower()
+        host = match.group("host").lower()
+        path = (match.group("path") or "").rstrip("/")
+        normalized_base = f"{scheme}{host}{path}"
+    else:
+        normalized_base = base.lower().rstrip("/")
+    kept_params: list[str] = []
+    for part in query.split("&"):
+        if not part:
+            continue
+        key = part.split("=", 1)[0].lower()
+        if key.startswith("utm_") or key in {"fbclid", "gclid", "yclid", "mc_cid", "mc_eid", "spm"}:
+            continue
+        kept_params.append(part)
+    return f"{normalized_base}?{'&'.join(kept_params)}" if kept_params else normalized_base
+
+
+def _dedup_content_preview_hash(title: str, body: str) -> str:
+    normalized = re.sub(r"[\W_]+", " ", f"{title} {body}".lower(), flags=re.UNICODE)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    if not normalized:
+        return ""
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _dedup_group_reason(reasons: set[str]) -> str:
+    if len(reasons) != 1:
+        return "mixed"
+    return next(iter(reasons))
+
+
+def _dedup_group_confidence(reason: str, reasons: set[str]) -> str:
+    if reason == "mixed" or "exact_url_match" in reasons or "lineage_match" in reasons:
+        return "high"
+    if "normalized_url_match" in reasons:
+        return "high"
+    if "content_preview_hash_match" in reasons or "reviewer_merge_hint" in reasons:
+        return "medium"
+    return "low"
+
+
+def _select_dedup_representative(items: list[ReviewQueueItem]) -> ReviewQueueItem | None:
+    if not items:
+        return None
+    status_rank = {"approved": 0, "marked_weak": 1, "duplicate_merged": 2}
+
+    def key(item: ReviewQueueItem) -> tuple[int, int, int, str, str]:
+        candidate = item.evidence_candidate
+        preview_len = len(candidate.title_preview.strip()) + len(candidate.body_text_preview.strip())
+        return (
+            status_rank.get(item.queue_status, 9),
+            0 if candidate.source_url.strip() else 1,
+            -preview_len,
+            candidate.created_at or item.created_at.isoformat(),
+            item.review_item_id,
+        )
+
+    return sorted(items, key=key)[0]
+
+
+def _dedup_preview_next_steps(status: str, has_groups: bool) -> list[str]:
+    if status != "preview_ready":
+        return [
+            "Resolve blockers before any future dedup preview.",
+            "Do not promote evidence to analysis while blockers remain.",
+        ]
+    if not has_groups:
+        return [
+            "No duplicate group candidates found in this preview.",
+            "Future analysis promotion still requires a separate gate.",
+        ]
+    return [
+        "Review duplicate group candidates with a human reviewer.",
+        "Do not use duplicate_count_preview to amplify risk or sentiment.",
+        "Proceed to a future dedup group review phase before any analysis promotion.",
+    ]
+
+
 def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -3490,6 +3935,7 @@ def _ensure_root() -> Path:
     (root / "review_queue_items").mkdir(parents=True, exist_ok=True)
     (root / "review_queue_action_audits").mkdir(parents=True, exist_ok=True)
     (root / "review_queue_completion_gates").mkdir(parents=True, exist_ok=True)
+    (root / "dedup_previews").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -3608,6 +4054,13 @@ def _review_queue_completion_gate_path(request_id: str, completion_gate_id: str)
     return root / "review_queue_completion_gates" / f"{request_id}_{completion_gate_id}.json"
 
 
+def _dedup_preview_path(request_id: str, dedup_preview_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(dedup_preview_id)
+    root = _ensure_root()
+    return root / "dedup_previews" / f"{request_id}_{dedup_preview_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -3674,6 +4127,11 @@ def _new_review_queue_action_audit_id() -> str:
 def _new_review_queue_completion_gate_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"review_queue_completion_gate_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_dedup_preview_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"dedup_preview_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

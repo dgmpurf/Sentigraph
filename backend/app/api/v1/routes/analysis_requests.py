@@ -8,6 +8,8 @@ from app.schemas.analysis_request import (
     AnalysisRequestCreate,
     AnalysisRequestRecord,
     CaseDraftHandoff,
+    DedupPreview,
+    DedupPreviewRequest,
     EvidenceImportPlan,
     EvidenceImportPreview,
     EvidenceImportReviewDecision,
@@ -39,6 +41,7 @@ from app.services.analysis_request_store import (
     AnalysisRequestValidationError,
     cancel_analysis_request,
     create_case_draft_handoff,
+    create_dedup_preview,
     create_evidence_import_plan,
     create_evidence_import_preview,
     create_evidence_import_review_decision,
@@ -54,6 +57,7 @@ from app.services.analysis_request_store import (
     create_review_queue_initialization,
     get_analysis_request_config,
     list_case_draft_handoffs,
+    list_all_dedup_previews,
     list_all_evidence_row_reader_dry_runs,
     list_all_manual_evidence_import_execution_preflights,
     list_all_manual_evidence_import_jobs,
@@ -68,6 +72,7 @@ from app.services.analysis_request_store import (
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
     list_evidence_row_reader_dry_runs,
+    list_dedup_previews,
     list_analysis_requests,
     list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
@@ -78,6 +83,7 @@ from app.services.analysis_request_store import (
     list_review_queue_completion_gates,
     list_review_queue_initializations,
     read_case_draft_handoff,
+    read_dedup_preview,
     read_evidence_import_plan,
     read_evidence_import_preview,
     read_evidence_import_review_decision,
@@ -176,6 +182,11 @@ def analysis_request_review_queue_action_audit_all_list() -> list[ReviewQueueAct
 @router.get("/review-queue-completion-gates", response_model=list[ReviewQueueCompletionGate])
 def analysis_request_review_queue_completion_gate_all_list() -> list[ReviewQueueCompletionGate]:
     return list_all_review_queue_completion_gates()
+
+
+@router.get("/dedup-previews", response_model=list[DedupPreview])
+def analysis_request_dedup_preview_all_list() -> list[DedupPreview]:
+    return list_all_dedup_previews()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -597,6 +608,40 @@ def analysis_request_review_queue_completion_gate_detail(
 ) -> ReviewQueueCompletionGate:
     try:
         return read_review_queue_completion_gate(request_id, completion_gate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/dedup-previews", response_model=list[DedupPreview])
+def analysis_request_dedup_preview_list(request_id: str) -> list[DedupPreview]:
+    try:
+        return list_dedup_previews(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/dedup-previews", response_model=DedupPreview)
+def analysis_request_dedup_preview_create(
+    request_id: str,
+    payload: DedupPreviewRequest,
+) -> DedupPreview:
+    try:
+        return create_dedup_preview(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/dedup-previews/{dedup_preview_id}", response_model=DedupPreview)
+def analysis_request_dedup_preview_detail(
+    request_id: str,
+    dedup_preview_id: str,
+) -> DedupPreview:
+    try:
+        return read_dedup_preview(request_id, dedup_preview_id)
     except AnalysisRequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:

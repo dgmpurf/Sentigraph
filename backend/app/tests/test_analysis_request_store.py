@@ -19,6 +19,7 @@ from app.services.analysis_request_store import (
     create_review_only_case_staging_import,
     create_review_queue_initialization,
     create_review_queue_completion_gate,
+    create_dedup_preview,
     create_review_queue_item_action,
     create_analysis_request,
     get_analysis_request_config,
@@ -33,6 +34,7 @@ from app.services.analysis_request_store import (
     list_review_only_case_staging_imports,
     list_review_queue_action_audits,
     list_review_queue_completion_gates,
+    list_dedup_previews,
     list_review_queue_initializations,
     list_analysis_requests,
     read_evidence_row_reader_dry_run,
@@ -41,6 +43,7 @@ from app.services.analysis_request_store import (
     read_review_only_case_staging_import,
     read_review_queue_action_audits_for_item,
     read_review_queue_completion_gate,
+    read_dedup_preview,
     read_review_queue_initialization,
     read_review_queue_item_batch,
     read_staged_evidence_candidate_batch,
@@ -366,6 +369,20 @@ def review_queue_completion_gate_payload(**overrides: object) -> dict:
         "acknowledge_completion_is_not_analysis": True,
         "acknowledge_no_evidence_layer_write": True,
         "acknowledge_no_production_case": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def dedup_preview_payload(**overrides: object) -> dict:
+    payload = {
+        "include_marked_weak": True,
+        "include_duplicate_merged": True,
+        "acknowledge_dedup_preview_only": True,
+        "acknowledge_no_production_dedup": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_analysis": True,
         "acknowledge_no_report": True,
     }
     payload.update(overrides)
@@ -2585,6 +2602,179 @@ def test_review_queue_completion_gate_records_are_append_only(tmp_path: Path, mo
     assert first_gate.completion_gate_id != second_gate.completion_gate_id
     assert {gate.completion_gate_id for gate in gates} >= {first_gate.completion_gate_id, second_gate.completion_gate_id}
     assert len(gates) == 2
+
+
+def test_dedup_preview_groups_review_only_items_without_reading_package_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Dedup preview signals")))
+    package_dir = create_many_row_preview_package(tmp_path)
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id, package_dir=package_dir)
+    forbidden_row_file = package_dir / "evidence_items.jsonl"
+    forbidden_row_file.write_text('{"raw_author_id":"must_not_be_read","source_url":"https://unsafe.example"}\n', encoding="utf-8")
+    item_ids = [item.review_item_id for item in item_batch.items]
+
+    create_review_queue_item_action(record.request_id, item_ids[0], review_queue_action_payload("approve"))
+    create_review_queue_item_action(record.request_id, item_ids[1], review_queue_action_payload("mark_weak", note="Keep with warning."))
+    create_review_queue_item_action(
+        record.request_id,
+        item_ids[2],
+        review_queue_action_payload("merge_duplicate", note="Reviewer merge hint.", duplicate_group_id="manual_hint_a"),
+    )
+    create_review_queue_item_action(
+        record.request_id,
+        item_ids[3],
+        review_queue_action_payload("merge_duplicate", note="Reviewer merge hint.", duplicate_group_id="manual_hint_a"),
+    )
+
+    batch_path = tmp_path / "review_queue_items" / f"{record.request_id}_{queue_init.queue_init_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["items"][0]["evidence_candidate"]["source_url"] = "https://Example.com/story?utm_source=news&id=42"
+    batch_payload["items"][0]["evidence_candidate"]["title_preview"] = "Helldivers PSN rollback"
+    batch_payload["items"][0]["evidence_candidate"]["body_text_preview"] = "Same community concern."
+    batch_payload["items"][1]["evidence_candidate"]["source_url"] = "https://example.com/story?id=42"
+    batch_payload["items"][1]["evidence_candidate"]["title_preview"] = "helldivers psn rollback"
+    batch_payload["items"][1]["evidence_candidate"]["body_text_preview"] = "Same   community concern."
+    batch_payload["items"][2]["evidence_candidate"]["source_url"] = "https://forum.example/a"
+    batch_payload["items"][3]["evidence_candidate"]["source_url"] = "https://forum.example/b"
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+
+    gate = create_review_queue_completion_gate(
+        record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+    preview = create_dedup_preview(
+        record.request_id,
+        dedup_preview_payload(
+            review_case_id=queue_init.review_case_id,
+            queue_init_id=queue_init.queue_init_id,
+            completion_gate_id=gate.completion_gate_id,
+        ),
+    )
+    previews = list_dedup_previews(record.request_id)
+    read_back = read_dedup_preview(record.request_id, preview.dedup_preview_id)
+    updated_batch = read_review_queue_item_batch(record.request_id, queue_init.queue_init_id)
+
+    assert preview.schema_ == "sentigraph_dedup_preview_v1"
+    assert preview.status == "preview_ready"
+    assert preview.counts.items_seen == 4
+    assert preview.counts.items_eligible_for_preview == 4
+    assert preview.counts.duplicate_group_candidates >= 2
+    assert preview.readiness.can_run_dedup_now is False
+    assert preview.readiness.can_run_analysis_now is False
+    assert all(group.may_amplify_risk is False for group in preview.groups)
+    assert all(group.analysis_effect == "preview_only_no_analysis_effect" for group in preview.groups)
+    assert any(group.reason == "mixed" and set(item_ids[:2]).issubset(set(group.item_ids)) for group in preview.groups)
+    assert any(group.reason in {"reviewer_merge_hint", "mixed"} and set(item_ids[2:4]).issubset(set(group.item_ids)) for group in preview.groups)
+    assert read_back.dedup_preview_id == preview.dedup_preview_id
+    assert previews[0].dedup_preview_id == preview.dedup_preview_id
+    assert all(item.governance.analysis_included is False for item in updated_batch.items)
+    assert all(item.dedup.may_amplify_risk is False for item in updated_batch.items)
+    assert "must_not_be_read" not in json.dumps(preview.model_dump(mode="json"), ensure_ascii=False)
+
+
+def test_dedup_preview_excludes_ineligible_items_and_honors_include_flags(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Dedup preview exclusions")))
+    package_dir = create_many_row_preview_package(tmp_path)
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id, package_dir=package_dir)
+    item_ids = [item.review_item_id for item in item_batch.items]
+
+    create_review_queue_item_action(record.request_id, item_ids[0], review_queue_action_payload("approve"))
+    create_review_queue_item_action(record.request_id, item_ids[1], review_queue_action_payload("reject"))
+    create_review_queue_item_action(record.request_id, item_ids[2], review_queue_action_payload("mark_weak"))
+    create_review_queue_item_action(
+        record.request_id,
+        item_ids[3],
+        review_queue_action_payload("merge_duplicate", duplicate_group_id="dup_include_flag"),
+    )
+    gate = create_review_queue_completion_gate(
+        record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+
+    preview = create_dedup_preview(
+        record.request_id,
+        dedup_preview_payload(
+            queue_init_id=queue_init.queue_init_id,
+            review_case_id=queue_init.review_case_id,
+            completion_gate_id=gate.completion_gate_id,
+            include_marked_weak=False,
+            include_duplicate_merged=False,
+        ),
+    )
+
+    excluded = {item.review_item_id: item.reason for item in preview.excluded_items}
+    assert preview.counts.items_eligible_for_preview == 1
+    assert item_ids[1] in excluded and excluded[item_ids[1]] == "status_rejected"
+    assert item_ids[2] in excluded and excluded[item_ids[2]] == "marked_weak_not_included"
+    assert item_ids[3] in excluded and excluded[item_ids[3]] == "duplicate_merged_not_included"
+    assert preview.counts.duplicate_group_candidates == 0
+    assert preview.counts.unique_candidate_count == 1
+
+
+def test_dedup_preview_blocks_unsafe_or_incomplete_creation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Dedup preview blocks")))
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id)
+    item_id = item_batch.items[0].review_item_id
+
+    incomplete_gate = create_review_queue_completion_gate(
+        record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+    assert incomplete_gate.status == "incomplete"
+
+    unsafe_payloads = [
+        dedup_preview_payload(queue_init_id=queue_init.queue_init_id, completion_gate_id=incomplete_gate.completion_gate_id),
+        dedup_preview_payload(queue_init_id=queue_init.queue_init_id, completion_gate_id="missing_gate"),
+        dedup_preview_payload(queue_init_id=queue_init.queue_init_id, completion_gate_id=incomplete_gate.completion_gate_id, acknowledge_no_analysis=False),
+        dedup_preview_payload(queue_init_id=queue_init.queue_init_id, completion_gate_id=incomplete_gate.completion_gate_id, run_analysis_now=True),
+        dedup_preview_payload(queue_init_id=queue_init.queue_init_id, completion_gate_id=incomplete_gate.completion_gate_id, production_case_id="case_prod_unsafe"),
+    ]
+    for payload in unsafe_payloads:
+        try:
+            create_dedup_preview(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert any(text in str(exc) for text in ("completion gate", "acknowledgement", "side effect", "production_case"))
+        else:
+            raise AssertionError("unsafe dedup preview payload should fail")
+
+    create_review_queue_item_action(record.request_id, item_id, review_queue_action_payload("approve"))
+    batch_path = tmp_path / "review_queue_items" / f"{record.request_id}_{queue_init.queue_init_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["items"][0]["privacy"]["raw_author_id_present"] = True
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+    blocked_gate = create_review_queue_completion_gate(
+        record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+    assert blocked_gate.status == "blocked"
+    try:
+        create_dedup_preview(record.request_id, dedup_preview_payload(queue_init_id=queue_init.queue_init_id, completion_gate_id=blocked_gate.completion_gate_id))
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "completion gate" in str(exc)
+    else:
+        raise AssertionError("blocked completion gate should fail dedup preview")
+
+
+def test_dedup_preview_records_are_append_only(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Dedup preview append-only")))
+    _review_case, _staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, record.request_id)
+    for item in item_batch.items:
+        create_review_queue_item_action(record.request_id, item.review_item_id, review_queue_action_payload("approve"))
+    gate = create_review_queue_completion_gate(
+        record.request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+
+    first_preview = create_dedup_preview(record.request_id, dedup_preview_payload(queue_init_id=queue_init.queue_init_id, completion_gate_id=gate.completion_gate_id))
+    second_preview = create_dedup_preview(record.request_id, dedup_preview_payload(queue_init_id=queue_init.queue_init_id, completion_gate_id=gate.completion_gate_id))
+    previews = list_dedup_previews(record.request_id)
+
+    assert first_preview.dedup_preview_id != second_preview.dedup_preview_id
+    assert {preview.dedup_preview_id for preview in previews} >= {first_preview.dedup_preview_id, second_preview.dedup_preview_id}
+    assert len(previews) == 2
 
 
 def test_config_uses_default_runtime_label_without_absolute_path(monkeypatch) -> None:
