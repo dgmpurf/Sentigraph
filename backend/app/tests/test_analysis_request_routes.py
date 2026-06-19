@@ -185,6 +185,19 @@ def route_staging_import_ack_payload(**overrides: object) -> dict:
     return payload
 
 
+def route_review_queue_init_ack_payload(**overrides: object) -> dict:
+    payload = {
+        "acknowledge_review_only_queue": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_dedup": True,
+        "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -1171,6 +1184,134 @@ def test_analysis_request_review_only_staging_import_route_blocks_unsafe_inputs(
     assert first_response.status_code == 200
     assert duplicate_response.status_code == 400
     assert "already has staging import" in duplicate_response.text
+
+
+def test_analysis_request_review_queue_initialization_routes_create_read_and_list(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    assert preview_response.status_code == 200
+    preview_run_id = preview_response.json()["preview_run_id"]
+    review_case_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_run_id, "target_case_mode": "new_review_case"},
+    )
+    assert review_case_response.status_code == 200
+    review_case_id = review_case_response.json()["review_case_id"]
+    staging_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id, preview_run_id=preview_run_id),
+    )
+    assert staging_response.status_code == 200
+    staging_import_id = staging_response.json()["staging_import_id"]
+
+    create_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations",
+        json=route_review_queue_init_ack_payload(review_case_id=review_case_id, staging_import_id=staging_import_id),
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-queue-initializations")
+    all_response = client.get("/api/v1/analysis-requests/review-queue-initializations")
+
+    assert create_response.status_code == 200
+    body = create_response.json()
+    assert body["schema"] == "sentigraph_review_queue_initialization_v1"
+    assert body["request_id"] == request_id
+    assert body["review_case_id"] == review_case_id
+    assert body["staging_import_id"] == staging_import_id
+    assert body["execution_mode"] == "review_only_queue_initialization"
+    assert body["status"] == "completed"
+    assert body["source"]["source_type"] == "staged_evidence_candidates"
+    assert body["counts"]["queue_items_created"] == 1
+    assert body["defaults"]["queue_status"] == "review_needed"
+    assert body["defaults"]["verification_status"] == "source_url_provided_unverified"
+    assert body["defaults"]["trust_label"] == "medium_low"
+    assert body["defaults"]["analysis_included"] is False
+    assert body["target"]["production_case_created"] is False
+    assert body["target"]["evidence_layer_written"] is False
+    assert body["target"]["production_review_queue_created"] is False
+    assert body["readiness"]["can_run_analysis_now"] is False
+    assert body["readiness"]["requires_review_actions_phase"] is True
+    assert body["readiness"]["requires_dedup_phase"] is True
+
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+    assert all_response.status_code == 200
+    assert len(all_response.json()) == 1
+    read_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations/{body['queue_init_id']}"
+    )
+    items_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations/{body['queue_init_id']}/items"
+    )
+    assert read_response.status_code == 200
+    assert read_response.json()["queue_init_id"] == body["queue_init_id"]
+    assert items_response.status_code == 200
+    items_body = items_response.json()
+    assert items_body["schema"] == "sentigraph_review_queue_item_batch_v1"
+    assert len(items_body["items"]) == 1
+    item_text = json.dumps(items_body, ensure_ascii=False)
+    assert items_body["items"][0]["queue_status"] == "review_needed"
+    assert items_body["items"][0]["governance"]["analysis_included"] is False
+    assert items_body["items"][0]["dedup"]["dedup_status"] == "not_run"
+    assert items_body["items"][0]["dedup"]["may_amplify_risk"] is False
+    assert "route-raw-author-not-returned" not in item_text
+
+
+def test_analysis_request_review_queue_initialization_route_blocks_unsafe_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path)
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=1),
+    )
+    assert preview_response.status_code == 200
+    preview_run_id = preview_response.json()["preview_run_id"]
+    review_case_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_run_id, "target_case_mode": "new_review_case"},
+    )
+    assert review_case_response.status_code == 200
+    review_case_id = review_case_response.json()["review_case_id"]
+    staging_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id, preview_run_id=preview_run_id),
+    )
+    assert staging_response.status_code == 200
+    staging_import_id = staging_response.json()["staging_import_id"]
+
+    cases = [
+        (route_review_queue_init_ack_payload(acknowledge_no_report=False), "acknowledgement", 400),
+        (route_review_queue_init_ack_payload(package_path="runtime/private/evidence_items.jsonl"), "package_path", 400),
+        (route_review_queue_init_ack_payload(dedup_run=True), "side effect", 400),
+        (route_review_queue_init_ack_payload(target_production_case_id="case_prod_unsafe"), "production_case_id", 400),
+        (
+            route_review_queue_init_ack_payload(
+                review_case_id=review_case_id,
+                staging_import_id="review_only_staging_import_missing",
+            ),
+            "staging import",
+            404,
+        ),
+    ]
+    for payload, expected_message, expected_status in cases:
+        response = client.post(f"/api/v1/analysis-requests/{request_id}/review-queue-initializations", json=payload)
+        assert response.status_code == expected_status
+        assert expected_message in response.text
+
+    first_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations",
+        json=route_review_queue_init_ack_payload(review_case_id=review_case_id, staging_import_id=staging_import_id),
+    )
+    duplicate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations",
+        json=route_review_queue_init_ack_payload(review_case_id=review_case_id, staging_import_id=staging_import_id),
+    )
+    assert first_response.status_code == 200
+    assert duplicate_response.status_code == 400
+    assert "already has review queue initialization" in duplicate_response.text
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:

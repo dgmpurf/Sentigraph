@@ -32,8 +32,10 @@ import {
   createAnalysisRequestExecutionPreflight,
   createAnalysisRequestRealPackageRowPreview,
   createAnalysisRequestReviewOnlyCase,
+  createAnalysisRequestReviewQueueInitialization,
   createAnalysisRequestRowReaderDryRun,
   createAnalysisRequestStagingImport,
+  getAnalysisRequestReviewQueueItems,
   getAnalysisRequestStagingImportCandidates,
   getAnalysisRequest,
   getAnalysisRequestCaseDraft,
@@ -44,6 +46,7 @@ import {
   listAnalysisRequestImportJobs,
   listAnalysisRequestRealPackageRowPreviews,
   listAnalysisRequestReviewOnlyCases,
+  listAnalysisRequestReviewQueueInitializations,
   listAnalysisRequestRowReaderDryRuns,
   listAnalysisRequestReviewDecisions,
   listAnalysisRequestStagingImports,
@@ -479,6 +482,44 @@ function stagingImportEligibility(latestReviewOnlyCase, latestRealPackagePreview
   return { eligible: true, reason: 'Ready to create review-only staging import from redacted preview rows.' }
 }
 
+function reviewQueueInitEligibility(latestReviewOnlyCase, latestStagingImport, latestReviewDecision, stagedCandidateBatch, queueInitializations) {
+  if (!latestReviewOnlyCase) return { eligible: false, reason: 'Create a review-only case container first.' }
+  if (!latestStagingImport) return { eligible: false, reason: 'Create a review-only staging import first.' }
+  if (queueInitializations?.length) return { eligible: false, reason: 'A review queue initialization already exists for this request.' }
+  if (!['draft', 'staging_pending'].includes(latestReviewOnlyCase.status)) {
+    return { eligible: false, reason: `Review-only case status ${latestReviewOnlyCase.status || 'unknown'} is not eligible.` }
+  }
+  if (latestReviewOnlyCase.visibility !== 'internal_review_only') {
+    return { eligible: false, reason: 'Review-only case must remain internal_review_only.' }
+  }
+  if (
+    latestReviewOnlyCase.analysis_included ||
+    latestReviewOnlyCase.production_case_created ||
+    latestReviewOnlyCase.evidence_layer_written ||
+    latestReviewOnlyCase.review_queue_created ||
+    latestReviewOnlyCase.dedup_run ||
+    latestReviewOnlyCase.analysis_run
+  ) {
+    return { eligible: false, reason: 'Review-only case has unsafe side-effect flags.' }
+  }
+  if (!['completed', 'partial'].includes(latestStagingImport.status)) {
+    return { eligible: false, reason: `Staging import status ${latestStagingImport.status || 'unknown'} is not eligible.` }
+  }
+  if (latestStagingImport.readiness?.state !== 'staged_for_review_only') {
+    return { eligible: false, reason: 'Staging import readiness must be staged_for_review_only.' }
+  }
+  if (latestStagingImport.target?.production_case_created || latestStagingImport.target?.evidence_layer_written) {
+    return { eligible: false, reason: 'Staging import has unsafe production target flags.' }
+  }
+  if (!stagedCandidateBatch?.items && !stagedCandidateBatch?.candidates?.length) {
+    return { eligible: false, reason: 'Staged evidence candidate batch is required.' }
+  }
+  if (!latestReviewDecision || latestReviewDecision.decision !== 'approve_import') {
+    return { eligible: false, reason: 'Latest review decision must remain approve_import.' }
+  }
+  return { eligible: true, reason: 'Ready to initialize review-only queue items from staged candidates.' }
+}
+
 function SummaryList({ title, items }) {
   return (
     <Card size="small" title={title}>
@@ -504,6 +545,7 @@ export function AnalysisRequests() {
   const [realPackagePreviewForm] = Form.useForm()
   const [reviewOnlyCaseForm] = Form.useForm()
   const [stagingImportForm] = Form.useForm()
+  const [reviewQueueInitForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -519,6 +561,8 @@ export function AnalysisRequests() {
   const [reviewOnlyCases, setReviewOnlyCases] = useState([])
   const [stagingImports, setStagingImports] = useState([])
   const [stagedCandidateBatch, setStagedCandidateBatch] = useState(null)
+  const [reviewQueueInitializations, setReviewQueueInitializations] = useState([])
+  const [reviewQueueItemBatch, setReviewQueueItemBatch] = useState(null)
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -532,6 +576,7 @@ export function AnalysisRequests() {
   const [realPackagePreviewLoading, setRealPackagePreviewLoading] = useState(false)
   const [reviewOnlyCaseLoading, setReviewOnlyCaseLoading] = useState(false)
   const [stagingImportLoading, setStagingImportLoading] = useState(false)
+  const [reviewQueueInitLoading, setReviewQueueInitLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -543,6 +588,7 @@ export function AnalysisRequests() {
   const [realPackagePreviewError, setRealPackagePreviewError] = useState('')
   const [reviewOnlyCaseError, setReviewOnlyCaseError] = useState('')
   const [stagingImportError, setStagingImportError] = useState('')
+  const [reviewQueueInitError, setReviewQueueInitError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -575,6 +621,8 @@ export function AnalysisRequests() {
       setReviewOnlyCases([])
       setStagingImports([])
       setStagedCandidateBatch(null)
+      setReviewQueueInitializations([])
+      setReviewQueueItemBatch(null)
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -585,6 +633,7 @@ export function AnalysisRequests() {
       setRealPackagePreviewError('')
       setReviewOnlyCaseError('')
       setStagingImportError('')
+      setReviewQueueInitError('')
       return
     }
     try {
@@ -665,6 +714,22 @@ export function AnalysisRequests() {
       setStagingImports([])
       setStagedCandidateBatch(null)
       setStagingImportError('')
+    }
+    try {
+      const nextQueueInitializations = await listAnalysisRequestReviewQueueInitializations(requestId)
+      setReviewQueueInitializations(nextQueueInitializations)
+      setReviewQueueInitError('')
+      if (nextQueueInitializations[0]?.queue_init_id) {
+        setReviewQueueItemBatch(
+          await getAnalysisRequestReviewQueueItems(requestId, nextQueueInitializations[0].queue_init_id),
+        )
+      } else {
+        setReviewQueueItemBatch(null)
+      }
+    } catch {
+      setReviewQueueInitializations([])
+      setReviewQueueItemBatch(null)
+      setReviewQueueInitError('')
     }
   }
 
@@ -925,6 +990,8 @@ export function AnalysisRequests() {
       setReviewOnlyCases([])
       setStagingImports([])
       setStagedCandidateBatch(null)
+      setReviewQueueInitializations([])
+      setReviewQueueItemBatch(null)
       message.success(`Created limited real package row preview: ${preview.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create limited real package row preview.'
@@ -948,6 +1015,8 @@ export function AnalysisRequests() {
       setReviewOnlyCases(await listAnalysisRequestReviewOnlyCases(selectedRecord.request_id))
       setStagingImports([])
       setStagedCandidateBatch(null)
+      setReviewQueueInitializations([])
+      setReviewQueueItemBatch(null)
       message.success(`Created review-only case container: ${reviewCase.review_case_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review-only case container.'
@@ -977,12 +1046,44 @@ export function AnalysisRequests() {
       setStagedCandidateBatch(
         await getAnalysisRequestStagingImportCandidates(selectedRecord.request_id, stagingImport.staging_import_id),
       )
+      setReviewQueueInitializations([])
+      setReviewQueueItemBatch(null)
       message.success(`Created review-only staging import: ${stagingImport.staging_import_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review-only staging import.'
       setStagingImportError(String(messageText))
     } finally {
       setStagingImportLoading(false)
+    }
+  }
+
+  async function handleCreateReviewQueueInitialization(values) {
+    if (!selectedRecord?.request_id) return
+    setReviewQueueInitLoading(true)
+    setReviewQueueInitError('')
+    try {
+      const queueInit = await createAnalysisRequestReviewQueueInitialization(selectedRecord.request_id, {
+        review_case_id: values.review_case_id || latestReviewOnlyCase?.review_case_id || undefined,
+        staging_import_id: values.staging_import_id || latestStagingImport?.staging_import_id || undefined,
+        acknowledge_review_only_queue: Boolean(values.acknowledge_review_only_queue),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_no_dedup: Boolean(values.acknowledge_no_dedup),
+        acknowledge_no_analysis: Boolean(values.acknowledge_no_analysis),
+        acknowledge_no_report: Boolean(values.acknowledge_no_report),
+        created_by: 'sentigraph_local_ui',
+      })
+      const nextQueueInitializations = await listAnalysisRequestReviewQueueInitializations(selectedRecord.request_id)
+      setReviewQueueInitializations(nextQueueInitializations)
+      setReviewQueueItemBatch(
+        await getAnalysisRequestReviewQueueItems(selectedRecord.request_id, queueInit.queue_init_id),
+      )
+      message.success(`Initialized review-only queue: ${queueInit.queue_init_id}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to initialize review-only queue.'
+      setReviewQueueInitError(String(messageText))
+    } finally {
+      setReviewQueueInitLoading(false)
     }
   }
 
@@ -1127,6 +1228,47 @@ export function AnalysisRequests() {
     stagingNoProductionCaseAck,
     stagingNoAnalysisAck,
     stagingNoReportAck,
+  ])
+  const latestReviewQueueInitialization = reviewQueueInitializations[0] || null
+  const latestReviewQueueInitializationJson = latestReviewQueueInitialization
+    ? JSON.stringify(latestReviewQueueInitialization, null, 2)
+    : ''
+  const reviewQueueItemBatchJson = reviewQueueItemBatch ? JSON.stringify(reviewQueueItemBatch, null, 2) : ''
+  const reviewQueueInitGate = useMemo(
+    () => reviewQueueInitEligibility(
+      latestReviewOnlyCase,
+      latestStagingImport,
+      latestReviewDecision,
+      stagedCandidateBatch,
+      reviewQueueInitializations,
+    ),
+    [latestReviewOnlyCase, latestStagingImport, latestReviewDecision, stagedCandidateBatch, reviewQueueInitializations],
+  )
+  const queueReviewAck = Form.useWatch('acknowledge_review_only_queue', reviewQueueInitForm)
+  const queueNoEvidenceLayerAck = Form.useWatch('acknowledge_no_evidence_layer_write', reviewQueueInitForm)
+  const queueNoProductionCaseAck = Form.useWatch('acknowledge_no_production_case', reviewQueueInitForm)
+  const queueNoDedupAck = Form.useWatch('acknowledge_no_dedup', reviewQueueInitForm)
+  const queueNoAnalysisAck = Form.useWatch('acknowledge_no_analysis', reviewQueueInitForm)
+  const queueNoReportAck = Form.useWatch('acknowledge_no_report', reviewQueueInitForm)
+  const reviewQueueInitSubmitDisabled = useMemo(() => {
+    if (!reviewQueueInitGate.eligible || reviewQueueInitLoading) return true
+    return !(
+      queueReviewAck &&
+      queueNoEvidenceLayerAck &&
+      queueNoProductionCaseAck &&
+      queueNoDedupAck &&
+      queueNoAnalysisAck &&
+      queueNoReportAck
+    )
+  }, [
+    reviewQueueInitGate.eligible,
+    reviewQueueInitLoading,
+    queueReviewAck,
+    queueNoEvidenceLayerAck,
+    queueNoProductionCaseAck,
+    queueNoDedupAck,
+    queueNoAnalysisAck,
+    queueNoReportAck,
   ])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
@@ -2637,6 +2779,212 @@ export function AnalysisRequests() {
                             </Space>
                           ) : (
                             <Text type="secondary">No review-only staging imports yet.</Text>
+                          )}
+                        </Card>
+                      </Space>
+                    </Card>
+
+                    <Card size="small" title="Review Queue Initialization / 复核队列初始化">
+                      <Space direction="vertical" size={12} className="full-width">
+                        <Alert
+                          type={reviewQueueInitGate.eligible ? 'warning' : 'info'}
+                          showIcon
+                          message={reviewQueueInitGate.eligible ? 'Ready to initialize review-only queue' : 'Review queue initialization not ready'}
+                          description={
+                            latestReviewQueueInitialization
+                              ? 'A review-only queue initialization already exists for this request.'
+                              : reviewQueueInitGate.reason
+                          }
+                        />
+                        <Alert
+                          type="warning"
+                          showIcon
+                          message="Review-only queue boundary"
+                          description="Only staged evidence candidates become review-only queue items. This does not write the production Evidence Layer, create a production case, create a production review queue, run dedup, run analysis, generate reports, generate Sandbox output, or make provider output official truth. Duplicate evidence must not amplify risk."
+                        />
+                        {reviewQueueInitError ? <Alert type="error" showIcon message={reviewQueueInitError} /> : null}
+                        <Form
+                          form={reviewQueueInitForm}
+                          layout="vertical"
+                          initialValues={{
+                            review_case_id: latestReviewOnlyCase?.review_case_id || '',
+                            staging_import_id: latestStagingImport?.staging_import_id || '',
+                          }}
+                          onFinish={handleCreateReviewQueueInitialization}
+                        >
+                          <Row gutter={[12, 0]}>
+                            <Col span={12}>
+                              <Form.Item name="review_case_id" label="review_case_id">
+                                <Select
+                                  placeholder={latestReviewOnlyCase?.review_case_id || 'select review-only case'}
+                                  options={reviewOnlyCases.map((reviewCase) => ({
+                                    value: reviewCase.review_case_id,
+                                    label: reviewCase.review_case_id,
+                                  }))}
+                                />
+                              </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                              <Form.Item name="staging_import_id" label="staging_import_id">
+                                <Select
+                                  placeholder={latestStagingImport?.staging_import_id || 'select staging import'}
+                                  options={stagingImports.map((item) => ({
+                                    value: item.staging_import_id,
+                                    label: `${item.staging_import_id} / ${item.status}`,
+                                  }))}
+                                />
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                          <Row gutter={[12, 0]}>
+                            <Col span={12}>
+                              <Form.Item name="acknowledge_review_only_queue" valuePropName="checked">
+                                <Checkbox>Confirm this is review-only queue initialization, not production review.</Checkbox>
+                              </Form.Item>
+                              <Form.Item name="acknowledge_no_evidence_layer_write" valuePropName="checked">
+                                <Checkbox>Confirm no production Evidence Layer write.</Checkbox>
+                              </Form.Item>
+                              <Form.Item name="acknowledge_no_production_case" valuePropName="checked">
+                                <Checkbox>Confirm no production case creation.</Checkbox>
+                              </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                              <Form.Item name="acknowledge_no_dedup" valuePropName="checked">
+                                <Checkbox>Confirm no dedup run.</Checkbox>
+                              </Form.Item>
+                              <Form.Item name="acknowledge_no_analysis" valuePropName="checked">
+                                <Checkbox>Confirm no analysis run.</Checkbox>
+                              </Form.Item>
+                              <Form.Item name="acknowledge_no_report" valuePropName="checked">
+                                <Checkbox>Confirm no report, Sandbox, or public event output.</Checkbox>
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                          <Space wrap>
+                            <Button
+                              type="primary"
+                              htmlType="submit"
+                              loading={reviewQueueInitLoading}
+                              disabled={reviewQueueInitSubmitDisabled}
+                            >
+                              Initialize review-only queue
+                            </Button>
+                            {latestReviewQueueInitialization ? (
+                              <Button
+                                icon={<ClipboardCopy size={16} />}
+                                onClick={() => copyText(latestReviewQueueInitializationJson, 'Review queue initialization JSON copied')}
+                              >
+                                Copy latest queue init JSON
+                              </Button>
+                            ) : null}
+                            {reviewQueueItemBatch ? (
+                              <Button
+                                icon={<ClipboardCopy size={16} />}
+                                onClick={() => copyText(reviewQueueItemBatchJson, 'Review queue items JSON copied')}
+                              >
+                                Copy review queue items JSON
+                              </Button>
+                            ) : null}
+                          </Space>
+                        </Form>
+
+                        {latestReviewQueueInitialization ? (
+                          <Card className="panel-card" size="small" title="Latest review queue initialization">
+                            <Space direction="vertical" size={12} className="full-width">
+                              <Space wrap>
+                                <Tag color={latestReviewQueueInitialization.status === 'completed' ? 'green' : 'gold'}>
+                                  {latestReviewQueueInitialization.status}
+                                </Tag>
+                                <Tag color="blue">{latestReviewQueueInitialization.execution_mode}</Tag>
+                                <Tag color="default">queue_status: {latestReviewQueueInitialization.defaults?.queue_status || 'review_needed'}</Tag>
+                                <Tag color="default">analysis_included: {boolText(latestReviewQueueInitialization.defaults?.analysis_included)}</Tag>
+                              </Space>
+                              <Descriptions column={1} size="small">
+                                <Descriptions.Item label="queue_init_id">{latestReviewQueueInitialization.queue_init_id}</Descriptions.Item>
+                                <Descriptions.Item label="review_case_id">{latestReviewQueueInitialization.review_case_id}</Descriptions.Item>
+                                <Descriptions.Item label="staging_import_id">{latestReviewQueueInitialization.staging_import_id}</Descriptions.Item>
+                                <Descriptions.Item label="package">{latestReviewQueueInitialization.package_name || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="counts">
+                                  staged_seen={latestReviewQueueInitialization.counts?.staged_candidates_seen || 0},
+                                  items_created={latestReviewQueueInitialization.counts?.queue_items_created || 0},
+                                  excluded={latestReviewQueueInitialization.counts?.excluded_candidates || 0},
+                                  privacy_hold={latestReviewQueueInitialization.counts?.privacy_hold_items || 0}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="defaults">
+                                  review_status={latestReviewQueueInitialization.defaults?.review_status || 'review_needed'},
+                                  verification={latestReviewQueueInitialization.defaults?.verification_status || 'source_url_provided_unverified'},
+                                  trust={latestReviewQueueInitialization.defaults?.trust_label || 'medium_low'},
+                                  dedup_required={boolText(latestReviewQueueInitialization.defaults?.dedup_required)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="target">
+                                  production_case_created={boolText(latestReviewQueueInitialization.target?.production_case_created)},
+                                  evidence_layer_written={boolText(latestReviewQueueInitialization.target?.evidence_layer_written)},
+                                  production_review_queue_created={boolText(latestReviewQueueInitialization.target?.production_review_queue_created)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="readiness">
+                                  state={latestReviewQueueInitialization.readiness?.state || '-'},
+                                  can_run_analysis_now={boolText(latestReviewQueueInitialization.readiness?.can_run_analysis_now)},
+                                  can_generate_report_now={boolText(latestReviewQueueInitialization.readiness?.can_generate_report_now)},
+                                  requires_review_actions_phase={boolText(latestReviewQueueInitialization.readiness?.requires_review_actions_phase)},
+                                  requires_dedup_phase={boolText(latestReviewQueueInitialization.readiness?.requires_dedup_phase)}
+                                </Descriptions.Item>
+                              </Descriptions>
+                              <SummaryList title="Boundary notes" items={latestReviewQueueInitialization.boundary_notes || []} />
+                              <SummaryList title="Recommended next steps" items={latestReviewQueueInitialization.recommended_next_steps || []} />
+                            </Space>
+                          </Card>
+                        ) : null}
+
+                        <Card size="small" title={`Review queue items (${reviewQueueItemBatch?.items?.length || 0})`}>
+                          {reviewQueueItemBatch?.items?.length ? (
+                            <Space direction="vertical" size={8} className="full-width">
+                              {reviewQueueItemBatch.items.slice(0, 5).map((item) => (
+                                <Card size="small" key={item.review_item_id}>
+                                  <Space direction="vertical" size={4} className="full-width">
+                                    <Space wrap>
+                                      <Tag color="gold">{item.queue_status}</Tag>
+                                      <Tag color="default">analysis_included: {boolText(item.governance?.analysis_included)}</Tag>
+                                      <Tag color="default">dedup_status: {item.dedup?.dedup_status || 'not_run'}</Tag>
+                                      <Tag color="default">may_amplify_risk: {boolText(item.dedup?.may_amplify_risk)}</Tag>
+                                    </Space>
+                                    <Text strong>{item.evidence_candidate?.title_preview || 'Untitled review queue item'}</Text>
+                                    <Text type="secondary">{item.evidence_candidate?.body_text_preview || '-'}</Text>
+                                    <Text type="secondary">
+                                      source_url={item.evidence_candidate?.source_url || '-'}; verification=
+                                      {item.governance?.verification_status || 'source_url_provided_unverified'}; trust=
+                                      {item.governance?.trust_label || 'medium_low'}
+                                    </Text>
+                                  </Space>
+                                </Card>
+                              ))}
+                            </Space>
+                          ) : (
+                            <Text type="secondary">No review queue items yet.</Text>
+                          )}
+                        </Card>
+
+                        <Card size="small" title={`Existing review queue initializations (${reviewQueueInitializations.length})`}>
+                          {reviewQueueInitializations.length ? (
+                            <Space direction="vertical" size={8} className="full-width">
+                              {reviewQueueInitializations.map((item) => (
+                                <Card size="small" key={item.queue_init_id}>
+                                  <Space direction="vertical" size={4} className="full-width">
+                                    <Space wrap>
+                                      <Tag color={item.status === 'completed' ? 'green' : 'gold'}>{item.status}</Tag>
+                                      <Text type="secondary">{item.queue_init_id}</Text>
+                                    </Space>
+                                    <Text>package: {item.package_name || '-'}</Text>
+                                    <Text type="secondary">
+                                      queue_items_created={item.counts?.queue_items_created || 0}, analysis_included=
+                                      {boolText(item.defaults?.analysis_included)}, production_review_queue_created=
+                                      {boolText(item.target?.production_review_queue_created)}
+                                    </Text>
+                                  </Space>
+                                </Card>
+                              ))}
+                            </Space>
+                          ) : (
+                            <Text type="secondary">No review queue initializations yet.</Text>
                           )}
                         </Card>
                       </Space>

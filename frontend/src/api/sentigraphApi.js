@@ -204,6 +204,30 @@ export async function getAnalysisRequestStagingImportCandidates(requestId, stagi
   return normalizeAnalysisRequestStagedEvidenceCandidateBatch(data)
 }
 
+export async function listAnalysisRequestReviewQueueInitializations(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-initializations`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisRequestReviewQueueInitialization).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestReviewQueueInitialization(requestId, payload = {}) {
+  const { data } = await apiClient.post(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-initializations`, payload)
+  return normalizeAnalysisRequestReviewQueueInitialization(data)
+}
+
+export async function getAnalysisRequestReviewQueueInitialization(requestId, queueInitId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-initializations/${encodeURIComponent(queueInitId)}`,
+  )
+  return normalizeAnalysisRequestReviewQueueInitialization(data)
+}
+
+export async function getAnalysisRequestReviewQueueItems(requestId, queueInitId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/review-queue-initializations/${encodeURIComponent(queueInitId)}/items`,
+  )
+  return normalizeAnalysisRequestReviewQueueItemBatch(data)
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -1798,6 +1822,80 @@ function normalizeStagedEvidenceCandidate(row) {
     source_preview_row_index: Number(row.source_preview_row_index || 0),
     created_at: row.created_at ? String(row.created_at) : '',
     row_status: String(row.row_status || 'accepted_for_review'),
+    evidence_candidate: {
+      evidence_type: String(candidate.evidence_type || ''),
+      platform: String(candidate.platform || ''),
+      source_url: String(candidate.source_url || ''),
+      title_preview: String(candidate.title_preview || ''),
+      body_text_preview: String(candidate.body_text_preview || ''),
+      created_at: String(candidate.created_at || ''),
+      language: String(candidate.language || ''),
+      safe_counts: candidate.safe_counts && typeof candidate.safe_counts === 'object' ? normalizeNumberMap(candidate.safe_counts) : {},
+    },
+    governance: row.governance && typeof row.governance === 'object' ? normalizeSafeObject(row.governance) : {},
+    privacy: row.privacy && typeof row.privacy === 'object' ? normalizeSafeObject(row.privacy) : {},
+    dedup: row.dedup && typeof row.dedup === 'object' ? normalizeSafeObject(row.dedup) : {},
+    audit: row.audit && typeof row.audit === 'object' ? normalizeSafeObject(row.audit) : {},
+  }
+}
+
+function normalizeAnalysisRequestReviewQueueInitialization(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_review_queue_initialization_v1'),
+    queue_init_id: String(data.queue_init_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    staging_import_id: String(data.staging_import_id || ''),
+    request_id: String(data.request_id || ''),
+    package_name: String(data.package_name || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    execution_mode: String(data.execution_mode || 'review_only_queue_initialization'),
+    status: String(data.status || 'completed'),
+    source: data.source && typeof data.source === 'object' ? normalizeSafeObject(data.source) : {},
+    counts: data.counts && typeof data.counts === 'object' ? normalizeSafeObject(data.counts) : {},
+    defaults: data.defaults && typeof data.defaults === 'object' ? normalizeSafeObject(data.defaults) : {},
+    target: data.target && typeof data.target === 'object' ? normalizeSafeObject(data.target) : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisRequestReviewQueueItemBatch(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_review_queue_item_batch_v1'),
+    queue_init_id: String(data.queue_init_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    staging_import_id: String(data.staging_import_id || ''),
+    request_id: String(data.request_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    items: Array.isArray(data.items) ? data.items.map(normalizeReviewQueueItem).filter(Boolean) : [],
+  }
+}
+
+function normalizeReviewQueueItem(row) {
+  if (!row || typeof row !== 'object') return null
+  const candidate =
+    row.evidence_candidate && typeof row.evidence_candidate === 'object' ? row.evidence_candidate : {}
+  return {
+    schema: String(row.schema || 'sentigraph_review_queue_item_v1'),
+    review_item_id: String(row.review_item_id || ''),
+    queue_init_id: String(row.queue_init_id || ''),
+    review_case_id: String(row.review_case_id || ''),
+    staging_import_id: String(row.staging_import_id || ''),
+    staging_id: String(row.staging_id || ''),
+    request_id: String(row.request_id || ''),
+    package_name: String(row.package_name || ''),
+    created_at: row.created_at ? String(row.created_at) : '',
+    created_by: String(row.created_by || 'sentigraph_local_ui'),
+    queue_status: String(row.queue_status || 'review_needed'),
     evidence_candidate: {
       evidence_type: String(candidate.evidence_type || ''),
       platform: String(candidate.platform || ''),

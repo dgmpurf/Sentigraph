@@ -24,6 +24,9 @@ from app.schemas.analysis_request import (
     ReviewOnlyCaseCreate,
     ReviewOnlyCaseStagingImport,
     ReviewOnlyCaseStagingImportCreate,
+    ReviewQueueInitialization,
+    ReviewQueueInitializationCreate,
+    ReviewQueueItemBatch,
     StagedEvidenceCandidateBatch,
 )
 from app.services.analysis_request_store import (
@@ -41,6 +44,7 @@ from app.services.analysis_request_store import (
     create_real_package_row_preview,
     create_review_only_case,
     create_review_only_case_staging_import,
+    create_review_queue_initialization,
     get_analysis_request_config,
     list_case_draft_handoffs,
     list_all_evidence_row_reader_dry_runs,
@@ -50,6 +54,7 @@ from app.services.analysis_request_store import (
     list_all_real_package_row_previews,
     list_all_review_only_cases,
     list_all_review_only_case_staging_imports,
+    list_all_review_queue_initializations,
     list_evidence_import_plans,
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
@@ -60,6 +65,7 @@ from app.services.analysis_request_store import (
     list_real_package_row_previews,
     list_review_only_cases,
     list_review_only_case_staging_imports,
+    list_review_queue_initializations,
     read_case_draft_handoff,
     read_evidence_import_plan,
     read_evidence_import_preview,
@@ -71,6 +77,8 @@ from app.services.analysis_request_store import (
     read_real_package_row_preview,
     read_review_only_case,
     read_review_only_case_staging_import,
+    read_review_queue_initialization,
+    read_review_queue_item_batch,
     read_staged_evidence_candidate_batch,
 )
 
@@ -140,6 +148,11 @@ def analysis_request_review_only_case_all_list() -> list[ReviewOnlyCase]:
 @router.get("/staging-imports", response_model=list[ReviewOnlyCaseStagingImport])
 def analysis_request_staging_import_all_list() -> list[ReviewOnlyCaseStagingImport]:
     return list_all_review_only_case_staging_imports()
+
+
+@router.get("/review-queue-initializations", response_model=list[ReviewQueueInitialization])
+def analysis_request_review_queue_initialization_all_list() -> list[ReviewQueueInitialization]:
+    return list_all_review_queue_initializations()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -444,6 +457,56 @@ def analysis_request_staging_import_candidates(
 ) -> StagedEvidenceCandidateBatch:
     try:
         return read_staged_evidence_candidate_batch(request_id, staging_import_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/review-queue-initializations", response_model=list[ReviewQueueInitialization])
+def analysis_request_review_queue_initialization_list(request_id: str) -> list[ReviewQueueInitialization]:
+    try:
+        return list_review_queue_initializations(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/review-queue-initializations", response_model=ReviewQueueInitialization)
+def analysis_request_review_queue_initialization_create(
+    request_id: str,
+    payload: ReviewQueueInitializationCreate | None = None,
+) -> ReviewQueueInitialization:
+    try:
+        return create_review_queue_initialization(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/review-queue-initializations/{queue_init_id}", response_model=ReviewQueueInitialization)
+def analysis_request_review_queue_initialization_detail(
+    request_id: str,
+    queue_init_id: str,
+) -> ReviewQueueInitialization:
+    try:
+        return read_review_queue_initialization(request_id, queue_init_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/review-queue-initializations/{queue_init_id}/items",
+    response_model=ReviewQueueItemBatch,
+)
+def analysis_request_review_queue_initialization_items(
+    request_id: str,
+    queue_init_id: str,
+) -> ReviewQueueItemBatch:
+    try:
+        return read_review_queue_item_batch(request_id, queue_init_id)
     except AnalysisRequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AnalysisRequestValidationError as exc:

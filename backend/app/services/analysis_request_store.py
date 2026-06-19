@@ -80,6 +80,17 @@ from app.schemas.analysis_request import (
     ReviewOnlyCaseStagingTarget,
     ReviewOnlyCaseTargetReference,
     ReviewOnlyStagedGovernance,
+    ReviewQueueDefaults,
+    ReviewQueueInitialization,
+    ReviewQueueInitializationCounts,
+    ReviewQueueInitializationCreate,
+    ReviewQueueInitializationReadiness,
+    ReviewQueueInitializationSource,
+    ReviewQueueInitializationTarget,
+    ReviewQueueItem,
+    ReviewQueueItemAudit,
+    ReviewQueueItemBatch,
+    ReviewQueueItemDedup,
     StagedEvidenceCandidate,
     StagedEvidenceCandidateAudit,
     StagedEvidenceCandidateBatch,
@@ -977,6 +988,53 @@ def read_staged_evidence_candidate_batch(request_id: str, staging_import_id: str
         raise AnalysisRequestValidationError(f"{batch_path.name} is not a valid staged evidence candidate batch: {type(exc).__name__}") from exc
 
 
+def read_review_queue_initialization(request_id: str, queue_init_id: str) -> ReviewQueueInitialization:
+    init_path = _review_queue_initialization_path(request_id, queue_init_id)
+    if not init_path.exists():
+        raise AnalysisRequestNotFoundError(f"Review queue initialization {queue_init_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(init_path.read_text(encoding="utf-8-sig"))
+        return ReviewQueueInitialization.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{init_path.name} is not a valid review queue initialization: {type(exc).__name__}") from exc
+
+
+def list_review_queue_initializations(request_id: str) -> list[ReviewQueueInitialization]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    initializations: list[ReviewQueueInitialization] = []
+    for path in sorted((root / "review_queue_initializations").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            initializations.append(ReviewQueueInitialization.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return initializations
+
+
+def list_all_review_queue_initializations() -> list[ReviewQueueInitialization]:
+    root = _ensure_root()
+    initializations: list[ReviewQueueInitialization] = []
+    for path in sorted((root / "review_queue_initializations").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            initializations.append(ReviewQueueInitialization.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return initializations
+
+
+def read_review_queue_item_batch(request_id: str, queue_init_id: str) -> ReviewQueueItemBatch:
+    batch_path = _review_queue_item_batch_path(request_id, queue_init_id)
+    if not batch_path.exists():
+        raise AnalysisRequestNotFoundError(f"Review queue item batch {queue_init_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(batch_path.read_text(encoding="utf-8-sig"))
+        return ReviewQueueItemBatch.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{batch_path.name} is not a valid review queue item batch: {type(exc).__name__}") from exc
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -1347,6 +1405,99 @@ def create_review_only_case_staging_import(
     _write_json(_staging_import_path(request_id, staging_import_id), staging_import.model_dump(mode="json", by_alias=True))
     _write_json(_staged_candidate_batch_path(request_id, staging_import_id), candidate_batch.model_dump(mode="json", by_alias=True))
     return read_review_only_case_staging_import(request_id, staging_import_id)
+
+
+def create_review_queue_initialization(
+    request_id: str,
+    payload: ReviewQueueInitializationCreate | dict[str, Any] | None = None,
+) -> ReviewQueueInitialization:
+    try:
+        queue_payload = (
+            payload
+            if isinstance(payload, ReviewQueueInitializationCreate)
+            else ReviewQueueInitializationCreate.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create review queue initialization: invalid payload ({exc}).") from exc
+
+    _validate_review_queue_init_payload(queue_payload)
+    review_case = _select_review_queue_init_review_case(request_id, queue_payload.review_case_id)
+    staging_import = _select_review_queue_init_staging_import(request_id, review_case, queue_payload.staging_import_id)
+    candidate_batch = read_staged_evidence_candidate_batch(request_id, staging_import.staging_import_id)
+    _validate_review_queue_init_eligibility(request_id, review_case, staging_import, candidate_batch)
+
+    queue_init_id = _new_review_queue_init_id()
+    created_at = datetime.now(timezone.utc)
+    items = [
+        _review_queue_item_from_staged_candidate(
+            candidate,
+            queue_init_id=queue_init_id,
+            created_at=created_at,
+            created_by=queue_payload.created_by or "sentigraph_local_ui",
+        )
+        for candidate in candidate_batch.candidates
+        if _staged_candidate_is_queue_eligible(candidate)
+    ]
+    if not items:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: no eligible staged evidence candidates are available.")
+
+    excluded_candidates = len(candidate_batch.candidates) - len(items)
+    status = "completed" if excluded_candidates == 0 else "partial"
+    warnings = ["Some staged candidates were excluded from review queue initialization."] if excluded_candidates else []
+    queue_init = ReviewQueueInitialization(
+        queue_init_id=queue_init_id,
+        review_case_id=review_case.review_case_id,
+        staging_import_id=staging_import.staging_import_id,
+        request_id=request_id,
+        package_name=staging_import.package_name,
+        created_at=created_at,
+        created_by=queue_payload.created_by or "sentigraph_local_ui",
+        status=status,
+        source=ReviewQueueInitializationSource(staging_import_id=staging_import.staging_import_id),
+        counts=ReviewQueueInitializationCounts(
+            staged_candidates_seen=len(candidate_batch.candidates),
+            queue_items_created=len(items),
+            excluded_candidates=excluded_candidates,
+            privacy_hold_items=0,
+        ),
+        defaults=ReviewQueueDefaults(),
+        target=ReviewQueueInitializationTarget(
+            review_case_id=review_case.review_case_id,
+            production_case_id=None,
+            production_case_created=False,
+            evidence_layer_written=False,
+            production_review_queue_created=False,
+        ),
+        readiness=ReviewQueueInitializationReadiness(),
+        warnings=warnings,
+        boundary_notes=[
+            "Review queue initialization uses staged evidence candidates only.",
+            "Original package evidence rows are not re-read.",
+            "Review queue items are not production EvidenceItems.",
+            "Review queue items are not analysis-included.",
+            "Dedup is not run yet.",
+            "Reports, Sandbox, public event, and production case generation remain disabled.",
+            "Duplicate evidence must not amplify risk.",
+            "Provider output is evidence, not official truth.",
+        ],
+        recommended_next_steps=[
+            "Run future review action runtime before dedup.",
+            "Keep review_needed/source_url_provided_unverified/medium_low defaults.",
+            "Run dedup preview before any analysis-ready promotion.",
+            "Keep rejected or weak evidence analysis-excluded until governance is complete.",
+        ],
+    )
+    item_batch = ReviewQueueItemBatch(
+        queue_init_id=queue_init_id,
+        review_case_id=review_case.review_case_id,
+        staging_import_id=staging_import.staging_import_id,
+        request_id=request_id,
+        created_at=created_at,
+        items=items,
+    )
+    _write_json(_review_queue_initialization_path(request_id, queue_init_id), queue_init.model_dump(mode="json", by_alias=True))
+    _write_json(_review_queue_item_batch_path(request_id, queue_init_id), item_batch.model_dump(mode="json", by_alias=True))
+    return read_review_queue_initialization(request_id, queue_init_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -2201,6 +2352,196 @@ def _candidate_from_redacted_preview_row(
     )
 
 
+def _select_review_queue_init_review_case(request_id: str, review_case_id: str | None) -> ReviewOnlyCase:
+    if review_case_id:
+        return read_review_only_case(request_id, review_case_id)
+    review_cases = list_review_only_cases(request_id)
+    if not review_cases:
+        raise AnalysisRequestNotFoundError(f"Review-only case for {request_id} was not found.")
+    return review_cases[0]
+
+
+def _select_review_queue_init_staging_import(
+    request_id: str,
+    review_case: ReviewOnlyCase,
+    staging_import_id: str | None,
+) -> ReviewOnlyCaseStagingImport:
+    if staging_import_id:
+        staging_import = read_review_only_case_staging_import(request_id, staging_import_id)
+    else:
+        imports = [item for item in list_review_only_case_staging_imports(request_id) if item.review_case_id == review_case.review_case_id]
+        if not imports:
+            raise AnalysisRequestNotFoundError(f"Review-only staging import for review-only case {review_case.review_case_id} was not found.")
+        staging_import = imports[0]
+    if staging_import.review_case_id != review_case.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: staging import must belong to the selected review-only case.")
+    return staging_import
+
+
+def _validate_review_queue_init_payload(payload: ReviewQueueInitializationCreate) -> None:
+    acknowledgements = {
+        "acknowledge_review_only_queue": payload.acknowledge_review_only_queue,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_no_dedup": payload.acknowledge_no_dedup,
+        "acknowledge_no_analysis": payload.acknowledge_no_analysis,
+        "acknowledge_no_report": payload.acknowledge_no_report,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(f"Cannot create review queue initialization: acknowledgement flags are required ({', '.join(missing)}).")
+    if payload.package_path:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: package_path is not accepted; queue uses staged evidence candidates only.")
+    if payload.target_production_case_id or payload.production_case_id:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: production_case_id is not allowed.")
+    side_effect_flags = {
+        "production_case_created": payload.production_case_created,
+        "evidence_layer_written": payload.evidence_layer_written,
+        "production_review_queue_created": payload.production_review_queue_created,
+        "analysis_included": payload.analysis_included,
+        "dedup_run": payload.dedup_run,
+        "analysis_run": payload.analysis_run,
+        "report_generated": payload.report_generated,
+        "sandbox_generated": payload.sandbox_generated,
+        "public_event_generated": payload.public_event_generated,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "run_analysis_now": payload.run_analysis_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(f"Cannot create review queue initialization: side effect flags must remain false ({', '.join(enabled)}).")
+
+
+def _validate_review_queue_init_eligibility(
+    request_id: str,
+    review_case: ReviewOnlyCase,
+    staging_import: ReviewOnlyCaseStagingImport,
+    candidate_batch: StagedEvidenceCandidateBatch,
+) -> None:
+    if review_case.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: review-only case request_id mismatch.")
+    if review_case.status not in {"draft", "staging_pending"}:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: review-only case status is not eligible.")
+    if review_case.visibility != "internal_review_only":
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: review-only case must be internal_review_only.")
+    review_case_flags = {
+        "analysis_included": review_case.analysis_included,
+        "production_case_created": review_case.production_case_created,
+        "evidence_layer_written": review_case.evidence_layer_written,
+        "review_queue_created": review_case.review_queue_created,
+        "dedup_run": review_case.dedup_run,
+        "analysis_run": review_case.analysis_run,
+    }
+    enabled_review_case_flags = [name for name, value in review_case_flags.items() if value]
+    if enabled_review_case_flags:
+        raise AnalysisRequestValidationError(
+            f"Cannot create review queue initialization: review-only case unsafe flags must remain false ({', '.join(enabled_review_case_flags)})."
+        )
+    matching_existing = [
+        item for item in list_review_queue_initializations(request_id)
+        if item.review_case_id == review_case.review_case_id or item.staging_import_id == staging_import.staging_import_id
+    ]
+    if matching_existing:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: review-only case already has review queue initialization.")
+    if staging_import.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: staging import request_id mismatch.")
+    if staging_import.status not in {"completed", "partial"}:
+        raise AnalysisRequestValidationError(f"Cannot create review queue initialization: staging import status {staging_import.status} is not eligible.")
+    if staging_import.status in {"privacy_stop", "blocked"}:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: privacy_stop or blocked staging import is not eligible.")
+    if staging_import.readiness.state != "staged_for_review_only":
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: staging import readiness must be staged_for_review_only.")
+    if staging_import.target.production_case_created or staging_import.target.evidence_layer_written:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: staging import target has unsafe production flags.")
+    if candidate_batch.request_id != request_id or candidate_batch.staging_import_id != staging_import.staging_import_id:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: staged candidate batch does not match the staging import.")
+    if not candidate_batch.candidates:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: staged candidate batch has no candidates.")
+    decisions = list_evidence_import_review_decisions(request_id)
+    if not decisions:
+        raise AnalysisRequestNotFoundError(f"review decision for {request_id} was not found.")
+    latest_decision = decisions[0]
+    if latest_decision.decision != "approve_import":
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: latest review decision must be approve_import.")
+    unsafe_candidate_indexes = [
+        index
+        for index, candidate in enumerate(candidate_batch.candidates)
+        if not _staged_candidate_is_queue_eligible(candidate)
+    ]
+    if unsafe_candidate_indexes:
+        raise AnalysisRequestValidationError("Cannot create review queue initialization: staged candidates contain forbidden or unsafe fields.")
+
+
+def _staged_candidate_is_queue_eligible(candidate: StagedEvidenceCandidate) -> bool:
+    if candidate.row_status != "accepted_for_review":
+        return False
+    governance = candidate.governance
+    if governance.review_status != "review_needed":
+        return False
+    if governance.verification_status != "source_url_provided_unverified":
+        return False
+    if governance.trust_label != "medium_low":
+        return False
+    if governance.analysis_included or governance.public_visible or governance.report_visible or governance.sandbox_visible:
+        return False
+    if not governance.dedup_required or not governance.audit_required:
+        return False
+    privacy = candidate.privacy
+    if not privacy.passed:
+        return False
+    if privacy.raw_author_id_present or privacy.raw_author_name_present or privacy.profile_url_present or privacy.private_message_present:
+        return False
+    candidate_text = " ".join(
+        [
+            candidate.evidence_candidate.title_preview,
+            candidate.evidence_candidate.body_text_preview,
+            candidate.evidence_candidate.source_url,
+        ]
+    )
+    if EMAIL_PATTERN.search(candidate_text) or PHONE_PATTERN.search(candidate_text):
+        return False
+    lowered = candidate_text.lower()
+    if any(pattern in lowered for pattern in ROW_READER_SECRET_PATTERNS):
+        return False
+    if not (candidate.evidence_candidate.title_preview or candidate.evidence_candidate.body_text_preview or candidate.evidence_candidate.source_url):
+        return False
+    return True
+
+
+def _review_queue_item_from_staged_candidate(
+    candidate: StagedEvidenceCandidate,
+    *,
+    queue_init_id: str,
+    created_at: datetime,
+    created_by: str,
+) -> ReviewQueueItem:
+    review_item_id = f"review_queue_item_{candidate.source_preview_row_index}_{uuid.uuid4().hex[:8]}"
+    return ReviewQueueItem(
+        review_item_id=review_item_id,
+        queue_init_id=queue_init_id,
+        review_case_id=candidate.review_case_id,
+        staging_import_id=candidate.staging_import_id,
+        staging_id=candidate.staging_id,
+        request_id=candidate.request_id,
+        package_name=candidate.package_name,
+        created_at=created_at,
+        created_by=created_by,
+        queue_status="review_needed",
+        evidence_candidate=candidate.evidence_candidate,
+        governance=ReviewOnlyStagedGovernance(),
+        privacy=StagedEvidenceCandidatePrivacy(
+            from_redacted_preview=True,
+            raw_author_id_present=False,
+            raw_author_name_present=False,
+            profile_url_present=False,
+            private_message_present=False,
+            passed=True,
+        ),
+        dedup=ReviewQueueItemDedup(),
+        audit=ReviewQueueItemAudit(queue_init_id=queue_init_id, created_at=created_at),
+    )
+
+
 def _read_real_package_preview_rows(
     row_file: Path,
     max_rows: int,
@@ -2576,6 +2917,8 @@ def _ensure_root() -> Path:
     (root / "review_only_cases").mkdir(parents=True, exist_ok=True)
     (root / "staging_imports").mkdir(parents=True, exist_ok=True)
     (root / "staged_evidence_candidates").mkdir(parents=True, exist_ok=True)
+    (root / "review_queue_initializations").mkdir(parents=True, exist_ok=True)
+    (root / "review_queue_items").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -2665,6 +3008,20 @@ def _staged_candidate_batch_path(request_id: str, staging_import_id: str) -> Pat
     return root / "staged_evidence_candidates" / f"{request_id}_{staging_import_id}.json"
 
 
+def _review_queue_initialization_path(request_id: str, queue_init_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(queue_init_id)
+    root = _ensure_root()
+    return root / "review_queue_initializations" / f"{request_id}_{queue_init_id}.json"
+
+
+def _review_queue_item_batch_path(request_id: str, queue_init_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(queue_init_id)
+    root = _ensure_root()
+    return root / "review_queue_items" / f"{request_id}_{queue_init_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -2716,6 +3073,11 @@ def _new_review_only_case_id() -> str:
 def _new_staging_import_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"review_only_staging_import_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_review_queue_init_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"review_queue_init_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

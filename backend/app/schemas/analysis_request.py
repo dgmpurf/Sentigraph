@@ -1285,6 +1285,187 @@ class StagedEvidenceCandidateBatch(BaseModel):
     candidates: list[StagedEvidenceCandidate] = Field(default_factory=list)
 
 
+class ReviewQueueInitializationCreate(BaseModel):
+    review_case_id: str | None = None
+    staging_import_id: str | None = None
+    created_by: str = "sentigraph_local_ui"
+    acknowledge_review_only_queue: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_no_dedup: bool = False
+    acknowledge_no_analysis: bool = False
+    acknowledge_no_report: bool = False
+    package_path: str | None = None
+    target_production_case_id: str | None = None
+    production_case_id: str | None = None
+    production_case_created: bool = False
+    evidence_layer_written: bool = False
+    production_review_queue_created: bool = False
+    analysis_included: bool = False
+    dedup_run: bool = False
+    analysis_run: bool = False
+    report_generated: bool = False
+    sandbox_generated: bool = False
+    public_event_generated: bool = False
+    write_evidence_layer_now: bool = False
+    run_analysis_now: bool = False
+
+
+class ReviewQueueInitializationSource(BaseModel):
+    source_type: str = "staged_evidence_candidates"
+    staging_import_id: str = ""
+    candidate_batch_schema: str = "sentigraph_staged_evidence_candidate_batch_v1"
+
+
+class ReviewQueueInitializationCounts(BaseModel):
+    staged_candidates_seen: int = 0
+    queue_items_created: int = 0
+    excluded_candidates: int = 0
+    privacy_hold_items: int = 0
+
+
+class ReviewQueueDefaults(BaseModel):
+    queue_status: str = "review_needed"
+    review_status: str = "review_needed"
+    verification_status: str = "source_url_provided_unverified"
+    trust_label: str = "medium_low"
+    analysis_included: bool = False
+    public_visible: bool = False
+    report_visible: bool = False
+    sandbox_visible: bool = False
+    dedup_required: bool = True
+    audit_required: bool = True
+
+
+class ReviewQueueInitializationTarget(BaseModel):
+    target_type: str = "review_only_case_queue"
+    review_case_id: str = ""
+    production_case_id: str | None = None
+    production_case_created: bool = False
+    evidence_layer_written: bool = False
+    production_review_queue_created: bool = False
+
+
+class ReviewQueueInitializationReadiness(BaseModel):
+    state: str = "review_queue_initialized"
+    can_run_analysis_now: bool = False
+    can_generate_report_now: bool = False
+    requires_review_actions_phase: bool = True
+    requires_dedup_phase: bool = True
+    reason: str = "Review-only queue items created for human governance only."
+
+
+class ReviewQueueInitialization(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_review_queue_initialization_v1"] = Field(
+        default="sentigraph_review_queue_initialization_v1",
+        alias="schema",
+    )
+    queue_init_id: str
+    review_case_id: str
+    staging_import_id: str
+    request_id: str
+    package_name: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    execution_mode: str = "review_only_queue_initialization"
+    status: Literal["completed", "partial", "blocked", "privacy_stop"] = "completed"
+    source: ReviewQueueInitializationSource = Field(default_factory=ReviewQueueInitializationSource)
+    counts: ReviewQueueInitializationCounts = Field(default_factory=ReviewQueueInitializationCounts)
+    defaults: ReviewQueueDefaults = Field(default_factory=ReviewQueueDefaults)
+    target: ReviewQueueInitializationTarget = Field(default_factory=ReviewQueueInitializationTarget)
+    readiness: ReviewQueueInitializationReadiness = Field(default_factory=ReviewQueueInitializationReadiness)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "review_only_queue_initialization": True,
+            "source_staged_candidates_only": True,
+            "original_package_rows_re_read": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "subprocess_provider_execution": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class ReviewQueueItemDedup(BaseModel):
+    dedup_status: str = "not_run"
+    duplicate_group_id: str | None = None
+    duplicate_count: int = 1
+    may_amplify_risk: bool = False
+
+
+class ReviewQueueItemAudit(BaseModel):
+    source: str = "review_queue_initialization"
+    queue_init_id: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ReviewQueueItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_review_queue_item_v1"] = Field(
+        default="sentigraph_review_queue_item_v1",
+        alias="schema",
+    )
+    review_item_id: str
+    queue_init_id: str
+    review_case_id: str
+    staging_import_id: str
+    staging_id: str
+    request_id: str
+    package_name: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    queue_status: Literal[
+        "review_needed",
+        "approved",
+        "rejected",
+        "marked_weak",
+        "needs_more_source",
+        "duplicate_merged",
+        "privacy_hold",
+    ] = "review_needed"
+    evidence_candidate: StagedEvidenceCandidatePreview = Field(default_factory=StagedEvidenceCandidatePreview)
+    governance: ReviewOnlyStagedGovernance = Field(default_factory=ReviewOnlyStagedGovernance)
+    privacy: StagedEvidenceCandidatePrivacy = Field(default_factory=StagedEvidenceCandidatePrivacy)
+    dedup: ReviewQueueItemDedup = Field(default_factory=ReviewQueueItemDedup)
+    audit: ReviewQueueItemAudit = Field(default_factory=ReviewQueueItemAudit)
+
+
+class ReviewQueueItemBatch(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_review_queue_item_batch_v1"] = Field(
+        default="sentigraph_review_queue_item_batch_v1",
+        alias="schema",
+    )
+    queue_init_id: str
+    review_case_id: str
+    staging_import_id: str
+    request_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    items: list[ReviewQueueItem] = Field(default_factory=list)
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

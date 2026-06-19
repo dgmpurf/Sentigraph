@@ -17,6 +17,7 @@ from app.services.analysis_request_store import (
     create_real_package_row_preview,
     create_review_only_case,
     create_review_only_case_staging_import,
+    create_review_queue_initialization,
     create_analysis_request,
     get_analysis_request_config,
     list_evidence_import_plans,
@@ -28,11 +29,14 @@ from app.services.analysis_request_store import (
     list_real_package_row_previews,
     list_review_only_cases,
     list_review_only_case_staging_imports,
+    list_review_queue_initializations,
     list_analysis_requests,
     read_evidence_row_reader_dry_run,
     read_real_package_row_preview,
     read_review_only_case,
     read_review_only_case_staging_import,
+    read_review_queue_initialization,
+    read_review_queue_item_batch,
     read_staged_evidence_candidate_batch,
     read_analysis_request,
 )
@@ -279,6 +283,19 @@ def staging_import_ack_payload(**overrides: object) -> dict:
         "acknowledge_review_only_staging": True,
         "acknowledge_no_evidence_layer_write": True,
         "acknowledge_no_production_case": True,
+        "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def review_queue_init_ack_payload(**overrides: object) -> dict:
+    payload = {
+        "acknowledge_review_only_queue": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_dedup": True,
         "acknowledge_no_analysis": True,
         "acknowledge_no_report": True,
     }
@@ -1908,6 +1925,222 @@ def test_review_only_staging_import_blocks_privacy_stop_and_latest_non_approve_d
         assert "privacy_stop" in str(exc)
     else:
         raise AssertionError("privacy_stop preview should block staging import")
+
+
+def test_review_queue_initialization_creates_items_from_staged_candidates_only(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review queue init safe"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+    (package_dir / "evidence_items.jsonl").write_text(
+        '{"raw_author_id":"must_not_be_opened_for_queue","body_text":"unsafe raw package row"}\n',
+        encoding="utf-8",
+    )
+    review_case = create_review_only_case(record.request_id, {"source_preview_run_id": preview.preview_run_id})
+    staging_import = create_review_only_case_staging_import(
+        record.request_id,
+        staging_import_ack_payload(review_case_id=review_case.review_case_id),
+    )
+
+    queue_init = create_review_queue_initialization(
+        record.request_id,
+        review_queue_init_ack_payload(
+            review_case_id=review_case.review_case_id,
+            staging_import_id=staging_import.staging_import_id,
+        ),
+    )
+    read_back = read_review_queue_initialization(record.request_id, queue_init.queue_init_id)
+    inits = list_review_queue_initializations(record.request_id)
+    item_batch = read_review_queue_item_batch(record.request_id, queue_init.queue_init_id)
+    payload_text = json.dumps(item_batch.model_dump(mode="json", by_alias=True), ensure_ascii=False)
+
+    assert queue_init.schema_ == "sentigraph_review_queue_initialization_v1"
+    assert queue_init.execution_mode == "review_only_queue_initialization"
+    assert queue_init.status == "completed"
+    assert queue_init.review_case_id == review_case.review_case_id
+    assert queue_init.staging_import_id == staging_import.staging_import_id
+    assert queue_init.source.source_type == "staged_evidence_candidates"
+    assert queue_init.source.candidate_batch_schema == "sentigraph_staged_evidence_candidate_batch_v1"
+    assert queue_init.counts.staged_candidates_seen == 2
+    assert queue_init.counts.queue_items_created == 2
+    assert queue_init.counts.excluded_candidates == 0
+    assert queue_init.counts.privacy_hold_items == 0
+    assert queue_init.defaults.queue_status == "review_needed"
+    assert queue_init.defaults.review_status == "review_needed"
+    assert queue_init.defaults.verification_status == "source_url_provided_unverified"
+    assert queue_init.defaults.trust_label == "medium_low"
+    assert queue_init.defaults.analysis_included is False
+    assert queue_init.defaults.public_visible is False
+    assert queue_init.defaults.report_visible is False
+    assert queue_init.defaults.sandbox_visible is False
+    assert queue_init.defaults.dedup_required is True
+    assert queue_init.target.production_case_id is None
+    assert queue_init.target.production_case_created is False
+    assert queue_init.target.evidence_layer_written is False
+    assert queue_init.target.production_review_queue_created is False
+    assert queue_init.readiness.state == "review_queue_initialized"
+    assert queue_init.readiness.can_run_analysis_now is False
+    assert queue_init.readiness.can_generate_report_now is False
+    assert queue_init.readiness.requires_review_actions_phase is True
+    assert queue_init.readiness.requires_dedup_phase is True
+    assert read_back.queue_init_id == queue_init.queue_init_id
+    assert [item.queue_init_id for item in inits] == [queue_init.queue_init_id]
+
+    assert item_batch.schema_ == "sentigraph_review_queue_item_batch_v1"
+    assert item_batch.queue_init_id == queue_init.queue_init_id
+    assert len(item_batch.items) == 2
+    first_item = item_batch.items[0]
+    assert first_item.schema_ == "sentigraph_review_queue_item_v1"
+    assert first_item.queue_init_id == queue_init.queue_init_id
+    assert first_item.staging_id
+    assert first_item.queue_status == "review_needed"
+    assert first_item.evidence_candidate.title_preview == "Safe local package row"
+    assert first_item.governance.review_status == "review_needed"
+    assert first_item.governance.verification_status == "source_url_provided_unverified"
+    assert first_item.governance.trust_label == "medium_low"
+    assert first_item.governance.analysis_included is False
+    assert first_item.governance.public_visible is False
+    assert first_item.governance.report_visible is False
+    assert first_item.governance.sandbox_visible is False
+    assert first_item.privacy.raw_author_id_present is False
+    assert first_item.privacy.raw_author_name_present is False
+    assert first_item.privacy.profile_url_present is False
+    assert first_item.privacy.private_message_present is False
+    assert first_item.privacy.passed is True
+    assert first_item.dedup.dedup_status == "not_run"
+    assert first_item.dedup.duplicate_group_id is None
+    assert first_item.dedup.duplicate_count == 1
+    assert first_item.dedup.may_amplify_risk is False
+    assert first_item.audit.source == "review_queue_initialization"
+    assert "must_not_be_opened_for_queue" not in payload_text
+    assert "real-preview-user-should-not-return" not in payload_text
+    assert "Real Preview Name Should Not Return" not in payload_text
+    assert "example.test/profile/real-preview" not in payload_text
+    assert "Real preview private message should not return" not in payload_text
+    assert not (tmp_path / "cases").exists()
+
+
+def test_review_queue_initialization_blocks_unsafe_inputs_and_duplicate_init(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review queue init blocks"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+    review_case = create_review_only_case(record.request_id, {"source_preview_run_id": preview.preview_run_id})
+    staging_import = create_review_only_case_staging_import(
+        record.request_id,
+        staging_import_ack_payload(review_case_id=review_case.review_case_id),
+    )
+
+    cases = [
+        (review_queue_init_ack_payload(acknowledge_no_dedup=False), "acknowledgement"),
+        (review_queue_init_ack_payload(package_path=str(package_dir / "evidence_items.jsonl")), "package_path"),
+        (review_queue_init_ack_payload(target_production_case_id="case_prod_unsafe"), "production_case_id"),
+        (review_queue_init_ack_payload(analysis_included=True), "side effect"),
+        (review_queue_init_ack_payload(dedup_run=True), "side effect"),
+        (
+            review_queue_init_ack_payload(
+                review_case_id=review_case.review_case_id,
+                staging_import_id="review_only_staging_import_missing",
+            ),
+            "staging import",
+        ),
+    ]
+    for payload, expected_message in cases:
+        try:
+            create_review_queue_initialization(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{expected_message} should block queue initialization")
+
+    first = create_review_queue_initialization(
+        record.request_id,
+        review_queue_init_ack_payload(
+            review_case_id=review_case.review_case_id,
+            staging_import_id=staging_import.staging_import_id,
+        ),
+    )
+    try:
+        create_review_queue_initialization(
+            record.request_id,
+            review_queue_init_ack_payload(
+                review_case_id=review_case.review_case_id,
+                staging_import_id=staging_import.staging_import_id,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "already has review queue initialization" in str(exc)
+    else:
+        raise AssertionError("Duplicate review queue initialization should be blocked")
+    assert len(list_review_queue_initializations(record.request_id)) == 1
+    assert first.queue_init_id
+
+
+def test_review_queue_initialization_blocks_non_approve_decision_and_forbidden_candidate(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review queue decision blocks"))
+    )
+    package_dir = create_real_preview_package(tmp_path)
+    create_real_preview_ready_chain(tmp_path, record.request_id, package_dir)
+    preview = create_real_package_row_preview(record.request_id, real_preview_ack_payload())
+    review_case = create_review_only_case(record.request_id, {"source_preview_run_id": preview.preview_run_id})
+    staging_import = create_review_only_case_staging_import(
+        record.request_id,
+        staging_import_ack_payload(review_case_id=review_case.review_case_id),
+    )
+    create_evidence_import_review_decision(
+        record.request_id,
+        review_payload("request_more_source", notes="Supersede approve before queue init."),
+    )
+
+    try:
+        create_review_queue_initialization(
+            record.request_id,
+            review_queue_init_ack_payload(
+                review_case_id=review_case.review_case_id,
+                staging_import_id=staging_import.staging_import_id,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "approve_import" in str(exc)
+    else:
+        raise AssertionError("Latest non-approve review decision should block queue initialization")
+
+    unsafe_record = create_analysis_request(
+        AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Review queue forbidden candidate blocks"))
+    )
+    unsafe_package = create_real_preview_package(tmp_path / "unsafe_queue")
+    create_real_preview_ready_chain(tmp_path, unsafe_record.request_id, unsafe_package)
+    unsafe_preview = create_real_package_row_preview(unsafe_record.request_id, real_preview_ack_payload())
+    unsafe_case = create_review_only_case(unsafe_record.request_id, {"source_preview_run_id": unsafe_preview.preview_run_id})
+    unsafe_staging = create_review_only_case_staging_import(
+        unsafe_record.request_id,
+        staging_import_ack_payload(review_case_id=unsafe_case.review_case_id),
+    )
+    batch_path = tmp_path / "staged_evidence_candidates" / f"{unsafe_record.request_id}_{unsafe_staging.staging_import_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["candidates"][0]["privacy"]["raw_author_id_present"] = True
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+
+    try:
+        create_review_queue_initialization(
+            unsafe_record.request_id,
+            review_queue_init_ack_payload(
+                review_case_id=unsafe_case.review_case_id,
+                staging_import_id=unsafe_staging.staging_import_id,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "forbidden" in str(exc) or "raw_author" in str(exc)
+    else:
+        raise AssertionError("Forbidden candidate privacy flag should block queue initialization")
 
 
 def test_invalid_result_json_sets_warning_without_crash(tmp_path: Path, monkeypatch) -> None:
