@@ -25,6 +25,7 @@ import {
   cancelAnalysisRequest,
   createAnalysisRequestAnalysisReadyPromotionGate,
   createAnalysisRequestAnalysisResultBoundaryGate,
+  createAnalysisRequestManualAnalysisExecution,
   createAnalysisRequestManualAnalysisTrigger,
   createAnalysisRequest,
   createAnalysisRequestDedupGroupReviewAction,
@@ -56,6 +57,9 @@ import {
   listAnalysisRequestDedupGroupReviewAudits,
   listAnalysisRequestDedupPreviews,
   listAnalysisRequestImportJobs,
+  listAnalysisRequestManualAnalysisExecutionAudits,
+  listAnalysisRequestManualAnalysisExecutions,
+  listAnalysisRequestManualAnalysisResultCandidates,
   listAnalysisRequestManualAnalysisTriggerAudits,
   listAnalysisRequestManualAnalysisTriggers,
   listAnalysisRequestRealPackageRowPreviews,
@@ -632,6 +636,7 @@ export function AnalysisRequests() {
   const [analysisReadyPromotionGateForm] = Form.useForm()
   const [manualAnalysisTriggerForm] = Form.useForm()
   const [analysisResultBoundaryGateForm] = Form.useForm()
+  const [manualAnalysisExecutionForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -659,6 +664,9 @@ export function AnalysisRequests() {
   const [manualAnalysisTriggerAudits, setManualAnalysisTriggerAudits] = useState([])
   const [analysisResultBoundaryGates, setAnalysisResultBoundaryGates] = useState([])
   const [analysisResultBoundaryGateAudits, setAnalysisResultBoundaryGateAudits] = useState([])
+  const [manualAnalysisExecutions, setManualAnalysisExecutions] = useState([])
+  const [manualAnalysisResultCandidates, setManualAnalysisResultCandidates] = useState([])
+  const [manualAnalysisExecutionAudits, setManualAnalysisExecutionAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -680,6 +688,7 @@ export function AnalysisRequests() {
   const [analysisReadyPromotionGateLoading, setAnalysisReadyPromotionGateLoading] = useState(false)
   const [manualAnalysisTriggerLoading, setManualAnalysisTriggerLoading] = useState(false)
   const [analysisResultBoundaryGateLoading, setAnalysisResultBoundaryGateLoading] = useState(false)
+  const [manualAnalysisExecutionLoading, setManualAnalysisExecutionLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -699,6 +708,7 @@ export function AnalysisRequests() {
   const [analysisReadyPromotionGateError, setAnalysisReadyPromotionGateError] = useState('')
   const [manualAnalysisTriggerError, setManualAnalysisTriggerError] = useState('')
   const [analysisResultBoundaryGateError, setAnalysisResultBoundaryGateError] = useState('')
+  const [manualAnalysisExecutionError, setManualAnalysisExecutionError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -725,6 +735,10 @@ export function AnalysisRequests() {
     setAnalysisResultBoundaryGates([])
     setAnalysisResultBoundaryGateAudits([])
     setAnalysisResultBoundaryGateError('')
+    setManualAnalysisExecutions([])
+    setManualAnalysisResultCandidates([])
+    setManualAnalysisExecutionAudits([])
+    setManualAnalysisExecutionError('')
   }
 
   async function loadDraftAndPlan(requestId) {
@@ -867,6 +881,9 @@ export function AnalysisRequests() {
       setManualAnalysisTriggerAudits(await listAnalysisRequestManualAnalysisTriggerAudits(requestId))
       setAnalysisResultBoundaryGates(await listAnalysisRequestAnalysisResultBoundaryGates(requestId))
       setAnalysisResultBoundaryGateAudits(await listAnalysisRequestAnalysisResultBoundaryGateAudits(requestId))
+      setManualAnalysisExecutions(await listAnalysisRequestManualAnalysisExecutions(requestId))
+      setManualAnalysisResultCandidates(await listAnalysisRequestManualAnalysisResultCandidates(requestId))
+      setManualAnalysisExecutionAudits(await listAnalysisRequestManualAnalysisExecutionAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
@@ -1507,6 +1524,9 @@ export function AnalysisRequests() {
       setManualAnalysisTriggerAudits(await listAnalysisRequestManualAnalysisTriggerAudits(selectedRecord.request_id))
       setAnalysisResultBoundaryGates(await listAnalysisRequestAnalysisResultBoundaryGates(selectedRecord.request_id))
       setAnalysisResultBoundaryGateAudits(await listAnalysisRequestAnalysisResultBoundaryGateAudits(selectedRecord.request_id))
+      setManualAnalysisExecutions([])
+      setManualAnalysisResultCandidates([])
+      setManualAnalysisExecutionAudits([])
       message.success(`Recorded manual trigger: ${trigger?.status || 'created'}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record manual analysis trigger.'
@@ -1558,12 +1578,75 @@ export function AnalysisRequests() {
       })
       setAnalysisResultBoundaryGates(await listAnalysisRequestAnalysisResultBoundaryGates(selectedRecord.request_id))
       setAnalysisResultBoundaryGateAudits(await listAnalysisRequestAnalysisResultBoundaryGateAudits(selectedRecord.request_id))
+      setManualAnalysisExecutions(await listAnalysisRequestManualAnalysisExecutions(selectedRecord.request_id))
+      setManualAnalysisResultCandidates(await listAnalysisRequestManualAnalysisResultCandidates(selectedRecord.request_id))
+      setManualAnalysisExecutionAudits(await listAnalysisRequestManualAnalysisExecutionAudits(selectedRecord.request_id))
       message.success(`Recorded result boundary gate: ${gate?.status || 'created'}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create Analysis Result Boundary Gate.'
       setAnalysisResultBoundaryGateError(String(messageText))
     } finally {
       setAnalysisResultBoundaryGateLoading(false)
+    }
+  }
+
+  async function handleCreateManualAnalysisExecution(values) {
+    if (!selectedRecord?.request_id || !latestAnalysisResultBoundaryGate?.boundary_gate_id) return
+    setManualAnalysisExecutionLoading(true)
+    setManualAnalysisExecutionError('')
+    try {
+      const execution = await createAnalysisRequestManualAnalysisExecution(selectedRecord.request_id, {
+        manual_trigger_id: values.manual_trigger_id || latestAnalysisResultBoundaryGate.manual_trigger_id,
+        boundary_gate_id: values.boundary_gate_id || latestAnalysisResultBoundaryGate.boundary_gate_id,
+        promotion_gate_id: values.promotion_gate_id || latestAnalysisResultBoundaryGate.promotion_gate_id,
+        review_case_id: values.review_case_id || latestAnalysisResultBoundaryGate.review_case_id || undefined,
+        reviewer_label: String(values.reviewer_label || '').trim(),
+        note: String(values.note || '').trim(),
+        analysis_execution_mode: 'local_review_only_candidate',
+        acknowledge_local_candidate_only: Boolean(values.acknowledge_local_candidate_only),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_no_report_generation: Boolean(values.acknowledge_no_report_generation),
+        acknowledge_no_sandbox_or_public_event: Boolean(values.acknowledge_no_sandbox_or_public_event),
+        acknowledge_provider_output_is_evidence_not_truth: Boolean(values.acknowledge_provider_output_is_evidence_not_truth),
+        acknowledge_not_official_verification: Boolean(values.acknowledge_not_official_verification),
+        acknowledge_not_full_web_coverage: Boolean(values.acknowledge_not_full_web_coverage),
+        acknowledge_weak_evidence_warning: Boolean(values.acknowledge_weak_evidence_warning),
+        acknowledge_rejected_exclusion: Boolean(values.acknowledge_rejected_exclusion),
+        acknowledge_dedup_no_risk_amplification: Boolean(values.acknowledge_dedup_no_risk_amplification),
+        write_evidence_layer_now: false,
+        create_production_case_now: false,
+        create_production_review_queue_now: false,
+        run_production_dedup_now: false,
+        run_analysis_now: false,
+        generate_analysis_result_now: false,
+        generate_report_now: false,
+        generate_sandbox_now: false,
+        generate_public_event_now: false,
+        generate_b_end_report_now: false,
+        include_rejected_evidence: false,
+        include_privacy_hold_evidence: false,
+        include_needs_more_source_evidence: false,
+        remove_weak_warnings: false,
+        duplicates_amplify_risk: false,
+        provider_output_is_truth: false,
+        official_verification: false,
+        full_web_coverage: false,
+        real_api_call_requested: false,
+        real_llm_call_requested: false,
+        provider_execution_requested: false,
+        collector_job_requested: false,
+        original_package_rows_read: false,
+      })
+      setManualAnalysisExecutions(await listAnalysisRequestManualAnalysisExecutions(selectedRecord.request_id))
+      setManualAnalysisResultCandidates(await listAnalysisRequestManualAnalysisResultCandidates(selectedRecord.request_id))
+      setManualAnalysisExecutionAudits(await listAnalysisRequestManualAnalysisExecutionAudits(selectedRecord.request_id))
+      message.success(`Created local analysis candidate: ${execution?.status || 'created'}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create manual analysis execution candidate.'
+      setManualAnalysisExecutionError(String(messageText))
+    } finally {
+      setManualAnalysisExecutionLoading(false)
     }
   }
 
@@ -1858,6 +1941,23 @@ export function AnalysisRequests() {
   const analysisResultBoundaryGateAuditsJson = analysisResultBoundaryGateAudits.length
     ? JSON.stringify(analysisResultBoundaryGateAudits, null, 2)
     : ''
+  const latestManualAnalysisExecution = manualAnalysisExecutions[0] || null
+  const latestManualAnalysisResultCandidate = manualAnalysisResultCandidates[0] || null
+  const latestManualAnalysisExecutionJson = latestManualAnalysisExecution
+    ? JSON.stringify(latestManualAnalysisExecution, null, 2)
+    : ''
+  const latestManualAnalysisResultCandidateJson = latestManualAnalysisResultCandidate
+    ? JSON.stringify(latestManualAnalysisResultCandidate, null, 2)
+    : ''
+  const manualAnalysisExecutionsJson = manualAnalysisExecutions.length
+    ? JSON.stringify(manualAnalysisExecutions, null, 2)
+    : ''
+  const manualAnalysisResultCandidatesJson = manualAnalysisResultCandidates.length
+    ? JSON.stringify(manualAnalysisResultCandidates, null, 2)
+    : ''
+  const manualAnalysisExecutionAuditsJson = manualAnalysisExecutionAudits.length
+    ? JSON.stringify(manualAnalysisExecutionAudits, null, 2)
+    : ''
   const analysisReadyPromotionGateValues = Form.useWatch([], analysisReadyPromotionGateForm) || {}
   const dedupGroupsNeedReview = useMemo(
     () => (latestDedupPreview?.groups || []).some((group) => !['confirmed', 'marked_weak', 'representative_changed', 'rejected'].includes(group.group_status)),
@@ -1927,6 +2027,30 @@ export function AnalysisRequests() {
         analysisResultBoundaryGateValues.acknowledge_no_production_case,
     )
   }, [analysisResultBoundaryGateValues, latestManualAnalysisTrigger?.manual_trigger_id, latestManualAnalysisTrigger?.status])
+  const manualAnalysisExecutionValues = Form.useWatch([], manualAnalysisExecutionForm) || {}
+  const manualAnalysisExecutionReady = useMemo(() => {
+    return Boolean(
+      latestAnalysisResultBoundaryGate?.boundary_gate_id &&
+        latestAnalysisResultBoundaryGate?.status === 'boundary_ready_for_future_analysis_result_runtime' &&
+        String(manualAnalysisExecutionValues.reviewer_label || '').trim() &&
+        String(manualAnalysisExecutionValues.note || '').trim() &&
+        manualAnalysisExecutionValues.acknowledge_local_candidate_only &&
+        manualAnalysisExecutionValues.acknowledge_no_evidence_layer_write &&
+        manualAnalysisExecutionValues.acknowledge_no_production_case &&
+        manualAnalysisExecutionValues.acknowledge_no_report_generation &&
+        manualAnalysisExecutionValues.acknowledge_no_sandbox_or_public_event &&
+        manualAnalysisExecutionValues.acknowledge_provider_output_is_evidence_not_truth &&
+        manualAnalysisExecutionValues.acknowledge_not_official_verification &&
+        manualAnalysisExecutionValues.acknowledge_not_full_web_coverage &&
+        manualAnalysisExecutionValues.acknowledge_weak_evidence_warning &&
+        manualAnalysisExecutionValues.acknowledge_rejected_exclusion &&
+        manualAnalysisExecutionValues.acknowledge_dedup_no_risk_amplification,
+    )
+  }, [
+    latestAnalysisResultBoundaryGate?.boundary_gate_id,
+    latestAnalysisResultBoundaryGate?.status,
+    manualAnalysisExecutionValues,
+  ])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -4832,6 +4956,250 @@ export function AnalysisRequests() {
                                       <Text type="secondary">
                                         generate_analysis_result_now={boolText(audit.now_flags?.generate_analysis_result_now)}
                                       </Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Manual Analysis Execution / 人工分析执行候选">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Local candidate only: no downstream product artifact is generated"
+                              description="This creates a local analysis result candidate from the approved manual-trigger scope. It does not write the Evidence Layer, create a production case, run production dedup, generate a Summary Report, generate Sandbox/public event output, or create a B-end report."
+                            />
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="Boundary notes remain attached"
+                              description="Provider output is evidence, not truth. Rejected evidence stays excluded, weak evidence keeps warnings, duplicate evidence must not amplify risk, and coverage is not full-web or official verification."
+                            />
+                            {manualAnalysisExecutionError ? <Alert type="error" showIcon message={manualAnalysisExecutionError} /> : null}
+                            <Form
+                              form={manualAnalysisExecutionForm}
+                              layout="vertical"
+                              initialValues={{
+                                reviewer_label: 'manual_analysis_executor',
+                                acknowledge_local_candidate_only: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_no_report_generation: true,
+                                acknowledge_no_sandbox_or_public_event: true,
+                                acknowledge_provider_output_is_evidence_not_truth: true,
+                                acknowledge_not_official_verification: true,
+                                acknowledge_not_full_web_coverage: true,
+                                acknowledge_weak_evidence_warning: true,
+                                acknowledge_rejected_exclusion: true,
+                                acknowledge_dedup_no_risk_amplification: true,
+                              }}
+                              onFinish={handleCreateManualAnalysisExecution}
+                            >
+                              <Row gutter={12}>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Manual trigger id" name="manual_trigger_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestAnalysisResultBoundaryGate?.manual_trigger_id || 'latest trigger from boundary gate'}
+                                      options={manualAnalysisTriggers.map((item) => ({
+                                        value: item.manual_trigger_id,
+                                        label: `${item.status} / ${item.manual_trigger_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Boundary gate id" name="boundary_gate_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestAnalysisResultBoundaryGate?.boundary_gate_id || 'latest ready boundary gate'}
+                                      options={analysisResultBoundaryGates.map((item) => ({
+                                        value: item.boundary_gate_id,
+                                        label: `${item.status} / ${item.boundary_gate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Promotion gate id" name="promotion_gate_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestAnalysisResultBoundaryGate?.promotion_gate_id || 'promotion gate from boundary'}
+                                      options={analysisReadyPromotionGates.map((item) => ({
+                                        value: item.promotion_gate_id,
+                                        label: `${item.status} / ${item.promotion_gate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={12}>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Reviewer label" name="reviewer_label" rules={[{ required: true }]}>
+                                    <Input placeholder="manual_analysis_executor" />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={16}>
+                                  <Form.Item label="Execution note" name="note" rules={[{ required: true }]}>
+                                    <TextArea
+                                      rows={2}
+                                      placeholder="Create a local analysis candidate only; preserve all boundary warnings."
+                                    />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Form.Item label="Required acknowledgements">
+                                <Row gutter={[8, 4]}>
+                                  {[
+                                    ['acknowledge_local_candidate_only', 'local result candidate only'],
+                                    ['acknowledge_no_evidence_layer_write', 'no Evidence Layer write'],
+                                    ['acknowledge_no_production_case', 'no production case'],
+                                    ['acknowledge_no_report_generation', 'no report generation'],
+                                    ['acknowledge_no_sandbox_or_public_event', 'no Sandbox/public event'],
+                                    ['acknowledge_provider_output_is_evidence_not_truth', 'provider output is evidence, not truth'],
+                                    ['acknowledge_not_official_verification', 'not official verification'],
+                                    ['acknowledge_not_full_web_coverage', 'not full-web coverage'],
+                                    ['acknowledge_weak_evidence_warning', 'weak evidence warning preserved'],
+                                    ['acknowledge_rejected_exclusion', 'rejected evidence remains excluded'],
+                                    ['acknowledge_dedup_no_risk_amplification', 'duplicate evidence not amplified'],
+                                  ].map(([name, label]) => (
+                                    <Col xs={24} md={8} key={name}>
+                                      <Form.Item name={name} valuePropName="checked" noStyle>
+                                        <Checkbox>{label}</Checkbox>
+                                      </Form.Item>
+                                    </Col>
+                                  ))}
+                                </Row>
+                              </Form.Item>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  icon={<ShieldCheck size={16} />}
+                                  loading={manualAnalysisExecutionLoading}
+                                  disabled={!manualAnalysisExecutionReady || manualAnalysisExecutionLoading}
+                                >
+                                  Create Analysis Result Candidate
+                                </Button>
+                                {latestManualAnalysisExecution ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestManualAnalysisExecutionJson, 'Manual analysis execution JSON copied')}
+                                  >
+                                    Copy latest execution JSON
+                                  </Button>
+                                ) : null}
+                                {latestManualAnalysisResultCandidate ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestManualAnalysisResultCandidateJson, 'Analysis candidate JSON copied')}
+                                  >
+                                    Copy latest candidate JSON
+                                  </Button>
+                                ) : null}
+                                {manualAnalysisExecutions.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(manualAnalysisExecutionsJson, 'Manual analysis execution history JSON copied')}
+                                  >
+                                    Copy execution history JSON
+                                  </Button>
+                                ) : null}
+                                {manualAnalysisResultCandidates.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(manualAnalysisResultCandidatesJson, 'Analysis candidate history JSON copied')}
+                                  >
+                                    Copy candidate history JSON
+                                  </Button>
+                                ) : null}
+                                {manualAnalysisExecutionAudits.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(manualAnalysisExecutionAuditsJson, 'Manual analysis execution audit JSON copied')}
+                                  >
+                                    Copy execution audit JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+                            {latestManualAnalysisExecution ? (
+                              <Card size="small" title="Latest Manual Analysis Execution">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={latestManualAnalysisExecution.status === 'analysis_result_candidate_created' ? 'green' : 'gold'}>
+                                      {latestManualAnalysisExecution.status}
+                                    </Tag>
+                                    <Tag>{latestManualAnalysisExecution.analysis_execution_mode}</Tag>
+                                    <Text type="secondary">{latestManualAnalysisExecution.manual_analysis_execution_id}</Text>
+                                  </Space>
+                                  <Text type="secondary">
+                                    candidate_result_id={latestManualAnalysisExecution.candidate_result_id || '-'} / original_package_rows_read=
+                                    {boolText(latestManualAnalysisExecution.input_scope?.original_package_rows_read || latestManualAnalysisExecution.safe_mode?.original_package_rows_re_read)}
+                                  </Text>
+                                  <Space wrap>
+                                    <Tag color="default">run_analysis_now={boolText(latestManualAnalysisExecution.now_flags?.run_analysis_now)}</Tag>
+                                    <Tag color="default">generate_analysis_result_now={boolText(latestManualAnalysisExecution.now_flags?.generate_analysis_result_now)}</Tag>
+                                    <Tag color="default">write_evidence_layer_now={boolText(latestManualAnalysisExecution.now_flags?.write_evidence_layer_now)}</Tag>
+                                    <Tag color="default">generate_report_now={boolText(latestManualAnalysisExecution.now_flags?.generate_report_now)}</Tag>
+                                    <Tag color="default">generate_public_event_now={boolText(latestManualAnalysisExecution.now_flags?.generate_public_event_now)}</Tag>
+                                  </Space>
+                                  <SummaryList title="Execution warnings" items={latestManualAnalysisExecution.warnings || []} />
+                                  <SummaryList title="Execution limitations" items={latestManualAnalysisExecution.limitations || []} />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No manual analysis execution candidate yet.</Text>
+                            )}
+                            {latestManualAnalysisResultCandidate ? (
+                              <Card size="small" title="Latest Analysis Result Candidate">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color="blue">{latestManualAnalysisResultCandidate.analysis_input_source}</Tag>
+                                    <Text type="secondary">{latestManualAnalysisResultCandidate.result_candidate_id}</Text>
+                                  </Space>
+                                  <Descriptions size="small" column={2} bordered>
+                                    <Descriptions.Item label="Included items">
+                                      {latestManualAnalysisResultCandidate.source_scope_summary?.included_item_count || 0}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="Included groups">
+                                      {latestManualAnalysisResultCandidate.source_scope_summary?.included_group_count || 0}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="Weak warning count">
+                                      {latestManualAnalysisResultCandidate.source_scope_summary?.weak_evidence_count || 0}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="Duplicate groups">
+                                      {latestManualAnalysisResultCandidate.source_scope_summary?.duplicate_group_count || 0}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <Card size="small" title="Candidate summary">
+                                    <pre className="code-preview">{JSON.stringify(latestManualAnalysisResultCandidate.analysis_summary || {}, null, 2)}</pre>
+                                  </Card>
+                                  <Space wrap>
+                                    {Object.entries(latestManualAnalysisResultCandidate.downstream_flags || {}).map(([key, value]) => (
+                                      <Tag color={value ? 'red' : 'default'} key={key}>
+                                        {key}={boolText(value)}
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                  <SummaryList title="Confidence notes" items={latestManualAnalysisResultCandidate.confidence_notes || []} />
+                                  <SummaryList title="Candidate limitations" items={latestManualAnalysisResultCandidate.limitations || []} />
+                                </Space>
+                              </Card>
+                            ) : null}
+                            {manualAnalysisExecutionAudits.length ? (
+                              <Card size="small" title={`Manual analysis execution audit timeline (${manualAnalysisExecutionAudits.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {manualAnalysisExecutionAudits.map((audit) => (
+                                    <Space wrap key={audit.manual_analysis_execution_audit_id}>
+                                      <Tag color="green">{audit.effect}</Tag>
+                                      <Text type="secondary">{audit.decided_at || '-'}</Text>
+                                      <Text type="secondary">effect={audit.analysis_effect}</Text>
+                                      <Text type="secondary">run_analysis_now={boolText(audit.now_flags?.run_analysis_now)}</Text>
+                                      <Text type="secondary">generate_report_now={boolText(audit.now_flags?.generate_report_now)}</Text>
                                     </Space>
                                   ))}
                                 </Space>

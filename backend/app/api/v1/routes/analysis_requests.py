@@ -28,6 +28,10 @@ from app.schemas.analysis_request import (
     ManualEvidenceImportExecutionPreflightCreate,
     ManualEvidenceImportJob,
     ManualEvidenceImportJobCreate,
+    ManualAnalysisExecution,
+    ManualAnalysisExecutionAudit,
+    ManualAnalysisExecutionRequest,
+    ManualAnalysisResultCandidate,
     ManualAnalysisTrigger,
     ManualAnalysisTriggerAudit,
     ManualAnalysisTriggerRequest,
@@ -62,6 +66,7 @@ from app.services.analysis_request_store import (
     create_evidence_import_review_decision,
     create_evidence_row_reader_dry_run,
     create_manual_evidence_import_execution_preflight,
+    create_manual_analysis_execution,
     create_manual_analysis_trigger,
     create_analysis_request,
     create_manual_evidence_import_job,
@@ -81,6 +86,9 @@ from app.services.analysis_request_store import (
     list_all_evidence_row_reader_dry_runs,
     list_all_manual_evidence_import_execution_preflights,
     list_all_manual_evidence_import_jobs,
+    list_all_manual_analysis_execution_audits,
+    list_all_manual_analysis_executions,
+    list_all_manual_analysis_result_candidates,
     list_all_manual_analysis_trigger_audits,
     list_all_manual_analysis_triggers,
     list_all_promotion_decision_audits,
@@ -104,6 +112,10 @@ from app.services.analysis_request_store import (
     list_analysis_requests,
     list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
+    list_manual_analysis_execution_audits,
+    list_manual_analysis_execution_audits_for_execution,
+    list_manual_analysis_executions,
+    list_manual_analysis_result_candidates,
     list_manual_analysis_trigger_audits,
     list_manual_analysis_trigger_audits_for_trigger,
     list_manual_analysis_triggers,
@@ -127,6 +139,8 @@ from app.services.analysis_request_store import (
     read_analysis_request,
     read_manual_evidence_import_execution_preflight,
     read_manual_evidence_import_job,
+    read_manual_analysis_execution,
+    read_manual_analysis_result_candidate,
     read_manual_analysis_trigger,
     read_real_package_row_preview,
     read_review_only_case,
@@ -259,6 +273,21 @@ def analysis_request_analysis_result_boundary_gate_all_list() -> list[AnalysisRe
 @router.get("/analysis-result-boundary-gate-audits", response_model=list[AnalysisResultBoundaryGateAudit])
 def analysis_request_analysis_result_boundary_gate_audit_all_list() -> list[AnalysisResultBoundaryGateAudit]:
     return list_all_analysis_result_boundary_gate_audits()
+
+
+@router.get("/manual-analysis-executions", response_model=list[ManualAnalysisExecution])
+def analysis_request_manual_analysis_execution_all_list() -> list[ManualAnalysisExecution]:
+    return list_all_manual_analysis_executions()
+
+
+@router.get("/manual-analysis-result-candidates", response_model=list[ManualAnalysisResultCandidate])
+def analysis_request_manual_analysis_result_candidate_all_list() -> list[ManualAnalysisResultCandidate]:
+    return list_all_manual_analysis_result_candidates()
+
+
+@router.get("/manual-analysis-execution-audits", response_model=list[ManualAnalysisExecutionAudit])
+def analysis_request_manual_analysis_execution_audit_all_list() -> list[ManualAnalysisExecutionAudit]:
+    return list_all_manual_analysis_execution_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -925,6 +954,86 @@ def analysis_request_analysis_result_boundary_gate_audit_for_gate_list(
 ) -> list[AnalysisResultBoundaryGateAudit]:
     try:
         return list_analysis_result_boundary_gate_audits_for_gate(request_id, boundary_gate_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/manual-analysis-executions", response_model=list[ManualAnalysisExecution])
+def analysis_request_manual_analysis_execution_list(request_id: str) -> list[ManualAnalysisExecution]:
+    try:
+        return list_manual_analysis_executions(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/manual-analysis-executions", response_model=ManualAnalysisExecution)
+def analysis_request_manual_analysis_execution_create(
+    request_id: str,
+    payload: ManualAnalysisExecutionRequest,
+) -> ManualAnalysisExecution:
+    try:
+        return create_manual_analysis_execution(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/manual-analysis-executions/{manual_analysis_execution_id}", response_model=ManualAnalysisExecution)
+def analysis_request_manual_analysis_execution_detail(
+    request_id: str,
+    manual_analysis_execution_id: str,
+) -> ManualAnalysisExecution:
+    try:
+        return read_manual_analysis_execution(request_id, manual_analysis_execution_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/manual-analysis-result-candidates", response_model=list[ManualAnalysisResultCandidate])
+def analysis_request_manual_analysis_result_candidate_list(request_id: str) -> list[ManualAnalysisResultCandidate]:
+    try:
+        return list_manual_analysis_result_candidates(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/manual-analysis-result-candidates/{result_candidate_id}",
+    response_model=ManualAnalysisResultCandidate,
+)
+def analysis_request_manual_analysis_result_candidate_detail(
+    request_id: str,
+    result_candidate_id: str,
+) -> ManualAnalysisResultCandidate:
+    try:
+        return read_manual_analysis_result_candidate(request_id, result_candidate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/manual-analysis-execution-audits", response_model=list[ManualAnalysisExecutionAudit])
+def analysis_request_manual_analysis_execution_audit_list(request_id: str) -> list[ManualAnalysisExecutionAudit]:
+    try:
+        return list_manual_analysis_execution_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/manual-analysis-executions/{manual_analysis_execution_id}/audits",
+    response_model=list[ManualAnalysisExecutionAudit],
+)
+def analysis_request_manual_analysis_execution_audit_for_execution_list(
+    request_id: str,
+    manual_analysis_execution_id: str,
+) -> list[ManualAnalysisExecutionAudit]:
+    try:
+        return list_manual_analysis_execution_audits_for_execution(request_id, manual_analysis_execution_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

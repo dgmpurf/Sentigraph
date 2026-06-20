@@ -2679,6 +2679,234 @@ class AnalysisResultBoundaryGateAudit(BaseModel):
     )
 
 
+class ManualAnalysisExecutionRequest(BaseModel):
+    manual_trigger_id: str
+    boundary_gate_id: str
+    promotion_gate_id: str
+    review_case_id: str | None = None
+    reviewer_label: str
+    note: str
+    analysis_execution_mode: Literal["local_review_only_candidate"] = "local_review_only_candidate"
+    acknowledge_local_candidate_only: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_no_report_generation: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    acknowledge_provider_output_is_evidence_not_truth: bool = False
+    acknowledge_not_official_verification: bool = False
+    acknowledge_not_full_web_coverage: bool = False
+    acknowledge_weak_evidence_warning: bool = False
+    acknowledge_rejected_exclusion: bool = False
+    acknowledge_dedup_no_risk_amplification: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    run_production_dedup_now: bool = False
+    run_analysis_now: bool = False
+    generate_analysis_result_now: bool = False
+    generate_summary_report_now: bool = False
+    generate_report_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_public_event_now: bool = False
+    generate_b_end_report_now: bool = False
+    include_rejected_evidence: bool = False
+    include_privacy_hold_evidence: bool = False
+    include_needs_more_source_evidence: bool = False
+    remove_weak_warnings: bool = False
+    duplicates_amplify_risk: bool = False
+    provider_output_is_truth: bool = False
+    official_verification: bool = False
+    full_web_coverage: bool = False
+    real_api_call_requested: bool = False
+    real_llm_call_requested: bool = False
+    provider_execution_requested: bool = False
+    collector_job_requested: bool = False
+    original_package_rows_read: bool = False
+
+
+class ManualAnalysisExecutionInputScope(BaseModel):
+    source: Literal["review_only_promoted_candidates"] = "review_only_promoted_candidates"
+    included_item_ids: list[str] = Field(default_factory=list)
+    included_group_ids: list[str] = Field(default_factory=list)
+    excluded_item_ids: list[str] = Field(default_factory=list)
+    excluded_group_ids: list[str] = Field(default_factory=list)
+    weak_warning_item_ids: list[str] = Field(default_factory=list)
+    weak_warning_group_ids: list[str] = Field(default_factory=list)
+    analysis_input_source: Literal["manual_trigger_scope"] = "manual_trigger_scope"
+    original_package_rows_read: bool = False
+
+
+class ManualAnalysisBoundaryBlock(BaseModel):
+    coverage_limitation: bool | str = True
+    weak_evidence_warning: bool | str = True
+    rejected_evidence_exclusion_note: bool | str = True
+    dedup_warning: bool | str = True
+    provider_output_evidence_not_truth_note: bool | str = True
+    not_official_verification_note: bool | str = True
+    not_full_web_coverage_note: bool | str = True
+    audit_trace_note: bool | str = True
+
+
+class ManualAnalysisExecutionReadiness(BaseModel):
+    analysis_result_candidate_created: bool = True
+    can_generate_report_now: bool = False
+    can_generate_sandbox_now: bool = False
+    can_generate_public_event_now: bool = False
+    requires_result_review_or_report_gate: bool = True
+
+
+class ManualAnalysisExecution(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_manual_analysis_execution_v1"] = Field(
+        default="sentigraph_manual_analysis_execution_v1",
+        alias="schema",
+    )
+    manual_analysis_execution_id: str
+    request_id: str
+    review_case_id: str
+    manual_trigger_id: str
+    boundary_gate_id: str
+    promotion_gate_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    execution_mode: Literal["local_review_only_candidate"] = "local_review_only_candidate"
+    status: Literal["analysis_result_candidate_created", "incomplete", "blocked", "privacy_hold"] = "blocked"
+    input_scope: ManualAnalysisExecutionInputScope = Field(default_factory=ManualAnalysisExecutionInputScope)
+    boundary_block: ManualAnalysisBoundaryBlock = Field(default_factory=ManualAnalysisBoundaryBlock)
+    result_candidate_id: str
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "run_production_dedup_now": False,
+            "run_analysis_now": False,
+            "generate_analysis_result_now": False,
+            "generate_summary_report_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+            "generate_b_end_report_now": False,
+        }
+    )
+    readiness: ManualAnalysisExecutionReadiness = Field(default_factory=ManualAnalysisExecutionReadiness)
+    blocked_reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "local_analysis_result_candidate_only": True,
+            "original_package_rows_re_read": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "summary_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "b_end_report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class ManualAnalysisSourceScopeSummary(BaseModel):
+    included_item_count: int = 0
+    included_group_count: int = 0
+    excluded_rejected_count: int = 0
+    weak_warning_count: int = 0
+    duplicate_group_count: int = 0
+    privacy_excluded_count: int = 0
+    needs_more_source_excluded_count: int = 0
+
+
+class ManualAnalysisResultCandidate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_manual_analysis_result_candidate_v1"] = Field(
+        default="sentigraph_manual_analysis_result_candidate_v1",
+        alias="schema",
+    )
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    request_id: str
+    review_case_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    analysis_input_source: Literal["manual_trigger_scope"] = "manual_trigger_scope"
+    source_scope_summary: ManualAnalysisSourceScopeSummary = Field(default_factory=ManualAnalysisSourceScopeSummary)
+    boundary_block: dict[str, str] = Field(default_factory=dict)
+    analysis_summary: dict[str, Any] = Field(default_factory=dict)
+    confidence_notes: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    audit_refs: dict[str, str] = Field(default_factory=dict)
+    downstream_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "summary_report_ready": False,
+            "sandbox_ready": False,
+            "public_event_ready": False,
+            "b_end_report_ready": False,
+        }
+    )
+
+
+class ManualAnalysisExecutionAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_manual_analysis_execution_audit_v1"] = Field(
+        default="sentigraph_manual_analysis_execution_audit_v1",
+        alias="schema",
+    )
+    manual_analysis_execution_audit_id: str
+    manual_analysis_execution_id: str
+    result_candidate_id: str
+    request_id: str
+    review_case_id: str
+    reviewer_label: str
+    decided_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    analysis_effect: Literal["local_result_candidate_created"] = "local_result_candidate_created"
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "run_production_dedup_now": False,
+            "run_analysis_now": False,
+            "generate_analysis_result_now": False,
+            "generate_summary_report_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+            "generate_b_end_report_now": False,
+        }
+    )
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "manual_analysis_execution_audit_only": True,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "summary_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "b_end_report_generated": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

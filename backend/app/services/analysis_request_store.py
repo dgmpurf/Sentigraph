@@ -77,6 +77,14 @@ from app.schemas.analysis_request import (
     ManualEvidenceImportJobCreate,
     ManualEvidenceImportJobReadiness,
     ManualAnalysisRequiredWarnings,
+    ManualAnalysisBoundaryBlock,
+    ManualAnalysisExecution,
+    ManualAnalysisExecutionAudit,
+    ManualAnalysisExecutionInputScope,
+    ManualAnalysisExecutionReadiness,
+    ManualAnalysisExecutionRequest,
+    ManualAnalysisResultCandidate,
+    ManualAnalysisSourceScopeSummary,
     ManualAnalysisScope,
     ManualAnalysisTrigger,
     ManualAnalysisTriggerAudit,
@@ -1431,6 +1439,106 @@ def list_analysis_result_boundary_gate_audits_for_gate(request_id: str, boundary
     ]
 
 
+def read_manual_analysis_execution(request_id: str, manual_analysis_execution_id: str) -> ManualAnalysisExecution:
+    execution_path = _manual_analysis_execution_path(request_id, manual_analysis_execution_id)
+    if not execution_path.exists():
+        raise AnalysisRequestNotFoundError(f"Manual analysis execution {manual_analysis_execution_id} was not found.")
+    try:
+        parsed = json.loads(execution_path.read_text(encoding="utf-8-sig"))
+        execution = ManualAnalysisExecution.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{execution_path.name} is not a valid manual analysis execution: {type(exc).__name__}") from exc
+    if execution.request_id != request_id or execution.manual_analysis_execution_id != manual_analysis_execution_id:
+        raise AnalysisRequestValidationError("Manual analysis execution id mismatch.")
+    return execution
+
+
+def list_manual_analysis_executions(request_id: str) -> list[ManualAnalysisExecution]:
+    read_analysis_request(request_id)
+    root = _ensure_root()
+    executions: list[ManualAnalysisExecution] = []
+    for path in sorted((root / "manual_analysis_executions").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        executions.append(read_manual_analysis_execution(request_id, _manual_analysis_execution_id_from_path(request_id, path)))
+    return executions
+
+
+def list_all_manual_analysis_executions() -> list[ManualAnalysisExecution]:
+    root = _ensure_root()
+    executions: list[ManualAnalysisExecution] = []
+    for path in sorted((root / "manual_analysis_executions").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        request_id, execution_id = _split_prefixed_id(path, "manual_analysis_execution")
+        executions.append(read_manual_analysis_execution(request_id, execution_id))
+    return executions
+
+
+def read_manual_analysis_result_candidate(request_id: str, result_candidate_id: str) -> ManualAnalysisResultCandidate:
+    candidate_path = _manual_analysis_result_candidate_path(request_id, result_candidate_id)
+    if not candidate_path.exists():
+        raise AnalysisRequestNotFoundError(f"Manual analysis result candidate {result_candidate_id} was not found.")
+    try:
+        parsed = json.loads(candidate_path.read_text(encoding="utf-8-sig"))
+        candidate = ManualAnalysisResultCandidate.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{candidate_path.name} is not a valid manual analysis result candidate: {type(exc).__name__}") from exc
+    if candidate.request_id != request_id or candidate.result_candidate_id != result_candidate_id:
+        raise AnalysisRequestValidationError("Manual analysis result candidate id mismatch.")
+    return candidate
+
+
+def list_manual_analysis_result_candidates(request_id: str) -> list[ManualAnalysisResultCandidate]:
+    read_analysis_request(request_id)
+    root = _ensure_root()
+    candidates: list[ManualAnalysisResultCandidate] = []
+    for path in sorted((root / "manual_analysis_result_candidates").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        candidates.append(read_manual_analysis_result_candidate(request_id, _manual_analysis_result_candidate_id_from_path(request_id, path)))
+    return candidates
+
+
+def list_all_manual_analysis_result_candidates() -> list[ManualAnalysisResultCandidate]:
+    root = _ensure_root()
+    candidates: list[ManualAnalysisResultCandidate] = []
+    for path in sorted((root / "manual_analysis_result_candidates").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        request_id, candidate_id = _split_prefixed_id(path, "manual_analysis_result_candidate")
+        candidates.append(read_manual_analysis_result_candidate(request_id, candidate_id))
+    return candidates
+
+
+def list_manual_analysis_execution_audits(request_id: str) -> list[ManualAnalysisExecutionAudit]:
+    read_analysis_request(request_id)
+    root = _ensure_root()
+    audits: list[ManualAnalysisExecutionAudit] = []
+    for path in sorted((root / "manual_analysis_execution_audits").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ManualAnalysisExecutionAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid manual analysis execution audit: {type(exc).__name__}") from exc
+    return audits
+
+
+def list_all_manual_analysis_execution_audits() -> list[ManualAnalysisExecutionAudit]:
+    root = _ensure_root()
+    audits: list[ManualAnalysisExecutionAudit] = []
+    for path in sorted((root / "manual_analysis_execution_audits").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ManualAnalysisExecutionAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid manual analysis execution audit: {type(exc).__name__}") from exc
+    return audits
+
+
+def list_manual_analysis_execution_audits_for_execution(
+    request_id: str,
+    manual_analysis_execution_id: str,
+) -> list[ManualAnalysisExecutionAudit]:
+    return [
+        audit
+        for audit in list_manual_analysis_execution_audits(request_id)
+        if audit.manual_analysis_execution_id == manual_analysis_execution_id
+    ]
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -2444,6 +2552,126 @@ def create_analysis_result_boundary_gate(
         audit.model_dump(mode="json", by_alias=True),
     )
     return read_analysis_result_boundary_gate(request_id, boundary_gate_id)
+
+
+def create_manual_analysis_execution(
+    request_id: str,
+    payload: ManualAnalysisExecutionRequest | dict[str, Any],
+) -> ManualAnalysisExecution:
+    try:
+        execution_payload = (
+            payload
+            if isinstance(payload, ManualAnalysisExecutionRequest)
+            else ManualAnalysisExecutionRequest.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create manual analysis execution: invalid payload ({exc}).") from exc
+
+    _validate_manual_analysis_execution_payload(execution_payload)
+    read_analysis_request(request_id)
+    manual_trigger = read_manual_analysis_trigger(request_id, execution_payload.manual_trigger_id)
+    boundary_gate = read_analysis_result_boundary_gate(request_id, execution_payload.boundary_gate_id)
+    promotion_gate = read_analysis_ready_promotion_gate(request_id, execution_payload.promotion_gate_id)
+    _validate_manual_analysis_execution_prerequisites(request_id, execution_payload, manual_trigger, boundary_gate, promotion_gate)
+    batch = read_review_queue_item_batch(request_id, promotion_gate.queue_init_id)
+    _validate_manual_analysis_execution_scope(manual_trigger, boundary_gate, promotion_gate, batch)
+
+    execution_id = _new_manual_analysis_execution_id()
+    candidate_id = _new_manual_analysis_result_candidate_id()
+    audit_id = _new_manual_analysis_execution_audit_id()
+    boundary_block = _manual_analysis_execution_boundary_block()
+    boundary_text = _manual_analysis_candidate_boundary_block()
+    warnings = _manual_analysis_execution_warnings(manual_trigger, boundary_gate, promotion_gate)
+    limitations = _manual_analysis_candidate_limitations()
+    candidate = ManualAnalysisResultCandidate(
+        result_candidate_id=candidate_id,
+        manual_analysis_execution_id=execution_id,
+        request_id=request_id,
+        review_case_id=manual_trigger.review_case_id,
+        created_at=datetime.now(timezone.utc),
+        analysis_input_source="manual_trigger_scope",
+        source_scope_summary=ManualAnalysisSourceScopeSummary(
+            included_item_count=len(manual_trigger.analysis_scope.include_item_ids),
+            included_group_count=len(manual_trigger.analysis_scope.include_group_ids),
+            excluded_rejected_count=len(manual_trigger.analysis_scope.exclude_item_ids),
+            weak_warning_count=len(manual_trigger.analysis_scope.weak_warning_item_ids)
+            + len(manual_trigger.analysis_scope.weak_warning_group_ids),
+            duplicate_group_count=len(manual_trigger.analysis_scope.include_group_ids),
+            privacy_excluded_count=boundary_gate.counts.privacy_excluded_count,
+            needs_more_source_excluded_count=boundary_gate.counts.needs_more_source_excluded_count,
+        ),
+        boundary_block=boundary_text,
+        analysis_summary=_build_manual_analysis_candidate_summary(manual_trigger, batch),
+        confidence_notes=[
+            "This is deterministic local analysis over reviewed safe preview fields only.",
+            "Weak evidence remains warning-marked and must be reviewed before any report gate.",
+            "Duplicate groups are not multiplied into sentiment, risk, coverage, or conclusion strength.",
+        ],
+        limitations=limitations,
+        audit_refs={
+            "promotion_gate_id": promotion_gate.promotion_gate_id,
+            "manual_trigger_id": manual_trigger.manual_trigger_id,
+            "boundary_gate_id": boundary_gate.boundary_gate_id,
+        },
+    )
+    execution = ManualAnalysisExecution(
+        manual_analysis_execution_id=execution_id,
+        request_id=request_id,
+        review_case_id=manual_trigger.review_case_id,
+        manual_trigger_id=manual_trigger.manual_trigger_id,
+        boundary_gate_id=boundary_gate.boundary_gate_id,
+        promotion_gate_id=promotion_gate.promotion_gate_id,
+        created_at=datetime.now(timezone.utc),
+        created_by=execution_payload.reviewer_label.strip(),
+        execution_mode="local_review_only_candidate",
+        status="analysis_result_candidate_created",
+        input_scope=ManualAnalysisExecutionInputScope(
+            source="review_only_promoted_candidates",
+            included_item_ids=list(manual_trigger.analysis_scope.include_item_ids),
+            included_group_ids=list(manual_trigger.analysis_scope.include_group_ids),
+            excluded_item_ids=list(manual_trigger.analysis_scope.exclude_item_ids),
+            excluded_group_ids=list(manual_trigger.analysis_scope.exclude_group_ids),
+            weak_warning_item_ids=list(manual_trigger.analysis_scope.weak_warning_item_ids),
+            weak_warning_group_ids=list(manual_trigger.analysis_scope.weak_warning_group_ids),
+            analysis_input_source="manual_trigger_scope",
+            original_package_rows_read=False,
+        ),
+        boundary_block=boundary_block,
+        result_candidate_id=candidate_id,
+        readiness=ManualAnalysisExecutionReadiness(
+            analysis_result_candidate_created=True,
+            can_generate_report_now=False,
+            can_generate_sandbox_now=False,
+            can_generate_public_event_now=False,
+            requires_result_review_or_report_gate=True,
+        ),
+        warnings=warnings,
+        boundary_notes=list(boundary_text.values()),
+        recommended_next_steps=[
+            "Review this local analysis result candidate before any report generation gate.",
+            "Do not present this candidate as Summary Report, official verification, full-web coverage, or production analysis.",
+            "Future Phase 7H should design a report generation gate before any Summary Report output.",
+        ],
+    )
+    audit = ManualAnalysisExecutionAudit(
+        manual_analysis_execution_audit_id=audit_id,
+        manual_analysis_execution_id=execution_id,
+        result_candidate_id=candidate_id,
+        request_id=request_id,
+        review_case_id=manual_trigger.review_case_id,
+        reviewer_label=execution_payload.reviewer_label.strip(),
+        decided_at=datetime.now(timezone.utc),
+        note=execution_payload.note.strip(),
+        analysis_effect="local_result_candidate_created",
+        boundary_notes=list(boundary_text.values()),
+    )
+    _write_json(_manual_analysis_execution_path(request_id, execution_id), execution.model_dump(mode="json", by_alias=True))
+    _write_json(_manual_analysis_result_candidate_path(request_id, candidate_id), candidate.model_dump(mode="json", by_alias=True))
+    _write_json(
+        _manual_analysis_execution_audit_path(request_id, execution_id, audit_id),
+        audit.model_dump(mode="json", by_alias=True),
+    )
+    return read_manual_analysis_execution(request_id, execution_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -5115,6 +5343,305 @@ def _analysis_result_boundary_notes() -> list[str]:
     ]
 
 
+def _validate_manual_analysis_execution_payload(payload: ManualAnalysisExecutionRequest) -> None:
+    if not (payload.manual_trigger_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: manual_trigger_id is required.")
+    if not (payload.boundary_gate_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary_gate_id is required.")
+    if not (payload.promotion_gate_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: promotion_gate_id is required.")
+    if not (payload.reviewer_label or "").strip():
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: reviewer_label is required.")
+    if not (payload.note or "").strip():
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: note is required.")
+    if payload.analysis_execution_mode != "local_review_only_candidate":
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: analysis_execution_mode must be local_review_only_candidate.")
+    acknowledgements = {
+        "acknowledge_local_candidate_only": payload.acknowledge_local_candidate_only,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_no_report_generation": payload.acknowledge_no_report_generation,
+        "acknowledge_no_sandbox_or_public_event": payload.acknowledge_no_sandbox_or_public_event,
+        "acknowledge_provider_output_is_evidence_not_truth": payload.acknowledge_provider_output_is_evidence_not_truth,
+        "acknowledge_not_official_verification": payload.acknowledge_not_official_verification,
+        "acknowledge_not_full_web_coverage": payload.acknowledge_not_full_web_coverage,
+        "acknowledge_weak_evidence_warning": payload.acknowledge_weak_evidence_warning,
+        "acknowledge_rejected_exclusion": payload.acknowledge_rejected_exclusion,
+        "acknowledge_dedup_no_risk_amplification": payload.acknowledge_dedup_no_risk_amplification,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual analysis execution: acknowledgement flags are required ({', '.join(missing)})."
+        )
+    side_effect_flags = {
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "run_production_dedup_now": payload.run_production_dedup_now,
+        "run_analysis_now": payload.run_analysis_now,
+        "generate_analysis_result_now": payload.generate_analysis_result_now,
+        "generate_summary_report_now": payload.generate_summary_report_now,
+        "generate_report_now": payload.generate_report_now,
+        "generate_sandbox_now": payload.generate_sandbox_now,
+        "generate_public_event_now": payload.generate_public_event_now,
+        "generate_b_end_report_now": payload.generate_b_end_report_now,
+        "real_api_call_requested": payload.real_api_call_requested,
+        "real_llm_call_requested": payload.real_llm_call_requested,
+        "provider_execution_requested": payload.provider_execution_requested,
+        "collector_job_requested": payload.collector_job_requested,
+        "original_package_rows_read": payload.original_package_rows_read,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual analysis execution: side effect flags must remain false ({', '.join(enabled)})."
+        )
+    forbidden_claims = {
+        "include_rejected_evidence": payload.include_rejected_evidence,
+        "include_privacy_hold_evidence": payload.include_privacy_hold_evidence,
+        "include_needs_more_source_evidence": payload.include_needs_more_source_evidence,
+        "remove_weak_warnings": payload.remove_weak_warnings,
+        "duplicates_amplify_risk": payload.duplicates_amplify_risk,
+        "provider_output_is_truth": payload.provider_output_is_truth,
+        "official_verification": payload.official_verification,
+        "full_web_coverage": payload.full_web_coverage,
+    }
+    forbidden = [name for name, value in forbidden_claims.items() if value]
+    if forbidden:
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual analysis execution: unsafe boundary claims are not allowed ({', '.join(forbidden)})."
+        )
+
+
+def _validate_manual_analysis_execution_prerequisites(
+    request_id: str,
+    payload: ManualAnalysisExecutionRequest,
+    manual_trigger: ManualAnalysisTrigger,
+    boundary_gate: AnalysisResultBoundaryGate,
+    promotion_gate: AnalysisReadyPromotionGate,
+) -> None:
+    if manual_trigger.request_id != request_id or boundary_gate.request_id != request_id or promotion_gate.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: request_id mismatch.")
+    if payload.review_case_id and payload.review_case_id != manual_trigger.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: review_case_id does not match manual trigger.")
+    if manual_trigger.review_case_id != boundary_gate.review_case_id or manual_trigger.review_case_id != promotion_gate.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: review_case_id mismatch.")
+    if manual_trigger.promotion_gate_id != promotion_gate.promotion_gate_id or boundary_gate.promotion_gate_id != promotion_gate.promotion_gate_id:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: promotion gate mismatch.")
+    if boundary_gate.manual_trigger_id != manual_trigger.manual_trigger_id:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary gate manual trigger id mismatch.")
+    if manual_trigger.status != "trigger_recorded_ready_for_future_analysis_runtime":
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: manual trigger is not ready.")
+    if manual_trigger.trigger_decision != "trigger_analysis":
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: manual trigger decision is not trigger_analysis.")
+    if boundary_gate.status != "boundary_ready_for_future_analysis_result_runtime":
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary gate is not ready.")
+    if promotion_gate.status != "eligible_for_future_manual_analysis_trigger":
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: promotion gate is not eligible.")
+    if not promotion_gate.readiness.eligible_for_future_manual_analysis_trigger:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: promotion gate readiness is not eligible.")
+    if boundary_gate.readiness.can_present_analysis_result_now:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary gate has unsafe presentation readiness.")
+    if promotion_gate.readiness.can_run_analysis_now or promotion_gate.readiness.can_generate_report_now:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: promotion gate has unsafe readiness flags.")
+    if manual_trigger.blocked_reasons or boundary_gate.blocked_reasons or promotion_gate.blockers:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: prior gate has blockers.")
+    _validate_analysis_result_boundary_now_flags("manual trigger", manual_trigger.now_flags)
+    _validate_analysis_result_boundary_now_flags("boundary gate", boundary_gate.now_flags)
+    _validate_analysis_result_boundary_now_flags("promotion gate", promotion_gate.now_flags)
+    _validate_analysis_result_boundary_safe_mode("manual trigger", manual_trigger.safe_mode)
+    _validate_analysis_result_boundary_safe_mode("boundary gate", boundary_gate.safe_mode)
+    _validate_analysis_result_boundary_safe_mode("promotion gate", promotion_gate.safe_mode)
+    if not any(audit.analysis_effect == "trigger_record_only_no_analysis_run" for audit in list_manual_analysis_trigger_audits_for_trigger(request_id, manual_trigger.manual_trigger_id)):
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: manual trigger audit is missing.")
+    if not any(audit.analysis_effect == "boundary_gate_record_only_no_analysis_run" for audit in list_analysis_result_boundary_gate_audits_for_gate(request_id, boundary_gate.boundary_gate_id)):
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary gate audit is missing.")
+    if not manual_trigger.analysis_scope.include_item_ids and not manual_trigger.analysis_scope.include_group_ids:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: manual trigger analysis scope is empty.")
+    if not all(boundary_gate.required_boundary_sections.model_dump().values()):
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary block sections are incomplete.")
+    if boundary_gate.analysis_input_boundary.provider_output_is_truth or boundary_gate.analysis_input_boundary.official_verification:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary gate contains unsafe truth/verification claim.")
+    if boundary_gate.analysis_input_boundary.full_web_coverage or boundary_gate.analysis_input_boundary.analysis_includes_rejected:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary gate contains unsafe coverage or rejected-evidence claim.")
+    if boundary_gate.analysis_input_boundary.duplicates_amplify_risk:
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary gate allows duplicate amplification.")
+
+
+def _validate_manual_analysis_execution_scope(
+    manual_trigger: ManualAnalysisTrigger,
+    boundary_gate: AnalysisResultBoundaryGate,
+    promotion_gate: AnalysisReadyPromotionGate,
+    batch: ReviewQueueItemBatch,
+) -> None:
+    _validate_analysis_result_boundary_scope(manual_trigger, promotion_gate, batch)
+    include_ids = set(manual_trigger.analysis_scope.include_item_ids)
+    weak_ids = set(manual_trigger.analysis_scope.weak_warning_item_ids)
+    if boundary_gate.counts.included_item_count != len(include_ids):
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary gate included-item count mismatch.")
+    if boundary_gate.counts.weak_warning_count != len(weak_ids) + len(manual_trigger.analysis_scope.weak_warning_group_ids):
+        raise AnalysisRequestValidationError("Cannot create manual analysis execution: boundary gate weak-warning count mismatch.")
+    item_map = {item.review_item_id: item for item in batch.items}
+    for item_id in include_ids:
+        item = item_map[item_id]
+        if _review_queue_item_has_forbidden_fields(item):
+            raise AnalysisRequestValidationError("Cannot create manual analysis execution: raw/private/secret-like review item is not allowed.")
+        if item.queue_status == "marked_weak" and item_id not in weak_ids:
+            raise AnalysisRequestValidationError("Cannot create manual analysis execution: weak warning was removed.")
+        if item.dedup.may_amplify_risk:
+            raise AnalysisRequestValidationError("Cannot create manual analysis execution: duplicate evidence may amplify risk.")
+
+
+def _manual_analysis_execution_boundary_block() -> ManualAnalysisBoundaryBlock:
+    return ManualAnalysisBoundaryBlock(
+        coverage_limitation=True,
+        weak_evidence_warning=True,
+        rejected_evidence_exclusion_note=True,
+        dedup_warning=True,
+        provider_output_evidence_not_truth_note=True,
+        not_official_verification_note=True,
+        not_full_web_coverage_note=True,
+        audit_trace_note=True,
+    )
+
+
+def _manual_analysis_candidate_boundary_block() -> dict[str, str]:
+    return {
+        "coverage_limitation": "Coverage is limited to reviewed promoted candidates; this is not full-web or full-platform coverage.",
+        "weak_evidence_warning": "Weak evidence remains warning-marked and should not be overstated.",
+        "rejected_evidence_exclusion_note": "Rejected evidence is excluded from this local analysis result candidate.",
+        "dedup_warning": "Duplicate evidence is not multiplied into risk, sentiment, coverage, or conclusions.",
+        "provider_output_evidence_not_truth_note": "Provider output is evidence, not truth.",
+        "not_official_verification_note": "This candidate is not official verification.",
+        "not_full_web_coverage_note": "This candidate is not full-web coverage.",
+        "audit_trace_note": "Manual trigger, promotion gate, and boundary gate audit references must remain visible.",
+    }
+
+
+def _manual_analysis_execution_warnings(
+    manual_trigger: ManualAnalysisTrigger,
+    boundary_gate: AnalysisResultBoundaryGate,
+    promotion_gate: AnalysisReadyPromotionGate,
+) -> list[str]:
+    return _unique_preserve_order(
+        list(manual_trigger.warnings)
+        + list(boundary_gate.warnings)
+        + list(boundary_gate.boundary_notes)
+        + list(promotion_gate.warnings)
+        + [
+            "Local analysis result candidate only; no Summary Report, Sandbox, public event, B-end report, Evidence Layer write, or production case.",
+            "Provider output is evidence, not truth.",
+            "This candidate is not official verification.",
+            "This candidate is not full-web coverage.",
+            "Weak evidence remains warning-marked.",
+            "Rejected evidence remains excluded.",
+            "Duplicate evidence must not amplify risk.",
+        ]
+    )
+
+
+def _manual_analysis_candidate_limitations() -> list[str]:
+    return [
+        "This is a local review-only analysis result candidate, not production Analysis Result.",
+        "This candidate is not Summary Report and cannot generate a report without a later gate.",
+        "This candidate is not Sandbox-ready, public-event-ready, or B-end-report-ready.",
+        "It uses safe reviewed preview fields only and does not read original package rows.",
+        "It does not call real APIs, real LLMs, providers, collectors, URLs, or crawlers.",
+        "It is not official verification and not full-web/full-platform coverage.",
+    ]
+
+
+def _build_manual_analysis_candidate_summary(
+    manual_trigger: ManualAnalysisTrigger,
+    batch: ReviewQueueItemBatch,
+) -> dict[str, Any]:
+    item_map = {item.review_item_id: item for item in batch.items}
+    included_items = [item_map[item_id] for item_id in manual_trigger.analysis_scope.include_item_ids if item_id in item_map]
+    representative_evidence: list[dict[str, Any]] = []
+    topic_counts: dict[str, int] = {}
+    sentiment_distribution = {"positive": 0, "neutral": 0, "negative": 0}
+    stance_distribution = {"supportive_or_cooling": 0, "neutral_or_unclear": 0, "critical_or_escalating": 0}
+    total_engagement = 0.0
+    for item in included_items:
+        preview = item.evidence_candidate
+        text = _manual_analysis_preview_text(preview.title_preview, preview.body_text_preview)
+        sentiment = _manual_analysis_sentiment_label(text)
+        stance = _manual_analysis_stance_label(sentiment)
+        sentiment_distribution[sentiment] += 1
+        stance_distribution[stance] += 1
+        topic = preview.evidence_type or preview.platform or "reviewed_evidence"
+        topic_counts[topic] = topic_counts.get(topic, 0) + 1
+        total_engagement += sum(float(value) for value in preview.safe_counts.values() if isinstance(value, (int, float)))
+        representative_evidence.append(
+            {
+                "review_item_id": item.review_item_id,
+                "evidence_type": preview.evidence_type,
+                "platform": preview.platform,
+                "title_preview": preview.title_preview[:120],
+                "body_text_preview": preview.body_text_preview[:240],
+                "source_url_present": bool(preview.source_url),
+                "queue_status": item.queue_status,
+                "trust_label": getattr(item.governance, "trust_label", "medium_low"),
+                "verification_status": getattr(item.governance, "verification_status", "source_url_provided_unverified"),
+                "weak_warning": item.review_item_id in set(manual_trigger.analysis_scope.weak_warning_item_ids),
+            }
+        )
+    topic_summary = [
+        {"topic": topic, "count": count}
+        for topic, count in sorted(topic_counts.items(), key=lambda pair: (-pair[1], pair[0]))
+    ]
+    included_count = len(included_items)
+    weak_count = len(manual_trigger.analysis_scope.weak_warning_item_ids) + len(manual_trigger.analysis_scope.weak_warning_group_ids)
+    return {
+        "stance_distribution": stance_distribution,
+        "sentiment_distribution": sentiment_distribution,
+        "topic_summary": topic_summary,
+        "risk_summary": {
+            "risk_level": _manual_analysis_risk_level(sentiment_distribution, weak_count, included_count),
+            "negative_signal_count": sentiment_distribution["negative"],
+            "weak_warning_count": weak_count,
+            "duplicate_group_count": len(manual_trigger.analysis_scope.include_group_ids),
+            "total_engagement_preview": total_engagement,
+            "duplicate_amplification_applied": False,
+        },
+        "representative_evidence": representative_evidence[:8],
+    }
+
+
+def _manual_analysis_preview_text(title: str, body: str) -> str:
+    return f"{title or ''} {body or ''}".strip()
+
+
+def _manual_analysis_sentiment_label(text: str) -> str:
+    lowered = text.lower()
+    negative_markers = ("angry", "bad", "worse", "boycott", "反对", "愤怒", "质疑", "危机", "失望", "抵制")
+    positive_markers = ("good", "clear", "thanks", "support", "支持", "澄清", "改善", "认可", "缓和")
+    if any(marker in lowered for marker in negative_markers):
+        return "negative"
+    if any(marker in lowered for marker in positive_markers):
+        return "positive"
+    return "neutral"
+
+
+def _manual_analysis_stance_label(sentiment: str) -> str:
+    if sentiment == "negative":
+        return "critical_or_escalating"
+    if sentiment == "positive":
+        return "supportive_or_cooling"
+    return "neutral_or_unclear"
+
+
+def _manual_analysis_risk_level(distribution: dict[str, int], weak_count: int, included_count: int) -> str:
+    if included_count <= 0:
+        return "unknown"
+    negative_ratio = distribution["negative"] / included_count
+    if negative_ratio >= 0.5 or weak_count >= included_count:
+        return "high_review_needed"
+    if negative_ratio >= 0.25 or weak_count > 0:
+        return "medium_review_needed"
+    return "low_limited_sample"
+
+
 def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -5534,6 +6061,9 @@ def _ensure_root() -> Path:
     (root / "manual_analysis_trigger_audits").mkdir(parents=True, exist_ok=True)
     (root / "analysis_result_boundary_gates").mkdir(parents=True, exist_ok=True)
     (root / "analysis_result_boundary_gate_audits").mkdir(parents=True, exist_ok=True)
+    (root / "manual_analysis_executions").mkdir(parents=True, exist_ok=True)
+    (root / "manual_analysis_result_candidates").mkdir(parents=True, exist_ok=True)
+    (root / "manual_analysis_execution_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -5712,6 +6242,28 @@ def _analysis_result_boundary_gate_audit_path(request_id: str, boundary_gate_id:
     return root / "analysis_result_boundary_gate_audits" / f"{request_id}_{boundary_gate_id}_{boundary_gate_audit_id}.json"
 
 
+def _manual_analysis_execution_path(request_id: str, manual_analysis_execution_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(manual_analysis_execution_id)
+    root = _ensure_root()
+    return root / "manual_analysis_executions" / f"{request_id}_{manual_analysis_execution_id}.json"
+
+
+def _manual_analysis_result_candidate_path(request_id: str, result_candidate_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(result_candidate_id)
+    root = _ensure_root()
+    return root / "manual_analysis_result_candidates" / f"{request_id}_{result_candidate_id}.json"
+
+
+def _manual_analysis_execution_audit_path(request_id: str, manual_analysis_execution_id: str, audit_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(manual_analysis_execution_id)
+    _validate_request_id(audit_id)
+    root = _ensure_root()
+    return root / "manual_analysis_execution_audits" / f"{request_id}_{manual_analysis_execution_id}_{audit_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -5722,6 +6274,33 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 def _validate_request_id(request_id: str) -> None:
     if not REQUEST_ID_PATTERN.fullmatch(request_id) or request_id in {".", ".."}:
         raise AnalysisRequestValidationError("Invalid request_id.")
+
+
+def _split_prefixed_id(path: Path, id_prefix: str) -> tuple[str, str]:
+    stem = path.stem
+    marker = f"_{id_prefix}_"
+    marker_index = stem.rfind(marker)
+    if marker_index <= 0:
+        raise AnalysisRequestValidationError(f"{path.name} does not contain expected id prefix {id_prefix}.")
+    request_id = stem[:marker_index]
+    object_id = stem[marker_index + 1 :]
+    _validate_request_id(request_id)
+    _validate_request_id(object_id)
+    return request_id, object_id
+
+
+def _manual_analysis_execution_id_from_path(request_id: str, path: Path) -> str:
+    parsed_request_id, execution_id = _split_prefixed_id(path, "manual_analysis_execution")
+    if parsed_request_id != request_id:
+        raise AnalysisRequestValidationError("Manual analysis execution request id mismatch.")
+    return execution_id
+
+
+def _manual_analysis_result_candidate_id_from_path(request_id: str, path: Path) -> str:
+    parsed_request_id, candidate_id = _split_prefixed_id(path, "manual_analysis_result_candidate")
+    if parsed_request_id != request_id:
+        raise AnalysisRequestValidationError("Manual analysis result candidate request id mismatch.")
+    return candidate_id
 
 
 def _new_request_id(title: str) -> str:
@@ -5818,6 +6397,21 @@ def _new_analysis_result_boundary_gate_id() -> str:
 def _new_analysis_result_boundary_gate_audit_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"analysis_result_boundary_gate_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_manual_analysis_execution_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"manual_analysis_execution_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_manual_analysis_result_candidate_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"manual_analysis_result_candidate_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_manual_analysis_execution_audit_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"manual_analysis_execution_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

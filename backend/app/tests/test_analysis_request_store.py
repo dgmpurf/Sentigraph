@@ -23,6 +23,7 @@ from app.services.analysis_request_store import (
     create_dedup_group_review_action,
     create_analysis_ready_promotion_gate,
     create_analysis_result_boundary_gate,
+    create_manual_analysis_execution,
     create_manual_analysis_trigger,
     create_review_queue_item_action,
     create_analysis_request,
@@ -43,6 +44,9 @@ from app.services.analysis_request_store import (
     list_analysis_ready_promotion_gates,
     list_analysis_result_boundary_gate_audits,
     list_analysis_result_boundary_gates,
+    list_manual_analysis_execution_audits,
+    list_manual_analysis_executions,
+    list_manual_analysis_result_candidates,
     list_manual_analysis_trigger_audits,
     list_manual_analysis_triggers,
     list_promotion_decision_audits,
@@ -58,6 +62,8 @@ from app.services.analysis_request_store import (
     read_dedup_group_review_audits_for_group,
     read_analysis_ready_promotion_gate,
     read_analysis_result_boundary_gate,
+    read_manual_analysis_execution,
+    read_manual_analysis_result_candidate,
     read_manual_analysis_trigger,
     read_review_queue_initialization,
     read_review_queue_item_batch,
@@ -487,6 +493,31 @@ def analysis_result_boundary_gate_payload(**overrides: object) -> dict:
         "acknowledge_no_sandbox_or_public_event": True,
         "acknowledge_no_evidence_layer_write": True,
         "acknowledge_no_production_case": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def manual_analysis_execution_payload(**overrides: object) -> dict:
+    payload = {
+        "manual_trigger_id": "",
+        "boundary_gate_id": "",
+        "promotion_gate_id": "",
+        "review_case_id": "",
+        "reviewer_label": "manual_analysis_execution_reviewer",
+        "note": "Create local review-only analysis result candidate.",
+        "analysis_execution_mode": "local_review_only_candidate",
+        "acknowledge_local_candidate_only": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_report_generation": True,
+        "acknowledge_no_sandbox_or_public_event": True,
+        "acknowledge_provider_output_is_evidence_not_truth": True,
+        "acknowledge_not_official_verification": True,
+        "acknowledge_not_full_web_coverage": True,
+        "acknowledge_weak_evidence_warning": True,
+        "acknowledge_rejected_exclusion": True,
+        "acknowledge_dedup_no_risk_amplification": True,
     }
     payload.update(overrides)
     return payload
@@ -3625,6 +3656,208 @@ def test_analysis_result_boundary_gate_does_not_parse_real_package_rows(tmp_path
     serialized = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
     assert result.status == "boundary_ready_for_future_analysis_result_runtime"
     assert "must_not_be_read_by_boundary_gate" not in serialized
+    assert "forbidden.example" not in serialized
+
+
+def create_manual_analysis_execution_ready_chain(tmp_path: Path, request_id: str):
+    queue_init, item_batch, promotion_gate, manual_trigger = create_analysis_result_boundary_ready_chain(tmp_path, request_id)
+    boundary_gate = create_analysis_result_boundary_gate(
+        request_id,
+        analysis_result_boundary_gate_payload(
+            manual_trigger_id=manual_trigger.manual_trigger_id,
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    return queue_init, item_batch, promotion_gate, manual_trigger, boundary_gate
+
+
+def test_manual_analysis_execution_creates_candidate_and_audit_without_downstream_outputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Manual execution ready")))
+    queue_init, item_batch, promotion_gate, manual_trigger, boundary_gate = create_manual_analysis_execution_ready_chain(
+        tmp_path,
+        record.request_id,
+    )
+
+    result = create_manual_analysis_execution(
+        record.request_id,
+        manual_analysis_execution_payload(
+            manual_trigger_id=manual_trigger.manual_trigger_id,
+            boundary_gate_id=boundary_gate.boundary_gate_id,
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    read_back = read_manual_analysis_execution(record.request_id, result.manual_analysis_execution_id)
+    candidate = read_manual_analysis_result_candidate(record.request_id, result.result_candidate_id)
+    executions = list_manual_analysis_executions(record.request_id)
+    candidates = list_manual_analysis_result_candidates(record.request_id)
+    audits = list_manual_analysis_execution_audits(record.request_id)
+
+    assert result.schema_ == "sentigraph_manual_analysis_execution_v1"
+    assert result.status == "analysis_result_candidate_created"
+    assert result.execution_mode == "local_review_only_candidate"
+    assert result.input_scope.analysis_input_source == "manual_trigger_scope"
+    assert result.input_scope.original_package_rows_read is False
+    assert set(result.input_scope.included_item_ids) == set(manual_trigger.analysis_scope.include_item_ids)
+    assert set(result.input_scope.excluded_item_ids) == set(manual_trigger.analysis_scope.exclude_item_ids)
+    assert set(result.input_scope.weak_warning_item_ids) == set(manual_trigger.analysis_scope.weak_warning_item_ids)
+    assert result.boundary_block.coverage_limitation is True
+    assert result.boundary_block.weak_evidence_warning is True
+    assert result.boundary_block.rejected_evidence_exclusion_note is True
+    assert result.boundary_block.dedup_warning is True
+    assert result.boundary_block.provider_output_evidence_not_truth_note is True
+    assert result.boundary_block.not_official_verification_note is True
+    assert result.boundary_block.not_full_web_coverage_note is True
+    assert result.boundary_block.audit_trace_note is True
+    assert all(value is False for value in result.now_flags.values())
+    assert result.readiness.analysis_result_candidate_created is True
+    assert result.readiness.can_generate_report_now is False
+    assert result.readiness.can_generate_sandbox_now is False
+    assert result.readiness.can_generate_public_event_now is False
+    assert result.readiness.requires_result_review_or_report_gate is True
+    assert read_back.manual_analysis_execution_id == result.manual_analysis_execution_id
+    assert executions[0].manual_analysis_execution_id == result.manual_analysis_execution_id
+
+    assert candidate.schema_ == "sentigraph_manual_analysis_result_candidate_v1"
+    assert candidate.analysis_input_source == "manual_trigger_scope"
+    assert candidate.source_scope_summary.included_item_count == len(manual_trigger.analysis_scope.include_item_ids)
+    assert candidate.source_scope_summary.excluded_rejected_count == len(manual_trigger.analysis_scope.exclude_item_ids)
+    assert candidate.source_scope_summary.weak_warning_count == len(manual_trigger.analysis_scope.weak_warning_item_ids)
+    assert candidate.source_scope_summary.duplicate_group_count == len(manual_trigger.analysis_scope.include_group_ids)
+    assert candidate.downstream_flags["summary_report_ready"] is False
+    assert candidate.downstream_flags["sandbox_ready"] is False
+    assert candidate.downstream_flags["public_event_ready"] is False
+    assert candidate.downstream_flags["b_end_report_ready"] is False
+    assert candidate.audit_refs["promotion_gate_id"] == promotion_gate.promotion_gate_id
+    assert candidate.audit_refs["manual_trigger_id"] == manual_trigger.manual_trigger_id
+    assert candidate.audit_refs["boundary_gate_id"] == boundary_gate.boundary_gate_id
+    assert candidates[0].result_candidate_id == candidate.result_candidate_id
+    assert len(candidate.analysis_summary["representative_evidence"]) > 0
+    serialized_candidate = json.dumps(candidate.model_dump(mode="json"), ensure_ascii=False)
+    assert "Provider output is evidence, not truth" in serialized_candidate
+    assert "not official verification" in serialized_candidate.lower()
+    assert "full-web" in serialized_candidate
+    assert "raw_author_id" not in serialized_candidate
+    assert "profile_url" not in serialized_candidate
+    assert "must_not_be_read" not in serialized_candidate
+
+    assert len(audits) == 1
+    assert audits[0].manual_analysis_execution_id == result.manual_analysis_execution_id
+    assert audits[0].result_candidate_id == candidate.result_candidate_id
+    assert audits[0].analysis_effect == "local_result_candidate_created"
+    assert all(value is False for value in audits[0].now_flags.values())
+    assert all(item.governance.analysis_included is False for item in item_batch.items)
+
+
+def test_manual_analysis_execution_blocks_unsafe_or_incomplete_payloads(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Manual execution blockers")))
+    queue_init, _item_batch, promotion_gate, manual_trigger, boundary_gate = create_manual_analysis_execution_ready_chain(
+        tmp_path,
+        record.request_id,
+    )
+    base_payload = manual_analysis_execution_payload(
+        manual_trigger_id=manual_trigger.manual_trigger_id,
+        boundary_gate_id=boundary_gate.boundary_gate_id,
+        promotion_gate_id=promotion_gate.promotion_gate_id,
+        review_case_id=queue_init.review_case_id,
+    )
+    unsafe_payloads = [
+        {**base_payload, "manual_trigger_id": ""},
+        {**base_payload, "boundary_gate_id": ""},
+        {**base_payload, "reviewer_label": ""},
+        {**base_payload, "note": ""},
+        {**base_payload, "analysis_execution_mode": "production_analysis"},
+        {**base_payload, "acknowledge_local_candidate_only": False},
+        {**base_payload, "acknowledge_no_evidence_layer_write": False},
+        {**base_payload, "acknowledge_provider_output_is_evidence_not_truth": False},
+        {**base_payload, "run_analysis_now": True},
+        {**base_payload, "generate_summary_report_now": True},
+        {**base_payload, "write_evidence_layer_now": True},
+        {**base_payload, "include_rejected_evidence": True},
+        {**base_payload, "remove_weak_warnings": True},
+        {**base_payload, "duplicates_amplify_risk": True},
+        {**base_payload, "official_verification": True},
+        {**base_payload, "full_web_coverage": True},
+    ]
+    for payload in unsafe_payloads:
+        try:
+            create_manual_analysis_execution(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - each unsafe payload should block.
+            assert "manual analysis execution" in str(exc).lower() or "analysis execution" in str(exc).lower()
+        else:
+            raise AssertionError(f"unsafe payload should block: {payload}")
+
+    held_trigger = create_manual_analysis_trigger(
+        record.request_id,
+        manual_analysis_trigger_payload(
+            "hold",
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    try:
+        create_manual_analysis_execution(
+            record.request_id,
+            manual_analysis_execution_payload(
+                manual_trigger_id=held_trigger.manual_trigger_id,
+                boundary_gate_id=boundary_gate.boundary_gate_id,
+                promotion_gate_id=promotion_gate.promotion_gate_id,
+                review_case_id=queue_init.review_case_id,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - non-ready trigger should block.
+        assert "manual trigger" in str(exc).lower() or "ready" in str(exc).lower()
+    else:
+        raise AssertionError("non-ready manual trigger should block execution")
+
+    audit_path = next((tmp_path / "analysis_result_boundary_gate_audits").glob(f"{record.request_id}_{boundary_gate.boundary_gate_id}_*.json"))
+    audit_path.unlink()
+    try:
+        create_manual_analysis_execution(record.request_id, base_payload)
+    except Exception as exc:  # noqa: BLE001 - missing boundary audit should block.
+        assert "audit" in str(exc).lower()
+    else:
+        raise AssertionError("missing boundary gate audit should block execution")
+
+
+def test_manual_analysis_execution_does_not_parse_real_package_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Manual execution no package parse")))
+    queue_init, _item_batch, promotion_gate, manual_trigger, boundary_gate = create_manual_analysis_execution_ready_chain(
+        tmp_path,
+        record.request_id,
+    )
+    forbidden_row_file = tmp_path / "many_safe_real_preview_package" / "evidence_items.jsonl"
+    assert forbidden_row_file.exists()
+    forbidden_row_file.write_text(
+        '{"raw_author_id":"must_not_be_read_by_manual_execution","profile_url":"https://forbidden.example/profile","body_text":"unsafe row"}\n{broken',
+        encoding="utf-8",
+    )
+
+    result = create_manual_analysis_execution(
+        record.request_id,
+        manual_analysis_execution_payload(
+            manual_trigger_id=manual_trigger.manual_trigger_id,
+            boundary_gate_id=boundary_gate.boundary_gate_id,
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    candidate = read_manual_analysis_result_candidate(record.request_id, result.result_candidate_id)
+
+    serialized = json.dumps(
+        {
+            "execution": result.model_dump(mode="json"),
+            "candidate": candidate.model_dump(mode="json"),
+        },
+        ensure_ascii=False,
+    )
+    assert result.status == "analysis_result_candidate_created"
+    assert result.input_scope.original_package_rows_read is False
+    assert "must_not_be_read_by_manual_execution" not in serialized
     assert "forbidden.example" not in serialized
 
 
