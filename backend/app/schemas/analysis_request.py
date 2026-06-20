@@ -2480,6 +2480,205 @@ class ManualAnalysisTriggerAudit(BaseModel):
     )
 
 
+AnalysisResultBoundaryGateStatus = Literal[
+    "boundary_ready_for_future_analysis_result_runtime",
+    "incomplete",
+    "blocked",
+    "privacy_hold",
+]
+
+
+class AnalysisResultBoundaryGateRequest(BaseModel):
+    manual_trigger_id: str
+    promotion_gate_id: str
+    review_case_id: str | None = None
+    reviewer_label: str
+    note: str
+    coverage_limitation_acknowledged: bool = False
+    weak_evidence_warning_acknowledged: bool = False
+    rejected_evidence_exclusion_acknowledged: bool = False
+    dedup_warning_acknowledged: bool = False
+    provider_output_is_evidence_not_truth_acknowledged: bool = False
+    not_official_verification_acknowledged: bool = False
+    not_full_web_coverage_acknowledged: bool = False
+    audit_trace_acknowledged: bool = False
+    acknowledge_boundary_gate_only: bool = False
+    acknowledge_no_analysis_run: bool = False
+    acknowledge_no_analysis_result_generation: bool = False
+    acknowledge_no_report_generation: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    run_analysis_now: bool = False
+    generate_analysis_result_now: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    run_production_dedup_now: bool = False
+    generate_report_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_public_event_now: bool = False
+    provider_output_is_truth: bool = False
+    official_verification: bool = False
+    full_web_coverage: bool = False
+    analysis_includes_rejected: bool = False
+    duplicates_amplify_risk: bool = False
+    remove_weak_warnings: bool = False
+    include_rejected_evidence: bool = False
+    include_privacy_hold_evidence: bool = False
+    include_needs_more_source_evidence: bool = False
+
+
+class AnalysisResultInputBoundary(BaseModel):
+    source: Literal["review_only_promoted_candidates"] = "review_only_promoted_candidates"
+    provider_output_is_truth: bool = False
+    official_verification: bool = False
+    full_web_coverage: bool = False
+    analysis_includes_rejected: bool = False
+    duplicates_amplify_risk: bool = False
+
+
+class AnalysisResultRequiredBoundarySections(BaseModel):
+    coverage_limitation: bool = True
+    weak_evidence_warning: bool = True
+    rejected_evidence_exclusion_note: bool = True
+    dedup_warning: bool = True
+    provider_output_evidence_not_truth_note: bool = True
+    not_official_verification_note: bool = True
+    not_full_web_coverage_note: bool = True
+    audit_trace_note: bool = True
+
+
+class AnalysisResultBoundaryCounts(BaseModel):
+    included_item_count: int = 0
+    excluded_rejected_count: int = 0
+    weak_warning_count: int = 0
+    duplicate_group_count: int = 0
+    privacy_excluded_count: int = 0
+    needs_more_source_excluded_count: int = 0
+
+
+class AnalysisResultBoundaryReadiness(BaseModel):
+    can_present_analysis_result_now: bool = False
+    requires_future_analysis_execution: bool = True
+    requires_boundary_runtime: bool = False
+    requires_report_gate: bool = True
+    requires_sandbox_gate: bool = True
+
+
+class AnalysisResultBoundaryGate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_analysis_result_boundary_gate_v1"] = Field(
+        default="sentigraph_analysis_result_boundary_gate_v1",
+        alias="schema",
+    )
+    boundary_gate_id: str
+    request_id: str
+    review_case_id: str
+    manual_trigger_id: str
+    promotion_gate_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    status: AnalysisResultBoundaryGateStatus = "blocked"
+    analysis_input_boundary: AnalysisResultInputBoundary = Field(default_factory=AnalysisResultInputBoundary)
+    required_boundary_sections: AnalysisResultRequiredBoundarySections = Field(default_factory=AnalysisResultRequiredBoundarySections)
+    counts: AnalysisResultBoundaryCounts = Field(default_factory=AnalysisResultBoundaryCounts)
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "run_analysis_now": False,
+            "generate_analysis_result_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    readiness: AnalysisResultBoundaryReadiness = Field(default_factory=AnalysisResultBoundaryReadiness)
+    blocked_reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "analysis_result_boundary_gate_only": True,
+            "original_package_rows_re_read": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_generated": False,
+            "analysis_result_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class AnalysisResultBoundaryGateAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_analysis_result_boundary_gate_audit_v1"] = Field(
+        default="sentigraph_analysis_result_boundary_gate_audit_v1",
+        alias="schema",
+    )
+    boundary_gate_audit_id: str
+    boundary_gate_id: str
+    manual_trigger_id: str
+    promotion_gate_id: str
+    request_id: str
+    review_case_id: str
+    reviewer_label: str
+    decided_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    coverage_limitation_acknowledged: bool = True
+    weak_evidence_warning_acknowledged: bool = True
+    rejected_evidence_exclusion_acknowledged: bool = True
+    dedup_warning_acknowledged: bool = True
+    provider_output_is_evidence_not_truth_acknowledged: bool = True
+    not_official_verification_acknowledged: bool = True
+    not_full_web_coverage_acknowledged: bool = True
+    audit_trace_acknowledged: bool = True
+    analysis_effect: Literal["boundary_gate_record_only_no_analysis_run"] = "boundary_gate_record_only_no_analysis_run"
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "run_analysis_now": False,
+            "generate_analysis_result_now": False,
+            "write_evidence_layer_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "analysis_result_boundary_gate_audit_only": True,
+            "analysis_generated": False,
+            "analysis_result_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   cancelAnalysisRequest,
   createAnalysisRequestAnalysisReadyPromotionGate,
+  createAnalysisRequestAnalysisResultBoundaryGate,
   createAnalysisRequestManualAnalysisTrigger,
   createAnalysisRequest,
   createAnalysisRequestDedupGroupReviewAction,
@@ -50,6 +51,8 @@ import {
   getAnalysisRequestImportPreview,
   listAnalysisRequestExecutionPreflights,
   listAnalysisRequestAnalysisReadyPromotionGates,
+  listAnalysisRequestAnalysisResultBoundaryGateAudits,
+  listAnalysisRequestAnalysisResultBoundaryGates,
   listAnalysisRequestDedupGroupReviewAudits,
   listAnalysisRequestDedupPreviews,
   listAnalysisRequestImportJobs,
@@ -628,6 +631,7 @@ export function AnalysisRequests() {
   const [dedupGroupReviewForm] = Form.useForm()
   const [analysisReadyPromotionGateForm] = Form.useForm()
   const [manualAnalysisTriggerForm] = Form.useForm()
+  const [analysisResultBoundaryGateForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -653,6 +657,8 @@ export function AnalysisRequests() {
   const [promotionDecisionAudits, setPromotionDecisionAudits] = useState([])
   const [manualAnalysisTriggers, setManualAnalysisTriggers] = useState([])
   const [manualAnalysisTriggerAudits, setManualAnalysisTriggerAudits] = useState([])
+  const [analysisResultBoundaryGates, setAnalysisResultBoundaryGates] = useState([])
+  const [analysisResultBoundaryGateAudits, setAnalysisResultBoundaryGateAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -673,6 +679,7 @@ export function AnalysisRequests() {
   const [dedupGroupReviewLoading, setDedupGroupReviewLoading] = useState('')
   const [analysisReadyPromotionGateLoading, setAnalysisReadyPromotionGateLoading] = useState(false)
   const [manualAnalysisTriggerLoading, setManualAnalysisTriggerLoading] = useState(false)
+  const [analysisResultBoundaryGateLoading, setAnalysisResultBoundaryGateLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -691,6 +698,7 @@ export function AnalysisRequests() {
   const [dedupGroupReviewError, setDedupGroupReviewError] = useState('')
   const [analysisReadyPromotionGateError, setAnalysisReadyPromotionGateError] = useState('')
   const [manualAnalysisTriggerError, setManualAnalysisTriggerError] = useState('')
+  const [analysisResultBoundaryGateError, setAnalysisResultBoundaryGateError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -714,6 +722,9 @@ export function AnalysisRequests() {
     setManualAnalysisTriggers([])
     setManualAnalysisTriggerAudits([])
     setManualAnalysisTriggerError('')
+    setAnalysisResultBoundaryGates([])
+    setAnalysisResultBoundaryGateAudits([])
+    setAnalysisResultBoundaryGateError('')
   }
 
   async function loadDraftAndPlan(requestId) {
@@ -854,6 +865,8 @@ export function AnalysisRequests() {
       setPromotionDecisionAudits(await listAnalysisRequestPromotionDecisionAudits(requestId))
       setManualAnalysisTriggers(await listAnalysisRequestManualAnalysisTriggers(requestId))
       setManualAnalysisTriggerAudits(await listAnalysisRequestManualAnalysisTriggerAudits(requestId))
+      setAnalysisResultBoundaryGates(await listAnalysisRequestAnalysisResultBoundaryGates(requestId))
+      setAnalysisResultBoundaryGateAudits(await listAnalysisRequestAnalysisResultBoundaryGateAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
@@ -1492,12 +1505,65 @@ export function AnalysisRequests() {
       })
       setManualAnalysisTriggers(await listAnalysisRequestManualAnalysisTriggers(selectedRecord.request_id))
       setManualAnalysisTriggerAudits(await listAnalysisRequestManualAnalysisTriggerAudits(selectedRecord.request_id))
+      setAnalysisResultBoundaryGates(await listAnalysisRequestAnalysisResultBoundaryGates(selectedRecord.request_id))
+      setAnalysisResultBoundaryGateAudits(await listAnalysisRequestAnalysisResultBoundaryGateAudits(selectedRecord.request_id))
       message.success(`Recorded manual trigger: ${trigger?.status || 'created'}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record manual analysis trigger.'
       setManualAnalysisTriggerError(String(messageText))
     } finally {
       setManualAnalysisTriggerLoading(false)
+    }
+  }
+
+  async function handleCreateAnalysisResultBoundaryGate(values) {
+    if (!selectedRecord?.request_id || !latestManualAnalysisTrigger?.manual_trigger_id) return
+    setAnalysisResultBoundaryGateLoading(true)
+    setAnalysisResultBoundaryGateError('')
+    try {
+      const gate = await createAnalysisRequestAnalysisResultBoundaryGate(selectedRecord.request_id, {
+        manual_trigger_id: values.manual_trigger_id || latestManualAnalysisTrigger.manual_trigger_id,
+        promotion_gate_id: values.promotion_gate_id || latestManualAnalysisTrigger.promotion_gate_id,
+        review_case_id: values.review_case_id || latestManualAnalysisTrigger.review_case_id || undefined,
+        reviewer_label: String(values.reviewer_label || '').trim(),
+        note: String(values.note || '').trim(),
+        coverage_limitation_acknowledged: Boolean(values.coverage_limitation_acknowledged),
+        weak_evidence_warning_acknowledged: Boolean(values.weak_evidence_warning_acknowledged),
+        rejected_evidence_exclusion_acknowledged: Boolean(values.rejected_evidence_exclusion_acknowledged),
+        dedup_warning_acknowledged: Boolean(values.dedup_warning_acknowledged),
+        provider_output_is_evidence_not_truth_acknowledged: Boolean(values.provider_output_is_evidence_not_truth_acknowledged),
+        not_official_verification_acknowledged: Boolean(values.not_official_verification_acknowledged),
+        not_full_web_coverage_acknowledged: Boolean(values.not_full_web_coverage_acknowledged),
+        audit_trace_acknowledged: Boolean(values.audit_trace_acknowledged),
+        acknowledge_boundary_gate_only: Boolean(values.acknowledge_boundary_gate_only),
+        acknowledge_no_analysis_run: Boolean(values.acknowledge_no_analysis_run),
+        acknowledge_no_analysis_result_generation: Boolean(values.acknowledge_no_analysis_result_generation),
+        acknowledge_no_report_generation: Boolean(values.acknowledge_no_report_generation),
+        acknowledge_no_sandbox_or_public_event: Boolean(values.acknowledge_no_sandbox_or_public_event),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        run_analysis_now: false,
+        generate_analysis_result_now: false,
+        write_evidence_layer_now: false,
+        create_production_case_now: false,
+        run_production_dedup_now: false,
+        generate_report_now: false,
+        generate_sandbox_now: false,
+        generate_public_event_now: false,
+        provider_output_is_truth: false,
+        official_verification: false,
+        full_web_coverage: false,
+        analysis_includes_rejected: false,
+        duplicates_amplify_risk: false,
+      })
+      setAnalysisResultBoundaryGates(await listAnalysisRequestAnalysisResultBoundaryGates(selectedRecord.request_id))
+      setAnalysisResultBoundaryGateAudits(await listAnalysisRequestAnalysisResultBoundaryGateAudits(selectedRecord.request_id))
+      message.success(`Recorded result boundary gate: ${gate?.status || 'created'}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create Analysis Result Boundary Gate.'
+      setAnalysisResultBoundaryGateError(String(messageText))
+    } finally {
+      setAnalysisResultBoundaryGateLoading(false)
     }
   }
 
@@ -1782,6 +1848,16 @@ export function AnalysisRequests() {
   const manualAnalysisTriggerAuditsJson = manualAnalysisTriggerAudits.length
     ? JSON.stringify(manualAnalysisTriggerAudits, null, 2)
     : ''
+  const latestAnalysisResultBoundaryGate = analysisResultBoundaryGates[0] || null
+  const latestAnalysisResultBoundaryGateJson = latestAnalysisResultBoundaryGate
+    ? JSON.stringify(latestAnalysisResultBoundaryGate, null, 2)
+    : ''
+  const analysisResultBoundaryGatesJson = analysisResultBoundaryGates.length
+    ? JSON.stringify(analysisResultBoundaryGates, null, 2)
+    : ''
+  const analysisResultBoundaryGateAuditsJson = analysisResultBoundaryGateAudits.length
+    ? JSON.stringify(analysisResultBoundaryGateAudits, null, 2)
+    : ''
   const analysisReadyPromotionGateValues = Form.useWatch([], analysisReadyPromotionGateForm) || {}
   const dedupGroupsNeedReview = useMemo(
     () => (latestDedupPreview?.groups || []).some((group) => !['confirmed', 'marked_weak', 'representative_changed', 'rejected'].includes(group.group_status)),
@@ -1827,6 +1903,30 @@ export function AnalysisRequests() {
         manualAnalysisTriggerValues.acknowledge_no_sandbox_or_public_event,
     )
   }, [latestAnalysisReadyPromotionGate?.promotion_gate_id, latestAnalysisReadyPromotionGate?.status, manualAnalysisTriggerValues])
+  const analysisResultBoundaryGateValues = Form.useWatch([], analysisResultBoundaryGateForm) || {}
+  const analysisResultBoundaryGateReady = useMemo(() => {
+    return Boolean(
+      latestManualAnalysisTrigger?.manual_trigger_id &&
+        latestManualAnalysisTrigger?.status === 'trigger_recorded_ready_for_future_analysis_runtime' &&
+        String(analysisResultBoundaryGateValues.reviewer_label || '').trim() &&
+        String(analysisResultBoundaryGateValues.note || '').trim() &&
+        analysisResultBoundaryGateValues.coverage_limitation_acknowledged &&
+        analysisResultBoundaryGateValues.weak_evidence_warning_acknowledged &&
+        analysisResultBoundaryGateValues.rejected_evidence_exclusion_acknowledged &&
+        analysisResultBoundaryGateValues.dedup_warning_acknowledged &&
+        analysisResultBoundaryGateValues.provider_output_is_evidence_not_truth_acknowledged &&
+        analysisResultBoundaryGateValues.not_official_verification_acknowledged &&
+        analysisResultBoundaryGateValues.not_full_web_coverage_acknowledged &&
+        analysisResultBoundaryGateValues.audit_trace_acknowledged &&
+        analysisResultBoundaryGateValues.acknowledge_boundary_gate_only &&
+        analysisResultBoundaryGateValues.acknowledge_no_analysis_run &&
+        analysisResultBoundaryGateValues.acknowledge_no_analysis_result_generation &&
+        analysisResultBoundaryGateValues.acknowledge_no_report_generation &&
+        analysisResultBoundaryGateValues.acknowledge_no_sandbox_or_public_event &&
+        analysisResultBoundaryGateValues.acknowledge_no_evidence_layer_write &&
+        analysisResultBoundaryGateValues.acknowledge_no_production_case,
+    )
+  }, [analysisResultBoundaryGateValues, latestManualAnalysisTrigger?.manual_trigger_id, latestManualAnalysisTrigger?.status])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -4528,6 +4628,210 @@ export function AnalysisRequests() {
                                       <Text type="secondary">{audit.decided_at || '-'}</Text>
                                       <Text type="secondary">effect={audit.analysis_effect}</Text>
                                       <Text type="secondary">run_analysis_now={boolText(audit.now_flags?.run_analysis_now)}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Analysis Result Boundary Gate / 分析结果边界门">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Boundary readiness only: no Analysis Result is generated here"
+                              description="This records boundary readiness only. It does not run analysis, does not generate Analysis Result or Summary Report, does not write Evidence Layer, and does not generate Sandbox, public event, or B-end report output."
+                            />
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="Warnings must travel with future results"
+                              description="Weak evidence remains warning-marked, rejected evidence remains excluded, duplicate evidence must not amplify risk, provider output is evidence not truth, and coverage limitations must be displayed in any future analysis result."
+                            />
+                            {analysisResultBoundaryGateError ? <Alert type="error" showIcon message={analysisResultBoundaryGateError} /> : null}
+                            <Form
+                              form={analysisResultBoundaryGateForm}
+                              layout="vertical"
+                              initialValues={{
+                                reviewer_label: 'boundary_gate_reviewer',
+                                coverage_limitation_acknowledged: true,
+                                weak_evidence_warning_acknowledged: true,
+                                rejected_evidence_exclusion_acknowledged: true,
+                                dedup_warning_acknowledged: true,
+                                provider_output_is_evidence_not_truth_acknowledged: true,
+                                not_official_verification_acknowledged: true,
+                                not_full_web_coverage_acknowledged: true,
+                                audit_trace_acknowledged: true,
+                                acknowledge_boundary_gate_only: true,
+                                acknowledge_no_analysis_run: true,
+                                acknowledge_no_analysis_result_generation: true,
+                                acknowledge_no_report_generation: true,
+                                acknowledge_no_sandbox_or_public_event: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                              }}
+                              onFinish={handleCreateAnalysisResultBoundaryGate}
+                            >
+                              <Row gutter={12}>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Manual trigger id" name="manual_trigger_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestManualAnalysisTrigger?.manual_trigger_id || 'latest ready manual trigger'}
+                                      options={manualAnalysisTriggers.map((item) => ({
+                                        value: item.manual_trigger_id,
+                                        label: `${item.status} / ${item.manual_trigger_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Promotion gate id" name="promotion_gate_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestManualAnalysisTrigger?.promotion_gate_id || 'from manual trigger'}
+                                      options={analysisReadyPromotionGates.map((item) => ({
+                                        value: item.promotion_gate_id,
+                                        label: `${item.status} / ${item.promotion_gate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Reviewer label" name="reviewer_label" rules={[{ required: true }]}>
+                                    <Input placeholder="boundary_gate_reviewer" />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24}>
+                                  <Form.Item label="Boundary note" name="note" rules={[{ required: true }]}>
+                                    <TextArea rows={2} placeholder="Confirm warnings, exclusions, dedup, coverage, and audit boundaries before any future result runtime." />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={12}>
+                                {[
+                                  ['coverage_limitation_acknowledged', 'Coverage limitation acknowledged'],
+                                  ['weak_evidence_warning_acknowledged', 'Weak evidence warning acknowledged'],
+                                  ['rejected_evidence_exclusion_acknowledged', 'Rejected evidence exclusion acknowledged'],
+                                  ['dedup_warning_acknowledged', 'Dedup warning acknowledged'],
+                                  ['provider_output_is_evidence_not_truth_acknowledged', 'Provider output is evidence, not truth'],
+                                  ['not_official_verification_acknowledged', 'Not official verification'],
+                                  ['not_full_web_coverage_acknowledged', 'Not full-web coverage'],
+                                  ['audit_trace_acknowledged', 'Audit trace acknowledged'],
+                                  ['acknowledge_boundary_gate_only', 'Boundary gate only'],
+                                  ['acknowledge_no_analysis_run', 'No analysis run'],
+                                  ['acknowledge_no_analysis_result_generation', 'No Analysis Result generation'],
+                                  ['acknowledge_no_report_generation', 'No report generation'],
+                                  ['acknowledge_no_sandbox_or_public_event', 'No Sandbox/public event generation'],
+                                  ['acknowledge_no_evidence_layer_write', 'No Evidence Layer write'],
+                                  ['acknowledge_no_production_case', 'No production case'],
+                                ].map(([name, label]) => (
+                                  <Col xs={24} md={12} key={name}>
+                                    <Form.Item name={name} valuePropName="checked">
+                                      <Checkbox>{label}</Checkbox>
+                                    </Form.Item>
+                                  </Col>
+                                ))}
+                              </Row>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  icon={<ShieldCheck size={16} />}
+                                  loading={analysisResultBoundaryGateLoading}
+                                  disabled={!analysisResultBoundaryGateReady || analysisResultBoundaryGateLoading}
+                                >
+                                  Create Boundary Gate
+                                </Button>
+                                {latestAnalysisResultBoundaryGate ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestAnalysisResultBoundaryGateJson, 'Boundary gate JSON copied')}
+                                  >
+                                    Copy latest boundary gate JSON
+                                  </Button>
+                                ) : null}
+                                {analysisResultBoundaryGates.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(analysisResultBoundaryGatesJson, 'Boundary gate history JSON copied')}
+                                  >
+                                    Copy boundary gate history JSON
+                                  </Button>
+                                ) : null}
+                                {analysisResultBoundaryGateAudits.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(analysisResultBoundaryGateAuditsJson, 'Boundary gate audit JSON copied')}
+                                  >
+                                    Copy boundary gate audit JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+                            {latestAnalysisResultBoundaryGate ? (
+                              <Card size="small" title="Latest Analysis Result Boundary Gate">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={latestAnalysisResultBoundaryGate.status === 'boundary_ready_for_future_analysis_result_runtime' ? 'green' : 'gold'}>
+                                      {latestAnalysisResultBoundaryGate.status}
+                                    </Tag>
+                                    <Tag color="default">
+                                      can_present_analysis_result_now:{' '}
+                                      {boolText(latestAnalysisResultBoundaryGate.readiness?.can_present_analysis_result_now)}
+                                    </Tag>
+                                    <Tag color="default">
+                                      run_analysis_now: {boolText(latestAnalysisResultBoundaryGate.now_flags?.run_analysis_now)}
+                                    </Tag>
+                                    <Tag color="default">
+                                      generate_analysis_result_now:{' '}
+                                      {boolText(latestAnalysisResultBoundaryGate.now_flags?.generate_analysis_result_now)}
+                                    </Tag>
+                                  </Space>
+                                  <Descriptions size="small" column={1}>
+                                    <Descriptions.Item label="boundary_gate_id">
+                                      {latestAnalysisResultBoundaryGate.boundary_gate_id}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="manual_trigger_id">
+                                      {latestAnalysisResultBoundaryGate.manual_trigger_id}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="input boundary">
+                                      source={latestAnalysisResultBoundaryGate.analysis_input_boundary?.source || '-'}, provider_truth=
+                                      {boolText(latestAnalysisResultBoundaryGate.analysis_input_boundary?.provider_output_is_truth)}, official_verification=
+                                      {boolText(latestAnalysisResultBoundaryGate.analysis_input_boundary?.official_verification)}, full_web=
+                                      {boolText(latestAnalysisResultBoundaryGate.analysis_input_boundary?.full_web_coverage)}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="counts">
+                                      included={latestAnalysisResultBoundaryGate.counts?.included_item_count || 0}, rejected_excluded=
+                                      {latestAnalysisResultBoundaryGate.counts?.excluded_rejected_count || 0}, weak=
+                                      {latestAnalysisResultBoundaryGate.counts?.weak_warning_count || 0}, duplicate_groups=
+                                      {latestAnalysisResultBoundaryGate.counts?.duplicate_group_count || 0}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <SummaryList title="Boundary sections" items={Object.entries(latestAnalysisResultBoundaryGate.required_boundary_sections || {}).map(([key, value]) => `${key}: ${boolText(value)}`)} />
+                                  <SummaryList title="Boundary warnings" items={latestAnalysisResultBoundaryGate.warnings || []} />
+                                  <SummaryList title="Blocked reasons" items={latestAnalysisResultBoundaryGate.blocked_reasons || []} />
+                                  <SummaryList title="Boundary notes" items={latestAnalysisResultBoundaryGate.boundary_notes || []} />
+                                  <SummaryList title="Recommended next steps" items={latestAnalysisResultBoundaryGate.recommended_next_steps || []} />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No Analysis Result Boundary Gate record yet.</Text>
+                            )}
+                            {analysisResultBoundaryGateAudits.length ? (
+                              <Card size="small" title={`Boundary gate audit timeline (${analysisResultBoundaryGateAudits.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {analysisResultBoundaryGateAudits.map((audit) => (
+                                    <Space wrap key={audit.boundary_gate_audit_id}>
+                                      <Tag color="green">boundary gate</Tag>
+                                      <Text type="secondary">{audit.decided_at || '-'}</Text>
+                                      <Text type="secondary">effect={audit.analysis_effect}</Text>
+                                      <Text type="secondary">run_analysis_now={boolText(audit.now_flags?.run_analysis_now)}</Text>
+                                      <Text type="secondary">
+                                        generate_analysis_result_now={boolText(audit.now_flags?.generate_analysis_result_now)}
+                                      </Text>
                                     </Space>
                                   ))}
                                 </Space>

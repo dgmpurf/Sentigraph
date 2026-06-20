@@ -9,6 +9,9 @@ from app.schemas.analysis_request import (
     AnalysisRequestRecord,
     AnalysisReadyPromotionGate,
     AnalysisReadyPromotionGateRequest,
+    AnalysisResultBoundaryGate,
+    AnalysisResultBoundaryGateAudit,
+    AnalysisResultBoundaryGateRequest,
     CaseDraftHandoff,
     DedupPreview,
     DedupGroupReviewActionRequest,
@@ -50,6 +53,7 @@ from app.services.analysis_request_store import (
     AnalysisRequestValidationError,
     cancel_analysis_request,
     create_analysis_ready_promotion_gate,
+    create_analysis_result_boundary_gate,
     create_case_draft_handoff,
     create_dedup_group_review_action,
     create_dedup_preview,
@@ -69,6 +73,8 @@ from app.services.analysis_request_store import (
     create_review_queue_initialization,
     get_analysis_request_config,
     list_all_analysis_ready_promotion_gates,
+    list_all_analysis_result_boundary_gate_audits,
+    list_all_analysis_result_boundary_gates,
     list_case_draft_handoffs,
     list_all_dedup_group_review_audits,
     list_all_dedup_previews,
@@ -90,6 +96,9 @@ from app.services.analysis_request_store import (
     list_evidence_import_review_decisions,
     list_evidence_row_reader_dry_runs,
     list_analysis_ready_promotion_gates,
+    list_analysis_result_boundary_gate_audits,
+    list_analysis_result_boundary_gate_audits_for_gate,
+    list_analysis_result_boundary_gates,
     list_dedup_group_review_audits,
     list_dedup_previews,
     list_analysis_requests,
@@ -108,6 +117,7 @@ from app.services.analysis_request_store import (
     list_review_queue_initializations,
     read_case_draft_handoff,
     read_analysis_ready_promotion_gate,
+    read_analysis_result_boundary_gate,
     read_dedup_group_review_audits_for_group,
     read_dedup_preview,
     read_evidence_import_plan,
@@ -239,6 +249,16 @@ def analysis_request_manual_analysis_trigger_all_list() -> list[ManualAnalysisTr
 @router.get("/manual-analysis-trigger-audits", response_model=list[ManualAnalysisTriggerAudit])
 def analysis_request_manual_analysis_trigger_audit_all_list() -> list[ManualAnalysisTriggerAudit]:
     return list_all_manual_analysis_trigger_audits()
+
+
+@router.get("/analysis-result-boundary-gates", response_model=list[AnalysisResultBoundaryGate])
+def analysis_request_analysis_result_boundary_gate_all_list() -> list[AnalysisResultBoundaryGate]:
+    return list_all_analysis_result_boundary_gates()
+
+
+@router.get("/analysis-result-boundary-gate-audits", response_model=list[AnalysisResultBoundaryGateAudit])
+def analysis_request_analysis_result_boundary_gate_audit_all_list() -> list[AnalysisResultBoundaryGateAudit]:
+    return list_all_analysis_result_boundary_gate_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -849,6 +869,62 @@ def analysis_request_manual_analysis_trigger_audit_for_trigger_list(
 ) -> list[ManualAnalysisTriggerAudit]:
     try:
         return list_manual_analysis_trigger_audits_for_trigger(request_id, manual_trigger_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/analysis-result-boundary-gates", response_model=list[AnalysisResultBoundaryGate])
+def analysis_request_analysis_result_boundary_gate_list(request_id: str) -> list[AnalysisResultBoundaryGate]:
+    try:
+        return list_analysis_result_boundary_gates(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/analysis-result-boundary-gates", response_model=AnalysisResultBoundaryGate)
+def analysis_request_analysis_result_boundary_gate_create(
+    request_id: str,
+    payload: AnalysisResultBoundaryGateRequest,
+) -> AnalysisResultBoundaryGate:
+    try:
+        return create_analysis_result_boundary_gate(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/analysis-result-boundary-gates/{boundary_gate_id}", response_model=AnalysisResultBoundaryGate)
+def analysis_request_analysis_result_boundary_gate_detail(
+    request_id: str,
+    boundary_gate_id: str,
+) -> AnalysisResultBoundaryGate:
+    try:
+        return read_analysis_result_boundary_gate(request_id, boundary_gate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/analysis-result-boundary-gate-audits", response_model=list[AnalysisResultBoundaryGateAudit])
+def analysis_request_analysis_result_boundary_gate_audit_list(request_id: str) -> list[AnalysisResultBoundaryGateAudit]:
+    try:
+        return list_analysis_result_boundary_gate_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/analysis-result-boundary-gates/{boundary_gate_id}/audits",
+    response_model=list[AnalysisResultBoundaryGateAudit],
+)
+def analysis_request_analysis_result_boundary_gate_audit_for_gate_list(
+    request_id: str,
+    boundary_gate_id: str,
+) -> list[AnalysisResultBoundaryGateAudit]:
+    try:
+        return list_analysis_result_boundary_gate_audits_for_gate(request_id, boundary_gate_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

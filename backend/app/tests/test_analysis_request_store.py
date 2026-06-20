@@ -22,6 +22,7 @@ from app.services.analysis_request_store import (
     create_dedup_preview,
     create_dedup_group_review_action,
     create_analysis_ready_promotion_gate,
+    create_analysis_result_boundary_gate,
     create_manual_analysis_trigger,
     create_review_queue_item_action,
     create_analysis_request,
@@ -40,6 +41,8 @@ from app.services.analysis_request_store import (
     list_dedup_previews,
     list_dedup_group_review_audits,
     list_analysis_ready_promotion_gates,
+    list_analysis_result_boundary_gate_audits,
+    list_analysis_result_boundary_gates,
     list_manual_analysis_trigger_audits,
     list_manual_analysis_triggers,
     list_promotion_decision_audits,
@@ -54,6 +57,7 @@ from app.services.analysis_request_store import (
     read_dedup_preview,
     read_dedup_group_review_audits_for_group,
     read_analysis_ready_promotion_gate,
+    read_analysis_result_boundary_gate,
     read_manual_analysis_trigger,
     read_review_queue_initialization,
     read_review_queue_item_batch,
@@ -456,6 +460,33 @@ def manual_analysis_trigger_payload(decision: str = "trigger_analysis", **overri
         "acknowledge_no_production_case": True,
         "acknowledge_no_report": True,
         "acknowledge_no_sandbox_or_public_event": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def analysis_result_boundary_gate_payload(**overrides: object) -> dict:
+    payload = {
+        "manual_trigger_id": "",
+        "promotion_gate_id": "",
+        "review_case_id": "",
+        "reviewer_label": "boundary_gate_reviewer",
+        "note": "Local Analysis Result Boundary Gate readiness review.",
+        "coverage_limitation_acknowledged": True,
+        "weak_evidence_warning_acknowledged": True,
+        "rejected_evidence_exclusion_acknowledged": True,
+        "dedup_warning_acknowledged": True,
+        "provider_output_is_evidence_not_truth_acknowledged": True,
+        "not_official_verification_acknowledged": True,
+        "not_full_web_coverage_acknowledged": True,
+        "audit_trace_acknowledged": True,
+        "acknowledge_boundary_gate_only": True,
+        "acknowledge_no_analysis_run": True,
+        "acknowledge_no_analysis_result_generation": True,
+        "acknowledge_no_report_generation": True,
+        "acknowledge_no_sandbox_or_public_event": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
     }
     payload.update(overrides)
     return payload
@@ -3423,6 +3454,178 @@ def test_manual_analysis_trigger_does_not_parse_real_package_rows(tmp_path: Path
 
     assert result.status == "trigger_recorded_ready_for_future_analysis_runtime"
     assert "must_not_be_read_by_manual_trigger" not in json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
+
+
+def create_analysis_result_boundary_ready_chain(tmp_path: Path, request_id: str):
+    queue_init, item_batch, promotion_gate = create_manual_trigger_ready_chain(tmp_path, request_id)
+    manual_trigger = create_manual_analysis_trigger(
+        request_id,
+        manual_analysis_trigger_payload(
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    return queue_init, item_batch, promotion_gate, manual_trigger
+
+
+def test_analysis_result_boundary_gate_creates_ready_record_and_audit_without_analysis(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Analysis boundary ready")))
+    queue_init, item_batch, promotion_gate, manual_trigger = create_analysis_result_boundary_ready_chain(tmp_path, record.request_id)
+
+    result = create_analysis_result_boundary_gate(
+        record.request_id,
+        analysis_result_boundary_gate_payload(
+            manual_trigger_id=manual_trigger.manual_trigger_id,
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    read_back = read_analysis_result_boundary_gate(record.request_id, result.boundary_gate_id)
+    gates = list_analysis_result_boundary_gates(record.request_id)
+    audits = list_analysis_result_boundary_gate_audits(record.request_id)
+    refreshed_items = read_review_queue_item_batch(record.request_id, queue_init.queue_init_id).items
+
+    assert result.schema_ == "sentigraph_analysis_result_boundary_gate_v1"
+    assert result.status == "boundary_ready_for_future_analysis_result_runtime"
+    assert result.analysis_input_boundary.source == "review_only_promoted_candidates"
+    assert result.analysis_input_boundary.provider_output_is_truth is False
+    assert result.analysis_input_boundary.official_verification is False
+    assert result.analysis_input_boundary.full_web_coverage is False
+    assert result.analysis_input_boundary.analysis_includes_rejected is False
+    assert result.analysis_input_boundary.duplicates_amplify_risk is False
+    assert all(result.required_boundary_sections.model_dump().values())
+    assert result.counts.included_item_count == len(manual_trigger.analysis_scope.include_item_ids)
+    assert result.counts.excluded_rejected_count == len(manual_trigger.analysis_scope.exclude_item_ids)
+    assert result.counts.weak_warning_count == len(manual_trigger.analysis_scope.weak_warning_item_ids)
+    assert result.counts.duplicate_group_count == len(manual_trigger.analysis_scope.include_group_ids)
+    assert result.now_flags["run_analysis_now"] is False
+    assert result.now_flags["generate_analysis_result_now"] is False
+    assert result.now_flags["generate_report_now"] is False
+    assert result.now_flags["write_evidence_layer_now"] is False
+    assert result.readiness.can_present_analysis_result_now is False
+    assert result.readiness.requires_future_analysis_execution is True
+    assert result.readiness.requires_boundary_runtime is False
+    assert "Coverage is limited" in " ".join(result.warnings + result.boundary_notes)
+    assert "Weak evidence" in " ".join(result.warnings + result.boundary_notes)
+    assert "Rejected evidence" in " ".join(result.warnings + result.boundary_notes)
+    assert "Duplicate evidence must not amplify risk" in " ".join(result.warnings + result.boundary_notes)
+    assert "Provider output is evidence, not truth" in " ".join(result.warnings + result.boundary_notes)
+    assert read_back.boundary_gate_id == result.boundary_gate_id
+    assert gates[0].boundary_gate_id == result.boundary_gate_id
+    assert len(audits) == 1
+    assert audits[0].boundary_gate_id == result.boundary_gate_id
+    assert audits[0].analysis_effect == "boundary_gate_record_only_no_analysis_run"
+    assert audits[0].now_flags["run_analysis_now"] is False
+    assert audits[0].now_flags["generate_analysis_result_now"] is False
+    assert all(item.governance.analysis_included is False for item in refreshed_items)
+    assert all(item.governance.report_visible is False for item in refreshed_items)
+
+
+def test_analysis_result_boundary_gate_blocks_unsafe_or_incomplete_payloads(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Analysis boundary blockers")))
+    queue_init, _item_batch, promotion_gate, manual_trigger = create_analysis_result_boundary_ready_chain(tmp_path, record.request_id)
+    base_payload = analysis_result_boundary_gate_payload(
+        manual_trigger_id=manual_trigger.manual_trigger_id,
+        promotion_gate_id=promotion_gate.promotion_gate_id,
+        review_case_id=queue_init.review_case_id,
+    )
+
+    unsafe_payloads = [
+        {**base_payload, "manual_trigger_id": ""},
+        {**base_payload, "promotion_gate_id": ""},
+        {**base_payload, "reviewer_label": ""},
+        {**base_payload, "note": ""},
+        {**base_payload, "coverage_limitation_acknowledged": False},
+        {**base_payload, "weak_evidence_warning_acknowledged": False},
+        {**base_payload, "rejected_evidence_exclusion_acknowledged": False},
+        {**base_payload, "dedup_warning_acknowledged": False},
+        {**base_payload, "provider_output_is_evidence_not_truth_acknowledged": False},
+        {**base_payload, "not_official_verification_acknowledged": False},
+        {**base_payload, "not_full_web_coverage_acknowledged": False},
+        {**base_payload, "audit_trace_acknowledged": False},
+        {**base_payload, "acknowledge_no_analysis_run": False},
+        {**base_payload, "run_analysis_now": True},
+        {**base_payload, "generate_analysis_result_now": True},
+        {**base_payload, "generate_report_now": True},
+        {**base_payload, "generate_sandbox_now": True},
+        {**base_payload, "generate_public_event_now": True},
+        {**base_payload, "write_evidence_layer_now": True},
+        {**base_payload, "create_production_case_now": True},
+        {**base_payload, "provider_output_is_truth": True},
+        {**base_payload, "official_verification": True},
+        {**base_payload, "full_web_coverage": True},
+        {**base_payload, "duplicates_amplify_risk": True},
+        {**base_payload, "analysis_includes_rejected": True},
+    ]
+    for payload in unsafe_payloads:
+        try:
+            create_analysis_result_boundary_gate(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert any(
+                text in str(exc)
+                for text in ("manual_trigger", "promotion_gate", "reviewer", "note", "acknowledgement", "side effect", "truth", "verification", "coverage", "duplicate", "rejected")
+            )
+        else:
+            raise AssertionError("unsafe boundary gate payload should fail")
+
+    held_trigger = create_manual_analysis_trigger(
+        record.request_id,
+        manual_analysis_trigger_payload(
+            "hold",
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    try:
+        create_analysis_result_boundary_gate(
+            record.request_id,
+            analysis_result_boundary_gate_payload(
+                manual_trigger_id=held_trigger.manual_trigger_id,
+                promotion_gate_id=promotion_gate.promotion_gate_id,
+                review_case_id=queue_init.review_case_id,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - non-ready trigger should block.
+        assert "manual trigger" in str(exc).lower() or "ready" in str(exc).lower()
+    else:
+        raise AssertionError("non-ready manual trigger should block boundary gate")
+
+    audit_path = next((tmp_path / "manual_analysis_trigger_audits").glob(f"{record.request_id}_{manual_trigger.manual_trigger_id}_*.json"))
+    audit_path.unlink()
+    try:
+        create_analysis_result_boundary_gate(record.request_id, base_payload)
+    except Exception as exc:  # noqa: BLE001 - missing manual trigger audit should block.
+        assert "audit" in str(exc).lower()
+    else:
+        raise AssertionError("missing manual trigger audit should block boundary gate")
+
+
+def test_analysis_result_boundary_gate_does_not_parse_real_package_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Analysis boundary no package parse")))
+    queue_init, _item_batch, promotion_gate, manual_trigger = create_analysis_result_boundary_ready_chain(tmp_path, record.request_id)
+    forbidden_row_file = tmp_path / "many_safe_real_preview_package" / "evidence_items.jsonl"
+    assert forbidden_row_file.exists()
+    forbidden_row_file.write_text(
+        '{"raw_author_id":"must_not_be_read_by_boundary_gate","profile_url":"https://forbidden.example/profile","body_text":"unsafe row"}\n{broken',
+        encoding="utf-8",
+    )
+
+    result = create_analysis_result_boundary_gate(
+        record.request_id,
+        analysis_result_boundary_gate_payload(
+            manual_trigger_id=manual_trigger.manual_trigger_id,
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+
+    serialized = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
+    assert result.status == "boundary_ready_for_future_analysis_result_runtime"
+    assert "must_not_be_read_by_boundary_gate" not in serialized
+    assert "forbidden.example" not in serialized
 
 
 def test_config_uses_default_runtime_label_without_absolute_path(monkeypatch) -> None:

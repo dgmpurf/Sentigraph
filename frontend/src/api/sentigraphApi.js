@@ -379,6 +379,38 @@ export async function listAnalysisRequestManualAnalysisTriggerAuditsForTrigger(r
   return Array.isArray(data) ? data.map(normalizeManualAnalysisTriggerAudit).filter(Boolean) : []
 }
 
+export async function listAnalysisRequestAnalysisResultBoundaryGates(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/analysis-result-boundary-gates`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisResultBoundaryGate).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestAnalysisResultBoundaryGate(requestId, payload = {}) {
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/analysis-result-boundary-gates`,
+    payload,
+  )
+  return normalizeAnalysisResultBoundaryGate(data)
+}
+
+export async function getAnalysisRequestAnalysisResultBoundaryGate(requestId, boundaryGateId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/analysis-result-boundary-gates/${encodeURIComponent(boundaryGateId)}`,
+  )
+  return normalizeAnalysisResultBoundaryGate(data)
+}
+
+export async function listAnalysisRequestAnalysisResultBoundaryGateAudits(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/analysis-result-boundary-gate-audits`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisResultBoundaryGateAudit).filter(Boolean) : []
+}
+
+export async function listAnalysisRequestAnalysisResultBoundaryGateAuditsForGate(requestId, boundaryGateId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/analysis-result-boundary-gates/${encodeURIComponent(boundaryGateId)}/audits`,
+  )
+  return Array.isArray(data) ? data.map(normalizeAnalysisResultBoundaryGateAudit).filter(Boolean) : []
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -2367,6 +2399,67 @@ function normalizeManualAnalysisTriggerAudit(data) {
     dedup_warning_acknowledgement: Boolean(data.dedup_warning_acknowledgement),
     provider_output_is_evidence_not_truth_acknowledgement: Boolean(data.provider_output_is_evidence_not_truth_acknowledgement),
     analysis_effect: String(data.analysis_effect || 'trigger_record_only_no_analysis_run'),
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisResultBoundaryGate(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_analysis_result_boundary_gate_v1'),
+    boundary_gate_id: String(data.boundary_gate_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    manual_trigger_id: String(data.manual_trigger_id || ''),
+    promotion_gate_id: String(data.promotion_gate_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    status: String(data.status || 'blocked'),
+    analysis_input_boundary:
+      data.analysis_input_boundary && typeof data.analysis_input_boundary === 'object'
+        ? normalizeSafeObject(data.analysis_input_boundary)
+        : {},
+    required_boundary_sections:
+      data.required_boundary_sections && typeof data.required_boundary_sections === 'object'
+        ? normalizeSafeObject(data.required_boundary_sections)
+        : {},
+    counts: data.counts && typeof data.counts === 'object' ? normalizeSafeObject(data.counts) : {},
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    blocked_reasons: Array.isArray(data.blocked_reasons) ? data.blocked_reasons.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeAnalysisResultBoundaryGateAudit(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_analysis_result_boundary_gate_audit_v1'),
+    boundary_gate_audit_id: String(data.boundary_gate_audit_id || ''),
+    boundary_gate_id: String(data.boundary_gate_id || ''),
+    manual_trigger_id: String(data.manual_trigger_id || ''),
+    promotion_gate_id: String(data.promotion_gate_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    reviewer_label: String(data.reviewer_label || ''),
+    decided_at: data.decided_at ? String(data.decided_at) : '',
+    note: String(data.note || ''),
+    coverage_limitation_acknowledged: Boolean(data.coverage_limitation_acknowledged),
+    weak_evidence_warning_acknowledged: Boolean(data.weak_evidence_warning_acknowledged),
+    rejected_evidence_exclusion_acknowledged: Boolean(data.rejected_evidence_exclusion_acknowledged),
+    dedup_warning_acknowledged: Boolean(data.dedup_warning_acknowledged),
+    provider_output_is_evidence_not_truth_acknowledged: Boolean(data.provider_output_is_evidence_not_truth_acknowledged),
+    not_official_verification_acknowledged: Boolean(data.not_official_verification_acknowledged),
+    not_full_web_coverage_acknowledged: Boolean(data.not_full_web_coverage_acknowledged),
+    audit_trace_acknowledged: Boolean(data.audit_trace_acknowledged),
+    analysis_effect: String(data.analysis_effect || 'boundary_gate_record_only_no_analysis_run'),
     now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
     boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},

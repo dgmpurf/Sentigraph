@@ -24,6 +24,13 @@ from app.schemas.analysis_request import (
     AnalysisReadyPromotionGateReadiness,
     AnalysisReadyPromotionGateRequest,
     AnalysisReadyPromotionSetPreview,
+    AnalysisResultBoundaryCounts,
+    AnalysisResultBoundaryGate,
+    AnalysisResultBoundaryGateAudit,
+    AnalysisResultBoundaryGateRequest,
+    AnalysisResultBoundaryReadiness,
+    AnalysisResultInputBoundary,
+    AnalysisResultRequiredBoundarySections,
     CaseDraftHandoff,
     CaseDraftPackageReference,
     CaseDraftProviderSummary,
@@ -1355,6 +1362,75 @@ def list_manual_analysis_trigger_audits_for_trigger(request_id: str, manual_trig
     ]
 
 
+def read_analysis_result_boundary_gate(request_id: str, boundary_gate_id: str) -> AnalysisResultBoundaryGate:
+    gate_path = _analysis_result_boundary_gate_path(request_id, boundary_gate_id)
+    if not gate_path.exists():
+        raise AnalysisRequestNotFoundError(f"Analysis Result Boundary Gate {boundary_gate_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(gate_path.read_text(encoding="utf-8-sig"))
+        return AnalysisResultBoundaryGate.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{gate_path.name} is not a valid Analysis Result Boundary Gate: {type(exc).__name__}") from exc
+
+
+def list_analysis_result_boundary_gates(request_id: str) -> list[AnalysisResultBoundaryGate]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    gates: list[AnalysisResultBoundaryGate] = []
+    for path in sorted((root / "analysis_result_boundary_gates").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            gates.append(AnalysisResultBoundaryGate.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return gates
+
+
+def list_all_analysis_result_boundary_gates() -> list[AnalysisResultBoundaryGate]:
+    root = _ensure_root()
+    gates: list[AnalysisResultBoundaryGate] = []
+    for path in sorted((root / "analysis_result_boundary_gates").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            gates.append(AnalysisResultBoundaryGate.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return gates
+
+
+def list_analysis_result_boundary_gate_audits(request_id: str) -> list[AnalysisResultBoundaryGateAudit]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    audits: list[AnalysisResultBoundaryGateAudit] = []
+    for path in sorted((root / "analysis_result_boundary_gate_audits").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(AnalysisResultBoundaryGateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def list_all_analysis_result_boundary_gate_audits() -> list[AnalysisResultBoundaryGateAudit]:
+    root = _ensure_root()
+    audits: list[AnalysisResultBoundaryGateAudit] = []
+    for path in sorted((root / "analysis_result_boundary_gate_audits").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(AnalysisResultBoundaryGateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def list_analysis_result_boundary_gate_audits_for_gate(request_id: str, boundary_gate_id: str) -> list[AnalysisResultBoundaryGateAudit]:
+    return [
+        audit
+        for audit in list_analysis_result_boundary_gate_audits(request_id)
+        if audit.boundary_gate_id == boundary_gate_id
+    ]
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -2264,6 +2340,110 @@ def create_manual_analysis_trigger(
     _write_json(_manual_analysis_trigger_path(request_id, manual_trigger_id), trigger.model_dump(mode="json", by_alias=True))
     _write_json(_manual_analysis_trigger_audit_path(request_id, manual_trigger_id, audit_id), audit.model_dump(mode="json", by_alias=True))
     return read_manual_analysis_trigger(request_id, manual_trigger_id)
+
+
+def create_analysis_result_boundary_gate(
+    request_id: str,
+    payload: AnalysisResultBoundaryGateRequest | dict[str, Any],
+) -> AnalysisResultBoundaryGate:
+    try:
+        gate_payload = (
+            payload
+            if isinstance(payload, AnalysisResultBoundaryGateRequest)
+            else AnalysisResultBoundaryGateRequest.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create Analysis Result Boundary Gate: invalid payload ({exc}).") from exc
+
+    _validate_analysis_result_boundary_payload(gate_payload)
+    read_analysis_request(request_id)
+    manual_trigger = read_manual_analysis_trigger(request_id, gate_payload.manual_trigger_id)
+    promotion_gate = read_analysis_ready_promotion_gate(request_id, gate_payload.promotion_gate_id)
+    _validate_analysis_result_boundary_prerequisites(request_id, gate_payload, manual_trigger, promotion_gate)
+    batch = read_review_queue_item_batch(request_id, promotion_gate.queue_init_id)
+    _validate_analysis_result_boundary_scope(manual_trigger, promotion_gate, batch)
+
+    boundary_gate_id = _new_analysis_result_boundary_gate_id()
+    audit_id = _new_analysis_result_boundary_gate_audit_id()
+    boundary_notes = _analysis_result_boundary_notes()
+    warnings = _analysis_result_boundary_warnings(manual_trigger, promotion_gate)
+    gate = AnalysisResultBoundaryGate(
+        boundary_gate_id=boundary_gate_id,
+        request_id=request_id,
+        review_case_id=manual_trigger.review_case_id,
+        manual_trigger_id=manual_trigger.manual_trigger_id,
+        promotion_gate_id=promotion_gate.promotion_gate_id,
+        created_at=datetime.now(timezone.utc),
+        created_by=gate_payload.reviewer_label.strip(),
+        status="boundary_ready_for_future_analysis_result_runtime",
+        analysis_input_boundary=AnalysisResultInputBoundary(
+            source="review_only_promoted_candidates",
+            provider_output_is_truth=False,
+            official_verification=False,
+            full_web_coverage=False,
+            analysis_includes_rejected=False,
+            duplicates_amplify_risk=False,
+        ),
+        required_boundary_sections=AnalysisResultRequiredBoundarySections(
+            coverage_limitation=True,
+            weak_evidence_warning=True,
+            rejected_evidence_exclusion_note=True,
+            dedup_warning=True,
+            provider_output_evidence_not_truth_note=True,
+            not_official_verification_note=True,
+            not_full_web_coverage_note=True,
+            audit_trace_note=True,
+        ),
+        counts=AnalysisResultBoundaryCounts(
+            included_item_count=len(manual_trigger.analysis_scope.include_item_ids),
+            excluded_rejected_count=len(manual_trigger.analysis_scope.exclude_item_ids),
+            weak_warning_count=len(manual_trigger.analysis_scope.weak_warning_item_ids)
+            + len(manual_trigger.analysis_scope.weak_warning_group_ids),
+            duplicate_group_count=len(manual_trigger.analysis_scope.include_group_ids),
+            privacy_excluded_count=0,
+            needs_more_source_excluded_count=0,
+        ),
+        readiness=AnalysisResultBoundaryReadiness(
+            can_present_analysis_result_now=False,
+            requires_future_analysis_execution=True,
+            requires_boundary_runtime=False,
+            requires_report_gate=True,
+            requires_sandbox_gate=True,
+        ),
+        warnings=warnings,
+        boundary_notes=boundary_notes,
+        recommended_next_steps=[
+            "Future Phase 7G may implement actual manual analysis execution; this gate does not run analysis.",
+            "Any future Analysis Result must display coverage, weak evidence, rejected exclusion, dedup, and audit warnings.",
+            "Report, Sandbox, public event, and B-end report outputs require separate later gates.",
+        ],
+    )
+    audit = AnalysisResultBoundaryGateAudit(
+        boundary_gate_audit_id=audit_id,
+        boundary_gate_id=boundary_gate_id,
+        manual_trigger_id=manual_trigger.manual_trigger_id,
+        promotion_gate_id=promotion_gate.promotion_gate_id,
+        request_id=request_id,
+        review_case_id=manual_trigger.review_case_id,
+        reviewer_label=gate_payload.reviewer_label.strip(),
+        decided_at=datetime.now(timezone.utc),
+        note=gate_payload.note.strip(),
+        coverage_limitation_acknowledged=gate_payload.coverage_limitation_acknowledged,
+        weak_evidence_warning_acknowledged=gate_payload.weak_evidence_warning_acknowledged,
+        rejected_evidence_exclusion_acknowledged=gate_payload.rejected_evidence_exclusion_acknowledged,
+        dedup_warning_acknowledged=gate_payload.dedup_warning_acknowledged,
+        provider_output_is_evidence_not_truth_acknowledged=gate_payload.provider_output_is_evidence_not_truth_acknowledged,
+        not_official_verification_acknowledged=gate_payload.not_official_verification_acknowledged,
+        not_full_web_coverage_acknowledged=gate_payload.not_full_web_coverage_acknowledged,
+        audit_trace_acknowledged=gate_payload.audit_trace_acknowledged,
+        boundary_notes=boundary_notes,
+    )
+    _write_json(_analysis_result_boundary_gate_path(request_id, boundary_gate_id), gate.model_dump(mode="json", by_alias=True))
+    _write_json(
+        _analysis_result_boundary_gate_audit_path(request_id, boundary_gate_id, audit_id),
+        audit.model_dump(mode="json", by_alias=True),
+    )
+    return read_analysis_result_boundary_gate(request_id, boundary_gate_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -4696,6 +4876,245 @@ def _manual_analysis_trigger_next_steps(status: str) -> list[str]:
     ]
 
 
+def _validate_analysis_result_boundary_payload(payload: AnalysisResultBoundaryGateRequest) -> None:
+    if not (payload.manual_trigger_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual_trigger_id is required.")
+    if not (payload.promotion_gate_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: promotion_gate_id is required.")
+    if not (payload.reviewer_label or "").strip():
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: reviewer_label is required.")
+    if not (payload.note or "").strip():
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: note is required.")
+    acknowledgements = {
+        "coverage_limitation_acknowledged": payload.coverage_limitation_acknowledged,
+        "weak_evidence_warning_acknowledged": payload.weak_evidence_warning_acknowledged,
+        "rejected_evidence_exclusion_acknowledged": payload.rejected_evidence_exclusion_acknowledged,
+        "dedup_warning_acknowledged": payload.dedup_warning_acknowledged,
+        "provider_output_is_evidence_not_truth_acknowledged": payload.provider_output_is_evidence_not_truth_acknowledged,
+        "not_official_verification_acknowledged": payload.not_official_verification_acknowledged,
+        "not_full_web_coverage_acknowledged": payload.not_full_web_coverage_acknowledged,
+        "audit_trace_acknowledged": payload.audit_trace_acknowledged,
+        "acknowledge_boundary_gate_only": payload.acknowledge_boundary_gate_only,
+        "acknowledge_no_analysis_run": payload.acknowledge_no_analysis_run,
+        "acknowledge_no_analysis_result_generation": payload.acknowledge_no_analysis_result_generation,
+        "acknowledge_no_report_generation": payload.acknowledge_no_report_generation,
+        "acknowledge_no_sandbox_or_public_event": payload.acknowledge_no_sandbox_or_public_event,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(
+            f"Cannot create Analysis Result Boundary Gate: acknowledgement flags are required ({', '.join(missing)})."
+        )
+    side_effect_flags = {
+        "run_analysis_now": payload.run_analysis_now,
+        "generate_analysis_result_now": payload.generate_analysis_result_now,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "run_production_dedup_now": payload.run_production_dedup_now,
+        "generate_report_now": payload.generate_report_now,
+        "generate_sandbox_now": payload.generate_sandbox_now,
+        "generate_public_event_now": payload.generate_public_event_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(
+            f"Cannot create Analysis Result Boundary Gate: side effect flags must remain false ({', '.join(enabled)})."
+        )
+    forbidden_claims = {
+        "provider_output_is_truth": payload.provider_output_is_truth,
+        "official_verification": payload.official_verification,
+        "full_web_coverage": payload.full_web_coverage,
+        "analysis_includes_rejected": payload.analysis_includes_rejected,
+        "duplicates_amplify_risk": payload.duplicates_amplify_risk,
+        "remove_weak_warnings": payload.remove_weak_warnings,
+        "include_rejected_evidence": payload.include_rejected_evidence,
+        "include_privacy_hold_evidence": payload.include_privacy_hold_evidence,
+        "include_needs_more_source_evidence": payload.include_needs_more_source_evidence,
+    }
+    forbidden = [name for name, value in forbidden_claims.items() if value]
+    if forbidden:
+        raise AnalysisRequestValidationError(
+            f"Cannot create Analysis Result Boundary Gate: unsafe boundary claims are not allowed ({', '.join(forbidden)})."
+        )
+
+
+def _validate_analysis_result_boundary_prerequisites(
+    request_id: str,
+    payload: AnalysisResultBoundaryGateRequest,
+    manual_trigger: ManualAnalysisTrigger,
+    promotion_gate: AnalysisReadyPromotionGate,
+) -> None:
+    if manual_trigger.request_id != request_id or promotion_gate.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: request_id mismatch.")
+    if payload.review_case_id and payload.review_case_id != manual_trigger.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: review_case_id does not match manual trigger.")
+    if manual_trigger.review_case_id != promotion_gate.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: review_case_id mismatch.")
+    if manual_trigger.promotion_gate_id != promotion_gate.promotion_gate_id:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual trigger promotion_gate_id mismatch.")
+    if manual_trigger.status != "trigger_recorded_ready_for_future_analysis_runtime":
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual trigger is not ready for future analysis runtime.")
+    if manual_trigger.trigger_decision != "trigger_analysis":
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual trigger decision is not trigger_analysis.")
+    if promotion_gate.status != "eligible_for_future_manual_analysis_trigger":
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: promotion gate is not eligible.")
+    if not promotion_gate.readiness.eligible_for_future_manual_analysis_trigger:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: promotion gate readiness is not eligible.")
+    if manual_trigger.readiness.can_run_analysis_now:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual trigger has unsafe analysis readiness.")
+    if promotion_gate.readiness.can_run_analysis_now or promotion_gate.readiness.can_generate_report_now:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: promotion gate has unsafe readiness flags.")
+    if manual_trigger.blocked_reasons or promotion_gate.blockers:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: prior gate has blockers.")
+    if not manual_trigger.analysis_scope.include_item_ids and not manual_trigger.analysis_scope.include_group_ids:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual trigger analysis scope is empty.")
+    _validate_analysis_result_boundary_now_flags("manual trigger", manual_trigger.now_flags)
+    _validate_analysis_result_boundary_now_flags("promotion gate", promotion_gate.now_flags)
+    _validate_analysis_result_boundary_safe_mode("manual trigger", manual_trigger.safe_mode)
+    _validate_analysis_result_boundary_safe_mode("promotion gate", promotion_gate.safe_mode)
+    audits = list_manual_analysis_trigger_audits_for_trigger(request_id, manual_trigger.manual_trigger_id)
+    if not any(audit.analysis_effect == "trigger_record_only_no_analysis_run" for audit in audits):
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual trigger audit is missing.")
+
+
+def _validate_analysis_result_boundary_now_flags(source: str, flags: dict[str, bool]) -> None:
+    unsafe = [
+        name
+        for name, value in flags.items()
+        if value
+        and name
+        in {
+            "write_evidence_layer_now",
+            "create_production_case_now",
+            "create_production_review_queue_now",
+            "run_production_dedup_now",
+            "run_analysis_now",
+            "generate_analysis_result_now",
+            "generate_report_now",
+            "generate_sandbox_now",
+            "generate_public_event_now",
+        }
+    ]
+    if unsafe:
+        raise AnalysisRequestValidationError(
+            f"Cannot create Analysis Result Boundary Gate: {source} side effect flags are unsafe ({', '.join(unsafe)})."
+        )
+
+
+def _validate_analysis_result_boundary_safe_mode(source: str, safe_mode: dict[str, bool]) -> None:
+    unsafe = [
+        name
+        for name in (
+            "original_package_rows_re_read",
+            "evidence_rows_imported",
+            "evidence_layer_written",
+            "production_case_created",
+            "production_review_queue_created",
+            "production_dedup_run",
+            "analysis_generated",
+            "analysis_result_generated",
+            "sandbox_fixture_generated",
+            "public_event_page_generated",
+            "report_generated",
+            "provider_execution",
+            "collector_jobs_run",
+            "real_api_calls",
+            "url_fetching",
+            "scraping",
+            "secrets_exposed",
+            "raw_author_identifiers_exposed",
+        )
+        if safe_mode.get(name)
+    ]
+    if unsafe:
+        raise AnalysisRequestValidationError(
+            f"Cannot create Analysis Result Boundary Gate: {source} safe_mode is unsafe ({', '.join(unsafe)})."
+        )
+
+
+def _validate_analysis_result_boundary_scope(
+    manual_trigger: ManualAnalysisTrigger,
+    promotion_gate: AnalysisReadyPromotionGate,
+    batch: ReviewQueueItemBatch,
+) -> None:
+    if manual_trigger.analysis_scope.source != "review_only_promoted_set":
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual trigger scope source is invalid.")
+    if manual_trigger.analysis_scope.analysis_input_source != "review_only_promoted_candidates":
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual trigger input source is invalid.")
+    item_map = {item.review_item_id: item for item in batch.items}
+    include_ids = set(manual_trigger.analysis_scope.include_item_ids)
+    excluded_ids = set(manual_trigger.analysis_scope.exclude_item_ids)
+    weak_ids = set(manual_trigger.analysis_scope.weak_warning_item_ids)
+    rejected_ids = set(promotion_gate.promotion_set_preview.rejected_item_ids)
+    missing = [item_id for item_id in include_ids | excluded_ids | weak_ids | rejected_ids if item_id not in item_map]
+    if missing:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: manual trigger references unknown review items.")
+    if include_ids & rejected_ids or include_ids & excluded_ids:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: rejected or excluded evidence leaked into include scope.")
+    if weak_ids - include_ids:
+        raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: weak warning scope references non-included items.")
+    for item_id in include_ids:
+        item = item_map[item_id]
+        if _review_queue_item_has_forbidden_fields(item):
+            raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: raw/private/secret-like review item is not allowed.")
+        if item.queue_status in {"rejected", "privacy_hold", "needs_more_source", "review_needed"}:
+            raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: unresolved, rejected, or privacy-held evidence cannot be included.")
+        if item.dedup.may_amplify_risk:
+            raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: duplicate evidence may amplify risk.")
+        if item.queue_status == "marked_weak" and item_id not in weak_ids:
+            raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: weak evidence warning was removed.")
+        if item.governance.analysis_included or item.governance.public_visible or item.governance.report_visible or item.governance.sandbox_visible:
+            raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: item already has unsafe analysis or visibility flags.")
+    for item_id in excluded_ids:
+        item = item_map[item_id]
+        if item.queue_status == "privacy_hold":
+            raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: privacy_hold item blocks result boundary.")
+        if item.queue_status == "needs_more_source":
+            raise AnalysisRequestValidationError("Cannot create Analysis Result Boundary Gate: needs_more_source item blocks result boundary.")
+
+
+def _analysis_result_boundary_warnings(
+    manual_trigger: ManualAnalysisTrigger,
+    promotion_gate: AnalysisReadyPromotionGate,
+) -> list[str]:
+    warnings = [
+        "Coverage is limited to reviewed promoted candidates, not full-web coverage.",
+        "Coverage is limited to available/imported evidence, not full-platform coverage.",
+        "Weak evidence remains warning-marked.",
+        "Rejected evidence remains excluded from any future Analysis Result metrics.",
+        "Duplicate evidence must not amplify risk, sentiment, coverage, or conclusions.",
+        "Provider output is evidence, not truth.",
+        "This boundary gate is not official verification.",
+        "Audit trace must remain visible in any future Analysis Result.",
+    ]
+    warnings.extend(manual_trigger.required_warnings.coverage_limitations)
+    warnings.extend(manual_trigger.required_warnings.weak_evidence_warnings)
+    warnings.extend(manual_trigger.required_warnings.dedup_preview_warnings)
+    warnings.extend(manual_trigger.warnings)
+    warnings.extend(promotion_gate.warnings)
+    warnings.extend(promotion_gate.promotion_set_preview.warning_notes)
+    return _unique_preserve_order(warnings)
+
+
+def _analysis_result_boundary_notes() -> list[str]:
+    return [
+        "Analysis Result Boundary Gate records boundary readiness only.",
+        "This gate does not run analysis.",
+        "This gate does not generate Analysis Result.",
+        "This gate does not write the production Evidence Layer.",
+        "This gate does not create a production case.",
+        "This gate does not generate Summary Report, Sandbox fixtures, public event pages, or B-end reports.",
+        "Weak evidence remains warning-marked.",
+        "Rejected evidence remains excluded.",
+        "Duplicate evidence must not amplify risk.",
+        "Provider output is evidence, not truth.",
+        "Coverage limitations must be displayed in any future Analysis Result.",
+        "Report, Sandbox, and public event generation require separate later gates.",
+    ]
+
+
 def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -5113,6 +5532,8 @@ def _ensure_root() -> Path:
     (root / "promotion_decision_audits").mkdir(parents=True, exist_ok=True)
     (root / "manual_analysis_triggers").mkdir(parents=True, exist_ok=True)
     (root / "manual_analysis_trigger_audits").mkdir(parents=True, exist_ok=True)
+    (root / "analysis_result_boundary_gates").mkdir(parents=True, exist_ok=True)
+    (root / "analysis_result_boundary_gate_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -5276,6 +5697,21 @@ def _manual_analysis_trigger_audit_path(request_id: str, manual_trigger_id: str,
     return root / "manual_analysis_trigger_audits" / f"{request_id}_{manual_trigger_id}_{manual_trigger_audit_id}.json"
 
 
+def _analysis_result_boundary_gate_path(request_id: str, boundary_gate_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(boundary_gate_id)
+    root = _ensure_root()
+    return root / "analysis_result_boundary_gates" / f"{request_id}_{boundary_gate_id}.json"
+
+
+def _analysis_result_boundary_gate_audit_path(request_id: str, boundary_gate_id: str, boundary_gate_audit_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(boundary_gate_id)
+    _validate_request_id(boundary_gate_audit_id)
+    root = _ensure_root()
+    return root / "analysis_result_boundary_gate_audits" / f"{request_id}_{boundary_gate_id}_{boundary_gate_audit_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -5372,6 +5808,16 @@ def _new_manual_analysis_trigger_id() -> str:
 def _new_manual_analysis_trigger_audit_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"manual_analysis_trigger_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_analysis_result_boundary_gate_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"analysis_result_boundary_gate_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_analysis_result_boundary_gate_audit_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"analysis_result_boundary_gate_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:
