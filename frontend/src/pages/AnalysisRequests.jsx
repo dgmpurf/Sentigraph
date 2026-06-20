@@ -27,6 +27,7 @@ import {
   createAnalysisRequestAnalysisResultBoundaryGate,
   createAnalysisRequestManualAnalysisExecution,
   createAnalysisRequestManualAnalysisTrigger,
+  createAnalysisRequestReportGenerationGate,
   createAnalysisRequest,
   createAnalysisRequestDedupGroupReviewAction,
   createAnalysisRequestCaseDraft,
@@ -62,6 +63,8 @@ import {
   listAnalysisRequestManualAnalysisResultCandidates,
   listAnalysisRequestManualAnalysisTriggerAudits,
   listAnalysisRequestManualAnalysisTriggers,
+  listAnalysisRequestReportGenerationGateAudits,
+  listAnalysisRequestReportGenerationGates,
   listAnalysisRequestRealPackageRowPreviews,
   listAnalysisRequestReviewOnlyCases,
   listAnalysisRequestReviewQueueActionAudits,
@@ -637,6 +640,7 @@ export function AnalysisRequests() {
   const [manualAnalysisTriggerForm] = Form.useForm()
   const [analysisResultBoundaryGateForm] = Form.useForm()
   const [manualAnalysisExecutionForm] = Form.useForm()
+  const [reportGenerationGateForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -667,6 +671,8 @@ export function AnalysisRequests() {
   const [manualAnalysisExecutions, setManualAnalysisExecutions] = useState([])
   const [manualAnalysisResultCandidates, setManualAnalysisResultCandidates] = useState([])
   const [manualAnalysisExecutionAudits, setManualAnalysisExecutionAudits] = useState([])
+  const [reportGenerationGates, setReportGenerationGates] = useState([])
+  const [reportGenerationGateAudits, setReportGenerationGateAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -689,6 +695,7 @@ export function AnalysisRequests() {
   const [manualAnalysisTriggerLoading, setManualAnalysisTriggerLoading] = useState(false)
   const [analysisResultBoundaryGateLoading, setAnalysisResultBoundaryGateLoading] = useState(false)
   const [manualAnalysisExecutionLoading, setManualAnalysisExecutionLoading] = useState(false)
+  const [reportGenerationGateLoading, setReportGenerationGateLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -709,6 +716,7 @@ export function AnalysisRequests() {
   const [manualAnalysisTriggerError, setManualAnalysisTriggerError] = useState('')
   const [analysisResultBoundaryGateError, setAnalysisResultBoundaryGateError] = useState('')
   const [manualAnalysisExecutionError, setManualAnalysisExecutionError] = useState('')
+  const [reportGenerationGateError, setReportGenerationGateError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -739,6 +747,9 @@ export function AnalysisRequests() {
     setManualAnalysisResultCandidates([])
     setManualAnalysisExecutionAudits([])
     setManualAnalysisExecutionError('')
+    setReportGenerationGates([])
+    setReportGenerationGateAudits([])
+    setReportGenerationGateError('')
   }
 
   async function loadDraftAndPlan(requestId) {
@@ -884,6 +895,8 @@ export function AnalysisRequests() {
       setManualAnalysisExecutions(await listAnalysisRequestManualAnalysisExecutions(requestId))
       setManualAnalysisResultCandidates(await listAnalysisRequestManualAnalysisResultCandidates(requestId))
       setManualAnalysisExecutionAudits(await listAnalysisRequestManualAnalysisExecutionAudits(requestId))
+      setReportGenerationGates(await listAnalysisRequestReportGenerationGates(requestId))
+      setReportGenerationGateAudits(await listAnalysisRequestReportGenerationGateAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
@@ -1581,6 +1594,8 @@ export function AnalysisRequests() {
       setManualAnalysisExecutions(await listAnalysisRequestManualAnalysisExecutions(selectedRecord.request_id))
       setManualAnalysisResultCandidates(await listAnalysisRequestManualAnalysisResultCandidates(selectedRecord.request_id))
       setManualAnalysisExecutionAudits(await listAnalysisRequestManualAnalysisExecutionAudits(selectedRecord.request_id))
+      setReportGenerationGates([])
+      setReportGenerationGateAudits([])
       message.success(`Recorded result boundary gate: ${gate?.status || 'created'}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create Analysis Result Boundary Gate.'
@@ -1641,12 +1656,78 @@ export function AnalysisRequests() {
       setManualAnalysisExecutions(await listAnalysisRequestManualAnalysisExecutions(selectedRecord.request_id))
       setManualAnalysisResultCandidates(await listAnalysisRequestManualAnalysisResultCandidates(selectedRecord.request_id))
       setManualAnalysisExecutionAudits(await listAnalysisRequestManualAnalysisExecutionAudits(selectedRecord.request_id))
+      setReportGenerationGates(await listAnalysisRequestReportGenerationGates(selectedRecord.request_id))
+      setReportGenerationGateAudits(await listAnalysisRequestReportGenerationGateAudits(selectedRecord.request_id))
       message.success(`Created local analysis candidate: ${execution?.status || 'created'}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create manual analysis execution candidate.'
       setManualAnalysisExecutionError(String(messageText))
     } finally {
       setManualAnalysisExecutionLoading(false)
+    }
+  }
+
+  async function handleCreateReportGenerationGate(values) {
+    if (!selectedRecord?.request_id || !latestManualAnalysisExecution?.manual_analysis_execution_id) return
+    setReportGenerationGateLoading(true)
+    setReportGenerationGateError('')
+    try {
+      const gate = await createAnalysisRequestReportGenerationGate(selectedRecord.request_id, {
+        manual_analysis_execution_id:
+          values.manual_analysis_execution_id || latestManualAnalysisExecution.manual_analysis_execution_id,
+        result_candidate_id:
+          values.result_candidate_id ||
+          latestManualAnalysisResultCandidate?.result_candidate_id ||
+          latestManualAnalysisExecution.candidate_result_id,
+        boundary_gate_id: values.boundary_gate_id || latestManualAnalysisExecution.boundary_gate_id,
+        review_case_id: values.review_case_id || latestManualAnalysisExecution.review_case_id || undefined,
+        reviewer_label: String(values.reviewer_label || '').trim(),
+        note: String(values.note || '').trim(),
+        requested_future_output: 'summary_report_candidate',
+        acknowledge_gate_only: Boolean(values.acknowledge_gate_only),
+        acknowledge_no_summary_report_generation: Boolean(values.acknowledge_no_summary_report_generation),
+        acknowledge_no_b_end_report_generation: Boolean(values.acknowledge_no_b_end_report_generation),
+        acknowledge_no_export_generation: Boolean(values.acknowledge_no_export_generation),
+        acknowledge_no_sandbox_or_public_event: Boolean(values.acknowledge_no_sandbox_or_public_event),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_provider_output_is_evidence_not_truth: Boolean(values.acknowledge_provider_output_is_evidence_not_truth),
+        acknowledge_not_official_verification: Boolean(values.acknowledge_not_official_verification),
+        acknowledge_not_full_web_coverage: Boolean(values.acknowledge_not_full_web_coverage),
+        acknowledge_weak_evidence_warning: Boolean(values.acknowledge_weak_evidence_warning),
+        acknowledge_rejected_exclusion: Boolean(values.acknowledge_rejected_exclusion),
+        acknowledge_dedup_no_risk_amplification: Boolean(values.acknowledge_dedup_no_risk_amplification),
+        acknowledge_audit_trace_required: Boolean(values.acknowledge_audit_trace_required),
+        generate_summary_report_now: false,
+        generate_report_now: false,
+        generate_b_end_report_now: false,
+        export_now: false,
+        generate_sandbox_now: false,
+        generate_public_event_now: false,
+        write_evidence_layer_now: false,
+        create_production_case_now: false,
+        read_original_package_rows_now: false,
+        call_llm_now: false,
+        call_external_api_now: false,
+        provider_execution_requested: false,
+        collector_job_requested: false,
+        provider_output_is_truth: false,
+        official_verification: false,
+        full_web_coverage: false,
+        include_rejected_evidence: false,
+        include_privacy_hold_evidence: false,
+        include_needs_more_source_evidence: false,
+        remove_weak_warnings: false,
+        duplicates_amplify_risk: false,
+      })
+      setReportGenerationGates(await listAnalysisRequestReportGenerationGates(selectedRecord.request_id))
+      setReportGenerationGateAudits(await listAnalysisRequestReportGenerationGateAudits(selectedRecord.request_id))
+      message.success(`Recorded report generation gate: ${gate?.status || 'created'}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create Report Generation Gate.'
+      setReportGenerationGateError(String(messageText))
+    } finally {
+      setReportGenerationGateLoading(false)
     }
   }
 
@@ -1958,6 +2039,16 @@ export function AnalysisRequests() {
   const manualAnalysisExecutionAuditsJson = manualAnalysisExecutionAudits.length
     ? JSON.stringify(manualAnalysisExecutionAudits, null, 2)
     : ''
+  const latestReportGenerationGate = reportGenerationGates[0] || null
+  const latestReportGenerationGateJson = latestReportGenerationGate
+    ? JSON.stringify(latestReportGenerationGate, null, 2)
+    : ''
+  const reportGenerationGatesJson = reportGenerationGates.length
+    ? JSON.stringify(reportGenerationGates, null, 2)
+    : ''
+  const reportGenerationGateAuditsJson = reportGenerationGateAudits.length
+    ? JSON.stringify(reportGenerationGateAudits, null, 2)
+    : ''
   const analysisReadyPromotionGateValues = Form.useWatch([], analysisReadyPromotionGateForm) || {}
   const dedupGroupsNeedReview = useMemo(
     () => (latestDedupPreview?.groups || []).some((group) => !['confirmed', 'marked_weak', 'representative_changed', 'rejected'].includes(group.group_status)),
@@ -2050,6 +2141,35 @@ export function AnalysisRequests() {
     latestAnalysisResultBoundaryGate?.boundary_gate_id,
     latestAnalysisResultBoundaryGate?.status,
     manualAnalysisExecutionValues,
+  ])
+  const reportGenerationGateValues = Form.useWatch([], reportGenerationGateForm) || {}
+  const reportGenerationGateReady = useMemo(() => {
+    return Boolean(
+      latestManualAnalysisExecution?.manual_analysis_execution_id &&
+        latestManualAnalysisExecution?.status === 'analysis_result_candidate_created' &&
+        latestManualAnalysisResultCandidate?.result_candidate_id &&
+        String(reportGenerationGateValues.reviewer_label || '').trim() &&
+        String(reportGenerationGateValues.note || '').trim() &&
+        reportGenerationGateValues.acknowledge_gate_only &&
+        reportGenerationGateValues.acknowledge_no_summary_report_generation &&
+        reportGenerationGateValues.acknowledge_no_b_end_report_generation &&
+        reportGenerationGateValues.acknowledge_no_export_generation &&
+        reportGenerationGateValues.acknowledge_no_sandbox_or_public_event &&
+        reportGenerationGateValues.acknowledge_no_evidence_layer_write &&
+        reportGenerationGateValues.acknowledge_no_production_case &&
+        reportGenerationGateValues.acknowledge_provider_output_is_evidence_not_truth &&
+        reportGenerationGateValues.acknowledge_not_official_verification &&
+        reportGenerationGateValues.acknowledge_not_full_web_coverage &&
+        reportGenerationGateValues.acknowledge_weak_evidence_warning &&
+        reportGenerationGateValues.acknowledge_rejected_exclusion &&
+        reportGenerationGateValues.acknowledge_dedup_no_risk_amplification &&
+        reportGenerationGateValues.acknowledge_audit_trace_required,
+    )
+  }, [
+    latestManualAnalysisExecution?.manual_analysis_execution_id,
+    latestManualAnalysisExecution?.status,
+    latestManualAnalysisResultCandidate?.result_candidate_id,
+    reportGenerationGateValues,
   ])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
@@ -5200,6 +5320,234 @@ export function AnalysisRequests() {
                                       <Text type="secondary">effect={audit.analysis_effect}</Text>
                                       <Text type="secondary">run_analysis_now={boolText(audit.now_flags?.run_analysis_now)}</Text>
                                       <Text type="secondary">generate_report_now={boolText(audit.now_flags?.generate_report_now)}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Report Generation Gate / 报告生成门">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Gate only: no report artifact is generated"
+                              description="This records readiness for a future report runtime only. It does not generate Summary Report, B-end report, PDF, Markdown, deck, Sandbox, public event, Evidence Layer write, production case, or any real LLM output."
+                            />
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="Future report inputs stay bounded"
+                              description="The future report must carry weak evidence warnings, rejected evidence exclusion, dedup no-amplification, coverage limits, and the rule that provider output is evidence, not truth."
+                            />
+                            {reportGenerationGateError ? <Alert type="error" showIcon message={reportGenerationGateError} /> : null}
+                            <Form
+                              form={reportGenerationGateForm}
+                              layout="vertical"
+                              initialValues={{
+                                reviewer_label: 'report_gate_reviewer',
+                                acknowledge_gate_only: true,
+                                acknowledge_no_summary_report_generation: true,
+                                acknowledge_no_b_end_report_generation: true,
+                                acknowledge_no_export_generation: true,
+                                acknowledge_no_sandbox_or_public_event: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_provider_output_is_evidence_not_truth: true,
+                                acknowledge_not_official_verification: true,
+                                acknowledge_not_full_web_coverage: true,
+                                acknowledge_weak_evidence_warning: true,
+                                acknowledge_rejected_exclusion: true,
+                                acknowledge_dedup_no_risk_amplification: true,
+                                acknowledge_audit_trace_required: true,
+                              }}
+                              onFinish={handleCreateReportGenerationGate}
+                            >
+                              <Row gutter={12}>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Manual analysis execution id" name="manual_analysis_execution_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestManualAnalysisExecution?.manual_analysis_execution_id || 'latest execution candidate'}
+                                      options={manualAnalysisExecutions.map((item) => ({
+                                        value: item.manual_analysis_execution_id,
+                                        label: `${item.status} / ${item.manual_analysis_execution_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Result candidate id" name="result_candidate_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestManualAnalysisResultCandidate?.result_candidate_id || 'latest result candidate'}
+                                      options={manualAnalysisResultCandidates.map((item) => ({
+                                        value: item.result_candidate_id,
+                                        label: `${item.analysis_input_source} / ${item.result_candidate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Boundary gate id" name="boundary_gate_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestManualAnalysisExecution?.boundary_gate_id || 'boundary from execution'}
+                                      options={analysisResultBoundaryGates.map((item) => ({
+                                        value: item.boundary_gate_id,
+                                        label: `${item.status} / ${item.boundary_gate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={12}>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Reviewer label" name="reviewer_label" rules={[{ required: true }]}>
+                                    <Input placeholder="report_gate_reviewer" />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={16}>
+                                  <Form.Item label="Gate note" name="note" rules={[{ required: true }]}>
+                                    <TextArea
+                                      rows={2}
+                                      placeholder="Confirm future report boundaries; do not generate report artifacts in this step."
+                                    />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Form.Item label="Required acknowledgements">
+                                <Row gutter={[8, 4]}>
+                                  {[
+                                    ['acknowledge_gate_only', 'report generation gate only'],
+                                    ['acknowledge_no_summary_report_generation', 'no Summary Report generation'],
+                                    ['acknowledge_no_b_end_report_generation', 'no B-end report generation'],
+                                    ['acknowledge_no_export_generation', 'no PDF/Markdown/deck export'],
+                                    ['acknowledge_no_sandbox_or_public_event', 'no Sandbox/public event generation'],
+                                    ['acknowledge_no_evidence_layer_write', 'no Evidence Layer write'],
+                                    ['acknowledge_no_production_case', 'no production case'],
+                                    ['acknowledge_provider_output_is_evidence_not_truth', 'provider output is evidence, not truth'],
+                                    ['acknowledge_not_official_verification', 'not official verification'],
+                                    ['acknowledge_not_full_web_coverage', 'not full-web coverage'],
+                                    ['acknowledge_weak_evidence_warning', 'weak evidence warning preserved'],
+                                    ['acknowledge_rejected_exclusion', 'rejected evidence remains excluded'],
+                                    ['acknowledge_dedup_no_risk_amplification', 'duplicate evidence not amplified'],
+                                    ['acknowledge_audit_trace_required', 'audit trace required'],
+                                  ].map(([name, label]) => (
+                                    <Col xs={24} md={8} key={name}>
+                                      <Form.Item name={name} valuePropName="checked" noStyle>
+                                        <Checkbox>{label}</Checkbox>
+                                      </Form.Item>
+                                    </Col>
+                                  ))}
+                                </Row>
+                              </Form.Item>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  icon={<ShieldCheck size={16} />}
+                                  loading={reportGenerationGateLoading}
+                                  disabled={!reportGenerationGateReady || reportGenerationGateLoading}
+                                >
+                                  Create Report Gate
+                                </Button>
+                                {latestReportGenerationGate ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestReportGenerationGateJson, 'Report gate JSON copied')}
+                                  >
+                                    Copy latest report gate JSON
+                                  </Button>
+                                ) : null}
+                                {reportGenerationGates.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(reportGenerationGatesJson, 'Report gate history JSON copied')}
+                                  >
+                                    Copy report gate history JSON
+                                  </Button>
+                                ) : null}
+                                {reportGenerationGateAudits.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(reportGenerationGateAuditsJson, 'Report gate audit JSON copied')}
+                                  >
+                                    Copy report gate audit JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+                            {latestReportGenerationGate ? (
+                              <Card size="small" title="Latest Report Generation Gate">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={latestReportGenerationGate.status === 'report_gate_ready_for_future_runtime' ? 'green' : 'gold'}>
+                                      {latestReportGenerationGate.status}
+                                    </Tag>
+                                    <Tag>{latestReportGenerationGate.requested_future_output}</Tag>
+                                    <Text type="secondary">{latestReportGenerationGate.report_gate_id}</Text>
+                                  </Space>
+                                  <Descriptions size="small" column={1}>
+                                    <Descriptions.Item label="result_candidate_id">
+                                      {latestReportGenerationGate.result_candidate_id}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="manual_analysis_execution_id">
+                                      {latestReportGenerationGate.manual_analysis_execution_id}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="input boundary">
+                                      source={latestReportGenerationGate.input_boundary?.source || '-'}, official_verification=
+                                      {boolText(latestReportGenerationGate.input_boundary?.official_verification)}, full_web=
+                                      {boolText(latestReportGenerationGate.input_boundary?.full_web_coverage)}, provider_truth=
+                                      {boolText(latestReportGenerationGate.input_boundary?.provider_output_is_truth)}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="readiness">
+                                      can_generate_summary_report_now=
+                                      {boolText(latestReportGenerationGate.readiness?.can_generate_summary_report_now)}, requires_report_runtime=
+                                      {boolText(latestReportGenerationGate.readiness?.requires_report_runtime)}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <Space wrap>
+                                    {Object.entries(latestReportGenerationGate.now_flags || {}).map(([key, value]) => (
+                                      <Tag color={value ? 'red' : 'default'} key={key}>
+                                        {key}={boolText(value)}
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                  <SummaryList
+                                    title="Allowed future outputs"
+                                    items={Object.entries(latestReportGenerationGate.allowed_future_outputs || {}).map(
+                                      ([key, value]) => `${key}: ${boolText(value)}`,
+                                    )}
+                                  />
+                                  <SummaryList
+                                    title="Required report sections"
+                                    items={Object.entries(latestReportGenerationGate.required_report_sections || {}).map(
+                                      ([key, value]) => `${key}: ${boolText(value)}`,
+                                    )}
+                                  />
+                                  <SummaryList title="Report gate warnings" items={latestReportGenerationGate.warnings || []} />
+                                  <SummaryList title="Blocked reasons" items={latestReportGenerationGate.blocked_reasons || []} />
+                                  <SummaryList title="Boundary notes" items={latestReportGenerationGate.boundary_notes || []} />
+                                  <SummaryList title="Recommended next steps" items={latestReportGenerationGate.recommended_next_steps || []} />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No Report Generation Gate record yet.</Text>
+                            )}
+                            {reportGenerationGateAudits.length ? (
+                              <Card size="small" title={`Report generation gate audit timeline (${reportGenerationGateAudits.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {reportGenerationGateAudits.map((audit) => (
+                                    <Space wrap key={audit.report_gate_audit_id}>
+                                      <Tag color="green">{audit.decision}</Tag>
+                                      <Text type="secondary">{audit.decided_at || '-'}</Text>
+                                      <Text type="secondary">effect={audit.analysis_effect}</Text>
+                                      <Text type="secondary">summary_report={boolText(audit.now_flags?.generate_summary_report_now)}</Text>
+                                      <Text type="secondary">export={boolText(audit.now_flags?.export_now)}</Text>
+                                      <Text type="secondary">public_event={boolText(audit.now_flags?.generate_public_event_now)}</Text>
                                     </Space>
                                   ))}
                                 </Space>

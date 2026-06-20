@@ -388,6 +388,34 @@ def route_manual_analysis_execution_payload(**overrides: object) -> dict:
     return payload
 
 
+def route_report_generation_gate_payload(**overrides: object) -> dict:
+    payload = {
+        "manual_analysis_execution_id": "",
+        "result_candidate_id": "",
+        "boundary_gate_id": "",
+        "review_case_id": "",
+        "reviewer_label": "route_report_gate_reviewer",
+        "note": "Route report generation gate record only.",
+        "requested_future_output": "summary_report_candidate",
+        "acknowledge_gate_only": True,
+        "acknowledge_no_summary_report_generation": True,
+        "acknowledge_no_b_end_report_generation": True,
+        "acknowledge_no_export_generation": True,
+        "acknowledge_no_sandbox_or_public_event": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_provider_output_is_evidence_not_truth": True,
+        "acknowledge_not_official_verification": True,
+        "acknowledge_not_full_web_coverage": True,
+        "acknowledge_weak_evidence_warning": True,
+        "acknowledge_rejected_exclusion": True,
+        "acknowledge_dedup_no_risk_amplification": True,
+        "acknowledge_audit_trace_required": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def create_route_manual_trigger_ready_chain(tmp_path: Path):
     request_id, _preflight_id = create_route_real_preview_chain(tmp_path, package_dir=create_route_many_safe_preview_package(tmp_path))
     preview_response = client.post(
@@ -2295,6 +2323,96 @@ def test_analysis_request_manual_analysis_execution_routes_create_list_read_cand
             promotion_gate_id=promotion_gate["promotion_gate_id"],
             review_case_id=review_case_id,
             generate_public_event_now=True,
+        ),
+    )
+    assert unsafe_response.status_code == 400
+
+
+def test_analysis_request_report_generation_gate_routes_create_list_read_audit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, review_case_id, promotion_gate, manual_trigger, _item_ids = create_route_manual_trigger_ready_chain(tmp_path)
+    boundary_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/analysis-result-boundary-gates",
+        json=route_analysis_result_boundary_gate_payload(
+            manual_trigger_id=manual_trigger["manual_trigger_id"],
+            promotion_gate_id=promotion_gate["promotion_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert boundary_response.status_code == 200
+    boundary_gate = boundary_response.json()
+    execution_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/manual-analysis-executions",
+        json=route_manual_analysis_execution_payload(
+            manual_trigger_id=manual_trigger["manual_trigger_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            promotion_gate_id=promotion_gate["promotion_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert execution_response.status_code == 200
+    execution = execution_response.json()
+
+    create_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/report-generation-gates",
+        json=route_report_generation_gate_payload(
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+
+    assert create_response.status_code == 200
+    body = create_response.json()
+    assert body["schema"] == "sentigraph_report_generation_gate_v1"
+    assert body["status"] == "report_gate_ready_for_future_runtime"
+    assert body["allowed_future_outputs"]["summary_report_candidate"] is True
+    assert body["allowed_future_outputs"]["b_end_report_candidate"] is False
+    assert body["allowed_future_outputs"]["pdf_export"] is False
+    assert body["allowed_future_outputs"]["markdown_export"] is False
+    assert body["allowed_future_outputs"]["briefing_deck_export"] is False
+    assert body["allowed_future_outputs"]["sandbox"] is False
+    assert body["allowed_future_outputs"]["public_event"] is False
+    assert body["readiness"]["can_generate_summary_report_candidate_in_future"] is True
+    assert body["readiness"]["can_generate_summary_report_now"] is False
+    assert body["readiness"]["can_export_now"] is False
+    assert body["readiness"]["can_generate_sandbox_now"] is False
+    assert body["readiness"]["can_generate_public_event_now"] is False
+    assert body["input_boundary"]["source"] == "manual_analysis_result_candidate"
+    assert body["input_boundary"]["read_original_package_rows_now"] is False
+    assert all(body["required_report_sections"].values())
+
+    read_response = client.get(f"/api/v1/analysis-requests/{request_id}/report-generation-gates/{body['report_gate_id']}")
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/report-generation-gates")
+    all_response = client.get("/api/v1/analysis-requests/report-generation-gates")
+    audit_response = client.get(f"/api/v1/analysis-requests/{request_id}/report-generation-gate-audits")
+    all_audit_response = client.get("/api/v1/analysis-requests/report-generation-gate-audits")
+    gate_audit_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/report-generation-gates/{body['report_gate_id']}/audits"
+    )
+
+    assert read_response.status_code == 200
+    assert list_response.status_code == 200
+    assert all_response.status_code == 200
+    assert audit_response.status_code == 200
+    assert all_audit_response.status_code == 200
+    assert gate_audit_response.status_code == 200
+    assert read_response.json()["report_gate_id"] == body["report_gate_id"]
+    assert list_response.json()[0]["report_gate_id"] == body["report_gate_id"]
+    assert audit_response.json()[0]["report_gate_id"] == body["report_gate_id"]
+    assert audit_response.json()[0]["analysis_effect"] == "report_generation_gate_record_only_no_report_generated"
+    assert gate_audit_response.json()[0]["now_flags"]["generate_summary_report_now"] is False
+    assert gate_audit_response.json()[0]["now_flags"]["export_now"] is False
+
+    unsafe_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/report-generation-gates",
+        json=route_report_generation_gate_payload(
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+            generate_summary_report_now=True,
         ),
     )
     assert unsafe_response.status_code == 400

@@ -90,6 +90,9 @@ from app.schemas.analysis_request import (
     ManualAnalysisTriggerAudit,
     ManualAnalysisTriggerReadiness,
     ManualAnalysisTriggerRequest,
+    ReportGenerationGate,
+    ReportGenerationGateAudit,
+    ReportGenerationGateRequest,
     ManualEvidenceImportPackageFileChecks,
     ManualEvidenceImportPreflightChecks,
     ManualEvidenceImportTargetCase,
@@ -1539,6 +1542,71 @@ def list_manual_analysis_execution_audits_for_execution(
     ]
 
 
+def read_report_generation_gate(request_id: str, report_gate_id: str) -> ReportGenerationGate:
+    gate_path = _report_generation_gate_path(request_id, report_gate_id)
+    if not gate_path.exists():
+        raise AnalysisRequestNotFoundError(f"Report generation gate {report_gate_id} was not found.")
+    try:
+        parsed = json.loads(gate_path.read_text(encoding="utf-8-sig"))
+        gate = ReportGenerationGate.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{gate_path.name} is not a valid report generation gate: {type(exc).__name__}") from exc
+    if gate.request_id != request_id or gate.report_gate_id != report_gate_id:
+        raise AnalysisRequestValidationError("Report generation gate id mismatch.")
+    return gate
+
+
+def list_report_generation_gates(request_id: str) -> list[ReportGenerationGate]:
+    read_analysis_request(request_id)
+    root = _ensure_root()
+    gates: list[ReportGenerationGate] = []
+    for path in sorted((root / "report_generation_gates").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        gates.append(read_report_generation_gate(request_id, _report_generation_gate_id_from_path(request_id, path)))
+    return gates
+
+
+def list_all_report_generation_gates() -> list[ReportGenerationGate]:
+    root = _ensure_root()
+    gates: list[ReportGenerationGate] = []
+    for path in sorted((root / "report_generation_gates").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        request_id, report_gate_id = _split_prefixed_id(path, "report_generation_gate")
+        gates.append(read_report_generation_gate(request_id, report_gate_id))
+    return gates
+
+
+def list_report_generation_gate_audits(request_id: str) -> list[ReportGenerationGateAudit]:
+    read_analysis_request(request_id)
+    root = _ensure_root()
+    audits: list[ReportGenerationGateAudit] = []
+    for path in sorted((root / "report_generation_gate_audits").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ReportGenerationGateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid report generation gate audit: {type(exc).__name__}") from exc
+    return audits
+
+
+def list_all_report_generation_gate_audits() -> list[ReportGenerationGateAudit]:
+    root = _ensure_root()
+    audits: list[ReportGenerationGateAudit] = []
+    for path in sorted((root / "report_generation_gate_audits").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ReportGenerationGateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid report generation gate audit: {type(exc).__name__}") from exc
+    return audits
+
+
+def list_report_generation_gate_audits_for_gate(request_id: str, report_gate_id: str) -> list[ReportGenerationGateAudit]:
+    return [
+        audit
+        for audit in list_report_generation_gate_audits(request_id)
+        if audit.report_gate_id == report_gate_id
+    ]
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -2672,6 +2740,70 @@ def create_manual_analysis_execution(
         audit.model_dump(mode="json", by_alias=True),
     )
     return read_manual_analysis_execution(request_id, execution_id)
+
+
+def create_report_generation_gate(
+    request_id: str,
+    payload: ReportGenerationGateRequest | dict[str, Any],
+) -> ReportGenerationGate:
+    try:
+        gate_payload = (
+            payload
+            if isinstance(payload, ReportGenerationGateRequest)
+            else ReportGenerationGateRequest.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create report generation gate: invalid payload ({exc}).") from exc
+
+    _validate_report_generation_gate_payload(gate_payload)
+    read_analysis_request(request_id)
+    execution = read_manual_analysis_execution(request_id, gate_payload.manual_analysis_execution_id)
+    candidate = read_manual_analysis_result_candidate(request_id, gate_payload.result_candidate_id)
+    boundary_gate = read_analysis_result_boundary_gate(request_id, gate_payload.boundary_gate_id)
+    _validate_report_generation_gate_prerequisites(request_id, gate_payload, execution, candidate, boundary_gate)
+
+    report_gate_id = _new_report_generation_gate_id()
+    audit_id = _new_report_generation_gate_audit_id()
+    boundary_notes = _report_generation_gate_boundary_notes()
+    warnings = _report_generation_gate_warnings(execution, candidate, boundary_gate)
+    gate = ReportGenerationGate(
+        report_gate_id=report_gate_id,
+        request_id=request_id,
+        review_case_id=execution.review_case_id,
+        manual_analysis_execution_id=execution.manual_analysis_execution_id,
+        result_candidate_id=candidate.result_candidate_id,
+        boundary_gate_id=boundary_gate.boundary_gate_id,
+        created_at=datetime.now(timezone.utc),
+        created_by=gate_payload.reviewer_label.strip(),
+        status="report_gate_ready_for_future_runtime",
+        warnings=warnings,
+        boundary_notes=boundary_notes,
+        recommended_next_steps=[
+            "Future Phase 7J may create a Summary Report Candidate while preserving all boundary sections.",
+            "B-end report, export, Sandbox, and public event outputs require separate later gates.",
+            "Do not present this gate as a generated report, official verification, or full-web coverage.",
+        ],
+    )
+    audit = ReportGenerationGateAudit(
+        report_gate_audit_id=audit_id,
+        report_gate_id=report_gate_id,
+        manual_analysis_execution_id=execution.manual_analysis_execution_id,
+        result_candidate_id=candidate.result_candidate_id,
+        boundary_gate_id=boundary_gate.boundary_gate_id,
+        request_id=request_id,
+        review_case_id=execution.review_case_id,
+        reviewer_label=gate_payload.reviewer_label.strip(),
+        decided_at=datetime.now(timezone.utc),
+        note=gate_payload.note.strip(),
+        requested_future_output=gate_payload.requested_future_output,
+        boundary_notes=boundary_notes,
+    )
+    _write_json(_report_generation_gate_path(request_id, report_gate_id), gate.model_dump(mode="json", by_alias=True))
+    _write_json(
+        _report_generation_gate_audit_path(request_id, report_gate_id, audit_id),
+        audit.model_dump(mode="json", by_alias=True),
+    )
+    return read_report_generation_gate(request_id, report_gate_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -5642,6 +5774,206 @@ def _manual_analysis_risk_level(distribution: dict[str, int], weak_count: int, i
     return "low_limited_sample"
 
 
+def _validate_report_generation_gate_payload(payload: ReportGenerationGateRequest) -> None:
+    if not (payload.manual_analysis_execution_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create report generation gate: manual_analysis_execution_id is required.")
+    if not (payload.result_candidate_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create report generation gate: result_candidate_id is required.")
+    if not (payload.boundary_gate_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create report generation gate: boundary_gate_id is required.")
+    if not (payload.reviewer_label or "").strip():
+        raise AnalysisRequestValidationError("Cannot create report generation gate: reviewer_label is required.")
+    if not (payload.note or "").strip():
+        raise AnalysisRequestValidationError("Cannot create report generation gate: note is required.")
+    if payload.requested_future_output != "summary_report_candidate":
+        raise AnalysisRequestValidationError("Cannot create report generation gate: requested_future_output must be summary_report_candidate.")
+    acknowledgements = {
+        "acknowledge_gate_only": payload.acknowledge_gate_only,
+        "acknowledge_no_summary_report_generation": payload.acknowledge_no_summary_report_generation,
+        "acknowledge_no_b_end_report_generation": payload.acknowledge_no_b_end_report_generation,
+        "acknowledge_no_export_generation": payload.acknowledge_no_export_generation,
+        "acknowledge_no_sandbox_or_public_event": payload.acknowledge_no_sandbox_or_public_event,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_provider_output_is_evidence_not_truth": payload.acknowledge_provider_output_is_evidence_not_truth,
+        "acknowledge_not_official_verification": payload.acknowledge_not_official_verification,
+        "acknowledge_not_full_web_coverage": payload.acknowledge_not_full_web_coverage,
+        "acknowledge_weak_evidence_warning": payload.acknowledge_weak_evidence_warning,
+        "acknowledge_rejected_exclusion": payload.acknowledge_rejected_exclusion,
+        "acknowledge_dedup_no_risk_amplification": payload.acknowledge_dedup_no_risk_amplification,
+        "acknowledge_audit_trace_required": payload.acknowledge_audit_trace_required,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(
+            f"Cannot create report generation gate: acknowledgement flags are required ({', '.join(missing)})."
+        )
+    side_effect_flags = {
+        "generate_summary_report_now": payload.generate_summary_report_now,
+        "generate_report_now": payload.generate_report_now,
+        "generate_b_end_report_now": payload.generate_b_end_report_now,
+        "export_now": payload.export_now,
+        "generate_sandbox_now": payload.generate_sandbox_now,
+        "generate_public_event_now": payload.generate_public_event_now,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "read_original_package_rows_now": payload.read_original_package_rows_now,
+        "call_llm_now": payload.call_llm_now,
+        "call_external_api_now": payload.call_external_api_now,
+        "provider_execution_requested": payload.provider_execution_requested,
+        "collector_job_requested": payload.collector_job_requested,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(
+            f"Cannot create report generation gate: side effect flags must remain false ({', '.join(enabled)})."
+        )
+    unsafe_claims = {
+        "include_rejected_evidence": payload.include_rejected_evidence,
+        "include_privacy_hold_evidence": payload.include_privacy_hold_evidence,
+        "include_needs_more_source_evidence": payload.include_needs_more_source_evidence,
+        "remove_weak_warnings": payload.remove_weak_warnings,
+        "duplicates_amplify_risk": payload.duplicates_amplify_risk,
+        "provider_output_is_truth": payload.provider_output_is_truth,
+        "official_verification": payload.official_verification,
+        "full_web_coverage": payload.full_web_coverage,
+    }
+    unsafe = [name for name, value in unsafe_claims.items() if value]
+    if unsafe:
+        raise AnalysisRequestValidationError(
+            f"Cannot create report generation gate: unsafe report claims are not allowed ({', '.join(unsafe)})."
+        )
+    if _report_generation_payload_has_forbidden_extra(payload):
+        raise AnalysisRequestValidationError("Cannot create report generation gate: raw/private/secret-like fields are not allowed.")
+
+
+def _validate_report_generation_gate_prerequisites(
+    request_id: str,
+    payload: ReportGenerationGateRequest,
+    execution: ManualAnalysisExecution,
+    candidate: ManualAnalysisResultCandidate,
+    boundary_gate: AnalysisResultBoundaryGate,
+) -> None:
+    if execution.request_id != request_id or candidate.request_id != request_id or boundary_gate.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: request_id mismatch.")
+    if payload.review_case_id and payload.review_case_id != execution.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: review_case_id does not match manual analysis execution.")
+    if execution.review_case_id != candidate.review_case_id or execution.review_case_id != boundary_gate.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: review_case_id mismatch.")
+    if execution.boundary_gate_id != boundary_gate.boundary_gate_id or candidate.audit_refs.get("boundary_gate_id") != boundary_gate.boundary_gate_id:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: boundary gate mismatch.")
+    if execution.result_candidate_id != candidate.result_candidate_id or candidate.manual_analysis_execution_id != execution.manual_analysis_execution_id:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: result candidate mismatch.")
+    if execution.status != "analysis_result_candidate_created":
+        raise AnalysisRequestValidationError("Cannot create report generation gate: manual analysis execution is not ready.")
+    if boundary_gate.status != "boundary_ready_for_future_analysis_result_runtime":
+        raise AnalysisRequestValidationError("Cannot create report generation gate: analysis result boundary gate is not ready.")
+    if not execution.readiness.analysis_result_candidate_created:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: execution readiness is not candidate-created.")
+    if execution.readiness.can_generate_report_now:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: execution has unsafe report readiness.")
+    if any(value is True for value in execution.now_flags.values()):
+        raise AnalysisRequestValidationError("Cannot create report generation gate: execution now_flags must remain false.")
+    if boundary_gate.readiness.can_present_analysis_result_now:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: boundary gate has unsafe result presentation readiness.")
+    _validate_analysis_result_boundary_now_flags("boundary gate", boundary_gate.now_flags)
+    _validate_analysis_result_boundary_safe_mode("execution", execution.safe_mode)
+    _validate_analysis_result_boundary_safe_mode("boundary gate", boundary_gate.safe_mode)
+    if not any(
+        audit.analysis_effect == "local_result_candidate_created"
+        for audit in list_manual_analysis_execution_audits_for_execution(request_id, execution.manual_analysis_execution_id)
+    ):
+        raise AnalysisRequestValidationError("Cannot create report generation gate: manual analysis execution audit is missing.")
+    if not any(
+        audit.analysis_effect == "boundary_gate_record_only_no_analysis_run"
+        for audit in list_analysis_result_boundary_gate_audits_for_gate(request_id, boundary_gate.boundary_gate_id)
+    ):
+        raise AnalysisRequestValidationError("Cannot create report generation gate: boundary gate audit is missing.")
+    if not candidate.boundary_block or not all(candidate.boundary_block.values()):
+        raise AnalysisRequestValidationError("Cannot create report generation gate: candidate boundary block is missing or incomplete.")
+    if candidate.source_scope_summary.included_item_count <= 0:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: candidate source scope summary is empty.")
+    if not candidate.audit_refs or candidate.audit_refs.get("boundary_gate_id") != boundary_gate.boundary_gate_id:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: candidate audit refs are incomplete.")
+    if any(value is True for value in candidate.downstream_flags.values()):
+        raise AnalysisRequestValidationError("Cannot create report generation gate: candidate downstream flags must remain false.")
+    serialized_candidate = json.dumps(candidate.model_dump(mode="json"), ensure_ascii=False).lower()
+    if "provider output is evidence, not truth".lower() not in serialized_candidate:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: provider evidence-not-truth note is missing.")
+    if "not official verification" not in serialized_candidate:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: not-official-verification note is missing.")
+    if "full-web" not in serialized_candidate or "full-platform" not in serialized_candidate:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: coverage limitation note is missing.")
+    if boundary_gate.analysis_input_boundary.provider_output_is_truth or boundary_gate.analysis_input_boundary.official_verification:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: boundary gate contains unsafe truth/verification claim.")
+    if boundary_gate.analysis_input_boundary.full_web_coverage or boundary_gate.analysis_input_boundary.analysis_includes_rejected:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: boundary gate contains unsafe coverage or rejected-evidence claim.")
+    if boundary_gate.analysis_input_boundary.duplicates_amplify_risk:
+        raise AnalysisRequestValidationError("Cannot create report generation gate: boundary gate allows duplicate amplification.")
+
+
+def _report_generation_gate_warnings(
+    execution: ManualAnalysisExecution,
+    candidate: ManualAnalysisResultCandidate,
+    boundary_gate: AnalysisResultBoundaryGate,
+) -> list[str]:
+    return _unique_preserve_order(
+        list(execution.warnings)
+        + list(candidate.confidence_notes)
+        + list(candidate.limitations)
+        + list(boundary_gate.warnings)
+        + [
+            "Report Generation Gate record only; no Summary Report, B-end report, export file, Sandbox fixture, public event page, Evidence Layer write, or production case.",
+            "Provider output is evidence, not truth.",
+            "This gate is not official verification.",
+            "This gate is not full-web, full-platform, or full-thread coverage.",
+            "Weak evidence remains warning-marked.",
+            "Rejected evidence remains excluded.",
+            "Duplicate evidence must not amplify risk, sentiment, coverage, or conclusions.",
+        ]
+    )
+
+
+def _report_generation_gate_boundary_notes() -> list[str]:
+    return [
+        "This creates a report readiness gate only.",
+        "This does not generate Summary Report, B-end report, PDF, Markdown, briefing deck, Sandbox, or public event output.",
+        "Future report runtime must preserve the ManualAnalysisResultCandidate boundary block.",
+        "Weak evidence remains warning-marked.",
+        "Rejected evidence remains excluded.",
+        "Duplicate evidence must not amplify risk.",
+        "Provider output is evidence, not truth.",
+        "This is not official verification.",
+        "This is not full-web coverage.",
+    ]
+
+
+def _report_generation_payload_has_forbidden_extra(payload: ReportGenerationGateRequest) -> bool:
+    extra = getattr(payload, "model_extra", None) or {}
+    forbidden_names = {
+        "cookie",
+        "token",
+        "session",
+        "api_key",
+        ".env",
+        "raw_author_id",
+        "raw_author_name",
+        "profile_url",
+        "password",
+        "private_message",
+        "email",
+        "phone",
+    }
+    for key, value in extra.items():
+        key_text = str(key).lower()
+        value_text = str(value).lower() if isinstance(value, (str, int, float, bool)) else ""
+        if any(name in key_text for name in forbidden_names):
+            return True
+        if any(name in value_text for name in forbidden_names):
+            return True
+    return False
+
+
 def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -6064,6 +6396,8 @@ def _ensure_root() -> Path:
     (root / "manual_analysis_executions").mkdir(parents=True, exist_ok=True)
     (root / "manual_analysis_result_candidates").mkdir(parents=True, exist_ok=True)
     (root / "manual_analysis_execution_audits").mkdir(parents=True, exist_ok=True)
+    (root / "report_generation_gates").mkdir(parents=True, exist_ok=True)
+    (root / "report_generation_gate_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -6264,6 +6598,21 @@ def _manual_analysis_execution_audit_path(request_id: str, manual_analysis_execu
     return root / "manual_analysis_execution_audits" / f"{request_id}_{manual_analysis_execution_id}_{audit_id}.json"
 
 
+def _report_generation_gate_path(request_id: str, report_gate_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(report_gate_id)
+    root = _ensure_root()
+    return root / "report_generation_gates" / f"{request_id}_{report_gate_id}.json"
+
+
+def _report_generation_gate_audit_path(request_id: str, report_gate_id: str, audit_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(report_gate_id)
+    _validate_request_id(audit_id)
+    root = _ensure_root()
+    return root / "report_generation_gate_audits" / f"{request_id}_{report_gate_id}_{audit_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -6301,6 +6650,13 @@ def _manual_analysis_result_candidate_id_from_path(request_id: str, path: Path) 
     if parsed_request_id != request_id:
         raise AnalysisRequestValidationError("Manual analysis result candidate request id mismatch.")
     return candidate_id
+
+
+def _report_generation_gate_id_from_path(request_id: str, path: Path) -> str:
+    parsed_request_id, report_gate_id = _split_prefixed_id(path, "report_generation_gate")
+    if parsed_request_id != request_id:
+        raise AnalysisRequestValidationError("Report generation gate request id mismatch.")
+    return report_gate_id
 
 
 def _new_request_id(title: str) -> str:
@@ -6412,6 +6768,16 @@ def _new_manual_analysis_result_candidate_id() -> str:
 def _new_manual_analysis_execution_audit_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"manual_analysis_execution_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_report_generation_gate_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"report_generation_gate_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_report_generation_gate_audit_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"report_generation_gate_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

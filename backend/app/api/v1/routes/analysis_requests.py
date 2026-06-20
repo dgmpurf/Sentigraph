@@ -32,6 +32,9 @@ from app.schemas.analysis_request import (
     ManualAnalysisExecutionAudit,
     ManualAnalysisExecutionRequest,
     ManualAnalysisResultCandidate,
+    ReportGenerationGate,
+    ReportGenerationGateAudit,
+    ReportGenerationGateRequest,
     ManualAnalysisTrigger,
     ManualAnalysisTriggerAudit,
     ManualAnalysisTriggerRequest,
@@ -67,6 +70,7 @@ from app.services.analysis_request_store import (
     create_evidence_row_reader_dry_run,
     create_manual_evidence_import_execution_preflight,
     create_manual_analysis_execution,
+    create_report_generation_gate,
     create_manual_analysis_trigger,
     create_analysis_request,
     create_manual_evidence_import_job,
@@ -89,6 +93,8 @@ from app.services.analysis_request_store import (
     list_all_manual_analysis_execution_audits,
     list_all_manual_analysis_executions,
     list_all_manual_analysis_result_candidates,
+    list_all_report_generation_gate_audits,
+    list_all_report_generation_gates,
     list_all_manual_analysis_trigger_audits,
     list_all_manual_analysis_triggers,
     list_all_promotion_decision_audits,
@@ -116,6 +122,9 @@ from app.services.analysis_request_store import (
     list_manual_analysis_execution_audits_for_execution,
     list_manual_analysis_executions,
     list_manual_analysis_result_candidates,
+    list_report_generation_gate_audits,
+    list_report_generation_gate_audits_for_gate,
+    list_report_generation_gates,
     list_manual_analysis_trigger_audits,
     list_manual_analysis_trigger_audits_for_trigger,
     list_manual_analysis_triggers,
@@ -141,6 +150,7 @@ from app.services.analysis_request_store import (
     read_manual_evidence_import_job,
     read_manual_analysis_execution,
     read_manual_analysis_result_candidate,
+    read_report_generation_gate,
     read_manual_analysis_trigger,
     read_real_package_row_preview,
     read_review_only_case,
@@ -288,6 +298,16 @@ def analysis_request_manual_analysis_result_candidate_all_list() -> list[ManualA
 @router.get("/manual-analysis-execution-audits", response_model=list[ManualAnalysisExecutionAudit])
 def analysis_request_manual_analysis_execution_audit_all_list() -> list[ManualAnalysisExecutionAudit]:
     return list_all_manual_analysis_execution_audits()
+
+
+@router.get("/report-generation-gates", response_model=list[ReportGenerationGate])
+def analysis_request_report_generation_gate_all_list() -> list[ReportGenerationGate]:
+    return list_all_report_generation_gates()
+
+
+@router.get("/report-generation-gate-audits", response_model=list[ReportGenerationGateAudit])
+def analysis_request_report_generation_gate_audit_all_list() -> list[ReportGenerationGateAudit]:
+    return list_all_report_generation_gate_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -1034,6 +1054,62 @@ def analysis_request_manual_analysis_execution_audit_for_execution_list(
 ) -> list[ManualAnalysisExecutionAudit]:
     try:
         return list_manual_analysis_execution_audits_for_execution(request_id, manual_analysis_execution_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/report-generation-gates", response_model=list[ReportGenerationGate])
+def analysis_request_report_generation_gate_list(request_id: str) -> list[ReportGenerationGate]:
+    try:
+        return list_report_generation_gates(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/report-generation-gates", response_model=ReportGenerationGate)
+def analysis_request_report_generation_gate_create(
+    request_id: str,
+    payload: ReportGenerationGateRequest,
+) -> ReportGenerationGate:
+    try:
+        return create_report_generation_gate(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/report-generation-gates/{report_gate_id}", response_model=ReportGenerationGate)
+def analysis_request_report_generation_gate_detail(
+    request_id: str,
+    report_gate_id: str,
+) -> ReportGenerationGate:
+    try:
+        return read_report_generation_gate(request_id, report_gate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/report-generation-gate-audits", response_model=list[ReportGenerationGateAudit])
+def analysis_request_report_generation_gate_audit_list(request_id: str) -> list[ReportGenerationGateAudit]:
+    try:
+        return list_report_generation_gate_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/report-generation-gates/{report_gate_id}/audits",
+    response_model=list[ReportGenerationGateAudit],
+)
+def analysis_request_report_generation_gate_audit_for_gate_list(
+    request_id: str,
+    report_gate_id: str,
+) -> list[ReportGenerationGateAudit]:
+    try:
+        return list_report_generation_gate_audits_for_gate(request_id, report_gate_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
