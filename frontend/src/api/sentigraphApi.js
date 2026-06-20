@@ -347,6 +347,38 @@ export async function listAnalysisRequestPromotionDecisionAuditsForGate(requestI
   return Array.isArray(data) ? data.map(normalizePromotionDecisionAudit).filter(Boolean) : []
 }
 
+export async function listAnalysisRequestManualAnalysisTriggers(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/manual-analysis-triggers`)
+  return Array.isArray(data) ? data.map(normalizeManualAnalysisTrigger).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestManualAnalysisTrigger(requestId, payload = {}) {
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/manual-analysis-triggers`,
+    payload,
+  )
+  return normalizeManualAnalysisTrigger(data)
+}
+
+export async function getAnalysisRequestManualAnalysisTrigger(requestId, manualTriggerId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/manual-analysis-triggers/${encodeURIComponent(manualTriggerId)}`,
+  )
+  return normalizeManualAnalysisTrigger(data)
+}
+
+export async function listAnalysisRequestManualAnalysisTriggerAudits(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/manual-analysis-trigger-audits`)
+  return Array.isArray(data) ? data.map(normalizeManualAnalysisTriggerAudit).filter(Boolean) : []
+}
+
+export async function listAnalysisRequestManualAnalysisTriggerAuditsForTrigger(requestId, manualTriggerId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/manual-analysis-triggers/${encodeURIComponent(manualTriggerId)}/audits`,
+  )
+  return Array.isArray(data) ? data.map(normalizeManualAnalysisTriggerAudit).filter(Boolean) : []
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -2278,6 +2310,66 @@ function normalizePromotionDecisionAudit(data) {
     now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
     boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+  }
+}
+
+function normalizeManualAnalysisTrigger(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_manual_analysis_trigger_v1'),
+    manual_trigger_id: String(data.manual_trigger_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    promotion_gate_id: String(data.promotion_gate_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    trigger_decision: String(data.trigger_decision || ''),
+    status: String(data.status || 'blocked'),
+    analysis_scope: data.analysis_scope && typeof data.analysis_scope === 'object' ? normalizeSafeObject(data.analysis_scope) : {},
+    required_warnings:
+      data.required_warnings && typeof data.required_warnings === 'object'
+        ? normalizeSafeObject(data.required_warnings)
+        : {},
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    blocked_reasons: Array.isArray(data.blocked_reasons) ? data.blocked_reasons.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeManualAnalysisTriggerAudit(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_manual_analysis_trigger_audit_v1'),
+    manual_trigger_audit_id: String(data.manual_trigger_audit_id || ''),
+    manual_trigger_id: String(data.manual_trigger_id || ''),
+    promotion_gate_id: String(data.promotion_gate_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    decision: String(data.decision || ''),
+    reviewer_label: String(data.reviewer_label || ''),
+    decided_at: data.decided_at ? String(data.decided_at) : '',
+    note: String(data.note || ''),
+    included_item_ids: Array.isArray(data.included_item_ids) ? data.included_item_ids.map((item) => String(item)) : [],
+    excluded_item_ids: Array.isArray(data.excluded_item_ids) ? data.excluded_item_ids.map((item) => String(item)) : [],
+    weak_warning_item_ids: Array.isArray(data.weak_warning_item_ids)
+      ? data.weak_warning_item_ids.map((item) => String(item))
+      : [],
+    included_group_ids: Array.isArray(data.included_group_ids) ? data.included_group_ids.map((item) => String(item)) : [],
+    excluded_group_ids: Array.isArray(data.excluded_group_ids) ? data.excluded_group_ids.map((item) => String(item)) : [],
+    coverage_acknowledgement: Boolean(data.coverage_acknowledgement),
+    privacy_acknowledgement: Boolean(data.privacy_acknowledgement),
+    dedup_warning_acknowledgement: Boolean(data.dedup_warning_acknowledgement),
+    provider_output_is_evidence_not_truth_acknowledgement: Boolean(data.provider_output_is_evidence_not_truth_acknowledgement),
+    analysis_effect: String(data.analysis_effect || 'trigger_record_only_no_analysis_run'),
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }
 

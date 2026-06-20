@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   cancelAnalysisRequest,
   createAnalysisRequestAnalysisReadyPromotionGate,
+  createAnalysisRequestManualAnalysisTrigger,
   createAnalysisRequest,
   createAnalysisRequestDedupGroupReviewAction,
   createAnalysisRequestCaseDraft,
@@ -52,6 +53,8 @@ import {
   listAnalysisRequestDedupGroupReviewAudits,
   listAnalysisRequestDedupPreviews,
   listAnalysisRequestImportJobs,
+  listAnalysisRequestManualAnalysisTriggerAudits,
+  listAnalysisRequestManualAnalysisTriggers,
   listAnalysisRequestRealPackageRowPreviews,
   listAnalysisRequestReviewOnlyCases,
   listAnalysisRequestReviewQueueActionAudits,
@@ -212,6 +215,21 @@ const PROMOTION_GATE_STATUS_COLOR = {
   eligible_for_future_manual_analysis_trigger: 'green',
   held_by_human: 'gold',
   rejected_by_human: 'red',
+  blocked: 'red',
+  privacy_hold: 'magenta',
+}
+
+const MANUAL_TRIGGER_DECISION_OPTIONS = [
+  { value: 'trigger_analysis', label: 'trigger_analysis / record trigger only' },
+  { value: 'hold', label: 'hold' },
+  { value: 'cancel', label: 'cancel' },
+]
+
+const MANUAL_TRIGGER_STATUS_COLOR = {
+  trigger_recorded_ready_for_future_analysis_runtime: 'green',
+  held: 'gold',
+  cancelled: 'default',
+  incomplete: 'orange',
   blocked: 'red',
   privacy_hold: 'magenta',
 }
@@ -609,6 +627,7 @@ export function AnalysisRequests() {
   const [dedupPreviewForm] = Form.useForm()
   const [dedupGroupReviewForm] = Form.useForm()
   const [analysisReadyPromotionGateForm] = Form.useForm()
+  const [manualAnalysisTriggerForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -632,6 +651,8 @@ export function AnalysisRequests() {
   const [dedupGroupReviewAudits, setDedupGroupReviewAudits] = useState([])
   const [analysisReadyPromotionGates, setAnalysisReadyPromotionGates] = useState([])
   const [promotionDecisionAudits, setPromotionDecisionAudits] = useState([])
+  const [manualAnalysisTriggers, setManualAnalysisTriggers] = useState([])
+  const [manualAnalysisTriggerAudits, setManualAnalysisTriggerAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -651,6 +672,7 @@ export function AnalysisRequests() {
   const [dedupPreviewLoading, setDedupPreviewLoading] = useState(false)
   const [dedupGroupReviewLoading, setDedupGroupReviewLoading] = useState('')
   const [analysisReadyPromotionGateLoading, setAnalysisReadyPromotionGateLoading] = useState(false)
+  const [manualAnalysisTriggerLoading, setManualAnalysisTriggerLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -668,6 +690,7 @@ export function AnalysisRequests() {
   const [dedupPreviewError, setDedupPreviewError] = useState('')
   const [dedupGroupReviewError, setDedupGroupReviewError] = useState('')
   const [analysisReadyPromotionGateError, setAnalysisReadyPromotionGateError] = useState('')
+  const [manualAnalysisTriggerError, setManualAnalysisTriggerError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -686,6 +709,12 @@ export function AnalysisRequests() {
     const selected = new Set(Array.isArray(watchedReviewChecklist) ? watchedReviewChecklist : [])
     return REVIEW_CHECKLIST_KEYS.some((key) => !selected.has(key))
   }, [importPreview, reviewLoading, watchedReviewChecklist, watchedReviewDecision, watchedReviewerLabel])
+
+  function clearManualAnalysisTriggerState() {
+    setManualAnalysisTriggers([])
+    setManualAnalysisTriggerAudits([])
+    setManualAnalysisTriggerError('')
+  }
 
   async function loadDraftAndPlan(requestId) {
     if (!requestId) {
@@ -708,6 +737,7 @@ export function AnalysisRequests() {
       setDedupGroupReviewAudits([])
       setAnalysisReadyPromotionGates([])
       setPromotionDecisionAudits([])
+      clearManualAnalysisTriggerState()
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -822,6 +852,8 @@ export function AnalysisRequests() {
       setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(requestId))
       setAnalysisReadyPromotionGates(await listAnalysisRequestAnalysisReadyPromotionGates(requestId))
       setPromotionDecisionAudits(await listAnalysisRequestPromotionDecisionAudits(requestId))
+      setManualAnalysisTriggers(await listAnalysisRequestManualAnalysisTriggers(requestId))
+      setManualAnalysisTriggerAudits(await listAnalysisRequestManualAnalysisTriggerAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
@@ -831,6 +863,7 @@ export function AnalysisRequests() {
       setDedupGroupReviewAudits([])
       setAnalysisReadyPromotionGates([])
       setPromotionDecisionAudits([])
+      clearManualAnalysisTriggerState()
       setReviewQueueInitError('')
       setReviewQueueActionError('')
       setReviewQueueCompletionGateError('')
@@ -1162,6 +1195,7 @@ export function AnalysisRequests() {
       setDedupGroupReviewAudits([])
       setAnalysisReadyPromotionGates([])
       setPromotionDecisionAudits([])
+      clearManualAnalysisTriggerState()
       message.success(`Created review-only staging import: ${stagingImport.staging_import_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review-only staging import.'
@@ -1198,6 +1232,7 @@ export function AnalysisRequests() {
       setDedupGroupReviewAudits([])
       setAnalysisReadyPromotionGates([])
       setPromotionDecisionAudits([])
+      clearManualAnalysisTriggerState()
       message.success(`Initialized review-only queue: ${queueInit.queue_init_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to initialize review-only queue.'
@@ -1236,6 +1271,7 @@ export function AnalysisRequests() {
       setDedupGroupReviewAudits([])
       setAnalysisReadyPromotionGates([])
       setPromotionDecisionAudits([])
+      clearManualAnalysisTriggerState()
       message.success(`Recorded review action: ${action}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record review queue action.'
@@ -1267,6 +1303,7 @@ export function AnalysisRequests() {
       setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(selectedRecord.request_id))
       setAnalysisReadyPromotionGates([])
       setPromotionDecisionAudits([])
+      clearManualAnalysisTriggerState()
       message.success(`Evaluated completion gate: ${gate.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to evaluate review queue completion gate.'
@@ -1298,6 +1335,7 @@ export function AnalysisRequests() {
       setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(selectedRecord.request_id))
       setAnalysisReadyPromotionGates([])
       setPromotionDecisionAudits([])
+      clearManualAnalysisTriggerState()
       message.success(`Created dedup preview: ${preview.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create dedup preview.'
@@ -1359,6 +1397,7 @@ export function AnalysisRequests() {
       setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(selectedRecord.request_id))
       setAnalysisReadyPromotionGates([])
       setPromotionDecisionAudits([])
+      clearManualAnalysisTriggerState()
       message.success(`Recorded dedup group action: ${result?.new_group_status || action}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record dedup group review action.'
@@ -1404,12 +1443,61 @@ export function AnalysisRequests() {
       })
       setAnalysisReadyPromotionGates(await listAnalysisRequestAnalysisReadyPromotionGates(selectedRecord.request_id))
       setPromotionDecisionAudits(await listAnalysisRequestPromotionDecisionAudits(selectedRecord.request_id))
+      setManualAnalysisTriggers(await listAnalysisRequestManualAnalysisTriggers(selectedRecord.request_id))
+      setManualAnalysisTriggerAudits(await listAnalysisRequestManualAnalysisTriggerAudits(selectedRecord.request_id))
       message.success(`Recorded promotion gate: ${gate?.status || 'created'}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create analysis-ready promotion gate.'
       setAnalysisReadyPromotionGateError(String(messageText))
     } finally {
       setAnalysisReadyPromotionGateLoading(false)
+    }
+  }
+
+  async function handleCreateManualAnalysisTrigger(values) {
+    if (!selectedRecord?.request_id || !latestAnalysisReadyPromotionGate?.promotion_gate_id) return
+    setManualAnalysisTriggerLoading(true)
+    setManualAnalysisTriggerError('')
+    try {
+      const trigger = await createAnalysisRequestManualAnalysisTrigger(selectedRecord.request_id, {
+        promotion_gate_id: values.promotion_gate_id || latestAnalysisReadyPromotionGate.promotion_gate_id,
+        review_case_id: values.review_case_id || latestAnalysisReadyPromotionGate.review_case_id || undefined,
+        trigger_decision: values.trigger_decision || 'trigger_analysis',
+        reviewer_label: String(values.reviewer_label || '').trim(),
+        note: String(values.note || '').trim(),
+        analysis_scope_mode: 'promotion_set_preview',
+        coverage_acknowledged: Boolean(values.coverage_acknowledged),
+        privacy_acknowledged: Boolean(values.privacy_acknowledged),
+        weak_warning_acknowledged: Boolean(values.weak_warning_acknowledged),
+        dedup_warning_acknowledged: Boolean(values.dedup_warning_acknowledged),
+        provider_output_is_evidence_not_truth_acknowledged: Boolean(values.provider_output_is_evidence_not_truth_acknowledged),
+        not_official_verification_acknowledged: Boolean(values.not_official_verification_acknowledged),
+        not_full_web_coverage_acknowledged: Boolean(values.not_full_web_coverage_acknowledged),
+        acknowledge_trigger_record_only: Boolean(values.acknowledge_trigger_record_only),
+        acknowledge_no_analysis_run: Boolean(values.acknowledge_no_analysis_run),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_no_report: Boolean(values.acknowledge_no_report),
+        acknowledge_no_sandbox_or_public_event: Boolean(values.acknowledge_no_sandbox_or_public_event),
+        write_evidence_layer_now: false,
+        create_production_case_now: false,
+        create_production_review_queue_now: false,
+        run_production_dedup_now: false,
+        run_dedup_now: false,
+        run_analysis_now: false,
+        generate_analysis_result_now: false,
+        generate_report_now: false,
+        generate_sandbox_now: false,
+        generate_public_event_now: false,
+      })
+      setManualAnalysisTriggers(await listAnalysisRequestManualAnalysisTriggers(selectedRecord.request_id))
+      setManualAnalysisTriggerAudits(await listAnalysisRequestManualAnalysisTriggerAudits(selectedRecord.request_id))
+      message.success(`Recorded manual trigger: ${trigger?.status || 'created'}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record manual analysis trigger.'
+      setManualAnalysisTriggerError(String(messageText))
+    } finally {
+      setManualAnalysisTriggerLoading(false)
     }
   }
 
@@ -1684,6 +1772,16 @@ export function AnalysisRequests() {
   const promotionDecisionAuditsJson = promotionDecisionAudits.length
     ? JSON.stringify(promotionDecisionAudits, null, 2)
     : ''
+  const latestManualAnalysisTrigger = manualAnalysisTriggers[0] || null
+  const latestManualAnalysisTriggerJson = latestManualAnalysisTrigger
+    ? JSON.stringify(latestManualAnalysisTrigger, null, 2)
+    : ''
+  const manualAnalysisTriggersJson = manualAnalysisTriggers.length
+    ? JSON.stringify(manualAnalysisTriggers, null, 2)
+    : ''
+  const manualAnalysisTriggerAuditsJson = manualAnalysisTriggerAudits.length
+    ? JSON.stringify(manualAnalysisTriggerAudits, null, 2)
+    : ''
   const analysisReadyPromotionGateValues = Form.useWatch([], analysisReadyPromotionGateForm) || {}
   const dedupGroupsNeedReview = useMemo(
     () => (latestDedupPreview?.groups || []).some((group) => !['confirmed', 'marked_weak', 'representative_changed', 'rejected'].includes(group.group_status)),
@@ -1707,6 +1805,28 @@ export function AnalysisRequests() {
         analysisReadyPromotionGateValues.acknowledge_no_report,
     )
   }, [analysisReadyPromotionGateValues, dedupGroupsNeedReview, latestDedupPreview?.dedup_preview_id, latestDedupPreview?.status])
+  const manualAnalysisTriggerValues = Form.useWatch([], manualAnalysisTriggerForm) || {}
+  const manualAnalysisTriggerReady = useMemo(() => {
+    return Boolean(
+      latestAnalysisReadyPromotionGate?.promotion_gate_id &&
+        latestAnalysisReadyPromotionGate?.status === 'eligible_for_future_manual_analysis_trigger' &&
+        String(manualAnalysisTriggerValues.reviewer_label || '').trim() &&
+        String(manualAnalysisTriggerValues.note || '').trim() &&
+        manualAnalysisTriggerValues.coverage_acknowledged &&
+        manualAnalysisTriggerValues.privacy_acknowledged &&
+        manualAnalysisTriggerValues.weak_warning_acknowledged &&
+        manualAnalysisTriggerValues.dedup_warning_acknowledged &&
+        manualAnalysisTriggerValues.provider_output_is_evidence_not_truth_acknowledged &&
+        manualAnalysisTriggerValues.not_official_verification_acknowledged &&
+        manualAnalysisTriggerValues.not_full_web_coverage_acknowledged &&
+        manualAnalysisTriggerValues.acknowledge_trigger_record_only &&
+        manualAnalysisTriggerValues.acknowledge_no_analysis_run &&
+        manualAnalysisTriggerValues.acknowledge_no_evidence_layer_write &&
+        manualAnalysisTriggerValues.acknowledge_no_production_case &&
+        manualAnalysisTriggerValues.acknowledge_no_report &&
+        manualAnalysisTriggerValues.acknowledge_no_sandbox_or_public_event,
+    )
+  }, [latestAnalysisReadyPromotionGate?.promotion_gate_id, latestAnalysisReadyPromotionGate?.status, manualAnalysisTriggerValues])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -4218,6 +4338,196 @@ export function AnalysisRequests() {
                                       <Text type="secondary">{audit.new_status}</Text>
                                       <Text type="secondary">{audit.reviewed_at || '-'}</Text>
                                       <Text type="secondary">effect={audit.analysis_effect}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Manual Analysis Trigger / 人工分析触发">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Trigger record only: no analysis runs here"
+                              description="This records a manual analysis trigger decision only. It does not run analysis, does not generate Analysis Result, does not write Evidence Layer, does not create a production case, and does not generate report, Sandbox, or public event output."
+                            />
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="Eligible promotion gate is not automatic analysis"
+                              description="Weak evidence remains warning-marked, rejected evidence remains excluded, duplicate evidence must not amplify risk, provider output is evidence not truth, and coverage limitations must be shown in any future analysis."
+                            />
+                            {manualAnalysisTriggerError ? <Alert type="error" showIcon message={manualAnalysisTriggerError} /> : null}
+                            <Form
+                              form={manualAnalysisTriggerForm}
+                              layout="vertical"
+                              initialValues={{
+                                trigger_decision: 'trigger_analysis',
+                                reviewer_label: 'manual_trigger_reviewer',
+                                coverage_acknowledged: true,
+                                privacy_acknowledged: true,
+                                weak_warning_acknowledged: true,
+                                dedup_warning_acknowledged: true,
+                                provider_output_is_evidence_not_truth_acknowledged: true,
+                                not_official_verification_acknowledged: true,
+                                not_full_web_coverage_acknowledged: true,
+                                acknowledge_trigger_record_only: true,
+                                acknowledge_no_analysis_run: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_no_report: true,
+                                acknowledge_no_sandbox_or_public_event: true,
+                              }}
+                              onFinish={handleCreateManualAnalysisTrigger}
+                            >
+                              <Row gutter={12}>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Trigger decision" name="trigger_decision">
+                                    <Select options={MANUAL_TRIGGER_DECISION_OPTIONS} />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Reviewer label" name="reviewer_label" rules={[{ required: true }]}>
+                                    <Input placeholder="manual_trigger_reviewer" />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Promotion gate id" name="promotion_gate_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestAnalysisReadyPromotionGate?.promotion_gate_id || 'latest eligible promotion gate'}
+                                      options={analysisReadyPromotionGates.map((item) => ({
+                                        value: item.promotion_gate_id,
+                                        label: `${item.status} / ${item.promotion_gate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24}>
+                                  <Form.Item label="Decision note" name="note" rules={[{ required: true }]}>
+                                    <TextArea rows={2} placeholder="Why this promoted review-only set should be triggered, held, or cancelled." />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={12}>
+                                {[
+                                  ['coverage_acknowledged', 'Coverage limitations acknowledged'],
+                                  ['privacy_acknowledged', 'Privacy boundaries acknowledged'],
+                                  ['weak_warning_acknowledged', 'Weak evidence warning acknowledged'],
+                                  ['dedup_warning_acknowledged', 'Dedup warning acknowledged'],
+                                  ['provider_output_is_evidence_not_truth_acknowledged', 'Provider output is evidence, not truth'],
+                                  ['not_official_verification_acknowledged', 'Not official verification'],
+                                  ['not_full_web_coverage_acknowledged', 'Not full-web coverage'],
+                                  ['acknowledge_trigger_record_only', 'Trigger record only'],
+                                  ['acknowledge_no_analysis_run', 'No analysis run'],
+                                  ['acknowledge_no_evidence_layer_write', 'No Evidence Layer write'],
+                                  ['acknowledge_no_production_case', 'No production case'],
+                                  ['acknowledge_no_report', 'No report generation'],
+                                  ['acknowledge_no_sandbox_or_public_event', 'No Sandbox/public event generation'],
+                                ].map(([name, label]) => (
+                                  <Col xs={24} md={12} key={name}>
+                                    <Form.Item name={name} valuePropName="checked">
+                                      <Checkbox>{label}</Checkbox>
+                                    </Form.Item>
+                                  </Col>
+                                ))}
+                              </Row>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  icon={<ShieldCheck size={16} />}
+                                  loading={manualAnalysisTriggerLoading}
+                                  disabled={!manualAnalysisTriggerReady || manualAnalysisTriggerLoading}
+                                >
+                                  Record Manual Trigger
+                                </Button>
+                                {latestManualAnalysisTrigger ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestManualAnalysisTriggerJson, 'Manual trigger JSON copied')}
+                                  >
+                                    Copy latest trigger JSON
+                                  </Button>
+                                ) : null}
+                                {manualAnalysisTriggers.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(manualAnalysisTriggersJson, 'Manual trigger history JSON copied')}
+                                  >
+                                    Copy trigger history JSON
+                                  </Button>
+                                ) : null}
+                                {manualAnalysisTriggerAudits.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(manualAnalysisTriggerAuditsJson, 'Manual trigger audit JSON copied')}
+                                  >
+                                    Copy trigger audit JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+                            {latestManualAnalysisTrigger ? (
+                              <Card size="small" title="Latest manual trigger">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={MANUAL_TRIGGER_STATUS_COLOR[latestManualAnalysisTrigger.status] || 'default'}>
+                                      {latestManualAnalysisTrigger.status}
+                                    </Tag>
+                                    <Tag color="default">decision: {latestManualAnalysisTrigger.trigger_decision || '-'}</Tag>
+                                    <Tag color="default">
+                                      can_run_analysis_now: {boolText(latestManualAnalysisTrigger.readiness?.can_run_analysis_now)}
+                                    </Tag>
+                                    <Tag color="default">
+                                      run_analysis_now: {boolText(latestManualAnalysisTrigger.now_flags?.run_analysis_now)}
+                                    </Tag>
+                                    <Tag color="default">
+                                      generate_analysis_result_now:{' '}
+                                      {boolText(latestManualAnalysisTrigger.now_flags?.generate_analysis_result_now)}
+                                    </Tag>
+                                  </Space>
+                                  <Descriptions size="small" column={1}>
+                                    <Descriptions.Item label="manual_trigger_id">{latestManualAnalysisTrigger.manual_trigger_id}</Descriptions.Item>
+                                    <Descriptions.Item label="promotion_gate_id">{latestManualAnalysisTrigger.promotion_gate_id}</Descriptions.Item>
+                                    <Descriptions.Item label="scope">
+                                      include_items={(latestManualAnalysisTrigger.analysis_scope?.include_item_ids || []).length}, include_groups=
+                                      {(latestManualAnalysisTrigger.analysis_scope?.include_group_ids || []).length}, excluded=
+                                      {(latestManualAnalysisTrigger.analysis_scope?.exclude_item_ids || []).length}, weak=
+                                      {(latestManualAnalysisTrigger.analysis_scope?.weak_warning_item_ids || []).length}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="readiness">
+                                      runtime_not_implemented=
+                                      {boolText(latestManualAnalysisTrigger.readiness?.analysis_runtime_not_implemented_here)}, result_gate_required=
+                                      {boolText(latestManualAnalysisTrigger.readiness?.requires_analysis_result_boundary_gate)}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <SummaryList title="Required coverage warnings" items={latestManualAnalysisTrigger.required_warnings?.coverage_limitations || []} />
+                                  <SummaryList title="Weak evidence warnings" items={latestManualAnalysisTrigger.required_warnings?.weak_evidence_warnings || []} />
+                                  <SummaryList title="Dedup warnings" items={latestManualAnalysisTrigger.required_warnings?.dedup_preview_warnings || []} />
+                                  <SummaryList title="Trigger warnings" items={latestManualAnalysisTrigger.warnings || []} />
+                                  <SummaryList title="Blocked reasons" items={latestManualAnalysisTrigger.blocked_reasons || []} />
+                                  <SummaryList title="Boundary notes" items={latestManualAnalysisTrigger.boundary_notes || []} />
+                                  <SummaryList title="Recommended next steps" items={latestManualAnalysisTrigger.recommended_next_steps || []} />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No manual analysis trigger record yet.</Text>
+                            )}
+                            {manualAnalysisTriggerAudits.length ? (
+                              <Card size="small" title={`Manual trigger audit timeline (${manualAnalysisTriggerAudits.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {manualAnalysisTriggerAudits.map((audit) => (
+                                    <Space wrap key={audit.manual_trigger_audit_id}>
+                                      <Tag color={audit.decision === 'trigger_analysis' ? 'green' : audit.decision === 'hold' ? 'gold' : 'default'}>
+                                        {audit.decision}
+                                      </Tag>
+                                      <Text type="secondary">{audit.decided_at || '-'}</Text>
+                                      <Text type="secondary">effect={audit.analysis_effect}</Text>
+                                      <Text type="secondary">run_analysis_now={boolText(audit.now_flags?.run_analysis_now)}</Text>
                                     </Space>
                                   ))}
                                 </Space>

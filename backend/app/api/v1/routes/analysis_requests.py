@@ -25,6 +25,9 @@ from app.schemas.analysis_request import (
     ManualEvidenceImportExecutionPreflightCreate,
     ManualEvidenceImportJob,
     ManualEvidenceImportJobCreate,
+    ManualAnalysisTrigger,
+    ManualAnalysisTriggerAudit,
+    ManualAnalysisTriggerRequest,
     PromotionDecisionAudit,
     RealPackageRowPreview,
     RealPackageRowPreviewCreate,
@@ -55,6 +58,7 @@ from app.services.analysis_request_store import (
     create_evidence_import_review_decision,
     create_evidence_row_reader_dry_run,
     create_manual_evidence_import_execution_preflight,
+    create_manual_analysis_trigger,
     create_analysis_request,
     create_manual_evidence_import_job,
     create_real_package_row_preview,
@@ -71,6 +75,8 @@ from app.services.analysis_request_store import (
     list_all_evidence_row_reader_dry_runs,
     list_all_manual_evidence_import_execution_preflights,
     list_all_manual_evidence_import_jobs,
+    list_all_manual_analysis_trigger_audits,
+    list_all_manual_analysis_triggers,
     list_all_promotion_decision_audits,
     list_all_evidence_import_review_decisions,
     list_all_real_package_row_previews,
@@ -89,6 +95,9 @@ from app.services.analysis_request_store import (
     list_analysis_requests,
     list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
+    list_manual_analysis_trigger_audits,
+    list_manual_analysis_trigger_audits_for_trigger,
+    list_manual_analysis_triggers,
     list_promotion_decision_audits,
     list_promotion_decision_audits_for_gate,
     list_real_package_row_previews,
@@ -108,6 +117,7 @@ from app.services.analysis_request_store import (
     read_analysis_request,
     read_manual_evidence_import_execution_preflight,
     read_manual_evidence_import_job,
+    read_manual_analysis_trigger,
     read_real_package_row_preview,
     read_review_only_case,
     read_review_only_case_staging_import,
@@ -219,6 +229,16 @@ def analysis_request_analysis_ready_promotion_gate_all_list() -> list[AnalysisRe
 @router.get("/promotion-decision-audits", response_model=list[PromotionDecisionAudit])
 def analysis_request_promotion_decision_audit_all_list() -> list[PromotionDecisionAudit]:
     return list_all_promotion_decision_audits()
+
+
+@router.get("/manual-analysis-triggers", response_model=list[ManualAnalysisTrigger])
+def analysis_request_manual_analysis_trigger_all_list() -> list[ManualAnalysisTrigger]:
+    return list_all_manual_analysis_triggers()
+
+
+@router.get("/manual-analysis-trigger-audits", response_model=list[ManualAnalysisTriggerAudit])
+def analysis_request_manual_analysis_trigger_audit_all_list() -> list[ManualAnalysisTriggerAudit]:
+    return list_all_manual_analysis_trigger_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -773,6 +793,62 @@ def analysis_request_analysis_ready_promotion_gate_audit_list(
 ) -> list[PromotionDecisionAudit]:
     try:
         return list_promotion_decision_audits_for_gate(request_id, promotion_gate_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/manual-analysis-triggers", response_model=list[ManualAnalysisTrigger])
+def analysis_request_manual_analysis_trigger_list(request_id: str) -> list[ManualAnalysisTrigger]:
+    try:
+        return list_manual_analysis_triggers(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/manual-analysis-triggers", response_model=ManualAnalysisTrigger)
+def analysis_request_manual_analysis_trigger_create(
+    request_id: str,
+    payload: ManualAnalysisTriggerRequest,
+) -> ManualAnalysisTrigger:
+    try:
+        return create_manual_analysis_trigger(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/manual-analysis-triggers/{manual_trigger_id}", response_model=ManualAnalysisTrigger)
+def analysis_request_manual_analysis_trigger_detail(
+    request_id: str,
+    manual_trigger_id: str,
+) -> ManualAnalysisTrigger:
+    try:
+        return read_manual_analysis_trigger(request_id, manual_trigger_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/manual-analysis-trigger-audits", response_model=list[ManualAnalysisTriggerAudit])
+def analysis_request_manual_analysis_trigger_audit_list(request_id: str) -> list[ManualAnalysisTriggerAudit]:
+    try:
+        return list_manual_analysis_trigger_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/manual-analysis-triggers/{manual_trigger_id}/audits",
+    response_model=list[ManualAnalysisTriggerAudit],
+)
+def analysis_request_manual_analysis_trigger_audit_for_trigger_list(
+    request_id: str,
+    manual_trigger_id: str,
+) -> list[ManualAnalysisTriggerAudit]:
+    try:
+        return list_manual_analysis_trigger_audits_for_trigger(request_id, manual_trigger_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -22,6 +22,7 @@ from app.services.analysis_request_store import (
     create_dedup_preview,
     create_dedup_group_review_action,
     create_analysis_ready_promotion_gate,
+    create_manual_analysis_trigger,
     create_review_queue_item_action,
     create_analysis_request,
     get_analysis_request_config,
@@ -39,6 +40,8 @@ from app.services.analysis_request_store import (
     list_dedup_previews,
     list_dedup_group_review_audits,
     list_analysis_ready_promotion_gates,
+    list_manual_analysis_trigger_audits,
+    list_manual_analysis_triggers,
     list_promotion_decision_audits,
     list_review_queue_initializations,
     list_analysis_requests,
@@ -51,6 +54,7 @@ from app.services.analysis_request_store import (
     read_dedup_preview,
     read_dedup_group_review_audits_for_group,
     read_analysis_ready_promotion_gate,
+    read_manual_analysis_trigger,
     read_review_queue_initialization,
     read_review_queue_item_batch,
     read_staged_evidence_candidate_batch,
@@ -426,6 +430,32 @@ def promotion_gate_payload(decision: str = "approve_for_future_manual_analysis_t
         "acknowledge_no_production_case": True,
         "acknowledge_no_production_dedup": True,
         "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def manual_analysis_trigger_payload(decision: str = "trigger_analysis", **overrides: object) -> dict:
+    payload = {
+        "promotion_gate_id": "",
+        "review_case_id": "",
+        "trigger_decision": decision,
+        "reviewer_label": "manual_trigger_reviewer",
+        "note": f"Local manual analysis trigger decision: {decision}.",
+        "analysis_scope_mode": "promotion_set_preview",
+        "coverage_acknowledged": True,
+        "privacy_acknowledged": True,
+        "weak_warning_acknowledged": True,
+        "dedup_warning_acknowledged": True,
+        "provider_output_is_evidence_not_truth_acknowledged": True,
+        "not_official_verification_acknowledged": True,
+        "not_full_web_coverage_acknowledged": True,
+        "acknowledge_trigger_record_only": True,
+        "acknowledge_no_analysis_run": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_report": True,
+        "acknowledge_no_sandbox_or_public_event": True,
     }
     payload.update(overrides)
     return payload
@@ -3214,6 +3244,185 @@ def test_analysis_ready_promotion_gate_blocks_unresolved_or_unsafe_inputs(tmp_pa
     batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
     result = create_analysis_ready_promotion_gate(record.request_id, base_payload)
     assert result.status == "eligible_for_future_manual_analysis_trigger"
+
+
+def create_manual_trigger_ready_chain(tmp_path: Path, request_id: str):
+    _case, _staging, queue_init, item_batch, gate, preview, group = create_dedup_preview_ready_chain(tmp_path, request_id)
+    create_dedup_group_review_action(
+        request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("confirm_group"),
+    )
+    promotion_gate = create_analysis_ready_promotion_gate(
+        request_id,
+        promotion_gate_payload(
+            review_case_id=queue_init.review_case_id,
+            queue_init_id=queue_init.queue_init_id,
+            completion_gate_id=gate.completion_gate_id,
+            dedup_preview_id=preview.dedup_preview_id,
+        ),
+    )
+    return queue_init, item_batch, promotion_gate
+
+
+def test_manual_analysis_trigger_records_ready_object_and_audit_without_running_analysis(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Manual trigger ready")))
+    queue_init, item_batch, promotion_gate = create_manual_trigger_ready_chain(tmp_path, record.request_id)
+
+    result = create_manual_analysis_trigger(
+        record.request_id,
+        manual_analysis_trigger_payload(
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    read_back = read_manual_analysis_trigger(record.request_id, result.manual_trigger_id)
+    triggers = list_manual_analysis_triggers(record.request_id)
+    audits = list_manual_analysis_trigger_audits(record.request_id)
+    refreshed_items = read_review_queue_item_batch(record.request_id, queue_init.queue_init_id).items
+
+    assert result.schema_ == "sentigraph_manual_analysis_trigger_v1"
+    assert result.status == "trigger_recorded_ready_for_future_analysis_runtime"
+    assert result.trigger_decision == "trigger_analysis"
+    assert result.analysis_scope.source == "review_only_promoted_set"
+    assert set(result.analysis_scope.include_item_ids) == {item.review_item_id for item in item_batch.items}
+    assert result.analysis_scope.include_group_ids == promotion_gate.promotion_set_preview.group_ids
+    assert result.analysis_scope.exclude_item_ids == promotion_gate.promotion_set_preview.excluded_item_ids
+    assert result.analysis_scope.weak_warning_item_ids == promotion_gate.promotion_set_preview.weak_item_ids
+    assert result.required_warnings.provider_output_is_evidence_not_truth is True
+    assert result.required_warnings.not_official_verification is True
+    assert result.required_warnings.not_full_web_coverage is True
+    assert result.now_flags["run_analysis_now"] is False
+    assert result.now_flags["generate_analysis_result_now"] is False
+    assert result.now_flags["write_evidence_layer_now"] is False
+    assert result.now_flags["create_production_case_now"] is False
+    assert result.readiness.can_run_analysis_now is False
+    assert result.readiness.analysis_runtime_not_implemented_here is True
+    assert "Analysis Result Boundary Gate" in " ".join(result.recommended_next_steps)
+    assert read_back.manual_trigger_id == result.manual_trigger_id
+    assert triggers[0].manual_trigger_id == result.manual_trigger_id
+    assert len(audits) == 1
+    assert audits[0].manual_trigger_id == result.manual_trigger_id
+    assert audits[0].analysis_effect == "trigger_record_only_no_analysis_run"
+    assert audits[0].now_flags["run_analysis_now"] is False
+    assert all(item.governance.analysis_included is False for item in refreshed_items)
+
+
+def test_manual_analysis_trigger_hold_and_cancel_append_audits_without_analysis(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Manual trigger hold cancel")))
+    queue_init, _item_batch, promotion_gate = create_manual_trigger_ready_chain(tmp_path, record.request_id)
+
+    hold = create_manual_analysis_trigger(
+        record.request_id,
+        manual_analysis_trigger_payload(
+            "hold",
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    cancel = create_manual_analysis_trigger(
+        record.request_id,
+        manual_analysis_trigger_payload(
+            "cancel",
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    audits = list_manual_analysis_trigger_audits(record.request_id)
+
+    assert hold.status == "held"
+    assert hold.now_flags["run_analysis_now"] is False
+    assert cancel.status == "cancelled"
+    assert cancel.now_flags["generate_analysis_result_now"] is False
+    assert len(audits) == 2
+    assert {audit.decision for audit in audits} == {"hold", "cancel"}
+    assert all(audit.analysis_effect == "trigger_record_only_no_analysis_run" for audit in audits)
+
+
+def test_manual_analysis_trigger_blocks_unsafe_or_incomplete_payloads(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Manual trigger blockers")))
+    queue_init, _item_batch, promotion_gate = create_manual_trigger_ready_chain(tmp_path, record.request_id)
+    base_payload = manual_analysis_trigger_payload(
+        promotion_gate_id=promotion_gate.promotion_gate_id,
+        review_case_id=queue_init.review_case_id,
+    )
+    unsafe_payloads = [
+        {**base_payload, "promotion_gate_id": ""},
+        {**base_payload, "reviewer_label": ""},
+        {**base_payload, "note": ""},
+        {**base_payload, "coverage_acknowledged": False},
+        {**base_payload, "provider_output_is_evidence_not_truth_acknowledged": False},
+        {**base_payload, "acknowledge_no_analysis_run": False},
+        {**base_payload, "run_analysis_now": True},
+        {**base_payload, "generate_analysis_result_now": True},
+        {**base_payload, "write_evidence_layer_now": True},
+        {**base_payload, "create_production_case_now": True},
+        {**base_payload, "generate_report_now": True},
+        {**base_payload, "generate_sandbox_now": True},
+        {**base_payload, "generate_public_event_now": True},
+        {**base_payload, "trust_label": "high"},
+        {**base_payload, "verification_status": "verified_by_official_api"},
+    ]
+    for payload in unsafe_payloads:
+        try:
+            create_manual_analysis_trigger(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert any(
+                text in str(exc)
+                for text in ("promotion_gate", "reviewer", "note", "acknowledgement", "side effect", "trust", "verification")
+            )
+        else:
+            raise AssertionError("unsafe manual trigger payload should fail")
+
+    noneligible = create_analysis_ready_promotion_gate(
+        record.request_id,
+        promotion_gate_payload(
+            "hold_for_more_review",
+            review_case_id=queue_init.review_case_id,
+            queue_init_id=promotion_gate.queue_init_id,
+            completion_gate_id=promotion_gate.completion_gate_id,
+            dedup_preview_id=promotion_gate.dedup_preview_id,
+        ),
+    )
+    try:
+        create_manual_analysis_trigger(
+            record.request_id,
+            manual_analysis_trigger_payload(
+                promotion_gate_id=noneligible.promotion_gate_id,
+                review_case_id=queue_init.review_case_id,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - non-eligible gate should block.
+        assert "eligible" in str(exc) or "promotion" in str(exc)
+    else:
+        raise AssertionError("non-eligible promotion gate should block manual trigger")
+
+
+def test_manual_analysis_trigger_does_not_parse_real_package_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Manual trigger no package parse")))
+    queue_init, _item_batch, promotion_gate = create_manual_trigger_ready_chain(tmp_path, record.request_id)
+    forbidden_row_file = tmp_path / "many_safe_real_preview_package" / "evidence_items.jsonl"
+    assert forbidden_row_file.exists()
+    forbidden_row_file.write_text(
+        '{"raw_author_id":"must_not_be_read_by_manual_trigger","body_text":"unsafe row"}\n{broken',
+        encoding="utf-8",
+    )
+
+    result = create_manual_analysis_trigger(
+        record.request_id,
+        manual_analysis_trigger_payload(
+            promotion_gate_id=promotion_gate.promotion_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+
+    assert result.status == "trigger_recorded_ready_for_future_analysis_runtime"
+    assert "must_not_be_read_by_manual_trigger" not in json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
 
 
 def test_config_uses_default_runtime_label_without_absolute_path(monkeypatch) -> None:

@@ -2279,6 +2279,207 @@ class AnalysisReadyPromotionGate(BaseModel):
     )
 
 
+ManualAnalysisTriggerDecision = Literal["trigger_analysis", "hold", "cancel"]
+ManualAnalysisTriggerStatus = Literal[
+    "trigger_recorded_ready_for_future_analysis_runtime",
+    "held",
+    "cancelled",
+    "incomplete",
+    "blocked",
+    "privacy_hold",
+]
+
+
+class ManualAnalysisTriggerRequest(BaseModel):
+    promotion_gate_id: str
+    review_case_id: str | None = None
+    trigger_decision: ManualAnalysisTriggerDecision
+    reviewer_label: str
+    note: str
+    analysis_scope_mode: Literal["promotion_set_preview"] = "promotion_set_preview"
+    coverage_acknowledged: bool = False
+    privacy_acknowledged: bool = False
+    weak_warning_acknowledged: bool = False
+    dedup_warning_acknowledged: bool = False
+    provider_output_is_evidence_not_truth_acknowledged: bool = False
+    not_official_verification_acknowledged: bool = False
+    not_full_web_coverage_acknowledged: bool = False
+    acknowledge_trigger_record_only: bool = False
+    acknowledge_no_analysis_run: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_no_report: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    production_case_id: str | None = None
+    target_production_case_id: str | None = None
+    trust_label: str | None = None
+    verification_status: str | None = None
+    evidence_layer_written: bool = False
+    production_case_created: bool = False
+    production_review_queue_created: bool = False
+    production_dedup_run: bool = False
+    analysis_included: bool = False
+    analysis_run: bool = False
+    analysis_result_generated: bool = False
+    report_generated: bool = False
+    sandbox_generated: bool = False
+    public_event_generated: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    create_production_review_queue_now: bool = False
+    run_production_dedup_now: bool = False
+    run_dedup_now: bool = False
+    run_analysis_now: bool = False
+    generate_analysis_result_now: bool = False
+    generate_report_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_public_event_now: bool = False
+
+
+class ManualAnalysisScope(BaseModel):
+    source: Literal["review_only_promoted_set"] = "review_only_promoted_set"
+    include_item_ids: list[str] = Field(default_factory=list)
+    include_group_ids: list[str] = Field(default_factory=list)
+    exclude_item_ids: list[str] = Field(default_factory=list)
+    exclude_group_ids: list[str] = Field(default_factory=list)
+    weak_warning_item_ids: list[str] = Field(default_factory=list)
+    weak_warning_group_ids: list[str] = Field(default_factory=list)
+    analysis_input_source: Literal["review_only_promoted_candidates"] = "review_only_promoted_candidates"
+    analysis_included_after_runtime: Literal["not_set_by_this_phase"] = "not_set_by_this_phase"
+
+
+class ManualAnalysisRequiredWarnings(BaseModel):
+    coverage_limitations: list[str] = Field(default_factory=list)
+    weak_evidence_warnings: list[str] = Field(default_factory=list)
+    dedup_preview_warnings: list[str] = Field(default_factory=list)
+    provider_output_is_evidence_not_truth: bool = True
+    not_official_verification: bool = True
+    not_full_web_coverage: bool = True
+
+
+class ManualAnalysisTriggerReadiness(BaseModel):
+    can_run_analysis_now: bool = False
+    analysis_runtime_not_implemented_here: bool = True
+    requires_analysis_result_boundary_gate: bool = True
+    requires_future_explicit_analysis_execution_phase: bool = True
+
+
+class ManualAnalysisTrigger(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_manual_analysis_trigger_v1"] = Field(
+        default="sentigraph_manual_analysis_trigger_v1",
+        alias="schema",
+    )
+    manual_trigger_id: str
+    request_id: str
+    review_case_id: str
+    promotion_gate_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    trigger_decision: ManualAnalysisTriggerDecision
+    status: ManualAnalysisTriggerStatus = "blocked"
+    analysis_scope: ManualAnalysisScope = Field(default_factory=ManualAnalysisScope)
+    required_warnings: ManualAnalysisRequiredWarnings = Field(default_factory=ManualAnalysisRequiredWarnings)
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "create_production_review_queue_now": False,
+            "run_production_dedup_now": False,
+            "run_analysis_now": False,
+            "generate_analysis_result_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    readiness: ManualAnalysisTriggerReadiness = Field(default_factory=ManualAnalysisTriggerReadiness)
+    blocked_reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "manual_trigger_record_only": True,
+            "original_package_rows_re_read": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_generated": False,
+            "analysis_result_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class ManualAnalysisTriggerAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_manual_analysis_trigger_audit_v1"] = Field(
+        default="sentigraph_manual_analysis_trigger_audit_v1",
+        alias="schema",
+    )
+    manual_trigger_audit_id: str
+    manual_trigger_id: str
+    promotion_gate_id: str
+    request_id: str
+    review_case_id: str
+    decision: ManualAnalysisTriggerDecision
+    reviewer_label: str
+    decided_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    included_item_ids: list[str] = Field(default_factory=list)
+    excluded_item_ids: list[str] = Field(default_factory=list)
+    weak_warning_item_ids: list[str] = Field(default_factory=list)
+    included_group_ids: list[str] = Field(default_factory=list)
+    excluded_group_ids: list[str] = Field(default_factory=list)
+    coverage_acknowledgement: bool = True
+    privacy_acknowledgement: bool = True
+    dedup_warning_acknowledgement: bool = True
+    provider_output_is_evidence_not_truth_acknowledgement: bool = True
+    analysis_effect: Literal["trigger_record_only_no_analysis_run"] = "trigger_record_only_no_analysis_run"
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "run_analysis_now": False,
+            "write_evidence_layer_now": False,
+            "generate_analysis_result_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "manual_trigger_audit_only": True,
+            "analysis_generated": False,
+            "analysis_result_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

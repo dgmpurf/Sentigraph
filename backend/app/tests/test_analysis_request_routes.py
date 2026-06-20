@@ -310,6 +310,32 @@ def route_analysis_ready_promotion_gate_payload(**overrides: object) -> dict:
     return payload
 
 
+def route_manual_analysis_trigger_payload(decision: str = "trigger_analysis", **overrides: object) -> dict:
+    payload = {
+        "promotion_gate_id": "",
+        "review_case_id": "",
+        "trigger_decision": decision,
+        "reviewer_label": "route_manual_trigger_reviewer",
+        "note": f"Route manual trigger decision: {decision}.",
+        "analysis_scope_mode": "promotion_set_preview",
+        "coverage_acknowledged": True,
+        "privacy_acknowledged": True,
+        "weak_warning_acknowledged": True,
+        "dedup_warning_acknowledged": True,
+        "provider_output_is_evidence_not_truth_acknowledged": True,
+        "not_official_verification_acknowledged": True,
+        "not_full_web_coverage_acknowledged": True,
+        "acknowledge_trigger_record_only": True,
+        "acknowledge_no_analysis_run": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_report": True,
+        "acknowledge_no_sandbox_or_public_event": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_analysis_request_routes_create_list_read_cancel(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
 
@@ -1860,6 +1886,121 @@ def test_analysis_request_analysis_ready_promotion_gate_routes_create_list_read_
             queue_init_id=queue_init_id,
             completion_gate_id=completion_response.json()["completion_gate_id"],
             dedup_preview_id=dedup_response.json()["dedup_preview_id"],
+            run_analysis_now=True,
+        ),
+    )
+    assert unsafe_response.status_code == 400
+
+
+def test_analysis_request_manual_analysis_trigger_routes_create_list_read_audit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path, package_dir=create_route_many_safe_preview_package(tmp_path))
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=2),
+    )
+    assert preview_response.status_code == 200
+    review_case_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_response.json()["preview_run_id"], "target_case_mode": "new_review_case"},
+    )
+    review_case_id = review_case_response.json()["review_case_id"]
+    staging_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id),
+    )
+    queue_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations",
+        json=route_review_queue_init_ack_payload(review_case_id=review_case_id, staging_import_id=staging_response.json()["staging_import_id"]),
+    )
+    queue_init_id = queue_response.json()["queue_init_id"]
+    items_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-queue-initializations/{queue_init_id}/items")
+    item_ids = [item["review_item_id"] for item in items_response.json()["items"]]
+    for item_id in item_ids:
+        action_response = client.post(
+            f"/api/v1/analysis-requests/{request_id}/review-queue-items/{item_id}/actions",
+            json=route_review_queue_action_payload("approve"),
+        )
+        assert action_response.status_code == 200
+    batch_path = tmp_path / "review_queue_items" / f"{request_id}_{queue_init_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["items"][0]["evidence_candidate"]["source_url"] = "https://example.com/route-manual-trigger?id=1&utm_source=demo"
+    batch_payload["items"][1]["evidence_candidate"]["source_url"] = "https://example.com/route-manual-trigger?id=1"
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+    completion_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-completion-gates",
+        json=route_review_queue_completion_gate_payload(queue_init_id=queue_init_id, review_case_id=review_case_id),
+    )
+    dedup_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/dedup-previews",
+        json=route_dedup_preview_payload(
+            queue_init_id=queue_init_id,
+            review_case_id=review_case_id,
+            completion_gate_id=completion_response.json()["completion_gate_id"],
+        ),
+    )
+    group = dedup_response.json()["groups"][0]
+    group_action_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/dedup-previews/{dedup_response.json()['dedup_preview_id']}/groups/{group['group_candidate_id']}/actions",
+        json=route_dedup_group_review_action_payload("confirm_group"),
+    )
+    assert group_action_response.status_code == 200
+    promotion_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/analysis-ready-promotion-gates",
+        json=route_analysis_ready_promotion_gate_payload(
+            review_case_id=review_case_id,
+            queue_init_id=queue_init_id,
+            completion_gate_id=completion_response.json()["completion_gate_id"],
+            dedup_preview_id=dedup_response.json()["dedup_preview_id"],
+        ),
+    )
+    assert promotion_response.status_code == 200
+
+    create_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/manual-analysis-triggers",
+        json=route_manual_analysis_trigger_payload(
+            promotion_gate_id=promotion_response.json()["promotion_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+
+    assert create_response.status_code == 200
+    body = create_response.json()
+    assert body["schema"] == "sentigraph_manual_analysis_trigger_v1"
+    assert body["status"] == "trigger_recorded_ready_for_future_analysis_runtime"
+    assert body["now_flags"]["run_analysis_now"] is False
+    assert body["now_flags"]["generate_analysis_result_now"] is False
+    assert body["now_flags"]["write_evidence_layer_now"] is False
+    assert body["analysis_scope"]["source"] == "review_only_promoted_set"
+    assert set(body["analysis_scope"]["include_item_ids"]) == set(item_ids)
+
+    read_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/manual-analysis-triggers/{body['manual_trigger_id']}"
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/manual-analysis-triggers")
+    all_response = client.get("/api/v1/analysis-requests/manual-analysis-triggers")
+    audit_response = client.get(f"/api/v1/analysis-requests/{request_id}/manual-analysis-trigger-audits")
+    all_audit_response = client.get("/api/v1/analysis-requests/manual-analysis-trigger-audits")
+    trigger_audit_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/manual-analysis-triggers/{body['manual_trigger_id']}/audits"
+    )
+    assert read_response.status_code == 200
+    assert list_response.status_code == 200
+    assert all_response.status_code == 200
+    assert audit_response.status_code == 200
+    assert all_audit_response.status_code == 200
+    assert trigger_audit_response.status_code == 200
+    assert read_response.json()["manual_trigger_id"] == body["manual_trigger_id"]
+    assert list_response.json()[0]["manual_trigger_id"] == body["manual_trigger_id"]
+    assert audit_response.json()[0]["manual_trigger_id"] == body["manual_trigger_id"]
+    assert audit_response.json()[0]["analysis_effect"] == "trigger_record_only_no_analysis_run"
+    assert trigger_audit_response.json()[0]["now_flags"]["run_analysis_now"] is False
+
+    unsafe_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/manual-analysis-triggers",
+        json=route_manual_analysis_trigger_payload(
+            promotion_gate_id=promotion_response.json()["promotion_gate_id"],
+            review_case_id=review_case_id,
             run_analysis_now=True,
         ),
     )

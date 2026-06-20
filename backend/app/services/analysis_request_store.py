@@ -69,6 +69,12 @@ from app.schemas.analysis_request import (
     ManualEvidenceImportJob,
     ManualEvidenceImportJobCreate,
     ManualEvidenceImportJobReadiness,
+    ManualAnalysisRequiredWarnings,
+    ManualAnalysisScope,
+    ManualAnalysisTrigger,
+    ManualAnalysisTriggerAudit,
+    ManualAnalysisTriggerReadiness,
+    ManualAnalysisTriggerRequest,
     ManualEvidenceImportPackageFileChecks,
     ManualEvidenceImportPreflightChecks,
     ManualEvidenceImportTargetCase,
@@ -1280,6 +1286,75 @@ def list_promotion_decision_audits_for_gate(request_id: str, promotion_gate_id: 
     ]
 
 
+def read_manual_analysis_trigger(request_id: str, manual_trigger_id: str) -> ManualAnalysisTrigger:
+    trigger_path = _manual_analysis_trigger_path(request_id, manual_trigger_id)
+    if not trigger_path.exists():
+        raise AnalysisRequestNotFoundError(f"Manual analysis trigger {manual_trigger_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(trigger_path.read_text(encoding="utf-8-sig"))
+        return ManualAnalysisTrigger.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{trigger_path.name} is not a valid manual analysis trigger: {type(exc).__name__}") from exc
+
+
+def list_manual_analysis_triggers(request_id: str) -> list[ManualAnalysisTrigger]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    triggers: list[ManualAnalysisTrigger] = []
+    for path in sorted((root / "manual_analysis_triggers").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            triggers.append(ManualAnalysisTrigger.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return triggers
+
+
+def list_all_manual_analysis_triggers() -> list[ManualAnalysisTrigger]:
+    root = _ensure_root()
+    triggers: list[ManualAnalysisTrigger] = []
+    for path in sorted((root / "manual_analysis_triggers").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            triggers.append(ManualAnalysisTrigger.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return triggers
+
+
+def list_manual_analysis_trigger_audits(request_id: str) -> list[ManualAnalysisTriggerAudit]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    audits: list[ManualAnalysisTriggerAudit] = []
+    for path in sorted((root / "manual_analysis_trigger_audits").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ManualAnalysisTriggerAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def list_all_manual_analysis_trigger_audits() -> list[ManualAnalysisTriggerAudit]:
+    root = _ensure_root()
+    audits: list[ManualAnalysisTriggerAudit] = []
+    for path in sorted((root / "manual_analysis_trigger_audits").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ManualAnalysisTriggerAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def list_manual_analysis_trigger_audits_for_trigger(request_id: str, manual_trigger_id: str) -> list[ManualAnalysisTriggerAudit]:
+    return [
+        audit
+        for audit in list_manual_analysis_trigger_audits(request_id)
+        if audit.manual_trigger_id == manual_trigger_id
+    ]
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -2082,6 +2157,113 @@ def create_analysis_ready_promotion_gate(
         audit.model_dump(mode="json", by_alias=True),
     )
     return read_analysis_ready_promotion_gate(request_id, gate.promotion_gate_id)
+
+
+def create_manual_analysis_trigger(
+    request_id: str,
+    payload: ManualAnalysisTriggerRequest | dict[str, Any],
+) -> ManualAnalysisTrigger:
+    try:
+        trigger_payload = (
+            payload
+            if isinstance(payload, ManualAnalysisTriggerRequest)
+            else ManualAnalysisTriggerRequest.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create manual analysis trigger: invalid payload ({exc}).") from exc
+
+    _validate_manual_analysis_trigger_payload(trigger_payload)
+    read_analysis_request(request_id)
+    gate = read_analysis_ready_promotion_gate(request_id, trigger_payload.promotion_gate_id)
+    _validate_manual_analysis_trigger_gate(request_id, gate)
+    if trigger_payload.review_case_id and trigger_payload.review_case_id != gate.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: review_case_id does not match promotion gate.")
+    batch = read_review_queue_item_batch(request_id, gate.queue_init_id)
+    _validate_manual_analysis_trigger_scope(gate, batch)
+
+    manual_trigger_id = _new_manual_analysis_trigger_id()
+    audit_id = _new_manual_analysis_trigger_audit_id()
+    status = _manual_analysis_trigger_status(trigger_payload.trigger_decision)
+    analysis_scope = ManualAnalysisScope(
+        include_item_ids=list(gate.promotion_set_preview.item_ids),
+        include_group_ids=list(gate.promotion_set_preview.group_ids),
+        exclude_item_ids=list(gate.promotion_set_preview.excluded_item_ids),
+        exclude_group_ids=[],
+        weak_warning_item_ids=list(gate.promotion_set_preview.weak_item_ids),
+        weak_warning_group_ids=[],
+        analysis_input_source="review_only_promoted_candidates",
+        analysis_included_after_runtime="not_set_by_this_phase",
+    )
+    required_warnings = ManualAnalysisRequiredWarnings(
+        coverage_limitations=[
+            "Coverage is limited to reviewed promoted candidates, not full-web coverage.",
+            "Coverage is limited to available/imported evidence, not full-platform coverage.",
+        ],
+        weak_evidence_warnings=_manual_analysis_weak_warnings(gate),
+        dedup_preview_warnings=[
+            "Duplicate evidence must not amplify risk, sentiment, coverage, or conclusions.",
+            "Duplicate group size is context/density only, not truth strength.",
+        ],
+        provider_output_is_evidence_not_truth=True,
+        not_official_verification=True,
+        not_full_web_coverage=True,
+    )
+    boundary_notes = [
+        "Manual Analysis Trigger records a human decision only.",
+        "This trigger does not run analysis.",
+        "This trigger does not generate Analysis Result.",
+        "This trigger does not write the production Evidence Layer.",
+        "This trigger does not create a production case.",
+        "This trigger does not generate reports, Sandbox fixtures, or public event pages.",
+        "Eligible promotion gate is not automatic analysis.",
+        "Provider output is evidence, not truth.",
+    ]
+    trigger = ManualAnalysisTrigger(
+        manual_trigger_id=manual_trigger_id,
+        request_id=request_id,
+        review_case_id=gate.review_case_id,
+        promotion_gate_id=gate.promotion_gate_id,
+        created_at=datetime.now(timezone.utc),
+        created_by=trigger_payload.reviewer_label.strip(),
+        trigger_decision=trigger_payload.trigger_decision,
+        status=status,
+        analysis_scope=analysis_scope,
+        required_warnings=required_warnings,
+        blocked_reasons=[],
+        warnings=_unique_preserve_order(
+            list(gate.warnings)
+            + list(gate.promotion_set_preview.warning_notes)
+            + required_warnings.coverage_limitations
+            + required_warnings.weak_evidence_warnings
+            + required_warnings.dedup_preview_warnings
+        ),
+        boundary_notes=boundary_notes,
+        recommended_next_steps=_manual_analysis_trigger_next_steps(status),
+    )
+    audit = ManualAnalysisTriggerAudit(
+        manual_trigger_audit_id=audit_id,
+        manual_trigger_id=manual_trigger_id,
+        promotion_gate_id=gate.promotion_gate_id,
+        request_id=request_id,
+        review_case_id=gate.review_case_id,
+        decision=trigger_payload.trigger_decision,
+        reviewer_label=trigger_payload.reviewer_label.strip(),
+        decided_at=datetime.now(timezone.utc),
+        note=trigger_payload.note.strip(),
+        included_item_ids=list(analysis_scope.include_item_ids),
+        excluded_item_ids=list(analysis_scope.exclude_item_ids),
+        weak_warning_item_ids=list(analysis_scope.weak_warning_item_ids),
+        included_group_ids=list(analysis_scope.include_group_ids),
+        excluded_group_ids=list(analysis_scope.exclude_group_ids),
+        coverage_acknowledgement=trigger_payload.coverage_acknowledged,
+        privacy_acknowledgement=trigger_payload.privacy_acknowledged,
+        dedup_warning_acknowledgement=trigger_payload.dedup_warning_acknowledged,
+        provider_output_is_evidence_not_truth_acknowledgement=trigger_payload.provider_output_is_evidence_not_truth_acknowledged,
+        boundary_notes=boundary_notes,
+    )
+    _write_json(_manual_analysis_trigger_path(request_id, manual_trigger_id), trigger.model_dump(mode="json", by_alias=True))
+    _write_json(_manual_analysis_trigger_audit_path(request_id, manual_trigger_id, audit_id), audit.model_dump(mode="json", by_alias=True))
+    return read_manual_analysis_trigger(request_id, manual_trigger_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -4316,6 +4498,204 @@ def _analysis_ready_promotion_next_steps(status: str) -> list[str]:
     ]
 
 
+def _validate_manual_analysis_trigger_payload(payload: ManualAnalysisTriggerRequest) -> None:
+    if not (payload.promotion_gate_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: promotion_gate_id is required.")
+    if payload.trigger_decision not in {"trigger_analysis", "hold", "cancel"}:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: trigger_decision is required.")
+    if not (payload.reviewer_label or "").strip():
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: reviewer_label is required.")
+    if not (payload.note or "").strip():
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: note is required.")
+    if payload.analysis_scope_mode != "promotion_set_preview":
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: analysis_scope_mode must be promotion_set_preview.")
+    acknowledgements = {
+        "coverage_acknowledged": payload.coverage_acknowledged,
+        "privacy_acknowledged": payload.privacy_acknowledged,
+        "weak_warning_acknowledged": payload.weak_warning_acknowledged,
+        "dedup_warning_acknowledged": payload.dedup_warning_acknowledged,
+        "provider_output_is_evidence_not_truth_acknowledged": payload.provider_output_is_evidence_not_truth_acknowledged,
+        "not_official_verification_acknowledged": payload.not_official_verification_acknowledged,
+        "not_full_web_coverage_acknowledged": payload.not_full_web_coverage_acknowledged,
+        "acknowledge_trigger_record_only": payload.acknowledge_trigger_record_only,
+        "acknowledge_no_analysis_run": payload.acknowledge_no_analysis_run,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_no_report": payload.acknowledge_no_report,
+        "acknowledge_no_sandbox_or_public_event": payload.acknowledge_no_sandbox_or_public_event,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual analysis trigger: acknowledgement flags are required ({', '.join(missing)})."
+        )
+    if payload.production_case_id or payload.target_production_case_id:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: production_case_id is not allowed.")
+    if (payload.trust_label or "").lower() in {"high", "verified", "official", "official_api"}:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: trust upgrade is not allowed.")
+    if (payload.verification_status or "").lower() in {"verified", "verified_by_official_api", "official_verified"}:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: official verification upgrade is not allowed.")
+    side_effect_flags = {
+        "evidence_layer_written": payload.evidence_layer_written,
+        "production_case_created": payload.production_case_created,
+        "production_review_queue_created": payload.production_review_queue_created,
+        "production_dedup_run": payload.production_dedup_run,
+        "analysis_included": payload.analysis_included,
+        "analysis_run": payload.analysis_run,
+        "analysis_result_generated": payload.analysis_result_generated,
+        "report_generated": payload.report_generated,
+        "sandbox_generated": payload.sandbox_generated,
+        "public_event_generated": payload.public_event_generated,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "create_production_review_queue_now": payload.create_production_review_queue_now,
+        "run_production_dedup_now": payload.run_production_dedup_now,
+        "run_dedup_now": payload.run_dedup_now,
+        "run_analysis_now": payload.run_analysis_now,
+        "generate_analysis_result_now": payload.generate_analysis_result_now,
+        "generate_report_now": payload.generate_report_now,
+        "generate_sandbox_now": payload.generate_sandbox_now,
+        "generate_public_event_now": payload.generate_public_event_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual analysis trigger: side effect flags must remain false ({', '.join(enabled)})."
+        )
+
+
+def _validate_manual_analysis_trigger_gate(request_id: str, gate: AnalysisReadyPromotionGate) -> None:
+    if gate.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: promotion gate request_id mismatch.")
+    if gate.status != "eligible_for_future_manual_analysis_trigger":
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: promotion gate is not eligible.")
+    if not gate.readiness.eligible_for_future_manual_analysis_trigger:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: promotion gate readiness is not eligible.")
+    if gate.readiness.can_run_analysis_now or gate.readiness.can_generate_report_now:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: promotion gate has unsafe readiness flags.")
+    if gate.blockers:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: promotion gate has blockers.")
+    unsafe_now_flags = [
+        name
+        for name, value in gate.now_flags.items()
+        if value and name in {"write_evidence_layer_now", "create_production_case_now", "run_production_dedup_now", "run_analysis_now", "generate_report_now", "generate_sandbox_now", "generate_public_event_now"}
+    ]
+    if unsafe_now_flags:
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual analysis trigger: promotion gate side effect flags are unsafe ({', '.join(unsafe_now_flags)})."
+        )
+    unsafe_safe_mode = [
+        name
+        for name in (
+            "original_package_rows_re_read",
+            "evidence_rows_imported",
+            "evidence_layer_written",
+            "production_case_created",
+            "production_review_queue_created",
+            "production_dedup_run",
+            "analysis_generated",
+            "sandbox_fixture_generated",
+            "public_event_page_generated",
+            "report_generated",
+            "provider_execution",
+            "collector_jobs_run",
+            "real_api_calls",
+            "url_fetching",
+            "scraping",
+            "secrets_exposed",
+            "raw_author_identifiers_exposed",
+        )
+        if gate.safe_mode.get(name)
+    ]
+    if unsafe_safe_mode:
+        raise AnalysisRequestValidationError(
+            f"Cannot create manual analysis trigger: promotion gate safe_mode is unsafe ({', '.join(unsafe_safe_mode)})."
+        )
+    if not gate.promotion_set_preview.item_ids and not gate.promotion_set_preview.group_ids:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: promotion_set_preview is empty.")
+    audits = list_promotion_decision_audits_for_gate(request_id, gate.promotion_gate_id)
+    if not any(audit.analysis_effect == "eligible_for_manual_trigger_only" for audit in audits):
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: promotion decision audit is missing.")
+
+
+def _validate_manual_analysis_trigger_scope(gate: AnalysisReadyPromotionGate, batch: ReviewQueueItemBatch) -> None:
+    item_map = {item.review_item_id: item for item in batch.items}
+    include_ids = set(gate.promotion_set_preview.item_ids)
+    excluded_ids = set(gate.promotion_set_preview.excluded_item_ids)
+    rejected_ids = set(gate.promotion_set_preview.rejected_item_ids)
+    weak_ids = set(gate.promotion_set_preview.weak_item_ids)
+    missing = [item_id for item_id in include_ids | excluded_ids | rejected_ids | weak_ids if item_id not in item_map]
+    if missing:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: promotion_set_preview references unknown review items.")
+    if include_ids & rejected_ids:
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: rejected items cannot be included.")
+    for item_id in include_ids:
+        item = item_map[item_id]
+        if _review_queue_item_has_forbidden_fields(item):
+            raise AnalysisRequestValidationError("Cannot create manual analysis trigger: raw/private/secret-like review item is not allowed.")
+        if item.queue_status in {"rejected", "privacy_hold", "needs_more_source", "review_needed"}:
+            raise AnalysisRequestValidationError("Cannot create manual analysis trigger: unresolved or rejected review item cannot be included.")
+        if item.dedup.may_amplify_risk:
+            raise AnalysisRequestValidationError("Cannot create manual analysis trigger: duplicate evidence may amplify risk.")
+        if item.queue_status == "marked_weak" and item_id not in weak_ids:
+            raise AnalysisRequestValidationError("Cannot create manual analysis trigger: weak evidence warning was removed.")
+        if item.governance.analysis_included or item.governance.public_visible or item.governance.report_visible or item.governance.sandbox_visible:
+            raise AnalysisRequestValidationError("Cannot create manual analysis trigger: item already has unsafe analysis or visibility flags.")
+    for item_id in rejected_ids:
+        if item_id in include_ids:
+            raise AnalysisRequestValidationError("Cannot create manual analysis trigger: rejected item leaked into include scope.")
+    if any(item_map[item_id].queue_status == "privacy_hold" for item_id in excluded_ids if item_id in item_map):
+        raise AnalysisRequestValidationError("Cannot create manual analysis trigger: privacy_hold item blocks manual trigger.")
+
+
+def _manual_analysis_trigger_status(decision: str) -> str:
+    if decision == "trigger_analysis":
+        return "trigger_recorded_ready_for_future_analysis_runtime"
+    if decision == "hold":
+        return "held"
+    if decision == "cancel":
+        return "cancelled"
+    return "blocked"
+
+
+def _manual_analysis_weak_warnings(gate: AnalysisReadyPromotionGate) -> list[str]:
+    warnings: list[str] = []
+    if gate.promotion_set_preview.weak_item_ids:
+        warnings.append("Weak evidence remains warning-marked in future analysis scope.")
+    if any("weak" in warning.lower() for warning in gate.warnings + gate.promotion_set_preview.warning_notes):
+        warnings.append("Promotion gate carried weak-evidence warnings that must be displayed downstream.")
+    return _unique_preserve_order(warnings)
+
+
+def _manual_analysis_trigger_next_steps(status: str) -> list[str]:
+    if status == "trigger_recorded_ready_for_future_analysis_runtime":
+        return [
+            "Design or run a future explicit analysis execution phase; this record does not run analysis.",
+            "Apply Analysis Result Boundary Gate before displaying any analysis result.",
+            "Keep rejected evidence excluded and weak evidence warning-marked.",
+            "Do not generate reports, Sandbox fixtures, or public event pages from this trigger record alone.",
+        ]
+    if status == "held":
+        return [
+            "Resolve reviewer concerns before recording a new manual trigger decision.",
+            "Keep promoted candidates out of analysis until a future explicit trigger.",
+        ]
+    if status == "cancelled":
+        return [
+            "Do not run analysis for this cancelled trigger decision.",
+            "Create a new audited trigger record only if human review later changes the decision.",
+        ]
+    if status == "privacy_hold":
+        return [
+            "Resolve privacy blockers before any future analysis trigger.",
+            "Do not run analysis or generate outputs while privacy hold remains.",
+        ]
+    return [
+        "Resolve blockers before any future analysis trigger.",
+        "Do not run analysis, report, Sandbox, or public event generation.",
+    ]
+
+
 def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -4731,6 +5111,8 @@ def _ensure_root() -> Path:
     (root / "dedup_group_review_audits").mkdir(parents=True, exist_ok=True)
     (root / "analysis_ready_promotion_gates").mkdir(parents=True, exist_ok=True)
     (root / "promotion_decision_audits").mkdir(parents=True, exist_ok=True)
+    (root / "manual_analysis_triggers").mkdir(parents=True, exist_ok=True)
+    (root / "manual_analysis_trigger_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -4879,6 +5261,21 @@ def _promotion_decision_audit_path(request_id: str, promotion_gate_id: str, prom
     return root / "promotion_decision_audits" / f"{request_id}_{promotion_gate_id}_{promotion_decision_id}.json"
 
 
+def _manual_analysis_trigger_path(request_id: str, manual_trigger_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(manual_trigger_id)
+    root = _ensure_root()
+    return root / "manual_analysis_triggers" / f"{request_id}_{manual_trigger_id}.json"
+
+
+def _manual_analysis_trigger_audit_path(request_id: str, manual_trigger_id: str, manual_trigger_audit_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(manual_trigger_id)
+    _validate_request_id(manual_trigger_audit_id)
+    root = _ensure_root()
+    return root / "manual_analysis_trigger_audits" / f"{request_id}_{manual_trigger_id}_{manual_trigger_audit_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -4965,6 +5362,16 @@ def _new_analysis_ready_promotion_gate_id() -> str:
 def _new_promotion_decision_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"promotion_decision_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_manual_analysis_trigger_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"manual_analysis_trigger_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_manual_analysis_trigger_audit_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"manual_analysis_trigger_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:
