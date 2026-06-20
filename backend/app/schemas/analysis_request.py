@@ -2044,6 +2044,241 @@ class DedupPreview(BaseModel):
     )
 
 
+class AnalysisReadyPromotionGateRequest(BaseModel):
+    review_case_id: str | None = None
+    queue_init_id: str | None = None
+    completion_gate_id: str | None = None
+    dedup_preview_id: str | None = None
+    promotion_decision: str = "approve_for_future_manual_analysis_trigger"
+    reviewer_label: str = ""
+    note: str = ""
+    created_by: str = "sentigraph_local_ui"
+    coverage_limitations_acknowledged: bool = False
+    privacy_acknowledged: bool = False
+    weak_evidence_warning_acknowledged: bool = False
+    dedup_preview_warning_acknowledged: bool = False
+    provider_output_is_evidence_not_truth_acknowledged: bool = False
+    acknowledge_promotion_is_not_analysis: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_no_production_dedup: bool = False
+    acknowledge_no_report: bool = False
+    production_case_id: str | None = None
+    target_production_case_id: str | None = None
+    trust_label: str | None = None
+    verification_status: str | None = None
+    evidence_layer_written: bool = False
+    production_case_created: bool = False
+    production_review_queue_created: bool = False
+    production_dedup_run: bool = False
+    analysis_included: bool = False
+    analysis_run: bool = False
+    report_generated: bool = False
+    sandbox_generated: bool = False
+    public_event_generated: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    create_production_review_queue_now: bool = False
+    run_production_dedup_now: bool = False
+    run_dedup_now: bool = False
+    run_analysis_now: bool = False
+    generate_report_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_public_event_now: bool = False
+
+
+class AnalysisReadyPromotionGateInputScope(BaseModel):
+    source: Literal["review_only_queue_items"] = "review_only_queue_items"
+    include_statuses: list[str] = Field(default_factory=lambda: ["approved", "marked_weak", "duplicate_merged"])
+    exclude_statuses: list[str] = Field(default_factory=lambda: ["rejected", "needs_more_source", "privacy_hold", "review_needed"])
+    analysis_included: bool = False
+    provider_output_is_truth: bool = False
+    official_verification: bool = False
+
+
+class AnalysisReadyPromotionGateCounts(BaseModel):
+    items_seen: int = 0
+    items_eligible_for_promotion_preview: int = 0
+    items_excluded: int = 0
+    approved_items: int = 0
+    weak_items: int = 0
+    duplicate_merged_items: int = 0
+    rejected_items: int = 0
+    confirmed_duplicate_groups: int = 0
+    warning_group_count: int = 0
+
+
+class AnalysisReadyPromotionSetPreview(BaseModel):
+    item_ids: list[str] = Field(default_factory=list)
+    group_ids: list[str] = Field(default_factory=list)
+    excluded_item_ids: list[str] = Field(default_factory=list)
+    weak_item_ids: list[str] = Field(default_factory=list)
+    rejected_item_ids: list[str] = Field(default_factory=list)
+    warning_notes: list[str] = Field(default_factory=list)
+
+
+class AnalysisReadyPromotionGateReadiness(BaseModel):
+    state: Literal[
+        "eligible_for_future_manual_analysis_trigger",
+        "held_by_human",
+        "rejected_by_human",
+        "blocked",
+        "privacy_hold",
+    ] = "blocked"
+    eligible_for_future_manual_analysis_trigger: bool = False
+    can_run_analysis_now: bool = False
+    can_generate_report_now: bool = False
+    requires_human_manual_analysis_trigger: bool = True
+    requires_separate_analysis_runtime: bool = True
+
+
+class AnalysisReadyPromotionDecision(BaseModel):
+    promotion_decision_id: str = ""
+    decision: str = "approve_for_future_manual_analysis_trigger"
+    reviewer_label: str = ""
+    decided_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    analysis_effect: Literal[
+        "eligible_for_manual_trigger_only",
+        "held",
+        "rejected",
+        "blocked",
+    ] = "blocked"
+
+
+class PromotionDecisionAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_promotion_decision_audit_v1"] = Field(
+        default="sentigraph_promotion_decision_audit_v1",
+        alias="schema",
+    )
+    promotion_decision_id: str
+    promotion_gate_id: str
+    request_id: str
+    review_case_id: str
+    queue_init_id: str
+    completion_gate_id: str
+    dedup_preview_id: str
+    previous_status: str = "not_created"
+    new_status: str = "blocked"
+    decision: str = "approve_for_future_manual_analysis_trigger"
+    reviewer_label: str = ""
+    reviewed_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    affected_item_ids: list[str] = Field(default_factory=list)
+    affected_group_ids: list[str] = Field(default_factory=list)
+    analysis_effect: Literal[
+        "eligible_for_manual_trigger_only",
+        "held",
+        "rejected",
+        "blocked",
+    ] = "blocked"
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "create_production_review_queue_now": False,
+            "run_production_dedup_now": False,
+            "run_analysis_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "analysis_ready_promotion_gate_only": True,
+            "original_package_rows_re_read": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+    boundary_notes: list[str] = Field(default_factory=list)
+
+
+class AnalysisReadyPromotionGate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_analysis_ready_promotion_gate_v1"] = Field(
+        default="sentigraph_analysis_ready_promotion_gate_v1",
+        alias="schema",
+    )
+    promotion_gate_id: str
+    request_id: str
+    review_case_id: str
+    queue_init_id: str
+    completion_gate_id: str
+    dedup_preview_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    status: Literal[
+        "eligible_for_future_manual_analysis_trigger",
+        "held_by_human",
+        "rejected_by_human",
+        "blocked",
+        "privacy_hold",
+    ] = "blocked"
+    input_scope: AnalysisReadyPromotionGateInputScope = Field(default_factory=AnalysisReadyPromotionGateInputScope)
+    counts: AnalysisReadyPromotionGateCounts = Field(default_factory=AnalysisReadyPromotionGateCounts)
+    promotion_set_preview: AnalysisReadyPromotionSetPreview = Field(default_factory=AnalysisReadyPromotionSetPreview)
+    promotion_decision: AnalysisReadyPromotionDecision = Field(default_factory=AnalysisReadyPromotionDecision)
+    readiness: AnalysisReadyPromotionGateReadiness = Field(default_factory=AnalysisReadyPromotionGateReadiness)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "create_production_review_queue_now": False,
+            "run_production_dedup_now": False,
+            "run_analysis_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "analysis_ready_promotion_gate_only": True,
+            "source_review_only_queue_items_only": True,
+            "original_package_rows_re_read": False,
+            "evidence_rows_imported": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "report_generated": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

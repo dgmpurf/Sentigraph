@@ -7,6 +7,8 @@ from app.schemas.analysis_request import (
     AnalysisRequestConfig,
     AnalysisRequestCreate,
     AnalysisRequestRecord,
+    AnalysisReadyPromotionGate,
+    AnalysisReadyPromotionGateRequest,
     CaseDraftHandoff,
     DedupPreview,
     DedupGroupReviewActionRequest,
@@ -23,6 +25,7 @@ from app.schemas.analysis_request import (
     ManualEvidenceImportExecutionPreflightCreate,
     ManualEvidenceImportJob,
     ManualEvidenceImportJobCreate,
+    PromotionDecisionAudit,
     RealPackageRowPreview,
     RealPackageRowPreviewCreate,
     ReviewOnlyCase,
@@ -43,6 +46,7 @@ from app.services.analysis_request_store import (
     AnalysisRequestNotFoundError,
     AnalysisRequestValidationError,
     cancel_analysis_request,
+    create_analysis_ready_promotion_gate,
     create_case_draft_handoff,
     create_dedup_group_review_action,
     create_dedup_preview,
@@ -60,12 +64,14 @@ from app.services.analysis_request_store import (
     create_review_queue_item_action,
     create_review_queue_initialization,
     get_analysis_request_config,
+    list_all_analysis_ready_promotion_gates,
     list_case_draft_handoffs,
     list_all_dedup_group_review_audits,
     list_all_dedup_previews,
     list_all_evidence_row_reader_dry_runs,
     list_all_manual_evidence_import_execution_preflights,
     list_all_manual_evidence_import_jobs,
+    list_all_promotion_decision_audits,
     list_all_evidence_import_review_decisions,
     list_all_real_package_row_previews,
     list_all_review_only_cases,
@@ -77,11 +83,14 @@ from app.services.analysis_request_store import (
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
     list_evidence_row_reader_dry_runs,
+    list_analysis_ready_promotion_gates,
     list_dedup_group_review_audits,
     list_dedup_previews,
     list_analysis_requests,
     list_manual_evidence_import_execution_preflights,
     list_manual_evidence_import_jobs,
+    list_promotion_decision_audits,
+    list_promotion_decision_audits_for_gate,
     list_real_package_row_previews,
     list_review_only_cases,
     list_review_only_case_staging_imports,
@@ -89,6 +98,7 @@ from app.services.analysis_request_store import (
     list_review_queue_completion_gates,
     list_review_queue_initializations,
     read_case_draft_handoff,
+    read_analysis_ready_promotion_gate,
     read_dedup_group_review_audits_for_group,
     read_dedup_preview,
     read_evidence_import_plan,
@@ -199,6 +209,16 @@ def analysis_request_dedup_preview_all_list() -> list[DedupPreview]:
 @router.get("/dedup-group-review-audits", response_model=list[DedupGroupReviewAudit])
 def analysis_request_dedup_group_review_audit_all_list() -> list[DedupGroupReviewAudit]:
     return list_all_dedup_group_review_audits()
+
+
+@router.get("/analysis-ready-promotion-gates", response_model=list[AnalysisReadyPromotionGate])
+def analysis_request_analysis_ready_promotion_gate_all_list() -> list[AnalysisReadyPromotionGate]:
+    return list_all_analysis_ready_promotion_gates()
+
+
+@router.get("/promotion-decision-audits", response_model=list[PromotionDecisionAudit])
+def analysis_request_promotion_decision_audit_all_list() -> list[PromotionDecisionAudit]:
+    return list_all_promotion_decision_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -697,6 +717,62 @@ def analysis_request_dedup_group_review_audit_group_list(
 def analysis_request_dedup_group_review_audit_list(request_id: str) -> list[DedupGroupReviewAudit]:
     try:
         return list_dedup_group_review_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/analysis-ready-promotion-gates", response_model=list[AnalysisReadyPromotionGate])
+def analysis_request_analysis_ready_promotion_gate_list(request_id: str) -> list[AnalysisReadyPromotionGate]:
+    try:
+        return list_analysis_ready_promotion_gates(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/analysis-ready-promotion-gates", response_model=AnalysisReadyPromotionGate)
+def analysis_request_analysis_ready_promotion_gate_create(
+    request_id: str,
+    payload: AnalysisReadyPromotionGateRequest,
+) -> AnalysisReadyPromotionGate:
+    try:
+        return create_analysis_ready_promotion_gate(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/analysis-ready-promotion-gates/{promotion_gate_id}", response_model=AnalysisReadyPromotionGate)
+def analysis_request_analysis_ready_promotion_gate_detail(
+    request_id: str,
+    promotion_gate_id: str,
+) -> AnalysisReadyPromotionGate:
+    try:
+        return read_analysis_ready_promotion_gate(request_id, promotion_gate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/promotion-decision-audits", response_model=list[PromotionDecisionAudit])
+def analysis_request_promotion_decision_audit_list(request_id: str) -> list[PromotionDecisionAudit]:
+    try:
+        return list_promotion_decision_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/analysis-ready-promotion-gates/{promotion_gate_id}/audits",
+    response_model=list[PromotionDecisionAudit],
+)
+def analysis_request_analysis_ready_promotion_gate_audit_list(
+    request_id: str,
+    promotion_gate_id: str,
+) -> list[PromotionDecisionAudit]:
+    try:
+        return list_promotion_decision_audits_for_gate(request_id, promotion_gate_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

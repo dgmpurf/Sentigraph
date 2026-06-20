@@ -2677,3 +2677,49 @@ The Simulation Lab strategy report export uses service-local Pydantic models und
 - `safe_mode`: aggregate-only safety metadata.
 
 The Markdown export must not include raw JSON dumps, raw prompts, raw user content, API key values, `.env` values, named user targets, account-level influenceability scoring, or automatic action-execution instructions.
+
+## 21. Analysis-ready Promotion Gate Schemas
+
+The Phase 7B runtime adds local governance schemas under `backend/app/schemas/analysis_request.py`.
+
+`AnalysisReadyPromotionGateRequest` includes:
+
+- `review_case_id`
+- `queue_init_id`
+- `completion_gate_id`
+- `dedup_preview_id`
+- `promotion_decision`
+- `reviewer_label`
+- `note`
+- acknowledgement flags for coverage limitations, privacy, weak evidence, dedup preview, provider output as evidence not truth, no analysis, no Evidence Layer write, no production case, no production dedup, and no report
+- side-effect flags that must remain false, including `run_analysis_now`, `write_evidence_layer_now`, `create_production_case_now`, `run_production_dedup_now`, and report/Sandbox/public event generation flags
+
+`AnalysisReadyPromotionGate` includes:
+
+- `schema=sentigraph_analysis_ready_promotion_gate_v1`
+- `promotion_gate_id`
+- `request_id`
+- `review_case_id`
+- `queue_init_id`
+- `completion_gate_id`
+- `dedup_preview_id`
+- `status`
+- `input_scope`
+- `counts`
+- `promotion_set_preview`
+- `promotion_decision`
+- `readiness`
+- `blockers`
+- `warnings`
+- `boundary_notes`
+- `recommended_next_steps`
+- `now_flags`
+- `safe_mode`
+
+`input_scope` must keep `analysis_included=false`, `provider_output_is_truth=false`, and `official_verification=false`.
+
+`readiness.eligible_for_future_manual_analysis_trigger=true` only means a later manual trigger may be considered. It does not mean analysis has run and does not make evidence verified.
+
+`PromotionDecisionAudit` is append-only and records the reviewer decision, affected item ids, affected group ids, analysis effect, safe-mode flags, and boundary notes. It must not include raw author identifiers, secrets, original package rows, browser state, cookies, tokens, or `.env` values.
+
+The Phase 7B schemas are runtime governance records only. They do not write production Evidence Layer rows, create production cases, run production dedup, run analysis, generate reports, generate Sandbox fixtures, create public event pages, call real APIs, fetch URLs, scrape websites, or call real LLMs.

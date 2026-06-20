@@ -2802,6 +2802,40 @@ The Markdown report includes:
 
 The report must remain aggregate-level and human-review-oriented. It must not expose raw JSON dumps, raw prompts, raw user content, API keys, `.env` values, account-level influenceability scores, named-user target lists, or recommendations to automatically execute a real-world strategy.
 
+### Analysis-ready Promotion Gate Runtime
+
+```http
+GET /api/v1/analysis-requests/analysis-ready-promotion-gates
+GET /api/v1/analysis-requests/promotion-decision-audits
+GET /api/v1/analysis-requests/{request_id}/analysis-ready-promotion-gates
+POST /api/v1/analysis-requests/{request_id}/analysis-ready-promotion-gates
+GET /api/v1/analysis-requests/{request_id}/analysis-ready-promotion-gates/{promotion_gate_id}
+GET /api/v1/analysis-requests/{request_id}/analysis-ready-promotion-gates/{promotion_gate_id}/audits
+GET /api/v1/analysis-requests/{request_id}/promotion-decision-audits
+```
+
+The Analysis-ready Promotion Gate is a local governance runtime after review-only staging, review queue completion, dedup preview, and dedup group review. It records a human decision that a review-only case is eligible, held, or rejected for a future manual analysis trigger.
+
+The POST request uses `AnalysisReadyPromotionGateRequest` and requires:
+
+- `promotion_decision`
+- `reviewer_label`
+- reviewed `review_case_id`, `queue_init_id`, `completion_gate_id`, and `dedup_preview_id` when not using latest inferred records
+- acknowledgement flags for coverage limits, privacy, weak evidence, dedup preview, provider-output-is-evidence-not-truth, no analysis, no Evidence Layer write, no production case, no production dedup, and no report
+
+The response is `AnalysisReadyPromotionGate` and includes:
+
+- `status`: `eligible_for_future_manual_analysis_trigger`, `held_by_human`, `rejected_by_human`, `blocked`, or `privacy_hold`
+- `input_scope` with `analysis_included=false`, `provider_output_is_truth=false`, and `official_verification=false`
+- `counts`
+- `promotion_set_preview`
+- `promotion_decision`
+- `readiness`
+- `blockers`, `warnings`, `boundary_notes`, `recommended_next_steps`
+- `now_flags` and `safe_mode`
+
+Decision audits are append-only `PromotionDecisionAudit` records. This runtime does not run analysis, write production Evidence Layer rows, create production cases, create production review queues, run production dedup, generate reports, generate Sandbox fixtures, create public event pages, call real APIs, fetch URLs, scrape, or use real LLMs.
+
 ## 11. API Rules
 
 1. Every endpoint should return JSON.

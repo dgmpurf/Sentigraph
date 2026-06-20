@@ -1,12 +1,56 @@
 # Sentigraph Implementation Backlog
 
-Last updated: 2026-05-28
+Last updated: 2026-06-20
 
 This backlog prioritizes practical next work while keeping the MVP mock-first and offline.
 
 CI note: GitHub Actions CI is intentionally disabled. Do not restore or recreate `.github/workflows/ci.yml` unless explicitly requested. Use local/Codex validation commands from the repository root: `python -m pytest`, `python scripts/run_offline_benchmarks.py`, and `npm --prefix frontend run build`; future CI can be reconsidered only if cost and notification concerns are resolved.
 
 ## Completed Pre-v1.0 Hardening Items
+
+### Phase 7B Analysis-ready Promotion Gate Runtime
+
+Status: local governance runtime implemented on 2026-06-20.
+
+Completed:
+
+- Added `AnalysisReadyPromotionGateRequest`, `AnalysisReadyPromotionGate`,
+  `AnalysisReadyPromotionDecision`, and `PromotionDecisionAudit` schemas.
+- Added local JSON storage for `analysis_ready_promotion_gates` and
+  `promotion_decision_audits`.
+- Added backend runtime creation/list/read helpers that only inspect existing
+  review-only governance records and safe review queue fields.
+- Added API endpoints for creating/listing/reading promotion gates and listing
+  append-only promotion decision audits.
+- Added an Analysis Requests frontend panel for recording human promotion
+  decisions, viewing latest gate status, blockers, warnings, boundary notes,
+  and audit history.
+- Added focused store/API tests covering eligible, held, rejected, blocked,
+  privacy-risk, side-effect, and no-original-row-re-read behavior.
+
+Acceptance:
+
+- Promotion eligibility means only
+  `eligible_for_future_manual_analysis_trigger`; it is not analysis execution.
+- `analysis_included=false`, `can_run_analysis_now=false`, and all now-run /
+  write / generate flags remain false.
+- The runtime does not write production Evidence Layer rows, create production
+  cases, create production review queues, run production dedup, run analysis,
+  generate reports, generate Sandbox fixtures, or create public event pages.
+- The runtime does not re-read original package rows, call real APIs, fetch
+  URLs, scrape, use MediaCrawler, use OpenClaw production ingestion, or call a
+  real LLM.
+- Focused backend store/API tests passed and `npm --prefix frontend run build`
+  passed; full validation should be run before commit.
+
+Next options:
+
+- Phase 7C Manual Analysis Trigger design.
+- Phase 7D Manual Analysis Trigger runtime only after the design gate is
+  reviewed.
+- Keep live platform API, vendor API, real LLM, MediaCrawler, and OpenClaw
+  production integrations out of scope until explicit legal/API/security gates
+  exist.
 
 ### Static guixutech.com Website
 

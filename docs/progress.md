@@ -1,10 +1,31 @@
 # Sentigraph Progress
 
-Last updated: 2026-05-28
+Last updated: 2026-06-20
 
 ## 1. Current Project Status
 
 Sentigraph is currently a mock-default, YouTube-real-capable, evidence-ingestion-ready desktop web MVP.
+
+Latest Phase 7B Analysis-ready Promotion Gate Runtime update: implemented on
+2026-06-20. Added a local-only `AnalysisReadyPromotionGate` runtime after the
+review-only governance chain. The runtime reads existing local review-only case,
+staging import, review queue completion, dedup preview, and dedup group review
+audit records; it does not re-read original package rows or import evidence
+rows. It creates append-only promotion gate records and
+`PromotionDecisionAudit` records for human decisions:
+`eligible_for_future_manual_analysis_trigger`, `held_by_human`, or
+`rejected_by_human`. Added API endpoints under
+`/api/v1/analysis-requests/{request_id}/analysis-ready-promotion-gates` and
+promotion decision audit list/detail endpoints. The Analysis Requests frontend
+now shows a Promotion Gate panel with acknowledgement checkboxes, latest gate
+status, promotion-set preview, blockers/warnings, boundary notes, and audit
+timeline. Validation so far: focused backend store/API tests passed
+(`4 passed, 112 deselected`) and `npm --prefix frontend run build` passed
+(`built in 10.93s`; existing large chunk warnings remain). The runtime still
+does not run analysis, write the Evidence Layer, create production cases, run
+production dedup, generate reports, generate Sandbox/public event outputs, call
+real APIs, fetch URLs, scrape, or call real LLMs. Next recommended task:
+Phase 7C Manual Analysis Trigger design, not execution.
 
 Latest static guixutech.com website update: completed and validated on
 2026-05-28. Converted the official website content package into a pure static

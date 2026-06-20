@@ -17,6 +17,13 @@ from app.schemas.analysis_request import (
     AnalysisRequestCreate,
     AnalysisRequestFile,
     AnalysisRequestRecord,
+    AnalysisReadyPromotionDecision,
+    AnalysisReadyPromotionGate,
+    AnalysisReadyPromotionGateCounts,
+    AnalysisReadyPromotionGateInputScope,
+    AnalysisReadyPromotionGateReadiness,
+    AnalysisReadyPromotionGateRequest,
+    AnalysisReadyPromotionSetPreview,
     CaseDraftHandoff,
     CaseDraftPackageReference,
     CaseDraftProviderSummary,
@@ -66,6 +73,7 @@ from app.schemas.analysis_request import (
     ManualEvidenceImportPreflightChecks,
     ManualEvidenceImportTargetCase,
     ManualEvidenceImportTargetCasePreflight,
+    PromotionDecisionAudit,
     ProviderJobResult,
     RealPackageRowPreview,
     RealPackageRowPreviewCandidate,
@@ -1203,6 +1211,75 @@ def read_dedup_group_review_audits_for_group(
     ]
 
 
+def read_analysis_ready_promotion_gate(request_id: str, promotion_gate_id: str) -> AnalysisReadyPromotionGate:
+    gate_path = _analysis_ready_promotion_gate_path(request_id, promotion_gate_id)
+    if not gate_path.exists():
+        raise AnalysisRequestNotFoundError(f"Analysis-ready promotion gate {promotion_gate_id} for {request_id} was not found.")
+    try:
+        parsed = json.loads(gate_path.read_text(encoding="utf-8-sig"))
+        return AnalysisReadyPromotionGate.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{gate_path.name} is not a valid analysis-ready promotion gate: {type(exc).__name__}") from exc
+
+
+def list_analysis_ready_promotion_gates(request_id: str) -> list[AnalysisReadyPromotionGate]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    gates: list[AnalysisReadyPromotionGate] = []
+    for path in sorted((root / "analysis_ready_promotion_gates").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            gates.append(AnalysisReadyPromotionGate.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return gates
+
+
+def list_all_analysis_ready_promotion_gates() -> list[AnalysisReadyPromotionGate]:
+    root = _ensure_root()
+    gates: list[AnalysisReadyPromotionGate] = []
+    for path in sorted((root / "analysis_ready_promotion_gates").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            gates.append(AnalysisReadyPromotionGate.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return gates
+
+
+def list_promotion_decision_audits(request_id: str) -> list[PromotionDecisionAudit]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    audits: list[PromotionDecisionAudit] = []
+    for path in sorted((root / "promotion_decision_audits").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(PromotionDecisionAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def list_all_promotion_decision_audits() -> list[PromotionDecisionAudit]:
+    root = _ensure_root()
+    audits: list[PromotionDecisionAudit] = []
+    for path in sorted((root / "promotion_decision_audits").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(PromotionDecisionAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def list_promotion_decision_audits_for_gate(request_id: str, promotion_gate_id: str) -> list[PromotionDecisionAudit]:
+    return [
+        audit
+        for audit in list_promotion_decision_audits(request_id)
+        if audit.promotion_gate_id == promotion_gate_id
+    ]
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -1933,6 +2010,78 @@ def create_dedup_group_review_action(
         updated_group=updated_group,
         audit_record=audit,
     )
+
+
+def create_analysis_ready_promotion_gate(
+    request_id: str,
+    payload: AnalysisReadyPromotionGateRequest | dict[str, Any],
+) -> AnalysisReadyPromotionGate:
+    try:
+        gate_payload = (
+            payload
+            if isinstance(payload, AnalysisReadyPromotionGateRequest)
+            else AnalysisReadyPromotionGateRequest.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create analysis-ready promotion gate: invalid payload ({exc}).") from exc
+
+    _validate_analysis_ready_promotion_payload(gate_payload)
+    read_analysis_request(request_id)
+    preview = read_dedup_preview(request_id, gate_payload.dedup_preview_id or "")
+    completion_gate = read_review_queue_completion_gate(request_id, gate_payload.completion_gate_id or preview.completion_gate_id)
+    queue_init = read_review_queue_initialization(request_id, gate_payload.queue_init_id or preview.queue_init_id)
+    review_case = read_review_only_case(request_id, gate_payload.review_case_id or preview.review_case_id)
+    batch = read_review_queue_item_batch(request_id, queue_init.queue_init_id)
+    staging_import = _select_review_queue_init_staging_import(request_id, review_case, queue_init.staging_import_id)
+
+    gate = _build_analysis_ready_promotion_gate(
+        request_id=request_id,
+        payload=gate_payload,
+        preview=preview,
+        completion_gate=completion_gate,
+        queue_init=queue_init,
+        review_case=review_case,
+        batch=batch,
+        staging_import=staging_import,
+    )
+    if gate.status in {"blocked", "privacy_hold"}:
+        raise AnalysisRequestValidationError(
+            f"Cannot create analysis-ready promotion gate: {', '.join(gate.blockers) or gate.status}."
+        )
+
+    audit = PromotionDecisionAudit(
+        promotion_decision_id=gate.promotion_decision.promotion_decision_id,
+        promotion_gate_id=gate.promotion_gate_id,
+        request_id=request_id,
+        review_case_id=gate.review_case_id,
+        queue_init_id=gate.queue_init_id,
+        completion_gate_id=gate.completion_gate_id,
+        dedup_preview_id=gate.dedup_preview_id,
+        previous_status="not_created",
+        new_status=gate.status,
+        decision=gate.promotion_decision.decision,
+        reviewer_label=gate.promotion_decision.reviewer_label,
+        reviewed_at=gate.promotion_decision.decided_at,
+        note=gate.promotion_decision.note,
+        affected_item_ids=list(gate.promotion_set_preview.item_ids),
+        affected_group_ids=list(gate.promotion_set_preview.group_ids),
+        analysis_effect=gate.promotion_decision.analysis_effect,
+        boundary_notes=[
+            "Analysis-ready promotion gate is local governance only.",
+            "This decision does not run analysis.",
+            "This decision does not write the production Evidence Layer.",
+            "This decision does not create a production case.",
+            "This decision does not run production dedup.",
+            "This decision does not generate reports, Sandbox fixtures, or public event pages.",
+            "Provider output is evidence, not truth.",
+        ],
+    )
+    _write_json(_analysis_ready_promotion_gate_path(request_id, gate.promotion_gate_id), gate.model_dump(mode="json", by_alias=True))
+    _write_json(
+        _promotion_decision_audit_path(request_id, gate.promotion_gate_id, audit.promotion_decision_id),
+        audit.model_dump(mode="json", by_alias=True),
+    )
+    return read_analysis_ready_promotion_gate(request_id, gate.promotion_gate_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -3837,6 +3986,336 @@ def _dedup_group_trust_effect(action: str) -> str:
     return "no_upgrade"
 
 
+def _validate_analysis_ready_promotion_payload(payload: AnalysisReadyPromotionGateRequest) -> None:
+    if not (payload.reviewer_label or "").strip():
+        raise AnalysisRequestValidationError("Cannot create analysis-ready promotion gate: reviewer_label is required.")
+    if not (payload.promotion_decision or "").strip():
+        raise AnalysisRequestValidationError("Cannot create analysis-ready promotion gate: promotion_decision is required.")
+    acknowledgements = {
+        "coverage_limitations_acknowledged": payload.coverage_limitations_acknowledged,
+        "privacy_acknowledged": payload.privacy_acknowledged,
+        "weak_evidence_warning_acknowledged": payload.weak_evidence_warning_acknowledged,
+        "dedup_preview_warning_acknowledged": payload.dedup_preview_warning_acknowledged,
+        "provider_output_is_evidence_not_truth_acknowledged": payload.provider_output_is_evidence_not_truth_acknowledged,
+        "acknowledge_promotion_is_not_analysis": payload.acknowledge_promotion_is_not_analysis,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_no_production_dedup": payload.acknowledge_no_production_dedup,
+        "acknowledge_no_report": payload.acknowledge_no_report,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(
+            f"Cannot create analysis-ready promotion gate: acknowledgement flags are required ({', '.join(missing)})."
+        )
+    if payload.production_case_id or payload.target_production_case_id:
+        raise AnalysisRequestValidationError("Cannot create analysis-ready promotion gate: production_case_id is not allowed.")
+    if (payload.trust_label or "").lower() in {"high", "verified", "official", "official_api"}:
+        raise AnalysisRequestValidationError("Cannot create analysis-ready promotion gate: trust upgrade is not allowed.")
+    if (payload.verification_status or "").lower() in {"verified", "verified_by_official_api", "official_verified"}:
+        raise AnalysisRequestValidationError("Cannot create analysis-ready promotion gate: official verification upgrade is not allowed.")
+    side_effect_flags = {
+        "evidence_layer_written": payload.evidence_layer_written,
+        "production_case_created": payload.production_case_created,
+        "production_review_queue_created": payload.production_review_queue_created,
+        "production_dedup_run": payload.production_dedup_run,
+        "analysis_included": payload.analysis_included,
+        "analysis_run": payload.analysis_run,
+        "report_generated": payload.report_generated,
+        "sandbox_generated": payload.sandbox_generated,
+        "public_event_generated": payload.public_event_generated,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "create_production_review_queue_now": payload.create_production_review_queue_now,
+        "run_production_dedup_now": payload.run_production_dedup_now,
+        "run_dedup_now": payload.run_dedup_now,
+        "run_analysis_now": payload.run_analysis_now,
+        "generate_report_now": payload.generate_report_now,
+        "generate_sandbox_now": payload.generate_sandbox_now,
+        "generate_public_event_now": payload.generate_public_event_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(
+            f"Cannot create analysis-ready promotion gate: side effect flags must remain false ({', '.join(enabled)})."
+        )
+
+
+def _build_analysis_ready_promotion_gate(
+    request_id: str,
+    payload: AnalysisReadyPromotionGateRequest,
+    preview: DedupPreview,
+    completion_gate: ReviewQueueCompletionGate,
+    queue_init: ReviewQueueInitialization,
+    review_case: ReviewOnlyCase,
+    batch: ReviewQueueItemBatch,
+    staging_import: ReviewOnlyCaseStagingImport,
+) -> AnalysisReadyPromotionGate:
+    blockers: list[str] = []
+    warnings: list[str] = []
+    eligible_items: list[ReviewQueueItem] = []
+    excluded_item_ids: list[str] = []
+    weak_item_ids: list[str] = []
+    rejected_item_ids: list[str] = []
+    group_ids: list[str] = []
+
+    if preview.request_id != request_id or completion_gate.request_id != request_id or queue_init.request_id != request_id:
+        blockers.append("request_id_mismatch")
+    if review_case.request_id != request_id or batch.request_id != request_id or staging_import.request_id != request_id:
+        blockers.append("request_id_mismatch")
+    if payload.review_case_id and payload.review_case_id != review_case.review_case_id:
+        blockers.append("review_case_id_payload_mismatch")
+    if payload.queue_init_id and payload.queue_init_id != queue_init.queue_init_id:
+        blockers.append("queue_init_id_payload_mismatch")
+    if payload.completion_gate_id and payload.completion_gate_id != completion_gate.completion_gate_id:
+        blockers.append("completion_gate_id_payload_mismatch")
+    if payload.dedup_preview_id and payload.dedup_preview_id != preview.dedup_preview_id:
+        blockers.append("dedup_preview_id_payload_mismatch")
+    if preview.review_case_id != review_case.review_case_id or completion_gate.review_case_id != review_case.review_case_id:
+        blockers.append("review_case_mismatch")
+    if preview.queue_init_id != queue_init.queue_init_id or completion_gate.queue_init_id != queue_init.queue_init_id:
+        blockers.append("queue_init_mismatch")
+    if batch.queue_init_id != queue_init.queue_init_id or batch.review_case_id != review_case.review_case_id:
+        blockers.append("review_queue_batch_mismatch")
+    if staging_import.review_case_id != review_case.review_case_id or staging_import.staging_import_id != queue_init.staging_import_id:
+        blockers.append("staging_import_mismatch")
+    if completion_gate.status != "complete_enough_for_future_dedup_preview":
+        blockers.append("completion_gate_not_complete")
+    if not completion_gate.downstream_eligibility.eligible_for_future_dedup_preview:
+        blockers.append("completion_gate_not_eligible")
+    if preview.status != "preview_ready" or preview.readiness.state != "dedup_preview_ready":
+        blockers.append("dedup_preview_not_ready")
+    if preview.privacy_scan.privacy_stop or preview.privacy_scan.raw_identifier_found or preview.privacy_scan.secret_like_found:
+        blockers.append("dedup_preview_privacy_stop")
+    if preview.now_flags.get("run_analysis_now") or preview.now_flags.get("write_evidence_layer_now"):
+        blockers.append("dedup_preview_unsafe_now_flags")
+    if review_case.production_case_created or review_case.evidence_layer_written or review_case.review_queue_created:
+        blockers.append("review_only_case_unsafe_production_flags")
+    if review_case.dedup_run or review_case.analysis_run or review_case.analysis_included:
+        blockers.append("review_only_case_unsafe_analysis_flags")
+    if queue_init.target.production_case_created or queue_init.target.evidence_layer_written or queue_init.target.production_review_queue_created:
+        blockers.append("queue_init_unsafe_production_flags")
+    if staging_import.target.production_case_created or staging_import.target.evidence_layer_written:
+        blockers.append("staging_import_unsafe_production_flags")
+
+    for item in batch.items:
+        if item.request_id != request_id or item.queue_init_id != queue_init.queue_init_id or item.review_case_id != review_case.review_case_id:
+            blockers.append("review_queue_item_parent_mismatch")
+            excluded_item_ids.append(item.review_item_id)
+            continue
+        if item.governance.analysis_included or item.governance.public_visible or item.governance.report_visible or item.governance.sandbox_visible:
+            blockers.append("item_visibility_or_analysis_flag_true")
+            excluded_item_ids.append(item.review_item_id)
+            continue
+        if _review_queue_item_has_forbidden_fields(item):
+            blockers.append("raw_forbidden_field_risk")
+            excluded_item_ids.append(item.review_item_id)
+            continue
+        if item.dedup.may_amplify_risk:
+            blockers.append("item_duplicate_may_amplify_risk")
+            excluded_item_ids.append(item.review_item_id)
+            continue
+        if item.queue_status == "approved":
+            eligible_items.append(item)
+        elif item.queue_status == "marked_weak":
+            eligible_items.append(item)
+            weak_item_ids.append(item.review_item_id)
+            warnings.append("Marked weak evidence remains warning-marked for any future manual analysis trigger.")
+        elif item.queue_status == "duplicate_merged":
+            eligible_items.append(item)
+        elif item.queue_status == "rejected":
+            rejected_item_ids.append(item.review_item_id)
+            excluded_item_ids.append(item.review_item_id)
+        elif item.queue_status == "privacy_hold":
+            blockers.append("review_queue_privacy_hold")
+            excluded_item_ids.append(item.review_item_id)
+        else:
+            blockers.append(f"unresolved_review_queue_status_{item.queue_status}")
+            excluded_item_ids.append(item.review_item_id)
+
+    group_warnings = _validate_promotion_dedup_groups(request_id, preview, batch, blockers)
+    warnings.extend(group_warnings)
+    for group in preview.groups:
+        if group.group_status in {"confirmed", "marked_weak", "representative_changed"}:
+            group_ids.append(group.group_candidate_id)
+
+    decision = payload.promotion_decision.strip()
+    status = _promotion_gate_status_for_decision(decision)
+    if blockers:
+        status = "privacy_hold" if any("privacy" in item or "forbidden" in item for item in blockers) else "blocked"
+    effect = _promotion_gate_analysis_effect(status)
+    eligible = status == "eligible_for_future_manual_analysis_trigger"
+    promotion_gate_id = _new_analysis_ready_promotion_gate_id()
+    decision_id = _new_promotion_decision_id()
+    warning_notes = [
+        "Promotion gate is not analysis.",
+        "Future analysis requires a separate manual trigger.",
+        "Coverage remains imported/available evidence only, not full-web or full-platform coverage.",
+        "Provider output is evidence, not truth.",
+    ]
+    if weak_item_ids:
+        warning_notes.append("Weak evidence remains warning-marked.")
+    if rejected_item_ids:
+        warning_notes.append("Rejected evidence is excluded from the promotion set preview.")
+
+    return AnalysisReadyPromotionGate(
+        promotion_gate_id=promotion_gate_id,
+        request_id=request_id,
+        review_case_id=review_case.review_case_id,
+        queue_init_id=queue_init.queue_init_id,
+        completion_gate_id=completion_gate.completion_gate_id,
+        dedup_preview_id=preview.dedup_preview_id,
+        created_at=datetime.now(timezone.utc),
+        created_by=payload.created_by or "sentigraph_local_ui",
+        status=status,
+        input_scope=AnalysisReadyPromotionGateInputScope(
+            include_statuses=["approved", "marked_weak", "duplicate_merged"],
+            exclude_statuses=["rejected", "needs_more_source", "privacy_hold", "review_needed"],
+            analysis_included=False,
+            provider_output_is_truth=False,
+            official_verification=False,
+        ),
+        counts=AnalysisReadyPromotionGateCounts(
+            items_seen=len(batch.items),
+            items_eligible_for_promotion_preview=len(eligible_items),
+            items_excluded=len(set(excluded_item_ids)),
+            approved_items=sum(1 for item in batch.items if item.queue_status == "approved"),
+            weak_items=len(weak_item_ids),
+            duplicate_merged_items=sum(1 for item in batch.items if item.queue_status == "duplicate_merged"),
+            rejected_items=len(rejected_item_ids),
+            confirmed_duplicate_groups=len(group_ids),
+            warning_group_count=sum(1 for group in preview.groups if group.group_status in {"marked_weak", "representative_changed"}),
+        ),
+        promotion_set_preview=AnalysisReadyPromotionSetPreview(
+            item_ids=[item.review_item_id for item in eligible_items],
+            group_ids=group_ids,
+            excluded_item_ids=sorted(set(excluded_item_ids)),
+            weak_item_ids=weak_item_ids,
+            rejected_item_ids=rejected_item_ids,
+            warning_notes=_unique_preserve_order(warning_notes),
+        ),
+        promotion_decision=AnalysisReadyPromotionDecision(
+            promotion_decision_id=decision_id,
+            decision=decision,
+            reviewer_label=payload.reviewer_label.strip(),
+            decided_at=datetime.now(timezone.utc),
+            note=payload.note.strip(),
+            analysis_effect=effect,
+        ),
+        readiness=AnalysisReadyPromotionGateReadiness(
+            state=status,
+            eligible_for_future_manual_analysis_trigger=eligible,
+            can_run_analysis_now=False,
+            can_generate_report_now=False,
+            requires_human_manual_analysis_trigger=True,
+            requires_separate_analysis_runtime=True,
+        ),
+        blockers=_unique_preserve_order(blockers),
+        warnings=_unique_preserve_order(warnings),
+        boundary_notes=[
+            "Analysis-ready promotion gate uses review-only governance records only.",
+            "This gate does not re-read original package rows.",
+            "This gate does not write the production Evidence Layer.",
+            "This gate does not create production cases or production review queues.",
+            "This gate does not run production dedup.",
+            "This gate does not run analysis or generate reports.",
+            "Duplicate evidence must not amplify risk, sentiment, coverage, or conclusions.",
+            "Rejected evidence remains excluded by default.",
+            "Provider output is evidence, not truth.",
+        ],
+        recommended_next_steps=_analysis_ready_promotion_next_steps(status),
+    )
+
+
+def _validate_promotion_dedup_groups(
+    request_id: str,
+    preview: DedupPreview,
+    batch: ReviewQueueItemBatch,
+    blockers: list[str],
+) -> list[str]:
+    warnings: list[str] = []
+    item_ids = {item.review_item_id for item in batch.items}
+    for group in preview.groups:
+        if group.may_amplify_risk:
+            blockers.append("dedup_group_may_amplify_risk")
+        if group.dedup_preview_id != preview.dedup_preview_id or group.review_case_id != preview.review_case_id:
+            blockers.append("dedup_group_parent_mismatch")
+        if any(item_id not in item_ids for item_id in group.item_ids):
+            blockers.append("dedup_group_item_missing_from_queue")
+        if group.representative_item_id and group.representative_item_id not in group.item_ids:
+            blockers.append("dedup_group_representative_missing")
+        audits = read_dedup_group_review_audits_for_group(request_id, preview.dedup_preview_id, group.group_candidate_id)
+        if group.group_status == "confirmed":
+            if not any(audit.new_group_status == "confirmed" for audit in audits):
+                blockers.append("dedup_group_confirmed_without_audit")
+        elif group.group_status == "marked_weak":
+            if not any(audit.new_group_status == "marked_weak" for audit in audits):
+                blockers.append("dedup_group_marked_weak_without_audit")
+            warnings.append("Dedup group marked weak remains warning-marked for future manual analysis trigger.")
+        elif group.group_status == "representative_changed":
+            if not any(audit.new_group_status == "representative_changed" for audit in audits):
+                blockers.append("dedup_group_representative_changed_without_audit")
+            warnings.append("Dedup group representative was changed by a human reviewer.")
+        elif group.group_status == "rejected":
+            if not any(audit.new_group_status == "rejected" for audit in audits):
+                blockers.append("dedup_group_rejected_without_audit")
+            warnings.append("Rejected duplicate group is excluded from promotion set preview.")
+        elif group.group_status == "privacy_hold":
+            blockers.append("dedup_group_privacy_hold")
+        else:
+            blockers.append(f"unresolved_dedup_group_status_{group.group_status}")
+    return warnings
+
+
+def _promotion_gate_status_for_decision(decision: str) -> str:
+    normalized = decision.strip().lower()
+    if normalized in {"approve_for_future_manual_analysis_trigger", "approve", "approve_promotion"}:
+        return "eligible_for_future_manual_analysis_trigger"
+    if normalized in {"hold_promotion", "hold_for_more_review", "request_more_review"}:
+        return "held_by_human"
+    if normalized in {"reject_promotion", "reject", "reject_for_analysis"}:
+        return "rejected_by_human"
+    raise AnalysisRequestValidationError(f"Cannot create analysis-ready promotion gate: unsupported promotion_decision {decision}.")
+
+
+def _promotion_gate_analysis_effect(status: str) -> str:
+    if status == "eligible_for_future_manual_analysis_trigger":
+        return "eligible_for_manual_trigger_only"
+    if status == "held_by_human":
+        return "held"
+    if status == "rejected_by_human":
+        return "rejected"
+    return "blocked"
+
+
+def _analysis_ready_promotion_next_steps(status: str) -> list[str]:
+    if status == "eligible_for_future_manual_analysis_trigger":
+        return [
+            "Design Phase 7C manual analysis trigger before running analysis.",
+            "Keep analysis_included=false until a separate manual trigger executes.",
+            "Do not generate reports, Sandbox fixtures, or public event pages from this gate alone.",
+        ]
+    if status == "held_by_human":
+        return [
+            "Resolve reviewer concerns before creating a new promotion gate decision.",
+            "Keep all review-only items excluded from analysis.",
+        ]
+    if status == "rejected_by_human":
+        return [
+            "Do not trigger analysis for this review-only case.",
+            "Keep the rejection audit visible for governance review.",
+        ]
+    if status == "privacy_hold":
+        return [
+            "Resolve privacy blockers before any future promotion gate.",
+            "Do not run analysis or generate reports while privacy hold remains.",
+        ]
+    return [
+        "Resolve blockers before promotion.",
+        "Do not run analysis, dedup, report, Sandbox, or public event generation.",
+    ]
+
+
 def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -4250,6 +4729,8 @@ def _ensure_root() -> Path:
     (root / "review_queue_completion_gates").mkdir(parents=True, exist_ok=True)
     (root / "dedup_previews").mkdir(parents=True, exist_ok=True)
     (root / "dedup_group_review_audits").mkdir(parents=True, exist_ok=True)
+    (root / "analysis_ready_promotion_gates").mkdir(parents=True, exist_ok=True)
+    (root / "promotion_decision_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -4383,6 +4864,21 @@ def _dedup_group_review_audit_path(request_id: str, group_candidate_id: str, aud
     return root / "dedup_group_review_audits" / f"{request_id}_{group_candidate_id}_{audit_id}.json"
 
 
+def _analysis_ready_promotion_gate_path(request_id: str, promotion_gate_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(promotion_gate_id)
+    root = _ensure_root()
+    return root / "analysis_ready_promotion_gates" / f"{request_id}_{promotion_gate_id}.json"
+
+
+def _promotion_decision_audit_path(request_id: str, promotion_gate_id: str, promotion_decision_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(promotion_gate_id)
+    _validate_request_id(promotion_decision_id)
+    root = _ensure_root()
+    return root / "promotion_decision_audits" / f"{request_id}_{promotion_gate_id}_{promotion_decision_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -4459,6 +4955,16 @@ def _new_dedup_preview_id() -> str:
 def _new_dedup_group_review_audit_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"dedup_group_review_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_analysis_ready_promotion_gate_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"analysis_ready_promotion_gate_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_promotion_decision_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"promotion_decision_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

@@ -315,6 +315,38 @@ export async function listAnalysisRequestDedupGroupReviewAuditsForGroup(requestI
   return Array.isArray(data) ? data.map(normalizeDedupGroupReviewAudit).filter(Boolean) : []
 }
 
+export async function listAnalysisRequestAnalysisReadyPromotionGates(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/analysis-ready-promotion-gates`)
+  return Array.isArray(data) ? data.map(normalizeAnalysisReadyPromotionGate).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestAnalysisReadyPromotionGate(requestId, payload = {}) {
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/analysis-ready-promotion-gates`,
+    payload,
+  )
+  return normalizeAnalysisReadyPromotionGate(data)
+}
+
+export async function getAnalysisRequestAnalysisReadyPromotionGate(requestId, promotionGateId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/analysis-ready-promotion-gates/${encodeURIComponent(promotionGateId)}`,
+  )
+  return normalizeAnalysisReadyPromotionGate(data)
+}
+
+export async function listAnalysisRequestPromotionDecisionAudits(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/promotion-decision-audits`)
+  return Array.isArray(data) ? data.map(normalizePromotionDecisionAudit).filter(Boolean) : []
+}
+
+export async function listAnalysisRequestPromotionDecisionAuditsForGate(requestId, promotionGateId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/analysis-ready-promotion-gates/${encodeURIComponent(promotionGateId)}/audits`,
+  )
+  return Array.isArray(data) ? data.map(normalizePromotionDecisionAudit).filter(Boolean) : []
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -2185,6 +2217,67 @@ function normalizeDedupGroupReviewActionResult(data) {
       ? normalizeDedupGroupReviewAudit(data.audit_record)
       : null,
     readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+  }
+}
+
+function normalizeAnalysisReadyPromotionGate(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_analysis_ready_promotion_gate_v1'),
+    promotion_gate_id: String(data.promotion_gate_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    queue_init_id: String(data.queue_init_id || ''),
+    completion_gate_id: String(data.completion_gate_id || ''),
+    dedup_preview_id: String(data.dedup_preview_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    status: String(data.status || 'blocked'),
+    input_scope: data.input_scope && typeof data.input_scope === 'object' ? normalizeSafeObject(data.input_scope) : {},
+    counts: data.counts && typeof data.counts === 'object' ? normalizeSafeObject(data.counts) : {},
+    promotion_set_preview:
+      data.promotion_set_preview && typeof data.promotion_set_preview === 'object'
+        ? normalizeSafeObject(data.promotion_set_preview)
+        : {},
+    promotion_decision:
+      data.promotion_decision && typeof data.promotion_decision === 'object'
+        ? normalizeSafeObject(data.promotion_decision)
+        : {},
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
+    blockers: Array.isArray(data.blockers) ? data.blockers.map((item) => String(item)) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    recommended_next_steps: Array.isArray(data.recommended_next_steps)
+      ? data.recommended_next_steps.map((item) => String(item))
+      : [],
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizePromotionDecisionAudit(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_promotion_decision_audit_v1'),
+    promotion_decision_id: String(data.promotion_decision_id || ''),
+    promotion_gate_id: String(data.promotion_gate_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    queue_init_id: String(data.queue_init_id || ''),
+    completion_gate_id: String(data.completion_gate_id || ''),
+    dedup_preview_id: String(data.dedup_preview_id || ''),
+    previous_status: String(data.previous_status || ''),
+    new_status: String(data.new_status || ''),
+    decision: String(data.decision || ''),
+    reviewer_label: String(data.reviewer_label || ''),
+    reviewed_at: data.reviewed_at ? String(data.reviewed_at) : '',
+    note: String(data.note || ''),
+    affected_item_ids: Array.isArray(data.affected_item_ids) ? data.affected_item_ids.map((item) => String(item)) : [],
+    affected_group_ids: Array.isArray(data.affected_group_ids) ? data.affected_group_ids.map((item) => String(item)) : [],
+    analysis_effect: String(data.analysis_effect || 'blocked'),
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
   }
 }
 

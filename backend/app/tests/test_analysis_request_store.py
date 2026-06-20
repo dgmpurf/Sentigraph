@@ -21,6 +21,7 @@ from app.services.analysis_request_store import (
     create_review_queue_completion_gate,
     create_dedup_preview,
     create_dedup_group_review_action,
+    create_analysis_ready_promotion_gate,
     create_review_queue_item_action,
     create_analysis_request,
     get_analysis_request_config,
@@ -37,6 +38,8 @@ from app.services.analysis_request_store import (
     list_review_queue_completion_gates,
     list_dedup_previews,
     list_dedup_group_review_audits,
+    list_analysis_ready_promotion_gates,
+    list_promotion_decision_audits,
     list_review_queue_initializations,
     list_analysis_requests,
     read_evidence_row_reader_dry_run,
@@ -47,6 +50,7 @@ from app.services.analysis_request_store import (
     read_review_queue_completion_gate,
     read_dedup_preview,
     read_dedup_group_review_audits_for_group,
+    read_analysis_ready_promotion_gate,
     read_review_queue_initialization,
     read_review_queue_item_batch,
     read_staged_evidence_candidate_batch,
@@ -401,6 +405,26 @@ def dedup_group_review_action_payload(action: str = "confirm_group", **overrides
         "acknowledge_no_production_dedup": True,
         "acknowledge_no_evidence_layer_write": True,
         "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def promotion_gate_payload(decision: str = "approve_for_future_manual_analysis_trigger", **overrides: object) -> dict:
+    payload = {
+        "promotion_decision": decision,
+        "reviewer_label": "promotion_reviewer",
+        "note": f"Local promotion decision: {decision}.",
+        "coverage_limitations_acknowledged": True,
+        "privacy_acknowledged": True,
+        "weak_evidence_warning_acknowledged": True,
+        "dedup_preview_warning_acknowledged": True,
+        "provider_output_is_evidence_not_truth_acknowledged": True,
+        "acknowledge_promotion_is_not_analysis": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_no_production_dedup": True,
         "acknowledge_no_report": True,
     }
     payload.update(overrides)
@@ -3027,6 +3051,169 @@ def test_dedup_group_review_blocks_unsafe_actions(tmp_path: Path, monkeypatch) -
         assert "forbidden" in str(exc) or "raw" in str(exc)
     else:
         raise AssertionError("raw/private queue item should block dedup group action")
+
+
+def test_analysis_ready_promotion_gate_creates_eligible_record_and_audit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Promotion gate eligible")))
+    _case, _staging, queue_init, item_batch, gate, preview, group = create_dedup_preview_ready_chain(tmp_path, record.request_id)
+    create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("confirm_group"),
+    )
+
+    result = create_analysis_ready_promotion_gate(
+        record.request_id,
+        promotion_gate_payload(
+            review_case_id=queue_init.review_case_id,
+            queue_init_id=queue_init.queue_init_id,
+            completion_gate_id=gate.completion_gate_id,
+            dedup_preview_id=preview.dedup_preview_id,
+        ),
+    )
+    gates = list_analysis_ready_promotion_gates(record.request_id)
+    audits = list_promotion_decision_audits(record.request_id)
+    read_back = read_analysis_ready_promotion_gate(record.request_id, result.promotion_gate_id)
+    refreshed_items = read_review_queue_item_batch(record.request_id, queue_init.queue_init_id).items
+
+    assert result.schema_ == "sentigraph_analysis_ready_promotion_gate_v1"
+    assert result.status == "eligible_for_future_manual_analysis_trigger"
+    assert result.readiness.eligible_for_future_manual_analysis_trigger is True
+    assert result.readiness.can_run_analysis_now is False
+    assert result.readiness.can_generate_report_now is False
+    assert result.now_flags["run_analysis_now"] is False
+    assert result.now_flags["write_evidence_layer_now"] is False
+    assert result.input_scope.analysis_included is False
+    assert result.input_scope.provider_output_is_truth is False
+    assert result.input_scope.official_verification is False
+    assert set(result.promotion_set_preview.item_ids) == {item.review_item_id for item in item_batch.items}
+    assert group.group_candidate_id in result.promotion_set_preview.group_ids
+    assert result.promotion_decision.analysis_effect == "eligible_for_manual_trigger_only"
+    assert read_back.promotion_gate_id == result.promotion_gate_id
+    assert gates[0].promotion_gate_id == result.promotion_gate_id
+    assert audits[0].promotion_gate_id == result.promotion_gate_id
+    assert audits[0].analysis_effect == "eligible_for_manual_trigger_only"
+    assert audits[0].now_flags["run_analysis_now"] is False
+    assert all(item.governance.analysis_included is False for item in refreshed_items)
+
+
+def test_analysis_ready_promotion_gate_hold_and_reject_are_not_eligible(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Promotion gate human decisions")))
+    _case, _staging, queue_init, _batch, gate, preview, group = create_dedup_preview_ready_chain(tmp_path, record.request_id)
+    create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("confirm_group"),
+    )
+
+    hold = create_analysis_ready_promotion_gate(
+        record.request_id,
+        promotion_gate_payload(
+            "hold_for_more_review",
+            review_case_id=queue_init.review_case_id,
+            queue_init_id=queue_init.queue_init_id,
+            completion_gate_id=gate.completion_gate_id,
+            dedup_preview_id=preview.dedup_preview_id,
+        ),
+    )
+    rejected = create_analysis_ready_promotion_gate(
+        record.request_id,
+        promotion_gate_payload(
+            "reject_promotion",
+            review_case_id=queue_init.review_case_id,
+            queue_init_id=queue_init.queue_init_id,
+            completion_gate_id=gate.completion_gate_id,
+            dedup_preview_id=preview.dedup_preview_id,
+        ),
+    )
+    audits = list_promotion_decision_audits(record.request_id)
+
+    assert hold.status == "held_by_human"
+    assert hold.readiness.eligible_for_future_manual_analysis_trigger is False
+    assert hold.promotion_decision.analysis_effect == "held"
+    assert rejected.status == "rejected_by_human"
+    assert rejected.readiness.eligible_for_future_manual_analysis_trigger is False
+    assert rejected.promotion_decision.analysis_effect == "rejected"
+    assert len(audits) == 2
+    assert {audit.decision for audit in audits} == {"hold_for_more_review", "reject_promotion"}
+
+
+def test_analysis_ready_promotion_gate_blocks_unresolved_or_unsafe_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Promotion gate blockers")))
+    _case, _staging, queue_init, _batch, gate, preview, group = create_dedup_preview_ready_chain(tmp_path, record.request_id)
+    base_payload = promotion_gate_payload(
+        review_case_id=queue_init.review_case_id,
+        queue_init_id=queue_init.queue_init_id,
+        completion_gate_id=gate.completion_gate_id,
+        dedup_preview_id=preview.dedup_preview_id,
+    )
+
+    blocked_payloads = [
+        {**base_payload, "reviewer_label": ""},
+        {**base_payload, "promotion_decision": ""},
+        {**base_payload, "coverage_limitations_acknowledged": False},
+        {**base_payload, "provider_output_is_evidence_not_truth_acknowledged": False},
+        {**base_payload, "run_analysis_now": True},
+        {**base_payload, "production_case_id": "case_prod_unsafe"},
+        {**base_payload, "trust_label": "high"},
+    ]
+    for payload in blocked_payloads:
+        try:
+            create_analysis_ready_promotion_gate(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert validation failure text.
+            assert any(text in str(exc) for text in ("reviewer", "decision", "acknowledgement", "side effect", "production_case", "trust"))
+        else:
+            raise AssertionError("unsafe promotion payload should fail")
+
+    try:
+        create_analysis_ready_promotion_gate(record.request_id, base_payload)
+    except Exception as exc:  # noqa: BLE001 - unresolved group should block.
+        assert "group" in str(exc) or "incomplete" in str(exc)
+    else:
+        raise AssertionError("unreviewed dedup group should block promotion")
+
+    create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("confirm_group"),
+    )
+    updated_preview_path = tmp_path / "dedup_previews" / f"{record.request_id}_{preview.dedup_preview_id}.json"
+    preview_payload = json.loads(updated_preview_path.read_text(encoding="utf-8"))
+    preview_payload["groups"][0]["may_amplify_risk"] = True
+    updated_preview_path.write_text(json.dumps(preview_payload), encoding="utf-8")
+    try:
+        create_analysis_ready_promotion_gate(record.request_id, base_payload)
+    except Exception as exc:  # noqa: BLE001 - risk amplification should block.
+        assert "amplify" in str(exc) or "risk" in str(exc)
+    else:
+        raise AssertionError("may_amplify_risk group should block promotion")
+
+    preview_payload["groups"][0]["may_amplify_risk"] = False
+    updated_preview_path.write_text(json.dumps(preview_payload), encoding="utf-8")
+    batch_path = tmp_path / "review_queue_items" / f"{record.request_id}_{queue_init.queue_init_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["items"][0]["privacy"]["raw_author_id_present"] = True
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+    try:
+        create_analysis_ready_promotion_gate(record.request_id, base_payload)
+    except Exception as exc:  # noqa: BLE001 - raw/private field should block.
+        assert "privacy" in str(exc) or "raw" in str(exc) or "forbidden" in str(exc)
+    else:
+        raise AssertionError("raw/private item should block promotion")
+
+    forbidden_row_file = tmp_path / "many_safe_real_preview_package" / "evidence_items.jsonl"
+    if forbidden_row_file.exists():
+        forbidden_row_file.write_text('{"raw_author_id":"must_not_be_read_by_promotion","body_text":"unsafe raw package row"}\n', encoding="utf-8")
+    batch_payload["items"][0]["privacy"]["raw_author_id_present"] = False
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+    result = create_analysis_ready_promotion_gate(record.request_id, base_payload)
+    assert result.status == "eligible_for_future_manual_analysis_trigger"
 
 
 def test_config_uses_default_runtime_label_without_absolute_path(monkeypatch) -> None:

@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import {
   cancelAnalysisRequest,
+  createAnalysisRequestAnalysisReadyPromotionGate,
   createAnalysisRequest,
   createAnalysisRequestDedupGroupReviewAction,
   createAnalysisRequestCaseDraft,
@@ -47,6 +48,7 @@ import {
   getAnalysisRequestImportPlan,
   getAnalysisRequestImportPreview,
   listAnalysisRequestExecutionPreflights,
+  listAnalysisRequestAnalysisReadyPromotionGates,
   listAnalysisRequestDedupGroupReviewAudits,
   listAnalysisRequestDedupPreviews,
   listAnalysisRequestImportJobs,
@@ -57,6 +59,7 @@ import {
   listAnalysisRequestReviewQueueInitializations,
   listAnalysisRequestRowReaderDryRuns,
   listAnalysisRequestReviewDecisions,
+  listAnalysisRequestPromotionDecisionAudits,
   listAnalysisRequestStagingImports,
   listAnalysisRequests,
 } from '../api/sentigraphApi.js'
@@ -198,6 +201,20 @@ const DEDUP_GROUP_ACTIONS = [
   'hold_group_for_privacy',
   'reset_group_review',
 ]
+
+const PROMOTION_DECISION_OPTIONS = [
+  { value: 'approve_for_future_manual_analysis_trigger', label: 'Approve for future manual trigger' },
+  { value: 'hold_for_more_review', label: 'Hold for more review' },
+  { value: 'reject_promotion', label: 'Reject promotion' },
+]
+
+const PROMOTION_GATE_STATUS_COLOR = {
+  eligible_for_future_manual_analysis_trigger: 'green',
+  held_by_human: 'gold',
+  rejected_by_human: 'red',
+  blocked: 'red',
+  privacy_hold: 'magenta',
+}
 
 function statusTag(status) {
   return <Tag color={STATUS_COLOR[status] || 'default'}>{status || 'no_result'}</Tag>
@@ -591,6 +608,7 @@ export function AnalysisRequests() {
   const [reviewQueueCompletionGateForm] = Form.useForm()
   const [dedupPreviewForm] = Form.useForm()
   const [dedupGroupReviewForm] = Form.useForm()
+  const [analysisReadyPromotionGateForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -612,6 +630,8 @@ export function AnalysisRequests() {
   const [reviewQueueCompletionGates, setReviewQueueCompletionGates] = useState([])
   const [dedupPreviews, setDedupPreviews] = useState([])
   const [dedupGroupReviewAudits, setDedupGroupReviewAudits] = useState([])
+  const [analysisReadyPromotionGates, setAnalysisReadyPromotionGates] = useState([])
+  const [promotionDecisionAudits, setPromotionDecisionAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -630,6 +650,7 @@ export function AnalysisRequests() {
   const [reviewQueueCompletionGateLoading, setReviewQueueCompletionGateLoading] = useState(false)
   const [dedupPreviewLoading, setDedupPreviewLoading] = useState(false)
   const [dedupGroupReviewLoading, setDedupGroupReviewLoading] = useState('')
+  const [analysisReadyPromotionGateLoading, setAnalysisReadyPromotionGateLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -646,6 +667,7 @@ export function AnalysisRequests() {
   const [reviewQueueCompletionGateError, setReviewQueueCompletionGateError] = useState('')
   const [dedupPreviewError, setDedupPreviewError] = useState('')
   const [dedupGroupReviewError, setDedupGroupReviewError] = useState('')
+  const [analysisReadyPromotionGateError, setAnalysisReadyPromotionGateError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -684,6 +706,8 @@ export function AnalysisRequests() {
       setReviewQueueCompletionGates([])
       setDedupPreviews([])
       setDedupGroupReviewAudits([])
+      setAnalysisReadyPromotionGates([])
+      setPromotionDecisionAudits([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -699,6 +723,7 @@ export function AnalysisRequests() {
       setReviewQueueCompletionGateError('')
       setDedupPreviewError('')
       setDedupGroupReviewError('')
+      setAnalysisReadyPromotionGateError('')
       return
     }
     try {
@@ -795,6 +820,8 @@ export function AnalysisRequests() {
       setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(requestId))
       setDedupPreviews(await listAnalysisRequestDedupPreviews(requestId))
       setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(requestId))
+      setAnalysisReadyPromotionGates(await listAnalysisRequestAnalysisReadyPromotionGates(requestId))
+      setPromotionDecisionAudits(await listAnalysisRequestPromotionDecisionAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
@@ -802,11 +829,14 @@ export function AnalysisRequests() {
       setReviewQueueCompletionGates([])
       setDedupPreviews([])
       setDedupGroupReviewAudits([])
+      setAnalysisReadyPromotionGates([])
+      setPromotionDecisionAudits([])
       setReviewQueueInitError('')
       setReviewQueueActionError('')
       setReviewQueueCompletionGateError('')
       setDedupPreviewError('')
       setDedupGroupReviewError('')
+      setAnalysisReadyPromotionGateError('')
     }
   }
 
@@ -1128,6 +1158,10 @@ export function AnalysisRequests() {
       setReviewQueueItemBatch(null)
       setReviewQueueActionAudits([])
       setReviewQueueCompletionGates([])
+      setDedupPreviews([])
+      setDedupGroupReviewAudits([])
+      setAnalysisReadyPromotionGates([])
+      setPromotionDecisionAudits([])
       message.success(`Created review-only staging import: ${stagingImport.staging_import_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create review-only staging import.'
@@ -1161,6 +1195,9 @@ export function AnalysisRequests() {
       setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(selectedRecord.request_id))
       setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(selectedRecord.request_id))
       setDedupPreviews([])
+      setDedupGroupReviewAudits([])
+      setAnalysisReadyPromotionGates([])
+      setPromotionDecisionAudits([])
       message.success(`Initialized review-only queue: ${queueInit.queue_init_id}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to initialize review-only queue.'
@@ -1196,6 +1233,9 @@ export function AnalysisRequests() {
       setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(selectedRecord.request_id))
       setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(selectedRecord.request_id))
       setDedupPreviews([])
+      setDedupGroupReviewAudits([])
+      setAnalysisReadyPromotionGates([])
+      setPromotionDecisionAudits([])
       message.success(`Recorded review action: ${action}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record review queue action.'
@@ -1224,6 +1264,9 @@ export function AnalysisRequests() {
       })
       setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(selectedRecord.request_id))
       setDedupPreviews(await listAnalysisRequestDedupPreviews(selectedRecord.request_id))
+      setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(selectedRecord.request_id))
+      setAnalysisReadyPromotionGates([])
+      setPromotionDecisionAudits([])
       message.success(`Evaluated completion gate: ${gate.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to evaluate review queue completion gate.'
@@ -1253,6 +1296,8 @@ export function AnalysisRequests() {
       })
       setDedupPreviews(await listAnalysisRequestDedupPreviews(selectedRecord.request_id))
       setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(selectedRecord.request_id))
+      setAnalysisReadyPromotionGates([])
+      setPromotionDecisionAudits([])
       message.success(`Created dedup preview: ${preview.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create dedup preview.'
@@ -1312,12 +1357,59 @@ export function AnalysisRequests() {
       )
       setDedupPreviews(await listAnalysisRequestDedupPreviews(selectedRecord.request_id))
       setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(selectedRecord.request_id))
+      setAnalysisReadyPromotionGates([])
+      setPromotionDecisionAudits([])
       message.success(`Recorded dedup group action: ${result?.new_group_status || action}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record dedup group review action.'
       setDedupGroupReviewError(String(messageText))
     } finally {
       setDedupGroupReviewLoading('')
+    }
+  }
+
+  async function handleCreateAnalysisReadyPromotionGate(values) {
+    if (!selectedRecord?.request_id) return
+    setAnalysisReadyPromotionGateLoading(true)
+    setAnalysisReadyPromotionGateError('')
+    try {
+      const gate = await createAnalysisRequestAnalysisReadyPromotionGate(selectedRecord.request_id, {
+        review_case_id: values.review_case_id || latestDedupPreview?.review_case_id || undefined,
+        queue_init_id: values.queue_init_id || latestDedupPreview?.queue_init_id || undefined,
+        completion_gate_id: values.completion_gate_id || latestDedupPreview?.completion_gate_id || undefined,
+        dedup_preview_id: values.dedup_preview_id || latestDedupPreview?.dedup_preview_id || undefined,
+        promotion_decision: values.promotion_decision || 'approve_for_future_manual_analysis_trigger',
+        reviewer_label: String(values.reviewer_label || '').trim(),
+        note: String(values.note || '').trim(),
+        coverage_limitations_acknowledged: Boolean(values.coverage_limitations_acknowledged),
+        privacy_acknowledged: Boolean(values.privacy_acknowledged),
+        weak_evidence_warning_acknowledged: Boolean(values.weak_evidence_warning_acknowledged),
+        dedup_preview_warning_acknowledged: Boolean(values.dedup_preview_warning_acknowledged),
+        provider_output_is_evidence_not_truth_acknowledged: Boolean(values.provider_output_is_evidence_not_truth_acknowledged),
+        acknowledge_promotion_is_not_analysis: Boolean(values.acknowledge_promotion_is_not_analysis),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_no_production_dedup: Boolean(values.acknowledge_no_production_dedup),
+        acknowledge_no_report: Boolean(values.acknowledge_no_report),
+        write_evidence_layer_now: false,
+        create_production_case_now: false,
+        create_production_review_queue_now: false,
+        run_production_dedup_now: false,
+        run_dedup_now: false,
+        run_analysis_now: false,
+        generate_report_now: false,
+        generate_sandbox_now: false,
+        generate_public_event_now: false,
+        created_by: 'sentigraph_local_ui',
+      })
+      setAnalysisReadyPromotionGates(await listAnalysisRequestAnalysisReadyPromotionGates(selectedRecord.request_id))
+      setPromotionDecisionAudits(await listAnalysisRequestPromotionDecisionAudits(selectedRecord.request_id))
+      message.success(`Recorded promotion gate: ${gate?.status || 'created'}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create analysis-ready promotion gate.'
+      setAnalysisReadyPromotionGateError(String(messageText))
+    } finally {
+      setAnalysisReadyPromotionGateLoading(false)
     }
   }
 
@@ -1582,6 +1674,39 @@ export function AnalysisRequests() {
   const dedupGroupReviewAuditsJson = dedupGroupReviewAudits.length
     ? JSON.stringify(dedupGroupReviewAudits, null, 2)
     : ''
+  const latestAnalysisReadyPromotionGate = analysisReadyPromotionGates[0] || null
+  const latestAnalysisReadyPromotionGateJson = latestAnalysisReadyPromotionGate
+    ? JSON.stringify(latestAnalysisReadyPromotionGate, null, 2)
+    : ''
+  const analysisReadyPromotionGatesJson = analysisReadyPromotionGates.length
+    ? JSON.stringify(analysisReadyPromotionGates, null, 2)
+    : ''
+  const promotionDecisionAuditsJson = promotionDecisionAudits.length
+    ? JSON.stringify(promotionDecisionAudits, null, 2)
+    : ''
+  const analysisReadyPromotionGateValues = Form.useWatch([], analysisReadyPromotionGateForm) || {}
+  const dedupGroupsNeedReview = useMemo(
+    () => (latestDedupPreview?.groups || []).some((group) => !['confirmed', 'marked_weak', 'representative_changed', 'rejected'].includes(group.group_status)),
+    [latestDedupPreview?.groups],
+  )
+  const analysisReadyPromotionReady = useMemo(() => {
+    return Boolean(
+      latestDedupPreview?.dedup_preview_id &&
+        latestDedupPreview?.status === 'preview_ready' &&
+        !dedupGroupsNeedReview &&
+        String(analysisReadyPromotionGateValues.reviewer_label || '').trim() &&
+        analysisReadyPromotionGateValues.coverage_limitations_acknowledged &&
+        analysisReadyPromotionGateValues.privacy_acknowledged &&
+        analysisReadyPromotionGateValues.weak_evidence_warning_acknowledged &&
+        analysisReadyPromotionGateValues.dedup_preview_warning_acknowledged &&
+        analysisReadyPromotionGateValues.provider_output_is_evidence_not_truth_acknowledged &&
+        analysisReadyPromotionGateValues.acknowledge_promotion_is_not_analysis &&
+        analysisReadyPromotionGateValues.acknowledge_no_evidence_layer_write &&
+        analysisReadyPromotionGateValues.acknowledge_no_production_case &&
+        analysisReadyPromotionGateValues.acknowledge_no_production_dedup &&
+        analysisReadyPromotionGateValues.acknowledge_no_report,
+    )
+  }, [analysisReadyPromotionGateValues, dedupGroupsNeedReview, latestDedupPreview?.dedup_preview_id, latestDedupPreview?.status])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -3913,6 +4038,186 @@ export function AnalysisRequests() {
                                       <Text type="secondary">{item.dedup_preview_id}</Text>
                                       <Text type="secondary">groups={item.counts?.duplicate_group_candidates || 0}</Text>
                                       <Text type="secondary">created_at={item.created_at || '-'}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Analysis-ready Promotion Gate / future manual trigger only">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Promotion gate is not analysis"
+                              description="This gate only records whether a review-only case is eligible for a future manual analysis trigger. It does not write the Evidence Layer, create a production case, run production dedup, run analysis, generate reports, generate Sandbox fixtures, or create public event pages."
+                            />
+                            {analysisReadyPromotionGateError ? <Alert type="error" showIcon message={analysisReadyPromotionGateError} /> : null}
+                            <Form
+                              form={analysisReadyPromotionGateForm}
+                              layout="vertical"
+                              initialValues={{
+                                promotion_decision: 'approve_for_future_manual_analysis_trigger',
+                                reviewer_label: 'promotion_reviewer',
+                                coverage_limitations_acknowledged: true,
+                                privacy_acknowledged: true,
+                                weak_evidence_warning_acknowledged: true,
+                                dedup_preview_warning_acknowledged: true,
+                                provider_output_is_evidence_not_truth_acknowledged: true,
+                                acknowledge_promotion_is_not_analysis: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_no_production_dedup: true,
+                                acknowledge_no_report: true,
+                              }}
+                              onFinish={handleCreateAnalysisReadyPromotionGate}
+                            >
+                              <Row gutter={12}>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Promotion decision" name="promotion_decision">
+                                    <Select options={PROMOTION_DECISION_OPTIONS} />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Reviewer label" name="reviewer_label" rules={[{ required: true }]}>
+                                    <Input placeholder="promotion_reviewer" />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Dedup preview id" name="dedup_preview_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestDedupPreview?.dedup_preview_id || 'latest ready preview'}
+                                      options={dedupPreviews.map((item) => ({
+                                        value: item.dedup_preview_id,
+                                        label: `${item.status} / ${item.dedup_preview_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24}>
+                                  <Form.Item label="Decision note" name="note">
+                                    <TextArea rows={2} placeholder="Why this review-only case is held, rejected, or eligible for a future manual trigger." />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={12}>
+                                {[
+                                  ['coverage_limitations_acknowledged', 'Coverage limitations acknowledged'],
+                                  ['privacy_acknowledged', 'Privacy blockers reviewed'],
+                                  ['weak_evidence_warning_acknowledged', 'Weak evidence remains warning-marked'],
+                                  ['dedup_preview_warning_acknowledged', 'Dedup preview reviewed; duplicate count is not truth strength'],
+                                  ['provider_output_is_evidence_not_truth_acknowledged', 'Provider output is evidence, not truth'],
+                                  ['acknowledge_promotion_is_not_analysis', 'This does not run analysis'],
+                                  ['acknowledge_no_evidence_layer_write', 'No Evidence Layer write'],
+                                  ['acknowledge_no_production_case', 'No production case'],
+                                  ['acknowledge_no_production_dedup', 'No production dedup'],
+                                  ['acknowledge_no_report', 'No report generation'],
+                                ].map(([name, label]) => (
+                                  <Col xs={24} md={12} key={name}>
+                                    <Form.Item name={name} valuePropName="checked">
+                                      <Checkbox>{label}</Checkbox>
+                                    </Form.Item>
+                                  </Col>
+                                ))}
+                              </Row>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  icon={<ShieldCheck size={16} />}
+                                  loading={analysisReadyPromotionGateLoading}
+                                  disabled={!analysisReadyPromotionReady || analysisReadyPromotionGateLoading}
+                                >
+                                  Record promotion gate
+                                </Button>
+                                {latestAnalysisReadyPromotionGate ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestAnalysisReadyPromotionGateJson, 'Promotion gate JSON copied')}
+                                  >
+                                    Copy latest gate JSON
+                                  </Button>
+                                ) : null}
+                                {analysisReadyPromotionGates.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(analysisReadyPromotionGatesJson, 'Promotion gate history JSON copied')}
+                                  >
+                                    Copy gate history JSON
+                                  </Button>
+                                ) : null}
+                                {promotionDecisionAudits.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(promotionDecisionAuditsJson, 'Promotion decision audit JSON copied')}
+                                  >
+                                    Copy promotion audit JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+                            {dedupGroupsNeedReview ? (
+                              <Alert
+                                type="info"
+                                showIcon
+                                message="Dedup group review is not complete"
+                                description="All duplicate group candidates must be confirmed, marked weak, representative-changed, or rejected before this gate can create an eligible record."
+                              />
+                            ) : null}
+                            {latestAnalysisReadyPromotionGate ? (
+                              <Card size="small" title="Latest promotion gate">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={PROMOTION_GATE_STATUS_COLOR[latestAnalysisReadyPromotionGate.status] || 'default'}>
+                                      {latestAnalysisReadyPromotionGate.status}
+                                    </Tag>
+                                    <Tag color="default">
+                                      eligible_future_manual_trigger:{' '}
+                                      {boolText(latestAnalysisReadyPromotionGate.readiness?.eligible_for_future_manual_analysis_trigger)}
+                                    </Tag>
+                                    <Tag color="default">
+                                      can_run_analysis_now: {boolText(latestAnalysisReadyPromotionGate.readiness?.can_run_analysis_now)}
+                                    </Tag>
+                                    <Tag color="default">
+                                      run_analysis_now: {boolText(latestAnalysisReadyPromotionGate.now_flags?.run_analysis_now)}
+                                    </Tag>
+                                  </Space>
+                                  <Descriptions size="small" column={1}>
+                                    <Descriptions.Item label="promotion_gate_id">{latestAnalysisReadyPromotionGate.promotion_gate_id}</Descriptions.Item>
+                                    <Descriptions.Item label="decision">{latestAnalysisReadyPromotionGate.promotion_decision?.decision || '-'}</Descriptions.Item>
+                                    <Descriptions.Item label="analysis_effect">
+                                      {latestAnalysisReadyPromotionGate.promotion_decision?.analysis_effect || '-'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="counts">
+                                      seen={latestAnalysisReadyPromotionGate.counts?.items_seen || 0}, eligible=
+                                      {latestAnalysisReadyPromotionGate.counts?.items_eligible_for_promotion_preview || 0}, excluded=
+                                      {latestAnalysisReadyPromotionGate.counts?.items_excluded || 0}, groups=
+                                      {latestAnalysisReadyPromotionGate.counts?.confirmed_duplicate_groups || 0}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <SummaryList title="Promotion warnings" items={latestAnalysisReadyPromotionGate.warnings || []} />
+                                  <SummaryList title="Promotion blockers" items={latestAnalysisReadyPromotionGate.blockers || []} />
+                                  <SummaryList title="Boundary notes" items={latestAnalysisReadyPromotionGate.boundary_notes || []} />
+                                  <SummaryList title="Recommended next steps" items={latestAnalysisReadyPromotionGate.recommended_next_steps || []} />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No analysis-ready promotion gate record yet.</Text>
+                            )}
+                            {promotionDecisionAudits.length ? (
+                              <Card size="small" title={`Promotion decision audit timeline (${promotionDecisionAudits.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {promotionDecisionAudits.map((audit) => (
+                                    <Space wrap key={audit.promotion_decision_id}>
+                                      <Tag color={audit.new_status === 'eligible_for_future_manual_analysis_trigger' ? 'green' : 'gold'}>
+                                        {audit.decision}
+                                      </Tag>
+                                      <Text type="secondary">{audit.new_status}</Text>
+                                      <Text type="secondary">{audit.reviewed_at || '-'}</Text>
+                                      <Text type="secondary">effect={audit.analysis_effect}</Text>
                                     </Space>
                                   ))}
                                 </Space>
