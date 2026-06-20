@@ -140,9 +140,42 @@ def create_route_real_preview_package(tmp_path: Path, *, include_rows: bool = Tr
     return package_dir
 
 
-def create_route_real_preview_chain(tmp_path: Path) -> tuple[str, str]:
+def create_route_many_safe_preview_package(tmp_path: Path) -> Path:
+    package_dir = tmp_path / "route_many_safe_real_preview_package"
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "manifest.json").write_text(
+        json.dumps({"package_name": package_dir.name, "package_role": "selected_public_sample"}),
+        encoding="utf-8",
+    )
+    (package_dir / "validation_report.json").write_text(json.dumps({"errors": 0, "warnings": 0}), encoding="utf-8")
+    (package_dir / "coverage_note.md").write_text(
+        "selected public sample only; not full-web, not full-platform, not full-thread",
+        encoding="utf-8",
+    )
+    (package_dir / "README.md").write_text("route many-row preview fixture", encoding="utf-8")
+    rows = [
+        {
+            "platform": "synthetic_forum",
+            "evidence_type": "comment",
+            "source_url": f"https://example.invalid/route-real-preview/many/{index}",
+            "title": f"Route safe local package row {index}",
+            "body_text": f"Route safe local package row preview body {index}.",
+            "created_at": "2026-06-18T01:00:00Z",
+            "language": "en",
+            "like_count": index,
+        }
+        for index in range(1, 4)
+    ]
+    (package_dir / "evidence_items.jsonl").write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows),
+        encoding="utf-8",
+    )
+    return package_dir
+
+
+def create_route_real_preview_chain(tmp_path: Path, *, package_dir: Path | None = None) -> tuple[str, str]:
     request_id = create_route_approve_decision(tmp_path, "Real package row preview route")
-    package_dir = create_route_real_preview_package(tmp_path)
+    package_dir = package_dir or create_route_real_preview_package(tmp_path)
     preview_path = tmp_path / "import_previews" / f"{request_id}.json"
     preview = json.loads(preview_path.read_text(encoding="utf-8"))
     preview["package_reference"]["package_path"] = str(package_dir)
@@ -233,6 +266,21 @@ def route_dedup_preview_payload(**overrides: object) -> dict:
         "include_marked_weak": True,
         "include_duplicate_merged": True,
         "acknowledge_dedup_preview_only": True,
+        "acknowledge_no_production_dedup": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def route_dedup_group_review_action_payload(action: str = "confirm_group", **overrides: object) -> dict:
+    payload = {
+        "action": action,
+        "reviewer_label": "route_dedup_reviewer",
+        "note": f"Route dedup group review action: {action}.",
+        "acknowledge_review_only_group_action": True,
         "acknowledge_no_production_dedup": True,
         "acknowledge_no_evidence_layer_write": True,
         "acknowledge_no_analysis": True,
@@ -1609,6 +1657,86 @@ def test_analysis_request_dedup_preview_routes_create_list_read(tmp_path: Path, 
     unsafe_response = client.post(
         f"/api/v1/analysis-requests/{request_id}/dedup-previews",
         json=route_dedup_preview_payload(queue_init_id=queue_init_id, completion_gate_id=completion_gate_id, run_dedup_now=True),
+    )
+    assert unsafe_response.status_code == 400
+
+
+def test_analysis_request_dedup_group_review_routes_create_and_list_audits(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, _preflight_id = create_route_real_preview_chain(tmp_path, package_dir=create_route_many_safe_preview_package(tmp_path))
+    preview_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/real-package-row-previews",
+        json=route_real_preview_ack_payload(max_rows=2),
+    )
+    assert preview_response.status_code == 200
+    review_case_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-only-cases",
+        json={"source_preview_run_id": preview_response.json()["preview_run_id"], "target_case_mode": "new_review_case"},
+    )
+    assert review_case_response.status_code == 200
+    review_case_id = review_case_response.json()["review_case_id"]
+    staging_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/staging-imports",
+        json=route_staging_import_ack_payload(review_case_id=review_case_id),
+    )
+    assert staging_response.status_code == 200
+    queue_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-initializations",
+        json=route_review_queue_init_ack_payload(review_case_id=review_case_id, staging_import_id=staging_response.json()["staging_import_id"]),
+    )
+    assert queue_response.status_code == 200
+    queue_init_id = queue_response.json()["queue_init_id"]
+    items_response = client.get(f"/api/v1/analysis-requests/{request_id}/review-queue-initializations/{queue_init_id}/items")
+    item_ids = [item["review_item_id"] for item in items_response.json()["items"]]
+    for item_id in item_ids:
+        action_response = client.post(
+            f"/api/v1/analysis-requests/{request_id}/review-queue-items/{item_id}/actions",
+            json=route_review_queue_action_payload("approve"),
+        )
+        assert action_response.status_code == 200
+    batch_path = tmp_path / "review_queue_items" / f"{request_id}_{queue_init_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["items"][0]["evidence_candidate"]["source_url"] = "https://example.com/route-dedup?id=1&utm_source=demo"
+    batch_payload["items"][1]["evidence_candidate"]["source_url"] = "https://example.com/route-dedup?id=1"
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+    gate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/review-queue-completion-gates",
+        json=route_review_queue_completion_gate_payload(queue_init_id=queue_init_id, review_case_id=review_case_id),
+    )
+    dedup_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/dedup-previews",
+        json=route_dedup_preview_payload(queue_init_id=queue_init_id, review_case_id=review_case_id, completion_gate_id=gate_response.json()["completion_gate_id"]),
+    )
+    group = dedup_response.json()["groups"][0]
+
+    action_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/dedup-previews/{dedup_response.json()['dedup_preview_id']}/groups/{group['group_candidate_id']}/actions",
+        json=route_dedup_group_review_action_payload("confirm_group"),
+    )
+    assert action_response.status_code == 200
+    body = action_response.json()
+    assert body["schema"] == "sentigraph_dedup_group_review_action_result_v1"
+    assert body["new_group_status"] == "confirmed"
+    assert body["updated_group"]["human_confirmation_required"] is False
+    assert body["readiness"]["can_run_analysis_now"] is False
+    assert body["audit_record"]["now_flags"]["run_production_dedup_now"] is False
+
+    group_audits = client.get(
+        f"/api/v1/analysis-requests/{request_id}/dedup-previews/{dedup_response.json()['dedup_preview_id']}/groups/{group['group_candidate_id']}/audits"
+    )
+    request_audits = client.get(f"/api/v1/analysis-requests/{request_id}/dedup-group-review-audits")
+    all_audits = client.get("/api/v1/analysis-requests/dedup-group-review-audits")
+    updated_preview = client.get(f"/api/v1/analysis-requests/{request_id}/dedup-previews/{dedup_response.json()['dedup_preview_id']}")
+    assert group_audits.status_code == 200
+    assert request_audits.status_code == 200
+    assert all_audits.status_code == 200
+    assert group_audits.json()[0]["audit_id"] == body["audit_id"]
+    assert request_audits.json()[0]["audit_id"] == body["audit_id"]
+    assert updated_preview.json()["groups"][0]["group_status"] == "confirmed"
+
+    unsafe_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/dedup-previews/{dedup_response.json()['dedup_preview_id']}/groups/{group['group_candidate_id']}/actions",
+        json=route_dedup_group_review_action_payload("confirm_group", run_analysis_now=True),
     )
     assert unsafe_response.status_code == 400
 

@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   cancelAnalysisRequest,
   createAnalysisRequest,
+  createAnalysisRequestDedupGroupReviewAction,
   createAnalysisRequestCaseDraft,
   createAnalysisRequestDedupPreview,
   createAnalysisRequestImportJob,
@@ -46,6 +47,7 @@ import {
   getAnalysisRequestImportPlan,
   getAnalysisRequestImportPreview,
   listAnalysisRequestExecutionPreflights,
+  listAnalysisRequestDedupGroupReviewAudits,
   listAnalysisRequestDedupPreviews,
   listAnalysisRequestImportJobs,
   listAnalysisRequestRealPackageRowPreviews,
@@ -163,6 +165,39 @@ const REVIEW_CHECKLIST_ITEMS = [
 ]
 
 const REVIEW_CHECKLIST_KEYS = REVIEW_CHECKLIST_ITEMS.map((item) => item.value)
+
+const DEDUP_GROUP_STATUS_COLOR = {
+  review_needed: 'gold',
+  confirmed: 'green',
+  split: 'purple',
+  representative_changed: 'blue',
+  marked_weak: 'orange',
+  rejected: 'red',
+  needs_more_source: 'volcano',
+  privacy_hold: 'magenta',
+}
+
+const DEDUP_GROUP_ACTION_LABELS = {
+  confirm_group: 'Confirm group',
+  split_group: 'Split group',
+  change_representative: 'Change representative',
+  mark_group_weak: 'Mark group weak',
+  reject_group: 'Reject group',
+  request_more_source: 'Request more source',
+  hold_group_for_privacy: 'Hold for privacy',
+  reset_group_review: 'Reset group review',
+}
+
+const DEDUP_GROUP_ACTIONS = [
+  'confirm_group',
+  'split_group',
+  'change_representative',
+  'mark_group_weak',
+  'reject_group',
+  'request_more_source',
+  'hold_group_for_privacy',
+  'reset_group_review',
+]
 
 function statusTag(status) {
   return <Tag color={STATUS_COLOR[status] || 'default'}>{status || 'no_result'}</Tag>
@@ -555,6 +590,7 @@ export function AnalysisRequests() {
   const [reviewQueueActionForm] = Form.useForm()
   const [reviewQueueCompletionGateForm] = Form.useForm()
   const [dedupPreviewForm] = Form.useForm()
+  const [dedupGroupReviewForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -575,6 +611,7 @@ export function AnalysisRequests() {
   const [reviewQueueActionAudits, setReviewQueueActionAudits] = useState([])
   const [reviewQueueCompletionGates, setReviewQueueCompletionGates] = useState([])
   const [dedupPreviews, setDedupPreviews] = useState([])
+  const [dedupGroupReviewAudits, setDedupGroupReviewAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -592,6 +629,7 @@ export function AnalysisRequests() {
   const [reviewQueueActionLoading, setReviewQueueActionLoading] = useState('')
   const [reviewQueueCompletionGateLoading, setReviewQueueCompletionGateLoading] = useState(false)
   const [dedupPreviewLoading, setDedupPreviewLoading] = useState(false)
+  const [dedupGroupReviewLoading, setDedupGroupReviewLoading] = useState('')
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -607,6 +645,7 @@ export function AnalysisRequests() {
   const [reviewQueueActionError, setReviewQueueActionError] = useState('')
   const [reviewQueueCompletionGateError, setReviewQueueCompletionGateError] = useState('')
   const [dedupPreviewError, setDedupPreviewError] = useState('')
+  const [dedupGroupReviewError, setDedupGroupReviewError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -644,7 +683,7 @@ export function AnalysisRequests() {
       setReviewQueueActionAudits([])
       setReviewQueueCompletionGates([])
       setDedupPreviews([])
-      setDedupPreviews([])
+      setDedupGroupReviewAudits([])
       setDraftError('')
       setPlanError('')
       setPreviewError('')
@@ -659,6 +698,7 @@ export function AnalysisRequests() {
       setReviewQueueActionError('')
       setReviewQueueCompletionGateError('')
       setDedupPreviewError('')
+      setDedupGroupReviewError('')
       return
     }
     try {
@@ -754,16 +794,19 @@ export function AnalysisRequests() {
       setReviewQueueActionAudits(await listAnalysisRequestReviewQueueActionAudits(requestId))
       setReviewQueueCompletionGates(await listAnalysisRequestReviewQueueCompletionGates(requestId))
       setDedupPreviews(await listAnalysisRequestDedupPreviews(requestId))
+      setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
       setReviewQueueActionAudits([])
       setReviewQueueCompletionGates([])
       setDedupPreviews([])
+      setDedupGroupReviewAudits([])
       setReviewQueueInitError('')
       setReviewQueueActionError('')
       setReviewQueueCompletionGateError('')
       setDedupPreviewError('')
+      setDedupGroupReviewError('')
     }
   }
 
@@ -1209,12 +1252,72 @@ export function AnalysisRequests() {
         created_by: 'sentigraph_local_ui',
       })
       setDedupPreviews(await listAnalysisRequestDedupPreviews(selectedRecord.request_id))
+      setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(selectedRecord.request_id))
       message.success(`Created dedup preview: ${preview.status}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create dedup preview.'
       setDedupPreviewError(String(messageText))
     } finally {
       setDedupPreviewLoading(false)
+    }
+  }
+
+  async function handleDedupGroupReviewAction(group, action) {
+    if (!selectedRecord?.request_id || !latestDedupPreview?.dedup_preview_id || !group?.group_candidate_id) return
+    const values = dedupGroupReviewForm.getFieldsValue()
+    const reviewerLabel = String(values.reviewer_label || '').trim()
+    const note = String(values.note || '').trim()
+    const splitItemIds = splitTags(values.split_item_ids)
+    const representativeItemId = String(values.representative_item_id || group.representative_item_id || '').trim()
+    if (!reviewerLabel || !note) {
+      message.warning('Reviewer label and review note are required for dedup group review actions.')
+      return
+    }
+    if (action === 'split_group' && !splitItemIds.length) {
+      message.warning('split_group requires split item ids.')
+      return
+    }
+    if (action === 'change_representative' && !representativeItemId) {
+      message.warning('change_representative requires a representative item id.')
+      return
+    }
+    setDedupGroupReviewLoading(`${group.group_candidate_id}:${action}`)
+    setDedupGroupReviewError('')
+    try {
+      const result = await createAnalysisRequestDedupGroupReviewAction(
+        selectedRecord.request_id,
+        latestDedupPreview.dedup_preview_id,
+        group.group_candidate_id,
+        {
+          action,
+          target_group_candidate_id: group.group_candidate_id,
+          reviewer_label: reviewerLabel,
+          note,
+          representative_item_id: action === 'change_representative' ? representativeItemId : undefined,
+          split_item_ids: action === 'split_group' ? splitItemIds : [],
+          acknowledge_review_only_group_action: Boolean(values.acknowledge_review_only_group_action),
+          acknowledge_no_production_dedup: Boolean(values.acknowledge_no_production_dedup),
+          acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+          acknowledge_no_analysis: Boolean(values.acknowledge_no_analysis),
+          acknowledge_no_report: Boolean(values.acknowledge_no_report),
+          write_evidence_layer_now: false,
+          create_production_case_now: false,
+          create_production_review_queue_now: false,
+          run_production_dedup_now: false,
+          run_analysis_now: false,
+          generate_report_now: false,
+          generate_sandbox_now: false,
+          generate_public_event_now: false,
+        },
+      )
+      setDedupPreviews(await listAnalysisRequestDedupPreviews(selectedRecord.request_id))
+      setDedupGroupReviewAudits(await listAnalysisRequestDedupGroupReviewAudits(selectedRecord.request_id))
+      message.success(`Recorded dedup group action: ${result?.new_group_status || action}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to record dedup group review action.'
+      setDedupGroupReviewError(String(messageText))
+    } finally {
+      setDedupGroupReviewLoading('')
     }
   }
 
@@ -1455,6 +1558,30 @@ export function AnalysisRequests() {
         dedupPreviewValues.acknowledge_no_report,
     )
   }, [dedupPreviewValues, latestReviewQueueCompletionGate?.completion_gate_id, latestReviewQueueCompletionGate?.status])
+  const dedupGroupReviewValues = Form.useWatch([], dedupGroupReviewForm) || {}
+  const dedupGroupReviewReady = useMemo(() => {
+    return Boolean(
+      latestDedupPreview?.dedup_preview_id &&
+        String(dedupGroupReviewValues.reviewer_label || '').trim() &&
+        String(dedupGroupReviewValues.note || '').trim() &&
+        dedupGroupReviewValues.acknowledge_review_only_group_action &&
+        dedupGroupReviewValues.acknowledge_no_production_dedup &&
+        dedupGroupReviewValues.acknowledge_no_evidence_layer_write &&
+        dedupGroupReviewValues.acknowledge_no_analysis &&
+        dedupGroupReviewValues.acknowledge_no_report,
+    )
+  }, [latestDedupPreview?.dedup_preview_id, dedupGroupReviewValues])
+  const dedupGroupAuditsByGroup = useMemo(() => {
+    return dedupGroupReviewAudits.reduce((acc, audit) => {
+      const key = audit.group_candidate_id || 'unknown'
+      if (!acc[key]) acc[key] = []
+      acc[key].push(audit)
+      return acc
+    }, {})
+  }, [dedupGroupReviewAudits])
+  const dedupGroupReviewAuditsJson = dedupGroupReviewAudits.length
+    ? JSON.stringify(dedupGroupReviewAudits, null, 2)
+    : ''
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
   return (
@@ -3555,6 +3682,85 @@ export function AnalysisRequests() {
                               </Space>
                             </Form>
 
+                            <Card size="small" title="Dedup Group Review / duplicate group governance">
+                              <Space direction="vertical" size={10} className="full-width">
+                                <Alert
+                                  type="info"
+                                  showIcon
+                                  message="Group review is local governance only"
+                                  description="Confirming a duplicate group does not run production dedup, does not write the Evidence Layer, does not make evidence analysis-ready, and does not generate reports, Sandbox output, or public events. Future group-review completion and analysis-promotion gates are still required."
+                                />
+                                {dedupGroupReviewError ? <Alert type="error" showIcon message={dedupGroupReviewError} /> : null}
+                                <Form
+                                  form={dedupGroupReviewForm}
+                                  layout="vertical"
+                                  initialValues={{
+                                    reviewer_label: 'sentigraph_local_reviewer',
+                                    note: 'Local review-only duplicate group action.',
+                                    representative_item_id: '',
+                                    split_item_ids: [],
+                                    acknowledge_review_only_group_action: true,
+                                    acknowledge_no_production_dedup: true,
+                                    acknowledge_no_evidence_layer_write: true,
+                                    acknowledge_no_analysis: true,
+                                    acknowledge_no_report: true,
+                                  }}
+                                >
+                                  <Row gutter={[12, 0]}>
+                                    <Col span={8}>
+                                      <Form.Item label="reviewer_label" name="reviewer_label">
+                                        <Input placeholder="human reviewer label" />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={8}>
+                                      <Form.Item label="representative_item_id" name="representative_item_id">
+                                        <Input placeholder="required for change_representative" />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={8}>
+                                      <Form.Item label="split_item_ids" name="split_item_ids">
+                                        <Select mode="tags" placeholder="required for split_group" />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={24}>
+                                      <Form.Item label="review note" name="note">
+                                        <TextArea rows={2} placeholder="Explain this local review-only group decision." />
+                                      </Form.Item>
+                                    </Col>
+                                  </Row>
+                                  <Row gutter={[12, 0]}>
+                                    <Col span={12}>
+                                      <Form.Item name="acknowledge_review_only_group_action" valuePropName="checked">
+                                        <Checkbox>Review-only group action; duplicate groups are candidates, not facts.</Checkbox>
+                                      </Form.Item>
+                                      <Form.Item name="acknowledge_no_production_dedup" valuePropName="checked">
+                                        <Checkbox>No production dedup, merge, or count-amplification effect.</Checkbox>
+                                      </Form.Item>
+                                      <Form.Item name="acknowledge_no_evidence_layer_write" valuePropName="checked">
+                                        <Checkbox>No Evidence Layer write and no production case/review queue creation.</Checkbox>
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={12}>
+                                      <Form.Item name="acknowledge_no_analysis" valuePropName="checked">
+                                        <Checkbox>No analysis, no risk update, and no analysis_included=true.</Checkbox>
+                                      </Form.Item>
+                                      <Form.Item name="acknowledge_no_report" valuePropName="checked">
+                                        <Checkbox>No report, Sandbox fixture, public event, or B-end output generation.</Checkbox>
+                                      </Form.Item>
+                                    </Col>
+                                  </Row>
+                                  {dedupGroupReviewAudits.length ? (
+                                    <Button
+                                      icon={<ClipboardCopy size={16} />}
+                                      onClick={() => copyText(dedupGroupReviewAuditsJson, 'Dedup group review audit JSON copied')}
+                                    >
+                                      Copy group review audit JSON
+                                    </Button>
+                                  ) : null}
+                                </Form>
+                              </Space>
+                            </Card>
+
                             {latestDedupPreview ? (
                               <Card size="small" title="Latest dedup preview">
                                 <Space direction="vertical" size={10} className="full-width">
@@ -3586,28 +3792,84 @@ export function AnalysisRequests() {
                                   </Descriptions>
                                   {latestDedupPreview.groups?.length ? (
                                     <Space direction="vertical" size={8} className="full-width">
-                                      {latestDedupPreview.groups.map((group) => (
-                                        <Card size="small" key={group.group_candidate_id}>
-                                          <Space direction="vertical" size={4} className="full-width">
-                                            <Space wrap>
-                                              <Tag color="blue">{group.reason}</Tag>
-                                              <Tag color={group.confidence === 'high' ? 'green' : group.confidence === 'low' ? 'gold' : 'cyan'}>
-                                                {group.confidence}
-                                              </Tag>
-                                              <Text type="secondary">{group.group_candidate_id}</Text>
+                                      {latestDedupPreview.groups.map((group) => {
+                                        const groupAudits = dedupGroupAuditsByGroup[group.group_candidate_id] || []
+                                        return (
+                                          <Card size="small" key={group.group_candidate_id}>
+                                            <Space direction="vertical" size={8} className="full-width">
+                                              <Space wrap>
+                                                <Tag color={DEDUP_GROUP_STATUS_COLOR[group.group_status] || 'default'}>
+                                                  {group.group_status || 'review_needed'}
+                                                </Tag>
+                                                <Tag color="blue">{group.reason}</Tag>
+                                                <Tag color={group.confidence === 'high' ? 'green' : group.confidence === 'low' ? 'gold' : 'cyan'}>
+                                                  {group.confidence}
+                                                </Tag>
+                                                <Tag color="default">audit_count: {groupAudits.length}</Tag>
+                                                <Text type="secondary">{group.group_candidate_id}</Text>
+                                              </Space>
+                                              <Text>representative: {group.representative_item_id || '-'}</Text>
+                                              <Text type="secondary">
+                                                items: {(group.item_ids || []).join(', ') || '-'}
+                                              </Text>
+                                              {group.split_item_ids?.length ? (
+                                                <Text type="secondary">split_item_ids: {group.split_item_ids.join(', ')}</Text>
+                                              ) : null}
+                                              <Text type="secondary">
+                                                duplicate_count_preview={group.duplicate_count_preview || 0}, may_amplify_risk=
+                                                {boolText(group.may_amplify_risk)}, human_confirmation_required=
+                                                {boolText(group.human_confirmation_required)}, analysis_effect={group.analysis_effect}
+                                              </Text>
+                                              <Space wrap>
+                                                {DEDUP_GROUP_ACTIONS.map((action) => {
+                                                  const requiresSplit = action === 'split_group'
+                                                  const requiresRepresentative = action === 'change_representative'
+                                                  const missingSplit = requiresSplit && !splitTags(dedupGroupReviewValues.split_item_ids).length
+                                                  const missingRepresentative = requiresRepresentative && !String(dedupGroupReviewValues.representative_item_id || '').trim()
+                                                  const loadingKey = `${group.group_candidate_id}:${action}`
+                                                  return (
+                                                    <Button
+                                                      size="small"
+                                                      key={action}
+                                                      danger={['reject_group', 'hold_group_for_privacy'].includes(action)}
+                                                      loading={dedupGroupReviewLoading === loadingKey}
+                                                      disabled={!dedupGroupReviewReady || missingSplit || missingRepresentative || Boolean(dedupGroupReviewLoading)}
+                                                      onClick={() => handleDedupGroupReviewAction(group, action)}
+                                                    >
+                                                      {DEDUP_GROUP_ACTION_LABELS[action]}
+                                                    </Button>
+                                                  )
+                                                })}
+                                              </Space>
+                                              {groupAudits.length ? (
+                                                <Card size="small" title="Group audit timeline">
+                                                  <Space direction="vertical" size={6} className="full-width">
+                                                    {groupAudits.map((audit) => (
+                                                      <Space direction="vertical" size={2} key={audit.audit_id} className="full-width">
+                                                        <Space wrap>
+                                                          <Tag color="default">{audit.action}</Tag>
+                                                          <Tag color={DEDUP_GROUP_STATUS_COLOR[audit.new_group_status] || 'default'}>
+                                                            {audit.previous_group_status || '-'} → {audit.new_group_status || '-'}
+                                                          </Tag>
+                                                          <Text type="secondary">{audit.reviewed_at || '-'}</Text>
+                                                          <Text type="secondary">{audit.reviewer_label || '-'}</Text>
+                                                        </Space>
+                                                        <Text type="secondary">
+                                                          analysis_effect={audit.analysis_effect}, dedup_effect={audit.dedup_effect}, trust_effect={audit.trust_label_effect}
+                                                        </Text>
+                                                        <Text>{audit.note || '-'}</Text>
+                                                      </Space>
+                                                    ))}
+                                                  </Space>
+                                                </Card>
+                                              ) : (
+                                                <Text type="secondary">No group review audit yet.</Text>
+                                              )}
+                                              <SummaryList title="Notes" items={group.notes || []} />
                                             </Space>
-                                            <Text>representative: {group.representative_item_id || '-'}</Text>
-                                            <Text type="secondary">
-                                              items: {(group.item_ids || []).join(', ') || '-'}
-                                            </Text>
-                                            <Text type="secondary">
-                                              duplicate_count_preview={group.duplicate_count_preview || 0}, may_amplify_risk=
-                                              {boolText(group.may_amplify_risk)}, analysis_effect={group.analysis_effect}
-                                            </Text>
-                                            <SummaryList title="Notes" items={group.notes || []} />
-                                          </Space>
-                                        </Card>
-                                      ))}
+                                          </Card>
+                                        )
+                                      })}
                                     </Space>
                                   ) : (
                                     <Text type="secondary">No duplicate group candidates found in latest preview.</Text>

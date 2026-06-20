@@ -1813,13 +1813,170 @@ class DedupGroupCandidate(BaseModel):
     dedup_preview_id: str
     reason: Literal["exact_url_match", "normalized_url_match", "content_preview_hash_match", "lineage_match", "reviewer_merge_hint", "mixed"]
     confidence: Literal["high", "medium", "low"] = "medium"
+    group_status: Literal[
+        "review_needed",
+        "confirmed",
+        "split",
+        "representative_changed",
+        "marked_weak",
+        "rejected",
+        "needs_more_source",
+        "privacy_hold",
+    ] = "review_needed"
     item_ids: list[str] = Field(default_factory=list)
     representative_item_id: str = ""
+    split_item_ids: list[str] = Field(default_factory=list)
     duplicate_count_preview: int = 0
     may_amplify_risk: bool = False
     human_confirmation_required: bool = True
-    analysis_effect: Literal["preview_only_no_analysis_effect"] = "preview_only_no_analysis_effect"
+    analysis_effect: Literal["preview_only_no_analysis_effect", "blocked", "eligible_for_future_promotion_gate"] = (
+        "preview_only_no_analysis_effect"
+    )
     notes: list[str] = Field(default_factory=list)
+
+
+DedupGroupReviewActionName = Literal[
+    "confirm_group",
+    "split_group",
+    "change_representative",
+    "mark_group_weak",
+    "reject_group",
+    "request_more_source",
+    "hold_group_for_privacy",
+    "reset_group_review",
+]
+
+
+class DedupGroupReviewActionRequest(BaseModel):
+    action: DedupGroupReviewActionName
+    reviewer_label: str = ""
+    note: str = ""
+    representative_item_id: str | None = None
+    split_item_ids: list[str] = Field(default_factory=list)
+    target_group_candidate_id: str | None = None
+    acknowledge_review_only_group_action: bool = False
+    acknowledge_no_production_dedup: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_analysis: bool = False
+    acknowledge_no_report: bool = False
+    production_case_id: str | None = None
+    target_production_case_id: str | None = None
+    trust_label: str | None = None
+    verification_status: str | None = None
+    evidence_layer_written: bool = False
+    production_case_created: bool = False
+    production_review_queue_created: bool = False
+    production_dedup_run: bool = False
+    analysis_included: bool = False
+    analysis_run: bool = False
+    report_generated: bool = False
+    sandbox_generated: bool = False
+    public_event_generated: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    create_production_review_queue_now: bool = False
+    run_production_dedup_now: bool = False
+    run_dedup_now: bool = False
+    run_analysis_now: bool = False
+    generate_report_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_public_event_now: bool = False
+
+
+class DedupGroupReviewAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_dedup_group_review_audit_v1"] = Field(
+        default="sentigraph_dedup_group_review_audit_v1",
+        alias="schema",
+    )
+    audit_id: str
+    request_id: str
+    review_case_id: str
+    dedup_preview_id: str
+    group_candidate_id: str
+    previous_group_status: str
+    new_group_status: str
+    action: DedupGroupReviewActionName
+    reviewer_label: str
+    reviewed_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    affected_item_ids: list[str] = Field(default_factory=list)
+    representative_before: str = ""
+    representative_after: str = ""
+    split_item_ids: list[str] = Field(default_factory=list)
+    analysis_effect: Literal["preview_only_no_analysis_effect", "blocked", "eligible_for_future_promotion_gate"] = (
+        "preview_only_no_analysis_effect"
+    )
+    dedup_effect: Literal[
+        "review_only_group_confirmed",
+        "review_only_group_split",
+        "review_only_group_blocked",
+        "review_only_representative_changed",
+        "review_only_group_reset",
+        "not_run",
+    ] = "not_run"
+    trust_label_effect: Literal["no_upgrade", "weak_warning", "rejected"] = "no_upgrade"
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "create_production_review_queue_now": False,
+            "run_production_dedup_now": False,
+            "run_analysis_now": False,
+            "generate_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+        }
+    )
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "review_only_group_action": True,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_generated": False,
+            "report_generated": False,
+            "sandbox_generated": False,
+            "public_event_page_generated": False,
+            "real_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class DedupGroupReviewActionResult(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_dedup_group_review_action_result_v1"] = Field(
+        default="sentigraph_dedup_group_review_action_result_v1",
+        alias="schema",
+    )
+    action_id: str
+    audit_id: str
+    request_id: str
+    review_case_id: str
+    dedup_preview_id: str
+    group_candidate_id: str
+    action: DedupGroupReviewActionName
+    previous_group_status: str
+    new_group_status: str
+    updated_group: DedupGroupCandidate
+    audit_record: DedupGroupReviewAudit
+    readiness: dict[str, bool | str] = Field(
+        default_factory=lambda: {
+            "state": "group_review_action_recorded",
+            "can_run_production_dedup_now": False,
+            "can_run_analysis_now": False,
+            "requires_group_review_completion_gate": True,
+            "requires_analysis_promotion_gate": True,
+        }
+    )
 
 
 class DedupPreview(BaseModel):

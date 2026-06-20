@@ -20,6 +20,7 @@ from app.services.analysis_request_store import (
     create_review_queue_initialization,
     create_review_queue_completion_gate,
     create_dedup_preview,
+    create_dedup_group_review_action,
     create_review_queue_item_action,
     create_analysis_request,
     get_analysis_request_config,
@@ -35,6 +36,7 @@ from app.services.analysis_request_store import (
     list_review_queue_action_audits,
     list_review_queue_completion_gates,
     list_dedup_previews,
+    list_dedup_group_review_audits,
     list_review_queue_initializations,
     list_analysis_requests,
     read_evidence_row_reader_dry_run,
@@ -44,6 +46,7 @@ from app.services.analysis_request_store import (
     read_review_queue_action_audits_for_item,
     read_review_queue_completion_gate,
     read_dedup_preview,
+    read_dedup_group_review_audits_for_group,
     read_review_queue_initialization,
     read_review_queue_item_batch,
     read_staged_evidence_candidate_batch,
@@ -389,6 +392,21 @@ def dedup_preview_payload(**overrides: object) -> dict:
     return payload
 
 
+def dedup_group_review_action_payload(action: str = "confirm_group", **overrides: object) -> dict:
+    payload = {
+        "action": action,
+        "reviewer_label": "dedup_reviewer",
+        "note": f"Review-only dedup group action: {action}.",
+        "acknowledge_review_only_group_action": True,
+        "acknowledge_no_production_dedup": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_analysis": True,
+        "acknowledge_no_report": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def create_review_queue_ready_chain(tmp_path: Path, request_id: str, *, package_dir: Path | None = None):
     if package_dir is None:
         package_dir = create_real_preview_package(tmp_path)
@@ -408,6 +426,37 @@ def create_review_queue_ready_chain(tmp_path: Path, request_id: str, *, package_
     )
     item_batch = read_review_queue_item_batch(request_id, queue_init.queue_init_id)
     return review_case, staging_import, queue_init, item_batch
+
+
+def create_dedup_preview_ready_chain(tmp_path: Path, request_id: str):
+    package_dir = create_many_row_preview_package(tmp_path)
+    review_case, staging_import, queue_init, item_batch = create_review_queue_ready_chain(tmp_path, request_id, package_dir=package_dir)
+    item_ids = [item.review_item_id for item in item_batch.items]
+    for item_id in item_ids:
+        create_review_queue_item_action(request_id, item_id, review_queue_action_payload("approve"))
+    batch_path = tmp_path / "review_queue_items" / f"{request_id}_{queue_init.queue_init_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["items"][0]["evidence_candidate"]["source_url"] = "https://example.com/dedup?id=1&utm_source=demo"
+    batch_payload["items"][0]["evidence_candidate"]["title_preview"] = "Duplicate candidate alpha"
+    batch_payload["items"][0]["evidence_candidate"]["body_text_preview"] = "Same preview text."
+    batch_payload["items"][1]["evidence_candidate"]["source_url"] = "https://example.com/dedup?id=1"
+    batch_payload["items"][1]["evidence_candidate"]["title_preview"] = "Duplicate candidate alpha"
+    batch_payload["items"][1]["evidence_candidate"]["body_text_preview"] = "Same preview text."
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+    gate = create_review_queue_completion_gate(
+        request_id,
+        review_queue_completion_gate_payload(queue_init_id=queue_init.queue_init_id, review_case_id=queue_init.review_case_id),
+    )
+    preview = create_dedup_preview(
+        request_id,
+        dedup_preview_payload(
+            review_case_id=queue_init.review_case_id,
+            queue_init_id=queue_init.queue_init_id,
+            completion_gate_id=gate.completion_gate_id,
+        ),
+    )
+    assert preview.groups
+    return review_case, staging_import, queue_init, item_batch, gate, preview, preview.groups[0]
 
 
 def create_real_preview_ready_chain(tmp_path: Path, request_id: str, package_dir: Path) -> dict:
@@ -2775,6 +2824,209 @@ def test_dedup_preview_records_are_append_only(tmp_path: Path, monkeypatch) -> N
     assert first_preview.dedup_preview_id != second_preview.dedup_preview_id
     assert {preview.dedup_preview_id for preview in previews} >= {first_preview.dedup_preview_id, second_preview.dedup_preview_id}
     assert len(previews) == 2
+
+
+def test_dedup_group_review_confirm_updates_preview_and_appends_audit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Dedup group confirm")))
+    _case, _staging, queue_init, _batch, _gate, preview, group = create_dedup_preview_ready_chain(tmp_path, record.request_id)
+
+    result = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("confirm_group"),
+    )
+    updated_preview = read_dedup_preview(record.request_id, preview.dedup_preview_id)
+    updated_group = next(item for item in updated_preview.groups if item.group_candidate_id == group.group_candidate_id)
+    audits = read_dedup_group_review_audits_for_group(record.request_id, preview.dedup_preview_id, group.group_candidate_id)
+    item_batch = read_review_queue_item_batch(record.request_id, queue_init.queue_init_id)
+
+    assert result.schema_ == "sentigraph_dedup_group_review_action_result_v1"
+    assert result.previous_group_status == "review_needed"
+    assert result.new_group_status == "confirmed"
+    assert result.updated_group.group_status == "confirmed"
+    assert result.updated_group.human_confirmation_required is False
+    assert result.updated_group.may_amplify_risk is False
+    assert result.updated_group.analysis_effect == "eligible_for_future_promotion_gate"
+    assert result.readiness["can_run_production_dedup_now"] is False
+    assert result.readiness["can_run_analysis_now"] is False
+    assert result.audit_record.analysis_effect == "eligible_for_future_promotion_gate"
+    assert result.audit_record.dedup_effect == "review_only_group_confirmed"
+    assert result.audit_record.now_flags["run_production_dedup_now"] is False
+    assert updated_group.group_status == "confirmed"
+    assert updated_group.human_confirmation_required is False
+    assert len(audits) == 1
+    assert audits[0].audit_id == result.audit_id
+    assert all(item.governance.analysis_included is False for item in item_batch.items)
+    assert all(item.dedup.may_amplify_risk is False for item in item_batch.items)
+
+
+def test_dedup_group_review_actions_are_review_only_and_append_audits(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Dedup group actions")))
+    _case, _staging, _queue_init, _batch, _gate, preview, group = create_dedup_preview_ready_chain(tmp_path, record.request_id)
+    second_item_id = group.item_ids[1]
+
+    change = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("change_representative", representative_item_id=second_item_id),
+    )
+    weak = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("mark_group_weak"),
+    )
+    reset = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("reset_group_review"),
+    )
+    split = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("split_group", split_item_ids=[second_item_id]),
+    )
+    reset_after_split = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("reset_group_review"),
+    )
+    reject = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("reject_group"),
+    )
+    reset_after_reject = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("reset_group_review"),
+    )
+    needs_source = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("request_more_source"),
+    )
+    reset_after_source = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("reset_group_review"),
+    )
+    privacy = create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("hold_group_for_privacy"),
+    )
+
+    request_audits = list_dedup_group_review_audits(record.request_id)
+    updated_preview = read_dedup_preview(record.request_id, preview.dedup_preview_id)
+    updated_group = next(item for item in updated_preview.groups if item.group_candidate_id == group.group_candidate_id)
+
+    assert change.new_group_status == "representative_changed"
+    assert change.updated_group.representative_item_id == second_item_id
+    assert weak.new_group_status == "marked_weak"
+    assert weak.audit_record.trust_label_effect == "weak_warning"
+    assert reset.new_group_status == "review_needed"
+    assert split.new_group_status == "split"
+    assert split.updated_group.split_item_ids == [second_item_id]
+    assert reject.audit_record.analysis_effect == "blocked"
+    assert needs_source.audit_record.analysis_effect == "blocked"
+    assert privacy.new_group_status == "privacy_hold"
+    assert privacy.audit_record.analysis_effect == "blocked"
+    assert updated_group.group_status == "privacy_hold"
+    assert updated_group.may_amplify_risk is False
+    assert len(request_audits) == 10
+    assert {audit.audit_id for audit in request_audits} >= {
+        change.audit_id,
+        weak.audit_id,
+        reset.audit_id,
+        split.audit_id,
+        reset_after_split.audit_id,
+        reject.audit_id,
+        reset_after_reject.audit_id,
+        needs_source.audit_id,
+        reset_after_source.audit_id,
+        privacy.audit_id,
+    }
+
+
+def test_dedup_group_review_blocks_unsafe_actions(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Dedup group blocks")))
+    _case, _staging, queue_init, _batch, _gate, preview, group = create_dedup_preview_ready_chain(tmp_path, record.request_id)
+
+    unsafe_payloads = [
+        dedup_group_review_action_payload("confirm_group", reviewer_label=""),
+        dedup_group_review_action_payload("confirm_group", acknowledge_no_analysis=False),
+        dedup_group_review_action_payload("confirm_group", run_production_dedup_now=True),
+        dedup_group_review_action_payload("confirm_group", production_case_id="case_prod_unsafe"),
+        dedup_group_review_action_payload("change_representative", representative_item_id="outside_group"),
+        dedup_group_review_action_payload("split_group", split_item_ids=[]),
+        dedup_group_review_action_payload("split_group", split_item_ids=["outside_group"]),
+        dedup_group_review_action_payload("mark_group_weak", note=""),
+        dedup_group_review_action_payload("confirm_group", trust_label="high"),
+    ]
+    for payload in unsafe_payloads:
+        try:
+            create_dedup_group_review_action(record.request_id, preview.dedup_preview_id, group.group_candidate_id, payload)
+        except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+            assert any(
+                text in str(exc)
+                for text in ("reviewer", "acknowledgement", "side effect", "production_case", "representative", "split", "note", "trust")
+            )
+        else:
+            raise AssertionError("unsafe dedup group action should fail")
+
+    create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("reject_group"),
+    )
+    try:
+        create_dedup_group_review_action(
+            record.request_id,
+            preview.dedup_preview_id,
+            group.group_candidate_id,
+            dedup_group_review_action_payload("confirm_group"),
+        )
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "transition" in str(exc)
+    else:
+        raise AssertionError("invalid transition from rejected should fail")
+
+    create_dedup_group_review_action(
+        record.request_id,
+        preview.dedup_preview_id,
+        group.group_candidate_id,
+        dedup_group_review_action_payload("reset_group_review"),
+    )
+    batch_path = tmp_path / "review_queue_items" / f"{record.request_id}_{queue_init.queue_init_id}.json"
+    batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    batch_payload["items"][0]["privacy"]["raw_author_id_present"] = True
+    batch_path.write_text(json.dumps(batch_payload), encoding="utf-8")
+    try:
+        create_dedup_group_review_action(
+            record.request_id,
+            preview.dedup_preview_id,
+            group.group_candidate_id,
+            dedup_group_review_action_payload("confirm_group"),
+        )
+    except Exception as exc:  # noqa: BLE001 - tests assert local validation failure text.
+        assert "forbidden" in str(exc) or "raw" in str(exc)
+    else:
+        raise AssertionError("raw/private queue item should block dedup group action")
 
 
 def test_config_uses_default_runtime_label_without_absolute_path(monkeypatch) -> None:

@@ -22,6 +22,9 @@ from app.schemas.analysis_request import (
     CaseDraftProviderSummary,
     CaseDraftReadiness,
     DedupGroupCandidate,
+    DedupGroupReviewActionRequest,
+    DedupGroupReviewActionResult,
+    DedupGroupReviewAudit,
     DedupPreview,
     DedupPreviewCounts,
     DedupPreviewExcludedItem,
@@ -1163,6 +1166,43 @@ def list_all_dedup_previews() -> list[DedupPreview]:
     return previews
 
 
+def list_dedup_group_review_audits(request_id: str) -> list[DedupGroupReviewAudit]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    audits: list[DedupGroupReviewAudit] = []
+    for path in sorted((root / "dedup_group_review_audits").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(DedupGroupReviewAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def list_all_dedup_group_review_audits() -> list[DedupGroupReviewAudit]:
+    root = _ensure_root()
+    audits: list[DedupGroupReviewAudit] = []
+    for path in sorted((root / "dedup_group_review_audits").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(DedupGroupReviewAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            continue
+    return audits
+
+
+def read_dedup_group_review_audits_for_group(
+    request_id: str,
+    dedup_preview_id: str,
+    group_candidate_id: str,
+) -> list[DedupGroupReviewAudit]:
+    return [
+        audit
+        for audit in list_dedup_group_review_audits(request_id)
+        if audit.dedup_preview_id == dedup_preview_id and audit.group_candidate_id == group_candidate_id
+    ]
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -1783,6 +1823,116 @@ def create_dedup_preview(
         raise AnalysisRequestValidationError(f"Cannot create dedup preview: {', '.join(preview.blockers) or preview.status}.")
     _write_json(_dedup_preview_path(request_id, preview.dedup_preview_id), preview.model_dump(mode="json", by_alias=True))
     return read_dedup_preview(request_id, preview.dedup_preview_id)
+
+
+def create_dedup_group_review_action(
+    request_id: str,
+    dedup_preview_id: str,
+    group_candidate_id: str,
+    payload: DedupGroupReviewActionRequest | dict[str, Any],
+) -> DedupGroupReviewActionResult:
+    try:
+        action_payload = (
+            payload
+            if isinstance(payload, DedupGroupReviewActionRequest)
+            else DedupGroupReviewActionRequest.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create dedup group review action: invalid payload ({exc}).") from exc
+
+    _validate_dedup_group_review_action_payload(action_payload, group_candidate_id)
+    preview = read_dedup_preview(request_id, dedup_preview_id)
+    if preview.status != "preview_ready":
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: dedup preview is not preview_ready.")
+    gate = read_review_queue_completion_gate(request_id, preview.completion_gate_id)
+    if gate.status != "complete_enough_for_future_dedup_preview":
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: completion gate is not complete.")
+    review_case = read_review_only_case(request_id, preview.review_case_id)
+    batch = read_review_queue_item_batch(request_id, preview.queue_init_id)
+    group_index = next((index for index, item in enumerate(preview.groups) if item.group_candidate_id == group_candidate_id), -1)
+    if group_index < 0:
+        raise AnalysisRequestNotFoundError(f"Dedup group candidate {group_candidate_id} for {dedup_preview_id} was not found.")
+    group = preview.groups[group_index]
+    _validate_dedup_group_review_eligibility(request_id, preview, gate, review_case, batch, group, action_payload)
+
+    previous_status = group.group_status or "review_needed"
+    new_status = _dedup_group_new_status(action_payload.action)
+    _validate_dedup_group_review_transition(previous_status, action_payload.action)
+    representative_before = group.representative_item_id
+    updated_group = group.model_copy(deep=True)
+    updated_group.group_status = new_status
+    updated_group.may_amplify_risk = False
+    if action_payload.action == "confirm_group":
+        updated_group.human_confirmation_required = False
+        updated_group.analysis_effect = "eligible_for_future_promotion_gate"
+    elif action_payload.action == "change_representative":
+        updated_group.representative_item_id = action_payload.representative_item_id or updated_group.representative_item_id
+        updated_group.human_confirmation_required = True
+        updated_group.analysis_effect = "preview_only_no_analysis_effect"
+    elif action_payload.action == "split_group":
+        updated_group.split_item_ids = list(action_payload.split_item_ids)
+        updated_group.human_confirmation_required = True
+        updated_group.analysis_effect = "preview_only_no_analysis_effect"
+    elif action_payload.action in {"reject_group", "request_more_source", "hold_group_for_privacy"}:
+        updated_group.human_confirmation_required = True
+        updated_group.analysis_effect = "blocked"
+    elif action_payload.action == "mark_group_weak":
+        updated_group.human_confirmation_required = True
+        updated_group.analysis_effect = "preview_only_no_analysis_effect"
+    elif action_payload.action == "reset_group_review":
+        updated_group.human_confirmation_required = True
+        updated_group.analysis_effect = "preview_only_no_analysis_effect"
+        updated_group.split_item_ids = []
+
+    note = action_payload.note.strip()
+    if note and note not in updated_group.notes:
+        updated_group.notes = [*updated_group.notes, note]
+    preview.groups[group_index] = updated_group
+
+    audit_id = _new_dedup_group_review_audit_id()
+    audit = DedupGroupReviewAudit(
+        audit_id=audit_id,
+        request_id=request_id,
+        review_case_id=preview.review_case_id,
+        dedup_preview_id=preview.dedup_preview_id,
+        group_candidate_id=group.group_candidate_id,
+        previous_group_status=previous_status,
+        new_group_status=new_status,
+        action=action_payload.action,
+        reviewer_label=action_payload.reviewer_label.strip(),
+        reviewed_at=datetime.now(timezone.utc),
+        note=note,
+        affected_item_ids=list(group.item_ids),
+        representative_before=representative_before,
+        representative_after=updated_group.representative_item_id,
+        split_item_ids=list(action_payload.split_item_ids),
+        analysis_effect=_dedup_group_analysis_effect(action_payload.action),
+        dedup_effect=_dedup_group_dedup_effect(action_payload.action),
+        trust_label_effect=_dedup_group_trust_effect(action_payload.action),
+        boundary_notes=[
+            "Dedup group review is local governance only.",
+            "This action does not run production dedup.",
+            "This action does not write the production Evidence Layer.",
+            "This action does not make evidence analysis-ready.",
+            "Duplicate evidence must not amplify risk.",
+            "A future group review completion gate and analysis promotion gate are still required.",
+        ],
+    )
+    _write_json(_dedup_preview_path(request_id, preview.dedup_preview_id), preview.model_dump(mode="json", by_alias=True))
+    _write_json(_dedup_group_review_audit_path(request_id, group.group_candidate_id, audit.audit_id), audit.model_dump(mode="json", by_alias=True))
+    return DedupGroupReviewActionResult(
+        action_id=f"dedup_group_review_action_{audit_id}",
+        audit_id=audit_id,
+        request_id=request_id,
+        review_case_id=preview.review_case_id,
+        dedup_preview_id=preview.dedup_preview_id,
+        group_candidate_id=group.group_candidate_id,
+        action=action_payload.action,
+        previous_group_status=previous_status,
+        new_group_status=new_status,
+        updated_group=updated_group,
+        audit_record=audit,
+    )
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -3524,6 +3674,169 @@ def _dedup_preview_next_steps(status: str, has_groups: bool) -> list[str]:
     ]
 
 
+def _validate_dedup_group_review_action_payload(payload: DedupGroupReviewActionRequest, group_candidate_id: str) -> None:
+    if payload.target_group_candidate_id and payload.target_group_candidate_id != group_candidate_id:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: target_group_candidate_id mismatch.")
+    if not payload.reviewer_label.strip():
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: reviewer_label is required.")
+    acknowledgements = {
+        "acknowledge_review_only_group_action": payload.acknowledge_review_only_group_action,
+        "acknowledge_no_production_dedup": payload.acknowledge_no_production_dedup,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_analysis": payload.acknowledge_no_analysis,
+        "acknowledge_no_report": payload.acknowledge_no_report,
+    }
+    missing = [name for name, value in acknowledgements.items() if not value]
+    if missing:
+        raise AnalysisRequestValidationError(f"Cannot create dedup group review action: acknowledgement flags are required ({', '.join(missing)}).")
+    if payload.action != "confirm_group" and not payload.note.strip():
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: note is required for this action.")
+    if payload.action == "change_representative" and not (payload.representative_item_id or "").strip():
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: representative_item_id is required.")
+    if payload.action == "split_group" and not payload.split_item_ids:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: split_item_ids are required.")
+    if payload.production_case_id or payload.target_production_case_id:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: production_case_id is not allowed.")
+    if (payload.trust_label or "").lower() in {"high", "verified", "official", "official_api"}:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: trust upgrade is not allowed.")
+    if (payload.verification_status or "").lower() in {"verified", "verified_by_official_api", "official_verified"}:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: official verification upgrade is not allowed.")
+    side_effect_flags = {
+        "evidence_layer_written": payload.evidence_layer_written,
+        "production_case_created": payload.production_case_created,
+        "production_review_queue_created": payload.production_review_queue_created,
+        "production_dedup_run": payload.production_dedup_run,
+        "analysis_included": payload.analysis_included,
+        "analysis_run": payload.analysis_run,
+        "report_generated": payload.report_generated,
+        "sandbox_generated": payload.sandbox_generated,
+        "public_event_generated": payload.public_event_generated,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "create_production_review_queue_now": payload.create_production_review_queue_now,
+        "run_production_dedup_now": payload.run_production_dedup_now,
+        "run_dedup_now": payload.run_dedup_now,
+        "run_analysis_now": payload.run_analysis_now,
+        "generate_report_now": payload.generate_report_now,
+        "generate_sandbox_now": payload.generate_sandbox_now,
+        "generate_public_event_now": payload.generate_public_event_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(f"Cannot create dedup group review action: side effect flags must remain false ({', '.join(enabled)}).")
+
+
+def _validate_dedup_group_review_eligibility(
+    request_id: str,
+    preview: DedupPreview,
+    gate: ReviewQueueCompletionGate,
+    review_case: ReviewOnlyCase,
+    batch: ReviewQueueItemBatch,
+    group: DedupGroupCandidate,
+    payload: DedupGroupReviewActionRequest,
+) -> None:
+    if preview.request_id != request_id or gate.request_id != request_id or review_case.request_id != request_id or batch.request_id != request_id:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: request_id mismatch.")
+    if preview.completion_gate_id != gate.completion_gate_id:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: completion gate mismatch.")
+    if preview.review_case_id != review_case.review_case_id or gate.review_case_id != review_case.review_case_id or batch.review_case_id != review_case.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: review_case_id mismatch.")
+    if preview.queue_init_id != gate.queue_init_id or preview.queue_init_id != batch.queue_init_id:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: queue_init_id mismatch.")
+    if group.dedup_preview_id != preview.dedup_preview_id or group.review_case_id != preview.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: group parent mismatch.")
+    if len(group.item_ids) < 2:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: group must contain at least two item ids.")
+    if group.may_amplify_risk:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: group may_amplify_risk must remain false.")
+    if payload.representative_item_id and payload.representative_item_id not in group.item_ids:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: representative_item_id must be inside group.")
+    if payload.split_item_ids and any(item_id not in group.item_ids for item_id in payload.split_item_ids):
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: split_item_ids must be inside group.")
+    if len(set(payload.split_item_ids)) != len(payload.split_item_ids):
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: split_item_ids must be unique.")
+    if review_case.production_case_created or review_case.evidence_layer_written or review_case.review_queue_created:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: review-only case has unsafe production flags.")
+    if review_case.dedup_run or review_case.analysis_run or review_case.analysis_included:
+        raise AnalysisRequestValidationError("Cannot create dedup group review action: review-only case has unsafe analysis flags.")
+    item_map = {item.review_item_id: item for item in batch.items}
+    for item_id in group.item_ids:
+        item = item_map.get(item_id)
+        if item is None:
+            raise AnalysisRequestValidationError("Cannot create dedup group review action: group item is missing from review queue item batch.")
+        if item.governance.analysis_included or item.governance.public_visible or item.governance.report_visible or item.governance.sandbox_visible:
+            raise AnalysisRequestValidationError("Cannot create dedup group review action: item visibility or analysis flag is true.")
+        if _review_queue_item_has_forbidden_fields(item):
+            raise AnalysisRequestValidationError("Cannot create dedup group review action: group item contains forbidden raw/private fields.")
+
+
+def _validate_dedup_group_review_transition(previous_status: str, action: str) -> None:
+    allowed: dict[str, set[str]] = {
+        "confirm_group": {"review_needed", "representative_changed", "marked_weak"},
+        "split_group": {"review_needed", "confirmed", "representative_changed", "marked_weak"},
+        "change_representative": {"review_needed", "confirmed", "marked_weak"},
+        "mark_group_weak": {"review_needed", "confirmed", "representative_changed"},
+        "reject_group": {"review_needed", "confirmed", "representative_changed", "marked_weak"},
+        "request_more_source": {"review_needed", "confirmed", "representative_changed", "marked_weak"},
+        "hold_group_for_privacy": {
+            "review_needed",
+            "confirmed",
+            "split",
+            "representative_changed",
+            "marked_weak",
+            "rejected",
+            "needs_more_source",
+        },
+        "reset_group_review": {"confirmed", "split", "representative_changed", "marked_weak", "rejected", "needs_more_source", "privacy_hold"},
+    }
+    if previous_status not in allowed[action]:
+        raise AnalysisRequestValidationError(
+            f"Cannot create dedup group review action: transition from {previous_status} via {action} is not allowed."
+        )
+
+
+def _dedup_group_new_status(action: str) -> str:
+    return {
+        "confirm_group": "confirmed",
+        "split_group": "split",
+        "change_representative": "representative_changed",
+        "mark_group_weak": "marked_weak",
+        "reject_group": "rejected",
+        "request_more_source": "needs_more_source",
+        "hold_group_for_privacy": "privacy_hold",
+        "reset_group_review": "review_needed",
+    }[action]
+
+
+def _dedup_group_analysis_effect(action: str) -> str:
+    if action == "confirm_group":
+        return "eligible_for_future_promotion_gate"
+    if action in {"reject_group", "request_more_source", "hold_group_for_privacy"}:
+        return "blocked"
+    return "preview_only_no_analysis_effect"
+
+
+def _dedup_group_dedup_effect(action: str) -> str:
+    return {
+        "confirm_group": "review_only_group_confirmed",
+        "split_group": "review_only_group_split",
+        "change_representative": "review_only_representative_changed",
+        "mark_group_weak": "not_run",
+        "reject_group": "review_only_group_blocked",
+        "request_more_source": "review_only_group_blocked",
+        "hold_group_for_privacy": "review_only_group_blocked",
+        "reset_group_review": "review_only_group_reset",
+    }[action]
+
+
+def _dedup_group_trust_effect(action: str) -> str:
+    if action == "mark_group_weak":
+        return "weak_warning"
+    if action == "reject_group":
+        return "rejected"
+    return "no_upgrade"
+
+
 def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -3936,6 +4249,7 @@ def _ensure_root() -> Path:
     (root / "review_queue_action_audits").mkdir(parents=True, exist_ok=True)
     (root / "review_queue_completion_gates").mkdir(parents=True, exist_ok=True)
     (root / "dedup_previews").mkdir(parents=True, exist_ok=True)
+    (root / "dedup_group_review_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -4061,6 +4375,14 @@ def _dedup_preview_path(request_id: str, dedup_preview_id: str) -> Path:
     return root / "dedup_previews" / f"{request_id}_{dedup_preview_id}.json"
 
 
+def _dedup_group_review_audit_path(request_id: str, group_candidate_id: str, audit_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(group_candidate_id)
+    _validate_request_id(audit_id)
+    root = _ensure_root()
+    return root / "dedup_group_review_audits" / f"{request_id}_{group_candidate_id}_{audit_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -4132,6 +4454,11 @@ def _new_review_queue_completion_gate_id() -> str:
 def _new_dedup_preview_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"dedup_preview_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_dedup_group_review_audit_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"dedup_group_review_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

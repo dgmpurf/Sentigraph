@@ -9,6 +9,9 @@ from app.schemas.analysis_request import (
     AnalysisRequestRecord,
     CaseDraftHandoff,
     DedupPreview,
+    DedupGroupReviewActionRequest,
+    DedupGroupReviewActionResult,
+    DedupGroupReviewAudit,
     DedupPreviewRequest,
     EvidenceImportPlan,
     EvidenceImportPreview,
@@ -41,6 +44,7 @@ from app.services.analysis_request_store import (
     AnalysisRequestValidationError,
     cancel_analysis_request,
     create_case_draft_handoff,
+    create_dedup_group_review_action,
     create_dedup_preview,
     create_evidence_import_plan,
     create_evidence_import_preview,
@@ -57,6 +61,7 @@ from app.services.analysis_request_store import (
     create_review_queue_initialization,
     get_analysis_request_config,
     list_case_draft_handoffs,
+    list_all_dedup_group_review_audits,
     list_all_dedup_previews,
     list_all_evidence_row_reader_dry_runs,
     list_all_manual_evidence_import_execution_preflights,
@@ -72,6 +77,7 @@ from app.services.analysis_request_store import (
     list_evidence_import_previews,
     list_evidence_import_review_decisions,
     list_evidence_row_reader_dry_runs,
+    list_dedup_group_review_audits,
     list_dedup_previews,
     list_analysis_requests,
     list_manual_evidence_import_execution_preflights,
@@ -83,6 +89,7 @@ from app.services.analysis_request_store import (
     list_review_queue_completion_gates,
     list_review_queue_initializations,
     read_case_draft_handoff,
+    read_dedup_group_review_audits_for_group,
     read_dedup_preview,
     read_evidence_import_plan,
     read_evidence_import_preview,
@@ -187,6 +194,11 @@ def analysis_request_review_queue_completion_gate_all_list() -> list[ReviewQueue
 @router.get("/dedup-previews", response_model=list[DedupPreview])
 def analysis_request_dedup_preview_all_list() -> list[DedupPreview]:
     return list_all_dedup_previews()
+
+
+@router.get("/dedup-group-review-audits", response_model=list[DedupGroupReviewAudit])
+def analysis_request_dedup_group_review_audit_all_list() -> list[DedupGroupReviewAudit]:
+    return list_all_dedup_group_review_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -644,6 +656,47 @@ def analysis_request_dedup_preview_detail(
         return read_dedup_preview(request_id, dedup_preview_id)
     except AnalysisRequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{request_id}/dedup-previews/{dedup_preview_id}/groups/{group_candidate_id}/actions",
+    response_model=DedupGroupReviewActionResult,
+)
+def analysis_request_dedup_group_review_action_create(
+    request_id: str,
+    dedup_preview_id: str,
+    group_candidate_id: str,
+    payload: DedupGroupReviewActionRequest,
+) -> DedupGroupReviewActionResult:
+    try:
+        return create_dedup_group_review_action(request_id, dedup_preview_id, group_candidate_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/dedup-previews/{dedup_preview_id}/groups/{group_candidate_id}/audits",
+    response_model=list[DedupGroupReviewAudit],
+)
+def analysis_request_dedup_group_review_audit_group_list(
+    request_id: str,
+    dedup_preview_id: str,
+    group_candidate_id: str,
+) -> list[DedupGroupReviewAudit]:
+    try:
+        return read_dedup_group_review_audits_for_group(request_id, dedup_preview_id, group_candidate_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/dedup-group-review-audits", response_model=list[DedupGroupReviewAudit])
+def analysis_request_dedup_group_review_audit_list(request_id: str) -> list[DedupGroupReviewAudit]:
+    try:
+        return list_dedup_group_review_audits(request_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

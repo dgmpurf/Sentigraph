@@ -288,6 +288,33 @@ export async function getAnalysisRequestDedupPreview(requestId, dedupPreviewId) 
   return normalizeDedupPreview(data)
 }
 
+export async function createAnalysisRequestDedupGroupReviewAction(
+  requestId,
+  dedupPreviewId,
+  groupCandidateId,
+  payload = {},
+) {
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/dedup-previews/${encodeURIComponent(dedupPreviewId)}/groups/${encodeURIComponent(groupCandidateId)}/actions`,
+    payload,
+  )
+  return normalizeDedupGroupReviewActionResult(data)
+}
+
+export async function listAnalysisRequestDedupGroupReviewAudits(requestId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/dedup-group-review-audits`,
+  )
+  return Array.isArray(data) ? data.map(normalizeDedupGroupReviewAudit).filter(Boolean) : []
+}
+
+export async function listAnalysisRequestDedupGroupReviewAuditsForGroup(requestId, dedupPreviewId, groupCandidateId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/dedup-previews/${encodeURIComponent(dedupPreviewId)}/groups/${encodeURIComponent(groupCandidateId)}/audits`,
+  )
+  return Array.isArray(data) ? data.map(normalizeDedupGroupReviewAudit).filter(Boolean) : []
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -2100,10 +2127,64 @@ function normalizeDedupGroupCandidate(data) {
     item_ids: Array.isArray(data.item_ids) ? data.item_ids.map((item) => String(item)) : [],
     representative_item_id: String(data.representative_item_id || ''),
     duplicate_count_preview: Number(data.duplicate_count_preview || 0),
+    group_status: String(data.group_status || 'review_needed'),
+    split_item_ids: Array.isArray(data.split_item_ids) ? data.split_item_ids.map((item) => String(item)) : [],
     may_amplify_risk: Boolean(data.may_amplify_risk),
     human_confirmation_required: Boolean(data.human_confirmation_required),
-    analysis_effect: String(data.analysis_effect || ''),
+    analysis_effect: String(data.analysis_effect || 'preview_only_no_analysis_effect'),
     notes: Array.isArray(data.notes) ? data.notes.map((item) => String(item)) : [],
+  }
+}
+
+function normalizeDedupGroupReviewAudit(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_dedup_group_review_audit_v1'),
+    audit_id: String(data.audit_id || ''),
+    action_id: String(data.action_id || data.audit_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    dedup_preview_id: String(data.dedup_preview_id || ''),
+    group_candidate_id: String(data.group_candidate_id || ''),
+    previous_group_status: String(data.previous_group_status || ''),
+    new_group_status: String(data.new_group_status || ''),
+    action: String(data.action || ''),
+    reviewer_label: String(data.reviewer_label || ''),
+    reviewed_at: data.reviewed_at ? String(data.reviewed_at) : '',
+    note: String(data.note || ''),
+    affected_item_ids: Array.isArray(data.affected_item_ids) ? data.affected_item_ids.map((item) => String(item)) : [],
+    representative_before: String(data.representative_before || ''),
+    representative_after: String(data.representative_after || ''),
+    split_item_ids: Array.isArray(data.split_item_ids) ? data.split_item_ids.map((item) => String(item)) : [],
+    analysis_effect: String(data.analysis_effect || 'preview_only_no_analysis_effect'),
+    dedup_effect: String(data.dedup_effect || 'not_run'),
+    trust_label_effect: String(data.trust_label_effect || 'no_upgrade'),
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeDedupGroupReviewActionResult(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_dedup_group_review_action_result_v1'),
+    action_id: String(data.action_id || ''),
+    audit_id: String(data.audit_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    dedup_preview_id: String(data.dedup_preview_id || ''),
+    group_candidate_id: String(data.group_candidate_id || ''),
+    action: String(data.action || ''),
+    previous_group_status: String(data.previous_group_status || ''),
+    new_group_status: String(data.new_group_status || ''),
+    updated_group: data.updated_group && typeof data.updated_group === 'object'
+      ? normalizeDedupGroupCandidate(data.updated_group)
+      : null,
+    audit_record: data.audit_record && typeof data.audit_record === 'object'
+      ? normalizeDedupGroupReviewAudit(data.audit_record)
+      : null,
+    readiness: data.readiness && typeof data.readiness === 'object' ? normalizeSafeObject(data.readiness) : {},
   }
 }
 
