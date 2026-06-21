@@ -2744,6 +2744,7 @@ class ManualAnalysisBoundaryBlock(BaseModel):
     not_official_verification_note: bool | str = True
     not_full_web_coverage_note: bool | str = True
     audit_trace_note: bool | str = True
+    candidate_only_note: bool | str = True
 
 
 class ManualAnalysisExecutionReadiness(BaseModel):
@@ -3097,6 +3098,233 @@ class ReportGenerationGateAudit(BaseModel):
         default_factory=lambda: {
             "report_generation_gate_audit_only": True,
             "summary_report_generated": False,
+            "b_end_report_generated": False,
+            "export_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+SummaryReportCandidateStatus = Literal[
+    "summary_report_candidate_created",
+    "incomplete",
+    "blocked",
+    "privacy_hold",
+]
+
+
+class SummaryReportCandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    report_gate_id: str
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    boundary_gate_id: str
+    review_case_id: str | None = None
+    reviewer_label: str
+    note: str
+    candidate_mode: Literal["local_summary_report_candidate"] = "local_summary_report_candidate"
+    acknowledge_candidate_only: bool = False
+    acknowledge_not_final_summary_report: bool = False
+    acknowledge_no_b_end_report: bool = False
+    acknowledge_no_export_generation: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_provider_output_is_evidence_not_truth: bool = False
+    acknowledge_not_official_verification: bool = False
+    acknowledge_not_full_web_coverage: bool = False
+    acknowledge_weak_evidence_warning: bool = False
+    acknowledge_rejected_exclusion: bool = False
+    acknowledge_dedup_no_risk_amplification: bool = False
+    acknowledge_audit_trace_required: bool = False
+    final_report_now: bool = False
+    b_end_report_now: bool = False
+    export_now: bool = False
+    sandbox_now: bool = False
+    public_event_now: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    read_original_package_rows_now: bool = False
+    call_llm_now: bool = False
+    call_external_api_now: bool = False
+    provider_execution_requested: bool = False
+    collector_job_requested: bool = False
+    include_rejected_evidence: bool = False
+    include_privacy_hold_evidence: bool = False
+    include_needs_more_source_evidence: bool = False
+    remove_weak_warnings: bool = False
+    duplicates_amplify_risk: bool = False
+    provider_output_is_truth: bool = False
+    official_verification: bool = False
+    full_web_coverage: bool = False
+
+
+class SummaryReportCandidateInputRefs(BaseModel):
+    manual_analysis_execution_id: str
+    result_candidate_id: str
+    boundary_gate_id: str
+    report_gate_id: str
+    manual_analysis_execution_audit_ids: list[str] = Field(default_factory=list)
+    boundary_gate_audit_ids: list[str] = Field(default_factory=list)
+    report_generation_gate_audit_ids: list[str] = Field(default_factory=list)
+
+
+class SummaryReportExecutiveSummaryCandidate(BaseModel):
+    title: str = ""
+    one_sentence_summary: str = ""
+    key_findings: list[str] = Field(default_factory=list)
+    confidence_note: str = ""
+    candidate_only_note: str = ""
+
+
+class SummaryReportEvidenceScopeSection(BaseModel):
+    source_scope_summary: dict[str, Any] = Field(default_factory=dict)
+    coverage_limitation: str = ""
+    selected_reviewed_scope_note: str = ""
+    not_full_web_coverage_note: str = ""
+    not_official_verification_note: str = ""
+
+
+class SummaryReportAnalysisSummarySection(BaseModel):
+    analysis_summary: dict[str, Any] = Field(default_factory=dict)
+    stance_distribution: dict[str, Any] = Field(default_factory=dict)
+    sentiment_distribution: dict[str, Any] = Field(default_factory=dict)
+    topic_summary: list[Any] = Field(default_factory=list)
+    risk_summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class SummaryReportRiskAndTopicSection(BaseModel):
+    risk_summary: dict[str, Any] = Field(default_factory=dict)
+    topic_summary: list[Any] = Field(default_factory=list)
+    risk_caveats: list[str] = Field(default_factory=list)
+
+
+class SummaryReportRepresentativeEvidenceSection(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    redaction_note: str = ""
+    rejected_exclusion_note: str = ""
+    weak_evidence_note: str = ""
+    duplicate_no_amplification_note: str = ""
+
+
+class SummaryReportAuditTrace(BaseModel):
+    manual_analysis_execution_id: str
+    result_candidate_id: str
+    boundary_gate_id: str
+    report_gate_id: str
+    audit_ids: list[str] = Field(default_factory=list)
+
+
+class SummaryReportCandidate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_summary_report_candidate_v1"] = Field(
+        default="sentigraph_summary_report_candidate_v1",
+        alias="schema",
+    )
+    summary_report_candidate_id: str
+    request_id: str
+    review_case_id: str
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    report_gate_id: str
+    boundary_gate_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    status: SummaryReportCandidateStatus = "blocked"
+    input_refs: SummaryReportCandidateInputRefs
+    executive_summary_candidate: SummaryReportExecutiveSummaryCandidate = Field(default_factory=SummaryReportExecutiveSummaryCandidate)
+    evidence_scope_section: SummaryReportEvidenceScopeSection = Field(default_factory=SummaryReportEvidenceScopeSection)
+    analysis_summary_section: SummaryReportAnalysisSummarySection = Field(default_factory=SummaryReportAnalysisSummarySection)
+    risk_and_topic_section: SummaryReportRiskAndTopicSection = Field(default_factory=SummaryReportRiskAndTopicSection)
+    representative_evidence_section: SummaryReportRepresentativeEvidenceSection = Field(default_factory=SummaryReportRepresentativeEvidenceSection)
+    boundary_block: ManualAnalysisBoundaryBlock = Field(default_factory=ManualAnalysisBoundaryBlock)
+    limitations: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    audit_trace: SummaryReportAuditTrace
+    downstream_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "final_summary_report_ready": False,
+            "b_end_report_ready": False,
+            "pdf_export_ready": False,
+            "markdown_export_ready": False,
+            "deck_export_ready": False,
+            "sandbox_ready": False,
+            "public_event_ready": False,
+        }
+    )
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "summary_report_candidate_only": True,
+            "final_report_generated": False,
+            "b_end_report_generated": False,
+            "pdf_export_generated": False,
+            "markdown_export_generated": False,
+            "briefing_deck_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "original_package_rows_re_read": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class SummaryReportCandidateAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_summary_report_candidate_audit_v1"] = Field(
+        default="sentigraph_summary_report_candidate_audit_v1",
+        alias="schema",
+    )
+    summary_report_candidate_audit_id: str
+    summary_report_candidate_id: str
+    request_id: str
+    review_case_id: str
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    report_gate_id: str
+    boundary_gate_id: str
+    reviewer_label: str
+    decided_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    analysis_effect: Literal["summary_report_candidate_created_no_final_report_generated"] = (
+        "summary_report_candidate_created_no_final_report_generated"
+    )
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "final_summary_report_now": False,
+            "b_end_report_now": False,
+            "export_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+        }
+    )
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "summary_report_candidate_audit_only": True,
+            "final_report_generated": False,
             "b_end_report_generated": False,
             "export_generated": False,
             "sandbox_fixture_generated": False,

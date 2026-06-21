@@ -28,6 +28,7 @@ import {
   createAnalysisRequestManualAnalysisExecution,
   createAnalysisRequestManualAnalysisTrigger,
   createAnalysisRequestReportGenerationGate,
+  createAnalysisRequestSummaryReportCandidate,
   createAnalysisRequest,
   createAnalysisRequestDedupGroupReviewAction,
   createAnalysisRequestCaseDraft,
@@ -65,6 +66,8 @@ import {
   listAnalysisRequestManualAnalysisTriggers,
   listAnalysisRequestReportGenerationGateAudits,
   listAnalysisRequestReportGenerationGates,
+  listAnalysisRequestSummaryReportCandidateAudits,
+  listAnalysisRequestSummaryReportCandidates,
   listAnalysisRequestRealPackageRowPreviews,
   listAnalysisRequestReviewOnlyCases,
   listAnalysisRequestReviewQueueActionAudits,
@@ -641,6 +644,7 @@ export function AnalysisRequests() {
   const [analysisResultBoundaryGateForm] = Form.useForm()
   const [manualAnalysisExecutionForm] = Form.useForm()
   const [reportGenerationGateForm] = Form.useForm()
+  const [summaryReportCandidateForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -673,6 +677,8 @@ export function AnalysisRequests() {
   const [manualAnalysisExecutionAudits, setManualAnalysisExecutionAudits] = useState([])
   const [reportGenerationGates, setReportGenerationGates] = useState([])
   const [reportGenerationGateAudits, setReportGenerationGateAudits] = useState([])
+  const [summaryReportCandidates, setSummaryReportCandidates] = useState([])
+  const [summaryReportCandidateAudits, setSummaryReportCandidateAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -696,6 +702,7 @@ export function AnalysisRequests() {
   const [analysisResultBoundaryGateLoading, setAnalysisResultBoundaryGateLoading] = useState(false)
   const [manualAnalysisExecutionLoading, setManualAnalysisExecutionLoading] = useState(false)
   const [reportGenerationGateLoading, setReportGenerationGateLoading] = useState(false)
+  const [summaryReportCandidateLoading, setSummaryReportCandidateLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -717,6 +724,7 @@ export function AnalysisRequests() {
   const [analysisResultBoundaryGateError, setAnalysisResultBoundaryGateError] = useState('')
   const [manualAnalysisExecutionError, setManualAnalysisExecutionError] = useState('')
   const [reportGenerationGateError, setReportGenerationGateError] = useState('')
+  const [summaryReportCandidateError, setSummaryReportCandidateError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -750,6 +758,9 @@ export function AnalysisRequests() {
     setReportGenerationGates([])
     setReportGenerationGateAudits([])
     setReportGenerationGateError('')
+    setSummaryReportCandidates([])
+    setSummaryReportCandidateAudits([])
+    setSummaryReportCandidateError('')
   }
 
   async function loadDraftAndPlan(requestId) {
@@ -897,6 +908,8 @@ export function AnalysisRequests() {
       setManualAnalysisExecutionAudits(await listAnalysisRequestManualAnalysisExecutionAudits(requestId))
       setReportGenerationGates(await listAnalysisRequestReportGenerationGates(requestId))
       setReportGenerationGateAudits(await listAnalysisRequestReportGenerationGateAudits(requestId))
+      setSummaryReportCandidates(await listAnalysisRequestSummaryReportCandidates(requestId))
+      setSummaryReportCandidateAudits(await listAnalysisRequestSummaryReportCandidateAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
@@ -1731,6 +1744,77 @@ export function AnalysisRequests() {
     }
   }
 
+  async function handleCreateSummaryReportCandidate(values) {
+    if (!selectedRecord?.request_id || !latestReportGenerationGate?.report_gate_id) return
+    setSummaryReportCandidateLoading(true)
+    setSummaryReportCandidateError('')
+    try {
+      const candidate = await createAnalysisRequestSummaryReportCandidate(selectedRecord.request_id, {
+        report_gate_id: values.report_gate_id || latestReportGenerationGate.report_gate_id,
+        result_candidate_id:
+          values.result_candidate_id ||
+          latestManualAnalysisResultCandidate?.result_candidate_id ||
+          latestReportGenerationGate.result_candidate_id,
+        manual_analysis_execution_id:
+          values.manual_analysis_execution_id ||
+          latestManualAnalysisExecution?.manual_analysis_execution_id ||
+          latestReportGenerationGate.manual_analysis_execution_id,
+        boundary_gate_id:
+          values.boundary_gate_id ||
+          latestAnalysisResultBoundaryGate?.boundary_gate_id ||
+          latestReportGenerationGate.boundary_gate_id,
+        review_case_id:
+          values.review_case_id ||
+          latestReportGenerationGate.review_case_id ||
+          latestManualAnalysisExecution?.review_case_id ||
+          undefined,
+        reviewer_label: String(values.reviewer_label || '').trim(),
+        note: String(values.note || '').trim(),
+        candidate_mode: 'local_summary_report_candidate',
+        acknowledge_candidate_only: Boolean(values.acknowledge_candidate_only),
+        acknowledge_not_final_summary_report: Boolean(values.acknowledge_not_final_summary_report),
+        acknowledge_no_b_end_report: Boolean(values.acknowledge_no_b_end_report),
+        acknowledge_no_export_generation: Boolean(values.acknowledge_no_export_generation),
+        acknowledge_no_sandbox_or_public_event: Boolean(values.acknowledge_no_sandbox_or_public_event),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_provider_output_is_evidence_not_truth: Boolean(values.acknowledge_provider_output_is_evidence_not_truth),
+        acknowledge_not_official_verification: Boolean(values.acknowledge_not_official_verification),
+        acknowledge_not_full_web_coverage: Boolean(values.acknowledge_not_full_web_coverage),
+        acknowledge_weak_evidence_warning: Boolean(values.acknowledge_weak_evidence_warning),
+        acknowledge_rejected_exclusion: Boolean(values.acknowledge_rejected_exclusion),
+        acknowledge_dedup_no_risk_amplification: Boolean(values.acknowledge_dedup_no_risk_amplification),
+        acknowledge_audit_trace_required: Boolean(values.acknowledge_audit_trace_required),
+        final_report_now: false,
+        b_end_report_now: false,
+        export_now: false,
+        sandbox_now: false,
+        public_event_now: false,
+        write_evidence_layer_now: false,
+        create_production_case_now: false,
+        read_original_package_rows_now: false,
+        call_llm_now: false,
+        call_external_api_now: false,
+        provider_execution_requested: false,
+        collector_job_requested: false,
+        claim_official_verification: false,
+        claim_full_web_coverage: false,
+        claim_full_platform_coverage: false,
+        include_rejected_evidence: false,
+        remove_weak_warnings: false,
+        duplicates_amplify_risk: false,
+      })
+      setSummaryReportCandidates(await listAnalysisRequestSummaryReportCandidates(selectedRecord.request_id))
+      setSummaryReportCandidateAudits(await listAnalysisRequestSummaryReportCandidateAudits(selectedRecord.request_id))
+      message.success(`Created Summary Report Candidate: ${candidate?.status || 'created'}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create Summary Report Candidate.'
+      setSummaryReportCandidateError(String(messageText))
+    } finally {
+      setSummaryReportCandidateLoading(false)
+    }
+  }
+
   async function copyText(text, successMessage) {
     try {
       await navigator.clipboard.writeText(text)
@@ -2049,6 +2133,16 @@ export function AnalysisRequests() {
   const reportGenerationGateAuditsJson = reportGenerationGateAudits.length
     ? JSON.stringify(reportGenerationGateAudits, null, 2)
     : ''
+  const latestSummaryReportCandidate = summaryReportCandidates[0] || null
+  const latestSummaryReportCandidateJson = latestSummaryReportCandidate
+    ? JSON.stringify(latestSummaryReportCandidate, null, 2)
+    : ''
+  const summaryReportCandidatesJson = summaryReportCandidates.length
+    ? JSON.stringify(summaryReportCandidates, null, 2)
+    : ''
+  const summaryReportCandidateAuditsJson = summaryReportCandidateAudits.length
+    ? JSON.stringify(summaryReportCandidateAudits, null, 2)
+    : ''
   const analysisReadyPromotionGateValues = Form.useWatch([], analysisReadyPromotionGateForm) || {}
   const dedupGroupsNeedReview = useMemo(
     () => (latestDedupPreview?.groups || []).some((group) => !['confirmed', 'marked_weak', 'representative_changed', 'rejected'].includes(group.group_status)),
@@ -2170,6 +2264,35 @@ export function AnalysisRequests() {
     latestManualAnalysisExecution?.status,
     latestManualAnalysisResultCandidate?.result_candidate_id,
     reportGenerationGateValues,
+  ])
+  const summaryReportCandidateValues = Form.useWatch([], summaryReportCandidateForm) || {}
+  const summaryReportCandidateReady = useMemo(() => {
+    return Boolean(
+      latestReportGenerationGate?.report_gate_id &&
+        latestReportGenerationGate?.status === 'report_gate_ready_for_future_runtime' &&
+        latestManualAnalysisResultCandidate?.result_candidate_id &&
+        String(summaryReportCandidateValues.reviewer_label || '').trim() &&
+        String(summaryReportCandidateValues.note || '').trim() &&
+        summaryReportCandidateValues.acknowledge_candidate_only &&
+        summaryReportCandidateValues.acknowledge_not_final_summary_report &&
+        summaryReportCandidateValues.acknowledge_no_b_end_report &&
+        summaryReportCandidateValues.acknowledge_no_export_generation &&
+        summaryReportCandidateValues.acknowledge_no_sandbox_or_public_event &&
+        summaryReportCandidateValues.acknowledge_no_evidence_layer_write &&
+        summaryReportCandidateValues.acknowledge_no_production_case &&
+        summaryReportCandidateValues.acknowledge_provider_output_is_evidence_not_truth &&
+        summaryReportCandidateValues.acknowledge_not_official_verification &&
+        summaryReportCandidateValues.acknowledge_not_full_web_coverage &&
+        summaryReportCandidateValues.acknowledge_weak_evidence_warning &&
+        summaryReportCandidateValues.acknowledge_rejected_exclusion &&
+        summaryReportCandidateValues.acknowledge_dedup_no_risk_amplification &&
+        summaryReportCandidateValues.acknowledge_audit_trace_required,
+    )
+  }, [
+    latestManualAnalysisResultCandidate?.result_candidate_id,
+    latestReportGenerationGate?.report_gate_id,
+    latestReportGenerationGate?.status,
+    summaryReportCandidateValues,
   ])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
@@ -5548,6 +5671,238 @@ export function AnalysisRequests() {
                                       <Text type="secondary">summary_report={boolText(audit.now_flags?.generate_summary_report_now)}</Text>
                                       <Text type="secondary">export={boolText(audit.now_flags?.export_now)}</Text>
                                       <Text type="secondary">public_event={boolText(audit.now_flags?.generate_public_event_now)}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Summary Report Candidate / 摘要报告候选">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Local candidate only / 仅创建本地候选摘要"
+                              description="This creates a local Summary Report Candidate plus append-only audit only. It does not generate a final Summary Report, B-end report, PDF/Markdown/deck export, Sandbox fixture, public event, Evidence Layer write, production case, real API call, URL fetch, or LLM call."
+                            />
+                            {summaryReportCandidateError ? <Alert type="error" showIcon message={summaryReportCandidateError} /> : null}
+                            <Form
+                              form={summaryReportCandidateForm}
+                              layout="vertical"
+                              initialValues={{
+                                reviewer_label: 'summary_candidate_reviewer',
+                                note: 'Create local Summary Report Candidate only; do not generate final report artifacts.',
+                                acknowledge_candidate_only: true,
+                                acknowledge_not_final_summary_report: true,
+                                acknowledge_no_b_end_report: true,
+                                acknowledge_no_export_generation: true,
+                                acknowledge_no_sandbox_or_public_event: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_provider_output_is_evidence_not_truth: true,
+                                acknowledge_not_official_verification: true,
+                                acknowledge_not_full_web_coverage: true,
+                                acknowledge_weak_evidence_warning: true,
+                                acknowledge_rejected_exclusion: true,
+                                acknowledge_dedup_no_risk_amplification: true,
+                                acknowledge_audit_trace_required: true,
+                              }}
+                              onFinish={handleCreateSummaryReportCandidate}
+                            >
+                              <Row gutter={12}>
+                                <Col xs={24} md={6}>
+                                  <Form.Item label="Report gate id" name="report_gate_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestReportGenerationGate?.report_gate_id || 'latest report gate'}
+                                      options={reportGenerationGates.map((item) => ({
+                                        value: item.report_gate_id,
+                                        label: `${item.status} / ${item.report_gate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={6}>
+                                  <Form.Item label="Result candidate id" name="result_candidate_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestManualAnalysisResultCandidate?.result_candidate_id || 'latest result candidate'}
+                                      options={manualAnalysisResultCandidates.map((item) => ({
+                                        value: item.result_candidate_id,
+                                        label: `${item.analysis_input_source} / ${item.result_candidate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={6}>
+                                  <Form.Item label="Manual execution id" name="manual_analysis_execution_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestManualAnalysisExecution?.manual_analysis_execution_id || 'latest execution'}
+                                      options={manualAnalysisExecutions.map((item) => ({
+                                        value: item.manual_analysis_execution_id,
+                                        label: `${item.status} / ${item.manual_analysis_execution_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={6}>
+                                  <Form.Item label="Boundary gate id" name="boundary_gate_id">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestAnalysisResultBoundaryGate?.boundary_gate_id || 'latest boundary gate'}
+                                      options={analysisResultBoundaryGates.map((item) => ({
+                                        value: item.boundary_gate_id,
+                                        label: `${item.status} / ${item.boundary_gate_id}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={12}>
+                                <Col xs={24} md={8}>
+                                  <Form.Item label="Reviewer label" name="reviewer_label" rules={[{ required: true }]}>
+                                    <Input placeholder="summary_candidate_reviewer" />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={16}>
+                                  <Form.Item label="Candidate note" name="note" rules={[{ required: true }]}>
+                                    <TextArea
+                                      rows={2}
+                                      placeholder="Confirm this remains a local candidate and does not generate final report artifacts."
+                                    />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Form.Item label="Required acknowledgements">
+                                <Row gutter={[8, 4]}>
+                                  {[
+                                    ['acknowledge_candidate_only', 'candidate only'],
+                                    ['acknowledge_not_final_summary_report', 'not final Summary Report'],
+                                    ['acknowledge_no_b_end_report', 'no B-end report'],
+                                    ['acknowledge_no_export_generation', 'no export generation'],
+                                    ['acknowledge_no_sandbox_or_public_event', 'no Sandbox/public event'],
+                                    ['acknowledge_no_evidence_layer_write', 'no Evidence Layer write'],
+                                    ['acknowledge_no_production_case', 'no production case'],
+                                    ['acknowledge_provider_output_is_evidence_not_truth', 'provider output is evidence, not truth'],
+                                    ['acknowledge_not_official_verification', 'not official verification'],
+                                    ['acknowledge_not_full_web_coverage', 'not full-web coverage'],
+                                    ['acknowledge_weak_evidence_warning', 'weak evidence warning preserved'],
+                                    ['acknowledge_rejected_exclusion', 'rejected evidence remains excluded'],
+                                    ['acknowledge_dedup_no_risk_amplification', 'duplicate evidence not amplified'],
+                                    ['acknowledge_audit_trace_required', 'audit trace required'],
+                                  ].map(([name, label]) => (
+                                    <Col xs={24} md={8} key={name}>
+                                      <Form.Item name={name} valuePropName="checked" noStyle>
+                                        <Checkbox>{label}</Checkbox>
+                                      </Form.Item>
+                                    </Col>
+                                  ))}
+                                </Row>
+                              </Form.Item>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  icon={<ShieldCheck size={16} />}
+                                  loading={summaryReportCandidateLoading}
+                                  disabled={!summaryReportCandidateReady || summaryReportCandidateLoading}
+                                >
+                                  Create Summary Report Candidate
+                                </Button>
+                                {latestSummaryReportCandidate ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestSummaryReportCandidateJson, 'Summary candidate JSON copied')}
+                                  >
+                                    Copy latest summary candidate JSON
+                                  </Button>
+                                ) : null}
+                                {summaryReportCandidates.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(summaryReportCandidatesJson, 'Summary candidate history JSON copied')}
+                                  >
+                                    Copy summary candidate history JSON
+                                  </Button>
+                                ) : null}
+                                {summaryReportCandidateAudits.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(summaryReportCandidateAuditsJson, 'Summary candidate audit JSON copied')}
+                                  >
+                                    Copy summary candidate audit JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+                            {latestSummaryReportCandidate ? (
+                              <Card size="small" title="Latest Summary Report Candidate">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={latestSummaryReportCandidate.status === 'summary_report_candidate_created' ? 'green' : 'gold'}>
+                                      {latestSummaryReportCandidate.status}
+                                    </Tag>
+                                    <Text type="secondary">{latestSummaryReportCandidate.summary_report_candidate_id}</Text>
+                                  </Space>
+                                  <Descriptions size="small" column={1}>
+                                    <Descriptions.Item label="title">
+                                      {latestSummaryReportCandidate.executive_summary_candidate?.title || '-'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="candidate note">
+                                      {latestSummaryReportCandidate.executive_summary_candidate?.candidate_only_note || '-'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="source scope">
+                                      {latestSummaryReportCandidate.evidence_scope_section?.source_scope_summary || '-'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="downstream flags">
+                                      {Object.entries(latestSummaryReportCandidate.downstream_flags || {})
+                                        .map(([key, value]) => `${key}=${boolText(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <Space wrap>
+                                    {Object.entries(latestSummaryReportCandidate.safe_mode || {}).map(([key, value]) => (
+                                      <Tag color={value && key !== 'summary_report_candidate_only' ? 'red' : 'default'} key={key}>
+                                        {key}={boolText(value)}
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                  <SummaryList title="Summary candidate warnings" items={latestSummaryReportCandidate.warnings || []} />
+                                  <SummaryList title="Limitations" items={latestSummaryReportCandidate.limitations || []} />
+                                  <SummaryList
+                                    title="Boundary block"
+                                    items={Object.entries(latestSummaryReportCandidate.boundary_block || {}).map(
+                                      ([key, value]) => `${key}: ${String(value)}`,
+                                    )}
+                                  />
+                                  <SummaryList
+                                    title="Representative evidence notes"
+                                    items={[
+                                      latestSummaryReportCandidate.representative_evidence_section?.redaction_note,
+                                      latestSummaryReportCandidate.representative_evidence_section?.rejected_exclusion_note,
+                                      latestSummaryReportCandidate.representative_evidence_section?.weak_evidence_note,
+                                      latestSummaryReportCandidate.representative_evidence_section?.duplicate_no_amplification_note,
+                                    ].filter(Boolean)}
+                                  />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No Summary Report Candidate record yet.</Text>
+                            )}
+                            {summaryReportCandidateAudits.length ? (
+                              <Card size="small" title={`Summary report candidate audit timeline (${summaryReportCandidateAudits.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {summaryReportCandidateAudits.map((audit) => (
+                                    <Space wrap key={audit.summary_report_candidate_audit_id}>
+                                      <Tag color="green">{audit.decision}</Tag>
+                                      <Text type="secondary">{audit.decided_at || '-'}</Text>
+                                      <Text type="secondary">effect={audit.analysis_effect}</Text>
+                                      <Text type="secondary">final_report={boolText(audit.now_flags?.final_report_now)}</Text>
+                                      <Text type="secondary">export={boolText(audit.now_flags?.export_now)}</Text>
+                                      <Text type="secondary">sandbox={boolText(audit.now_flags?.sandbox_now)}</Text>
                                     </Space>
                                   ))}
                                 </Space>

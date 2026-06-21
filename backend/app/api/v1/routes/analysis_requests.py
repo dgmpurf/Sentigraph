@@ -35,6 +35,9 @@ from app.schemas.analysis_request import (
     ReportGenerationGate,
     ReportGenerationGateAudit,
     ReportGenerationGateRequest,
+    SummaryReportCandidate,
+    SummaryReportCandidateAudit,
+    SummaryReportCandidateRequest,
     ManualAnalysisTrigger,
     ManualAnalysisTriggerAudit,
     ManualAnalysisTriggerRequest,
@@ -71,6 +74,7 @@ from app.services.analysis_request_store import (
     create_manual_evidence_import_execution_preflight,
     create_manual_analysis_execution,
     create_report_generation_gate,
+    create_summary_report_candidate,
     create_manual_analysis_trigger,
     create_analysis_request,
     create_manual_evidence_import_job,
@@ -95,6 +99,8 @@ from app.services.analysis_request_store import (
     list_all_manual_analysis_result_candidates,
     list_all_report_generation_gate_audits,
     list_all_report_generation_gates,
+    list_all_summary_report_candidate_audits,
+    list_all_summary_report_candidates,
     list_all_manual_analysis_trigger_audits,
     list_all_manual_analysis_triggers,
     list_all_promotion_decision_audits,
@@ -125,6 +131,9 @@ from app.services.analysis_request_store import (
     list_report_generation_gate_audits,
     list_report_generation_gate_audits_for_gate,
     list_report_generation_gates,
+    list_summary_report_candidate_audits,
+    list_summary_report_candidate_audits_for_candidate,
+    list_summary_report_candidates,
     list_manual_analysis_trigger_audits,
     list_manual_analysis_trigger_audits_for_trigger,
     list_manual_analysis_triggers,
@@ -151,6 +160,7 @@ from app.services.analysis_request_store import (
     read_manual_analysis_execution,
     read_manual_analysis_result_candidate,
     read_report_generation_gate,
+    read_summary_report_candidate,
     read_manual_analysis_trigger,
     read_real_package_row_preview,
     read_review_only_case,
@@ -308,6 +318,16 @@ def analysis_request_report_generation_gate_all_list() -> list[ReportGenerationG
 @router.get("/report-generation-gate-audits", response_model=list[ReportGenerationGateAudit])
 def analysis_request_report_generation_gate_audit_all_list() -> list[ReportGenerationGateAudit]:
     return list_all_report_generation_gate_audits()
+
+
+@router.get("/summary-report-candidates", response_model=list[SummaryReportCandidate])
+def analysis_request_summary_report_candidate_all_list() -> list[SummaryReportCandidate]:
+    return list_all_summary_report_candidates()
+
+
+@router.get("/summary-report-candidate-audits", response_model=list[SummaryReportCandidateAudit])
+def analysis_request_summary_report_candidate_audit_all_list() -> list[SummaryReportCandidateAudit]:
+    return list_all_summary_report_candidate_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -1110,6 +1130,65 @@ def analysis_request_report_generation_gate_audit_for_gate_list(
 ) -> list[ReportGenerationGateAudit]:
     try:
         return list_report_generation_gate_audits_for_gate(request_id, report_gate_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/summary-report-candidates", response_model=list[SummaryReportCandidate])
+def analysis_request_summary_report_candidate_list(request_id: str) -> list[SummaryReportCandidate]:
+    try:
+        return list_summary_report_candidates(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/summary-report-candidates", response_model=SummaryReportCandidate)
+def analysis_request_summary_report_candidate_create(
+    request_id: str,
+    payload: SummaryReportCandidateRequest,
+) -> SummaryReportCandidate:
+    try:
+        return create_summary_report_candidate(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/summary-report-candidates/{summary_report_candidate_id}",
+    response_model=SummaryReportCandidate,
+)
+def analysis_request_summary_report_candidate_detail(
+    request_id: str,
+    summary_report_candidate_id: str,
+) -> SummaryReportCandidate:
+    try:
+        return read_summary_report_candidate(request_id, summary_report_candidate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/summary-report-candidate-audits", response_model=list[SummaryReportCandidateAudit])
+def analysis_request_summary_report_candidate_audit_list(request_id: str) -> list[SummaryReportCandidateAudit]:
+    try:
+        return list_summary_report_candidate_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/summary-report-candidates/{summary_report_candidate_id}/audits",
+    response_model=list[SummaryReportCandidateAudit],
+)
+def analysis_request_summary_report_candidate_audit_for_candidate_list(
+    request_id: str,
+    summary_report_candidate_id: str,
+) -> list[SummaryReportCandidateAudit]:
+    try:
+        return list_summary_report_candidate_audits_for_candidate(request_id, summary_report_candidate_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

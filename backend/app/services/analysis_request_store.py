@@ -93,6 +93,16 @@ from app.schemas.analysis_request import (
     ReportGenerationGate,
     ReportGenerationGateAudit,
     ReportGenerationGateRequest,
+    SummaryReportAnalysisSummarySection,
+    SummaryReportAuditTrace,
+    SummaryReportCandidate,
+    SummaryReportCandidateAudit,
+    SummaryReportCandidateInputRefs,
+    SummaryReportCandidateRequest,
+    SummaryReportEvidenceScopeSection,
+    SummaryReportExecutiveSummaryCandidate,
+    SummaryReportRepresentativeEvidenceSection,
+    SummaryReportRiskAndTopicSection,
     ManualEvidenceImportPackageFileChecks,
     ManualEvidenceImportPreflightChecks,
     ManualEvidenceImportTargetCase,
@@ -1607,6 +1617,74 @@ def list_report_generation_gate_audits_for_gate(request_id: str, report_gate_id:
     ]
 
 
+def read_summary_report_candidate(request_id: str, summary_report_candidate_id: str) -> SummaryReportCandidate:
+    candidate_path = _summary_report_candidate_path(request_id, summary_report_candidate_id)
+    if not candidate_path.exists():
+        raise AnalysisRequestNotFoundError(f"Summary report candidate {summary_report_candidate_id} was not found.")
+    try:
+        parsed = json.loads(candidate_path.read_text(encoding="utf-8-sig"))
+        candidate = SummaryReportCandidate.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"{candidate_path.name} is not a valid summary report candidate: {type(exc).__name__}") from exc
+    if candidate.request_id != request_id or candidate.summary_report_candidate_id != summary_report_candidate_id:
+        raise AnalysisRequestValidationError("Summary report candidate id mismatch.")
+    return candidate
+
+
+def list_summary_report_candidates(request_id: str) -> list[SummaryReportCandidate]:
+    read_analysis_request(request_id)
+    root = _ensure_root()
+    candidates: list[SummaryReportCandidate] = []
+    for path in sorted((root / "summary_report_candidates").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        candidates.append(read_summary_report_candidate(request_id, _summary_report_candidate_id_from_path(request_id, path)))
+    return candidates
+
+
+def list_all_summary_report_candidates() -> list[SummaryReportCandidate]:
+    root = _ensure_root()
+    candidates: list[SummaryReportCandidate] = []
+    for path in sorted((root / "summary_report_candidates").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        request_id, candidate_id = _split_prefixed_id(path, "summary_report_candidate")
+        candidates.append(read_summary_report_candidate(request_id, candidate_id))
+    return candidates
+
+
+def list_summary_report_candidate_audits(request_id: str) -> list[SummaryReportCandidateAudit]:
+    read_analysis_request(request_id)
+    root = _ensure_root()
+    audits: list[SummaryReportCandidateAudit] = []
+    for path in sorted((root / "summary_report_candidate_audits").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(SummaryReportCandidateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid summary report candidate audit: {type(exc).__name__}") from exc
+    return audits
+
+
+def list_all_summary_report_candidate_audits() -> list[SummaryReportCandidateAudit]:
+    root = _ensure_root()
+    audits: list[SummaryReportCandidateAudit] = []
+    for path in sorted((root / "summary_report_candidate_audits").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(SummaryReportCandidateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid summary report candidate audit: {type(exc).__name__}") from exc
+    return audits
+
+
+def list_summary_report_candidate_audits_for_candidate(
+    request_id: str,
+    summary_report_candidate_id: str,
+) -> list[SummaryReportCandidateAudit]:
+    return [
+        audit
+        for audit in list_summary_report_candidate_audits(request_id)
+        if audit.summary_report_candidate_id == summary_report_candidate_id
+    ]
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -2804,6 +2882,133 @@ def create_report_generation_gate(
         audit.model_dump(mode="json", by_alias=True),
     )
     return read_report_generation_gate(request_id, report_gate_id)
+
+
+def create_summary_report_candidate(
+    request_id: str,
+    payload: SummaryReportCandidateRequest | dict[str, Any],
+) -> SummaryReportCandidate:
+    try:
+        candidate_payload = (
+            payload
+            if isinstance(payload, SummaryReportCandidateRequest)
+            else SummaryReportCandidateRequest.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create summary report candidate: invalid payload ({exc}).") from exc
+
+    _validate_summary_report_candidate_payload(candidate_payload)
+    read_analysis_request(request_id)
+    report_gate = read_report_generation_gate(request_id, candidate_payload.report_gate_id)
+    execution = read_manual_analysis_execution(request_id, candidate_payload.manual_analysis_execution_id)
+    result_candidate = read_manual_analysis_result_candidate(request_id, candidate_payload.result_candidate_id)
+    boundary_gate = read_analysis_result_boundary_gate(request_id, candidate_payload.boundary_gate_id)
+    manual_execution_audits = list_manual_analysis_execution_audits_for_execution(request_id, execution.manual_analysis_execution_id)
+    boundary_gate_audits = list_analysis_result_boundary_gate_audits_for_gate(request_id, boundary_gate.boundary_gate_id)
+    report_gate_audits = list_report_generation_gate_audits_for_gate(request_id, report_gate.report_gate_id)
+    _validate_summary_report_candidate_prerequisites(
+        request_id,
+        candidate_payload,
+        report_gate,
+        execution,
+        result_candidate,
+        boundary_gate,
+        manual_execution_audits,
+        boundary_gate_audits,
+        report_gate_audits,
+    )
+
+    summary_candidate_id = _new_summary_report_candidate_id()
+    audit_id = _new_summary_report_candidate_audit_id()
+    boundary_notes = _summary_report_candidate_boundary_notes()
+    warnings = _summary_report_candidate_warnings(result_candidate, report_gate)
+    limitations = _summary_report_candidate_limitations(result_candidate, report_gate)
+    audit_ids = (
+        [audit.manual_analysis_execution_audit_id for audit in manual_execution_audits]
+        + [audit.boundary_gate_audit_id for audit in boundary_gate_audits]
+        + [audit.report_gate_audit_id for audit in report_gate_audits]
+    )
+    boundary_block = ManualAnalysisBoundaryBlock.model_validate(result_candidate.boundary_block)
+    boundary_block.candidate_only_note = "This is a local Summary Report Candidate only; it is not a final Summary Report, B-end report, export, Sandbox fixture, or public event."
+    summary_candidate = SummaryReportCandidate(
+        summary_report_candidate_id=summary_candidate_id,
+        request_id=request_id,
+        review_case_id=execution.review_case_id,
+        result_candidate_id=result_candidate.result_candidate_id,
+        manual_analysis_execution_id=execution.manual_analysis_execution_id,
+        report_gate_id=report_gate.report_gate_id,
+        boundary_gate_id=boundary_gate.boundary_gate_id,
+        created_at=datetime.now(timezone.utc),
+        created_by=candidate_payload.reviewer_label.strip(),
+        status="summary_report_candidate_created",
+        input_refs=SummaryReportCandidateInputRefs(
+            manual_analysis_execution_id=execution.manual_analysis_execution_id,
+            result_candidate_id=result_candidate.result_candidate_id,
+            boundary_gate_id=boundary_gate.boundary_gate_id,
+            report_gate_id=report_gate.report_gate_id,
+            manual_analysis_execution_audit_ids=[audit.manual_analysis_execution_audit_id for audit in manual_execution_audits],
+            boundary_gate_audit_ids=[audit.boundary_gate_audit_id for audit in boundary_gate_audits],
+            report_generation_gate_audit_ids=[audit.report_gate_audit_id for audit in report_gate_audits],
+        ),
+        executive_summary_candidate=_build_summary_report_executive_section(result_candidate),
+        evidence_scope_section=_build_summary_report_evidence_scope_section(result_candidate),
+        analysis_summary_section=SummaryReportAnalysisSummarySection(
+            analysis_summary=result_candidate.analysis_summary,
+            stance_distribution=dict(result_candidate.analysis_summary.get("stance_distribution") or {}),
+            sentiment_distribution=dict(result_candidate.analysis_summary.get("sentiment_distribution") or {}),
+            topic_summary=list(result_candidate.analysis_summary.get("topic_summary") or []),
+            risk_summary=dict(result_candidate.analysis_summary.get("risk_summary") or {}),
+        ),
+        risk_and_topic_section=SummaryReportRiskAndTopicSection(
+            risk_summary=dict(result_candidate.analysis_summary.get("risk_summary") or {}),
+            topic_summary=list(result_candidate.analysis_summary.get("topic_summary") or []),
+            risk_caveats=[
+                "Risk is a bounded candidate signal, not a final risk report.",
+                "Duplicate evidence does not amplify risk, sentiment, coverage, or conclusions.",
+                "Weak evidence remains warning-marked and rejected evidence remains excluded.",
+            ],
+        ),
+        representative_evidence_section=SummaryReportRepresentativeEvidenceSection(
+            items=_safe_summary_representative_evidence_items(result_candidate),
+            redaction_note="Representative evidence uses safe preview fields only; raw author identifiers are not exposed.",
+            rejected_exclusion_note="Rejected evidence remains excluded from this Summary Report Candidate.",
+            weak_evidence_note="Weak evidence remains warning-marked and must be reviewed by a human.",
+            duplicate_no_amplification_note="Duplicate evidence is not allowed to amplify risk, sentiment, coverage, or conclusions.",
+        ),
+        boundary_block=boundary_block,
+        limitations=limitations,
+        warnings=warnings,
+        audit_trace=SummaryReportAuditTrace(
+            manual_analysis_execution_id=execution.manual_analysis_execution_id,
+            result_candidate_id=result_candidate.result_candidate_id,
+            boundary_gate_id=boundary_gate.boundary_gate_id,
+            report_gate_id=report_gate.report_gate_id,
+            audit_ids=audit_ids,
+        ),
+    )
+    audit = SummaryReportCandidateAudit(
+        summary_report_candidate_audit_id=audit_id,
+        summary_report_candidate_id=summary_candidate_id,
+        request_id=request_id,
+        review_case_id=execution.review_case_id,
+        result_candidate_id=result_candidate.result_candidate_id,
+        manual_analysis_execution_id=execution.manual_analysis_execution_id,
+        report_gate_id=report_gate.report_gate_id,
+        boundary_gate_id=boundary_gate.boundary_gate_id,
+        reviewer_label=candidate_payload.reviewer_label.strip(),
+        decided_at=datetime.now(timezone.utc),
+        note=candidate_payload.note.strip(),
+        boundary_notes=boundary_notes,
+    )
+    _write_json(
+        _summary_report_candidate_path(request_id, summary_candidate_id),
+        summary_candidate.model_dump(mode="json", by_alias=True),
+    )
+    _write_json(
+        _summary_report_candidate_audit_path(request_id, summary_candidate_id, audit_id),
+        audit.model_dump(mode="json", by_alias=True),
+    )
+    return read_summary_report_candidate(request_id, summary_candidate_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -5974,6 +6179,319 @@ def _report_generation_payload_has_forbidden_extra(payload: ReportGenerationGate
     return False
 
 
+def _validate_summary_report_candidate_payload(payload: SummaryReportCandidateRequest) -> None:
+    required_text = {
+        "report_gate_id": payload.report_gate_id,
+        "result_candidate_id": payload.result_candidate_id,
+        "manual_analysis_execution_id": payload.manual_analysis_execution_id,
+        "boundary_gate_id": payload.boundary_gate_id,
+        "reviewer_label": payload.reviewer_label,
+        "note": payload.note,
+    }
+    missing_text = [name for name, value in required_text.items() if not (value or "").strip()]
+    if missing_text:
+        raise AnalysisRequestValidationError(
+            f"Cannot create summary report candidate: required fields are missing ({', '.join(missing_text)})."
+        )
+    if payload.candidate_mode != "local_summary_report_candidate":
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: candidate_mode must be local_summary_report_candidate.")
+    acknowledgements = {
+        "acknowledge_candidate_only": payload.acknowledge_candidate_only,
+        "acknowledge_not_final_summary_report": payload.acknowledge_not_final_summary_report,
+        "acknowledge_no_b_end_report": payload.acknowledge_no_b_end_report,
+        "acknowledge_no_export_generation": payload.acknowledge_no_export_generation,
+        "acknowledge_no_sandbox_or_public_event": payload.acknowledge_no_sandbox_or_public_event,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_provider_output_is_evidence_not_truth": payload.acknowledge_provider_output_is_evidence_not_truth,
+        "acknowledge_not_official_verification": payload.acknowledge_not_official_verification,
+        "acknowledge_not_full_web_coverage": payload.acknowledge_not_full_web_coverage,
+        "acknowledge_weak_evidence_warning": payload.acknowledge_weak_evidence_warning,
+        "acknowledge_rejected_exclusion": payload.acknowledge_rejected_exclusion,
+        "acknowledge_dedup_no_risk_amplification": payload.acknowledge_dedup_no_risk_amplification,
+        "acknowledge_audit_trace_required": payload.acknowledge_audit_trace_required,
+    }
+    missing_acknowledgements = [name for name, value in acknowledgements.items() if not value]
+    if missing_acknowledgements:
+        raise AnalysisRequestValidationError(
+            f"Cannot create summary report candidate: acknowledgement flags are required ({', '.join(missing_acknowledgements)})."
+        )
+    side_effect_flags = {
+        "final_report_now": payload.final_report_now,
+        "b_end_report_now": payload.b_end_report_now,
+        "export_now": payload.export_now,
+        "sandbox_now": payload.sandbox_now,
+        "public_event_now": payload.public_event_now,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "read_original_package_rows_now": payload.read_original_package_rows_now,
+        "call_llm_now": payload.call_llm_now,
+        "call_external_api_now": payload.call_external_api_now,
+        "provider_execution_requested": payload.provider_execution_requested,
+        "collector_job_requested": payload.collector_job_requested,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(
+            f"Cannot create summary report candidate: side effect flags must remain false ({', '.join(enabled)})."
+        )
+    unsafe_claims = {
+        "include_rejected_evidence": payload.include_rejected_evidence,
+        "include_privacy_hold_evidence": payload.include_privacy_hold_evidence,
+        "include_needs_more_source_evidence": payload.include_needs_more_source_evidence,
+        "remove_weak_warnings": payload.remove_weak_warnings,
+        "duplicates_amplify_risk": payload.duplicates_amplify_risk,
+        "provider_output_is_truth": payload.provider_output_is_truth,
+        "official_verification": payload.official_verification,
+        "full_web_coverage": payload.full_web_coverage,
+    }
+    unsafe = [name for name, value in unsafe_claims.items() if value]
+    if unsafe:
+        raise AnalysisRequestValidationError(
+            f"Cannot create summary report candidate: unsafe candidate claims are not allowed ({', '.join(unsafe)})."
+        )
+    if _summary_report_payload_has_forbidden_extra(payload):
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: raw/private/secret-like fields are not allowed.")
+
+
+def _validate_summary_report_candidate_prerequisites(
+    request_id: str,
+    payload: SummaryReportCandidateRequest,
+    report_gate: ReportGenerationGate,
+    execution: ManualAnalysisExecution,
+    result_candidate: ManualAnalysisResultCandidate,
+    boundary_gate: AnalysisResultBoundaryGate,
+    manual_execution_audits: list[ManualAnalysisExecutionAudit],
+    boundary_gate_audits: list[AnalysisResultBoundaryGateAudit],
+    report_gate_audits: list[ReportGenerationGateAudit],
+) -> None:
+    if (
+        report_gate.request_id != request_id
+        or execution.request_id != request_id
+        or result_candidate.request_id != request_id
+        or boundary_gate.request_id != request_id
+    ):
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: request_id mismatch.")
+    if payload.review_case_id and payload.review_case_id != execution.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: review_case_id mismatch.")
+    if execution.review_case_id != result_candidate.review_case_id or execution.review_case_id != report_gate.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: review_case_id mismatch.")
+    if execution.manual_analysis_execution_id != result_candidate.manual_analysis_execution_id:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: result candidate does not match execution.")
+    if execution.result_candidate_id != result_candidate.result_candidate_id:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: execution result candidate mismatch.")
+    if execution.boundary_gate_id != boundary_gate.boundary_gate_id or report_gate.boundary_gate_id != boundary_gate.boundary_gate_id:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: boundary gate mismatch.")
+    if report_gate.manual_analysis_execution_id != execution.manual_analysis_execution_id:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: report gate execution mismatch.")
+    if report_gate.result_candidate_id != result_candidate.result_candidate_id:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: report gate result candidate mismatch.")
+    if execution.status != "analysis_result_candidate_created":
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: manual analysis execution is not ready.")
+    if boundary_gate.status != "boundary_ready_for_future_analysis_result_runtime":
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: boundary gate is not ready.")
+    if report_gate.status != "report_gate_ready_for_future_runtime":
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: report gate is not ready.")
+    if not manual_execution_audits:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: manual analysis execution audit is missing.")
+    if not boundary_gate_audits:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: boundary gate audit is missing.")
+    if not report_gate_audits:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: report generation gate audit is missing.")
+    if not result_candidate.boundary_block or not _manual_analysis_candidate_boundary_is_complete(result_candidate.boundary_block):
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: result candidate boundary block is missing or incomplete.")
+    if result_candidate.source_scope_summary.included_item_count <= 0:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: source scope summary is empty.")
+    if not result_candidate.audit_refs:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: result candidate audit refs are missing.")
+    if any(value is True for value in result_candidate.downstream_flags.values()):
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: result candidate downstream flags must remain false.")
+    if not report_gate.allowed_future_outputs.summary_report_candidate:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: report gate does not allow summary report candidate.")
+    blocked_outputs = {
+        "b_end_report_candidate": report_gate.allowed_future_outputs.b_end_report_candidate,
+        "pdf_export": report_gate.allowed_future_outputs.pdf_export,
+        "markdown_export": report_gate.allowed_future_outputs.markdown_export,
+        "briefing_deck_export": report_gate.allowed_future_outputs.briefing_deck_export,
+        "sandbox": report_gate.allowed_future_outputs.sandbox,
+        "public_event": report_gate.allowed_future_outputs.public_event,
+    }
+    enabled_outputs = [name for name, value in blocked_outputs.items() if value]
+    if enabled_outputs:
+        raise AnalysisRequestValidationError(
+            f"Cannot create summary report candidate: report gate allows unsafe downstream outputs ({', '.join(enabled_outputs)})."
+        )
+    if report_gate.input_boundary.read_original_package_rows_now or report_gate.input_boundary.call_llm_now or report_gate.input_boundary.call_external_api_now:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: report gate input boundary is unsafe.")
+    if report_gate.readiness.can_generate_summary_report_now or report_gate.readiness.can_export_now:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: report gate has unsafe now-readiness.")
+    if not all(report_gate.required_report_sections.model_dump().values()):
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: report gate required sections are incomplete.")
+    _validate_analysis_result_boundary_now_flags("manual analysis execution", execution.now_flags)
+    unsafe_safe_mode = [
+        key
+        for key, value in report_gate.safe_mode.items()
+        if value is True and key not in {"report_generation_gate_only"}
+    ]
+    if unsafe_safe_mode:
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: report gate safe mode is unsafe.")
+    serialized_candidate = json.dumps(result_candidate.model_dump(mode="json"), ensure_ascii=False).lower()
+    required_phrases = ["evidence, not truth", "official verification", "full-web", "full-platform"]
+    if any(phrase not in serialized_candidate for phrase in required_phrases):
+        raise AnalysisRequestValidationError("Cannot create summary report candidate: required boundary language is missing.")
+
+
+def _build_summary_report_executive_section(
+    result_candidate: ManualAnalysisResultCandidate,
+) -> SummaryReportExecutiveSummaryCandidate:
+    risk_summary = dict(result_candidate.analysis_summary.get("risk_summary") or {})
+    risk_level = risk_summary.get("risk_level", "bounded_candidate_signal")
+    included_count = result_candidate.source_scope_summary.included_item_count
+    return SummaryReportExecutiveSummaryCandidate(
+        title="Local Summary Report Candidate",
+        one_sentence_summary=(
+            f"This local candidate summarizes {included_count} reviewed evidence items with risk signal '{risk_level}'."
+        ),
+        key_findings=[
+            "Provider output is evidence, not truth.",
+            "This candidate is not official verification.",
+            "This candidate is not full-web, full-platform, or full-thread coverage.",
+            "Weak evidence remains warning-marked and rejected evidence remains excluded.",
+            "Duplicate evidence does not amplify risk, sentiment, coverage, or conclusions.",
+        ],
+        confidence_note="Provider output is evidence, not truth; confidence remains bounded by reviewed local evidence scope.",
+        candidate_only_note="This is a local Summary Report Candidate only, not final Summary Report.",
+    )
+
+
+def _build_summary_report_evidence_scope_section(
+    result_candidate: ManualAnalysisResultCandidate,
+) -> SummaryReportEvidenceScopeSection:
+    return SummaryReportEvidenceScopeSection(
+        source_scope_summary=result_candidate.source_scope_summary.model_dump(mode="json"),
+        coverage_limitation="Selected reviewed local evidence scope only; not full-web, full-platform, or full-thread coverage.",
+        selected_reviewed_scope_note="This candidate uses only the reviewed ManualAnalysisResultCandidate scope.",
+        not_full_web_coverage_note="This is not full-web, full-platform, or full-thread coverage.",
+        not_official_verification_note="This is not official verification.",
+    )
+
+
+def _safe_summary_representative_evidence_items(
+    result_candidate: ManualAnalysisResultCandidate,
+) -> list[dict[str, Any]]:
+    raw_items = result_candidate.analysis_summary.get("representative_evidence") or []
+    allowed_fields = {
+        "review_item_id",
+        "evidence_type",
+        "platform",
+        "title_preview",
+        "body_text_preview",
+        "source_url_present",
+        "queue_status",
+        "trust_label",
+        "verification_status",
+        "weak_warning",
+    }
+    safe_items: list[dict[str, Any]] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        safe_item = {key: item.get(key) for key in allowed_fields if key in item}
+        safe_items.append(safe_item)
+    return safe_items[:8]
+
+
+def _summary_report_candidate_warnings(
+    result_candidate: ManualAnalysisResultCandidate,
+    report_gate: ReportGenerationGate,
+) -> list[str]:
+    return _unique_preserve_order(
+        list(result_candidate.confidence_notes)
+        + list(result_candidate.limitations)
+        + list(report_gate.warnings)
+        + [
+            "This is not final Summary Report.",
+            "This is not B-end report, export file, Sandbox fixture, or public event page.",
+            "Provider output is evidence, not truth.",
+            "This is not official verification.",
+            "This is not full-web, full-platform, or full-thread coverage.",
+            "Weak evidence remains warning-marked.",
+            "Rejected evidence remains excluded.",
+            "Duplicate evidence does not amplify risk, sentiment, coverage, or conclusions.",
+        ]
+    )
+
+
+def _summary_report_candidate_limitations(
+    result_candidate: ManualAnalysisResultCandidate,
+    report_gate: ReportGenerationGate,
+) -> list[str]:
+    return _unique_preserve_order(
+        list(result_candidate.limitations)
+        + list(report_gate.boundary_notes)
+        + [
+            "This candidate uses safe local candidate/gate/audit records only.",
+            "No original package rows, evidence_items.jsonl, or evidence_items.csv were read.",
+            "No real API, real LLM, provider, collector, URL fetch, or scraping action was run.",
+            "Final report, B-end report, export, Sandbox, and public event outputs require later gates.",
+        ]
+    )
+
+
+def _summary_report_candidate_boundary_notes() -> list[str]:
+    return [
+        "Summary Report Candidate record only; no final Summary Report generated.",
+        "No B-end report, PDF, Markdown, briefing deck, Sandbox fixture, or public event page generated.",
+        "No Evidence Layer write and no production case creation.",
+        "Provider output is evidence, not truth.",
+        "This candidate is not official verification.",
+        "This candidate is not full-web, full-platform, or full-thread coverage.",
+        "Weak evidence remains warning-marked.",
+        "Rejected evidence remains excluded.",
+        "Duplicate evidence does not amplify risk.",
+    ]
+
+
+def _manual_analysis_candidate_boundary_is_complete(boundary: dict[str, Any]) -> bool:
+    required = {
+        "coverage_limitation",
+        "weak_evidence_warning",
+        "rejected_evidence_exclusion_note",
+        "dedup_warning",
+        "provider_output_evidence_not_truth_note",
+        "not_official_verification_note",
+        "not_full_web_coverage_note",
+        "audit_trace_note",
+    }
+    return required.issubset(set(boundary.keys())) and all(bool(boundary.get(key)) for key in required)
+
+
+def _summary_report_payload_has_forbidden_extra(payload: SummaryReportCandidateRequest) -> bool:
+    extra = getattr(payload, "model_extra", None) or {}
+    forbidden_names = {
+        "cookie",
+        "token",
+        "session",
+        "api_key",
+        ".env",
+        "raw_author_id",
+        "raw_author_name",
+        "profile_url",
+        "password",
+        "private_message",
+        "email",
+        "phone",
+    }
+    for key, value in extra.items():
+        key_text = str(key).lower()
+        value_text = str(value).lower() if isinstance(value, (str, int, float, bool)) else ""
+        if any(name in key_text for name in forbidden_names):
+            return True
+        if any(name in value_text for name in forbidden_names):
+            return True
+    return False
+
+
 def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -6398,6 +6916,8 @@ def _ensure_root() -> Path:
     (root / "manual_analysis_execution_audits").mkdir(parents=True, exist_ok=True)
     (root / "report_generation_gates").mkdir(parents=True, exist_ok=True)
     (root / "report_generation_gate_audits").mkdir(parents=True, exist_ok=True)
+    (root / "summary_report_candidates").mkdir(parents=True, exist_ok=True)
+    (root / "summary_report_candidate_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -6613,6 +7133,21 @@ def _report_generation_gate_audit_path(request_id: str, report_gate_id: str, aud
     return root / "report_generation_gate_audits" / f"{request_id}_{report_gate_id}_{audit_id}.json"
 
 
+def _summary_report_candidate_path(request_id: str, summary_report_candidate_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(summary_report_candidate_id)
+    root = _ensure_root()
+    return root / "summary_report_candidates" / f"{request_id}_{summary_report_candidate_id}.json"
+
+
+def _summary_report_candidate_audit_path(request_id: str, summary_report_candidate_id: str, audit_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(summary_report_candidate_id)
+    _validate_request_id(audit_id)
+    root = _ensure_root()
+    return root / "summary_report_candidate_audits" / f"{request_id}_{summary_report_candidate_id}_{audit_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -6657,6 +7192,13 @@ def _report_generation_gate_id_from_path(request_id: str, path: Path) -> str:
     if parsed_request_id != request_id:
         raise AnalysisRequestValidationError("Report generation gate request id mismatch.")
     return report_gate_id
+
+
+def _summary_report_candidate_id_from_path(request_id: str, path: Path) -> str:
+    parsed_request_id, summary_report_candidate_id = _split_prefixed_id(path, "summary_report_candidate")
+    if parsed_request_id != request_id:
+        raise AnalysisRequestValidationError("Summary report candidate request id mismatch.")
+    return summary_report_candidate_id
 
 
 def _new_request_id(title: str) -> str:
@@ -6778,6 +7320,16 @@ def _new_report_generation_gate_id() -> str:
 def _new_report_generation_gate_audit_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"report_generation_gate_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_summary_report_candidate_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"summary_report_candidate_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_summary_report_candidate_audit_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"summary_report_candidate_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:
