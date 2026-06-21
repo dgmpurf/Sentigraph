@@ -542,6 +542,32 @@ def route_final_summary_report_export_gate_payload(**overrides: object) -> dict:
     return payload
 
 
+def route_final_summary_report_export_artifact_payload(**overrides: object) -> dict:
+    payload = {
+        "final_summary_report_id": "",
+        "export_gate_id": "",
+        "export_gate_audit_id": "",
+        "review_case_id": "",
+        "artifact_type": "analyst_markdown",
+        "reviewer_label": "route_final_summary_export_artifact_reviewer",
+        "note": "Route local Final Summary Report export artifact only.",
+        "acknowledge_export_artifact_only": True,
+        "acknowledge_no_b_end_report": True,
+        "acknowledge_no_sandbox_or_public_event": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_provider_output_is_evidence_not_truth": True,
+        "acknowledge_not_official_verification": True,
+        "acknowledge_not_full_web_coverage": True,
+        "acknowledge_weak_evidence_warning": True,
+        "acknowledge_rejected_exclusion": True,
+        "acknowledge_dedup_no_risk_amplification": True,
+        "acknowledge_audit_trace_required": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def create_route_manual_trigger_ready_chain(tmp_path: Path):
     request_id, _preflight_id = create_route_real_preview_chain(tmp_path, package_dir=create_route_many_safe_preview_package(tmp_path))
     preview_response = client.post(
@@ -3081,6 +3107,226 @@ def test_analysis_request_final_summary_report_export_gate_routes_create_list_re
             pdf_file_now=True,
         ),
     )
+    assert unsafe_response.status_code == 400
+
+
+def create_route_final_summary_report_export_artifact_ready_chain(tmp_path: Path):
+    request_id, review_case_id, promotion_gate, manual_trigger, _item_ids = create_route_manual_trigger_ready_chain(tmp_path)
+    boundary_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/analysis-result-boundary-gates",
+        json=route_analysis_result_boundary_gate_payload(
+            manual_trigger_id=manual_trigger["manual_trigger_id"],
+            promotion_gate_id=promotion_gate["promotion_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert boundary_response.status_code == 200
+    boundary_gate = boundary_response.json()
+    execution_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/manual-analysis-executions",
+        json=route_manual_analysis_execution_payload(
+            manual_trigger_id=manual_trigger["manual_trigger_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            promotion_gate_id=promotion_gate["promotion_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert execution_response.status_code == 200
+    execution = execution_response.json()
+    report_gate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/report-generation-gates",
+        json=route_report_generation_gate_payload(
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert report_gate_response.status_code == 200
+    report_gate = report_gate_response.json()
+    summary_candidate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/summary-report-candidates",
+        json=route_summary_report_candidate_payload(
+            report_gate_id=report_gate["report_gate_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert summary_candidate_response.status_code == 200
+    summary_candidate = summary_candidate_response.json()
+    final_review_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-review-gates",
+        json=route_final_summary_report_review_gate_payload(
+            summary_report_candidate_id=summary_candidate["summary_report_candidate_id"],
+            report_gate_id=report_gate["report_gate_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert final_review_response.status_code == 200
+    final_review_gate = final_review_response.json()
+    final_report_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-reports",
+        json=route_final_summary_report_payload(
+            summary_report_candidate_id=summary_candidate["summary_report_candidate_id"],
+            final_report_review_gate_id=final_review_gate["final_report_review_gate_id"],
+            report_gate_id=report_gate["report_gate_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert final_report_response.status_code == 200
+    final_report = final_report_response.json()
+    final_report_audit_response = client.get(f"/api/v1/analysis-requests/{request_id}/final-summary-report-audits")
+    assert final_report_audit_response.status_code == 200
+    final_report_audit = final_report_audit_response.json()[0]
+    export_gate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-gates",
+        json=route_final_summary_report_export_gate_payload(
+            final_summary_report_id=final_report["final_summary_report_id"],
+            final_summary_report_audit_id=final_report_audit["final_summary_report_audit_id"],
+            summary_report_candidate_id=summary_candidate["summary_report_candidate_id"],
+            final_report_review_gate_id=final_review_gate["final_report_review_gate_id"],
+            report_gate_id=report_gate["report_gate_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert export_gate_response.status_code == 200
+    export_gate = export_gate_response.json()
+    export_gate_audit_response = client.get(f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-gate-audits")
+    assert export_gate_audit_response.status_code == 200
+    export_gate_audit = export_gate_audit_response.json()[0]
+    return request_id, review_case_id, final_report, export_gate, export_gate_audit
+
+
+def test_analysis_request_final_summary_report_export_artifact_routes_create_list_read_audit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, review_case_id, final_report, export_gate, export_gate_audit = create_route_final_summary_report_export_artifact_ready_chain(tmp_path)
+
+    create_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-artifacts",
+        json=route_final_summary_report_export_artifact_payload(
+            final_summary_report_id=final_report["final_summary_report_id"],
+            export_gate_id=export_gate["export_gate_id"],
+            export_gate_audit_id=export_gate_audit["export_gate_audit_id"],
+            review_case_id=review_case_id,
+            artifact_type="analyst_markdown",
+        ),
+    )
+
+    assert create_response.status_code == 200
+    body = create_response.json()
+    assert body["schema"] == "sentigraph_final_summary_report_export_artifact_v1"
+    assert body["status"] == "export_artifact_created"
+    assert body["artifact_type"] == "analyst_markdown"
+    assert body["artifact_format"] == "md"
+    assert body["artifact_scope"]["is_b_end_report"] is False
+    assert body["artifact_scope"]["is_public_event"] is False
+    assert body["artifact_scope"]["is_sandbox"] is False
+    assert body["artifact_scope"]["is_production_case"] is False
+    assert body["artifact_paths"]["public_url"] is None
+    assert body["artifact_paths"]["local_runtime_path"].startswith(f"runtime/analysis_requests/final_summary_report_exports/{request_id}/")
+    assert all(body["export_sections"].values())
+    assert body["source_and_scope"]["provider_output_evidence_not_truth"] is True
+    assert body["source_and_scope"]["not_official_verification"] is True
+    assert body["source_and_scope"]["not_full_web_coverage"] is True
+    assert body["source_and_scope"]["not_full_platform_coverage"] is True
+    assert body["source_and_scope"]["not_full_thread_coverage"] is True
+    assert body["downstream_flags"]["b_end_report_ready"] is False
+    assert body["downstream_flags"]["sandbox_ready"] is False
+    assert body["downstream_flags"]["public_event_ready"] is False
+    assert "Provider output is evidence, not truth" in str(body["boundary_notes"]) or "Provider output is evidence, not truth" in str(body["warnings"])
+    assert "full-web" in str(body["warnings"]).lower()
+
+    read_response = client.get(f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-artifacts/{body['export_artifact_id']}")
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-artifacts")
+    all_response = client.get("/api/v1/analysis-requests/final-summary-report-export-artifacts")
+    audit_response = client.get(f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-artifact-audits")
+    all_audit_response = client.get("/api/v1/analysis-requests/final-summary-report-export-artifact-audits")
+    artifact_audit_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-artifacts/{body['export_artifact_id']}/audits"
+    )
+
+    assert read_response.status_code == 200
+    assert list_response.status_code == 200
+    assert all_response.status_code == 200
+    assert audit_response.status_code == 200
+    assert all_audit_response.status_code == 200
+    assert artifact_audit_response.status_code == 200
+    assert read_response.json()["export_artifact_id"] == body["export_artifact_id"]
+    assert list_response.json()[0]["export_artifact_id"] == body["export_artifact_id"]
+    assert audit_response.json()[0]["export_artifact_id"] == body["export_artifact_id"]
+    assert audit_response.json()[0]["analysis_effect"] == "local_export_artifact_created_no_b_end_no_sandbox_no_public_event"
+    assert artifact_audit_response.json()[0]["now_flags"]["b_end_report_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["generate_sandbox_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["generate_public_event_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["write_evidence_layer_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["create_production_case_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["call_llm_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["fetch_url_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["read_original_rows_now"] is False
+    assert (tmp_path / "final_summary_report_exports").exists()
+    assert not list(tmp_path.rglob("*.pdf"))
+    assert not list(tmp_path.rglob("*.pptx"))
+    assert not (tmp_path / "b_end_reports").exists()
+    assert not (tmp_path / "sandbox_fixtures").exists()
+    assert not (tmp_path / "public_events").exists()
+
+    deck_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-artifacts",
+        json=route_final_summary_report_export_artifact_payload(
+            final_summary_report_id=final_report["final_summary_report_id"],
+            export_gate_id=export_gate["export_gate_id"],
+            export_gate_audit_id=export_gate_audit["export_gate_audit_id"],
+            review_case_id=review_case_id,
+            artifact_type="briefing_deck_outline",
+        ),
+    )
+    appendix_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-artifacts",
+        json=route_final_summary_report_export_artifact_payload(
+            final_summary_report_id=final_report["final_summary_report_id"],
+            export_gate_id=export_gate["export_gate_id"],
+            export_gate_audit_id=export_gate_audit["export_gate_audit_id"],
+            review_case_id=review_case_id,
+            artifact_type="evidence_appendix_package",
+        ),
+    )
+    pdf_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-artifacts",
+        json=route_final_summary_report_export_artifact_payload(
+            final_summary_report_id=final_report["final_summary_report_id"],
+            export_gate_id=export_gate["export_gate_id"],
+            export_gate_audit_id=export_gate_audit["export_gate_audit_id"],
+            review_case_id=review_case_id,
+            artifact_type="executive_pdf",
+        ),
+    )
+    unsafe_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-export-artifacts",
+        json=route_final_summary_report_export_artifact_payload(
+            final_summary_report_id=final_report["final_summary_report_id"],
+            export_gate_id=export_gate["export_gate_id"],
+            export_gate_audit_id=export_gate_audit["export_gate_audit_id"],
+            review_case_id=review_case_id,
+            b_end_report_now=True,
+        ),
+    )
+    assert deck_response.status_code == 200
+    assert deck_response.json()["artifact_format"] == "pptx_outline"
+    assert appendix_response.status_code == 200
+    assert appendix_response.json()["artifact_format"] == "json_bundle"
+    assert pdf_response.status_code == 400
+    assert "pdf_renderer_not_implemented" in pdf_response.text
     assert unsafe_response.status_code == 400
 
 

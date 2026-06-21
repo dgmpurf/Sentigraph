@@ -615,6 +615,38 @@ export async function listAnalysisRequestFinalSummaryReportExportGateAuditsForGa
   return Array.isArray(data) ? data.map(normalizeFinalSummaryReportExportGateAudit).filter(Boolean) : []
 }
 
+export async function listAnalysisRequestFinalSummaryReportExportArtifacts(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/final-summary-report-export-artifacts`)
+  return Array.isArray(data) ? data.map(normalizeFinalSummaryReportExportArtifact).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestFinalSummaryReportExportArtifact(requestId, payload = {}) {
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/final-summary-report-export-artifacts`,
+    payload,
+  )
+  return normalizeFinalSummaryReportExportArtifact(data)
+}
+
+export async function getAnalysisRequestFinalSummaryReportExportArtifact(requestId, exportArtifactId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/final-summary-report-export-artifacts/${encodeURIComponent(exportArtifactId)}`,
+  )
+  return normalizeFinalSummaryReportExportArtifact(data)
+}
+
+export async function listAnalysisRequestFinalSummaryReportExportArtifactAudits(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/final-summary-report-export-artifact-audits`)
+  return Array.isArray(data) ? data.map(normalizeFinalSummaryReportExportArtifactAudit).filter(Boolean) : []
+}
+
+export async function listAnalysisRequestFinalSummaryReportExportArtifactAuditsForArtifact(requestId, exportArtifactId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/final-summary-report-export-artifacts/${encodeURIComponent(exportArtifactId)}/audits`,
+  )
+  return Array.isArray(data) ? data.map(normalizeFinalSummaryReportExportArtifactAudit).filter(Boolean) : []
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -3067,6 +3099,63 @@ function normalizeFinalSummaryReportExportGateAudit(data) {
     analysis_effect: String(data.analysis_effect || 'final_summary_report_export_gate_record_only_no_export_generated'),
     now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
     required_revisions: Array.isArray(data.required_revisions) ? data.required_revisions.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeFinalSummaryReportExportArtifact(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_final_summary_report_export_artifact_v1'),
+    export_artifact_id: String(data.export_artifact_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    final_summary_report_id: String(data.final_summary_report_id || ''),
+    export_gate_id: String(data.export_gate_id || ''),
+    export_gate_audit_id: String(data.export_gate_audit_id || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    status: String(data.status || 'blocked'),
+    artifact_type: String(data.artifact_type || ''),
+    artifact_format: String(data.artifact_format || ''),
+    artifact_scope:
+      data.artifact_scope && typeof data.artifact_scope === 'object' ? normalizeSafeObject(data.artifact_scope) : {},
+    artifact_paths:
+      data.artifact_paths && typeof data.artifact_paths === 'object' ? normalizeSafeObject(data.artifact_paths) : {},
+    export_sections:
+      data.export_sections && typeof data.export_sections === 'object' ? normalizeBooleanMap(data.export_sections) : {},
+    source_and_scope:
+      data.source_and_scope && typeof data.source_and_scope === 'object' ? normalizeSafeObject(data.source_and_scope) : {},
+    downstream_flags:
+      data.downstream_flags && typeof data.downstream_flags === 'object' ? normalizeBooleanMap(data.downstream_flags) : {},
+    required_next_gates:
+      data.required_next_gates && typeof data.required_next_gates === 'object' ? normalizeBooleanMap(data.required_next_gates) : {},
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    audit_refs: data.audit_refs && typeof data.audit_refs === 'object' ? normalizeSafeObject(data.audit_refs) : {},
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeFinalSummaryReportExportArtifactAudit(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_final_summary_report_export_artifact_audit_v1'),
+    export_artifact_audit_id: String(data.export_artifact_audit_id || ''),
+    export_artifact_id: String(data.export_artifact_id || ''),
+    final_summary_report_id: String(data.final_summary_report_id || ''),
+    export_gate_id: String(data.export_gate_id || ''),
+    export_gate_audit_id: String(data.export_gate_audit_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    reviewer_label: String(data.reviewer_label || ''),
+    created_at: data.created_at ? String(data.created_at) : '',
+    note: String(data.note || ''),
+    artifact_type: String(data.artifact_type || ''),
+    artifact_format: String(data.artifact_format || ''),
+    analysis_effect: String(data.analysis_effect || 'local_export_artifact_created_no_b_end_no_sandbox_no_public_event'),
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
     boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }

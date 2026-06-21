@@ -29,6 +29,7 @@ import {
   createAnalysisRequestManualAnalysisTrigger,
   createAnalysisRequestReportGenerationGate,
   createAnalysisRequestFinalSummaryReport,
+  createAnalysisRequestFinalSummaryReportExportArtifact,
   createAnalysisRequestFinalSummaryReportExportGate,
   createAnalysisRequestFinalSummaryReportReviewGate,
   createAnalysisRequestSummaryReportCandidate,
@@ -70,6 +71,8 @@ import {
   listAnalysisRequestReportGenerationGateAudits,
   listAnalysisRequestReportGenerationGates,
   listAnalysisRequestFinalSummaryReportAudits,
+  listAnalysisRequestFinalSummaryReportExportArtifactAudits,
+  listAnalysisRequestFinalSummaryReportExportArtifacts,
   listAnalysisRequestFinalSummaryReportExportGateAudits,
   listAnalysisRequestFinalSummaryReportExportGates,
   listAnalysisRequestFinalSummaryReports,
@@ -280,6 +283,20 @@ const FINAL_SUMMARY_EXPORT_DECISION_OPTIONS = [
 const FINAL_SUMMARY_EXPORT_STATUS_COLOR = {
   ready_for_future_export_runtime: 'green',
   needs_revision: 'gold',
+  blocked: 'red',
+  privacy_hold: 'magenta',
+}
+
+const FINAL_SUMMARY_EXPORT_ARTIFACT_TYPE_OPTIONS = [
+  { value: 'analyst_markdown', label: 'analyst_markdown / local .md' },
+  { value: 'briefing_deck_outline', label: 'briefing_deck_outline / JSON outline only' },
+  { value: 'evidence_appendix_package', label: 'evidence_appendix_package / JSON bundle' },
+  { value: 'executive_pdf', label: 'executive_pdf / unsupported until safe renderer exists' },
+]
+
+const FINAL_SUMMARY_EXPORT_ARTIFACT_STATUS_COLOR = {
+  export_artifact_created: 'green',
+  unsupported_format: 'gold',
   blocked: 'red',
   privacy_hold: 'magenta',
 }
@@ -685,6 +702,7 @@ export function AnalysisRequests() {
   const [finalSummaryReportReviewGateForm] = Form.useForm()
   const [finalSummaryReportForm] = Form.useForm()
   const [finalSummaryReportExportGateForm] = Form.useForm()
+  const [finalSummaryReportExportArtifactForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -725,6 +743,8 @@ export function AnalysisRequests() {
   const [finalSummaryReportAudits, setFinalSummaryReportAudits] = useState([])
   const [finalSummaryReportExportGates, setFinalSummaryReportExportGates] = useState([])
   const [finalSummaryReportExportGateAudits, setFinalSummaryReportExportGateAudits] = useState([])
+  const [finalSummaryReportExportArtifacts, setFinalSummaryReportExportArtifacts] = useState([])
+  const [finalSummaryReportExportArtifactAudits, setFinalSummaryReportExportArtifactAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -752,6 +772,7 @@ export function AnalysisRequests() {
   const [finalSummaryReportReviewGateLoading, setFinalSummaryReportReviewGateLoading] = useState(false)
   const [finalSummaryReportLoading, setFinalSummaryReportLoading] = useState(false)
   const [finalSummaryReportExportGateLoading, setFinalSummaryReportExportGateLoading] = useState(false)
+  const [finalSummaryReportExportArtifactLoading, setFinalSummaryReportExportArtifactLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -777,6 +798,7 @@ export function AnalysisRequests() {
   const [finalSummaryReportReviewGateError, setFinalSummaryReportReviewGateError] = useState('')
   const [finalSummaryReportError, setFinalSummaryReportError] = useState('')
   const [finalSummaryReportExportGateError, setFinalSummaryReportExportGateError] = useState('')
+  const [finalSummaryReportExportArtifactError, setFinalSummaryReportExportArtifactError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -822,6 +844,9 @@ export function AnalysisRequests() {
     setFinalSummaryReportExportGates([])
     setFinalSummaryReportExportGateAudits([])
     setFinalSummaryReportExportGateError('')
+    setFinalSummaryReportExportArtifacts([])
+    setFinalSummaryReportExportArtifactAudits([])
+    setFinalSummaryReportExportArtifactError('')
   }
 
   async function loadDraftAndPlan(requestId) {
@@ -977,6 +1002,8 @@ export function AnalysisRequests() {
       setFinalSummaryReportAudits(await listAnalysisRequestFinalSummaryReportAudits(requestId))
       setFinalSummaryReportExportGates(await listAnalysisRequestFinalSummaryReportExportGates(requestId))
       setFinalSummaryReportExportGateAudits(await listAnalysisRequestFinalSummaryReportExportGateAudits(requestId))
+      setFinalSummaryReportExportArtifacts(await listAnalysisRequestFinalSummaryReportExportArtifacts(requestId))
+      setFinalSummaryReportExportArtifactAudits(await listAnalysisRequestFinalSummaryReportExportArtifactAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
@@ -2142,12 +2169,77 @@ export function AnalysisRequests() {
       })
       setFinalSummaryReportExportGates(await listAnalysisRequestFinalSummaryReportExportGates(selectedRecord.request_id))
       setFinalSummaryReportExportGateAudits(await listAnalysisRequestFinalSummaryReportExportGateAudits(selectedRecord.request_id))
+      setFinalSummaryReportExportArtifacts(await listAnalysisRequestFinalSummaryReportExportArtifacts(selectedRecord.request_id))
+      setFinalSummaryReportExportArtifactAudits(await listAnalysisRequestFinalSummaryReportExportArtifactAudits(selectedRecord.request_id))
       message.success(`Created Final Summary Report Export Gate: ${gate?.status || 'created'}`)
     } catch (requestError) {
       const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create Final Summary Report Export Gate.'
       setFinalSummaryReportExportGateError(String(messageText))
     } finally {
       setFinalSummaryReportExportGateLoading(false)
+    }
+  }
+
+  async function handleCreateFinalSummaryReportExportArtifact(values) {
+    if (!selectedRecord?.request_id || !latestFinalSummaryReportExportGate?.export_gate_id) return
+    setFinalSummaryReportExportArtifactLoading(true)
+    setFinalSummaryReportExportArtifactError('')
+    try {
+      const artifact = await createAnalysisRequestFinalSummaryReportExportArtifact(selectedRecord.request_id, {
+        final_summary_report_id:
+          values.final_summary_report_id ||
+          latestFinalSummaryReportExportGate.final_summary_report_id ||
+          latestFinalSummaryReport?.final_summary_report_id,
+        export_gate_id: values.export_gate_id || latestFinalSummaryReportExportGate.export_gate_id,
+        export_gate_audit_id:
+          values.export_gate_audit_id ||
+          latestFinalSummaryReportExportGateAudit?.export_gate_audit_id ||
+          finalSummaryReportExportGateAudits[0]?.export_gate_audit_id,
+        review_case_id:
+          values.review_case_id ||
+          latestFinalSummaryReportExportGate.review_case_id ||
+          latestFinalSummaryReport?.review_case_id ||
+          undefined,
+        artifact_type: values.artifact_type,
+        reviewer_label: String(values.reviewer_label || '').trim(),
+        note: String(values.note || '').trim(),
+        acknowledge_export_artifact_only: Boolean(values.acknowledge_export_artifact_only),
+        acknowledge_no_b_end_report: Boolean(values.acknowledge_no_b_end_report),
+        acknowledge_no_sandbox_or_public_event: Boolean(values.acknowledge_no_sandbox_or_public_event),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_provider_output_is_evidence_not_truth: Boolean(values.acknowledge_provider_output_is_evidence_not_truth),
+        acknowledge_not_official_verification: Boolean(values.acknowledge_not_official_verification),
+        acknowledge_not_full_web_coverage: Boolean(values.acknowledge_not_full_web_coverage),
+        acknowledge_weak_evidence_warning: Boolean(values.acknowledge_weak_evidence_warning),
+        acknowledge_rejected_exclusion: Boolean(values.acknowledge_rejected_exclusion),
+        acknowledge_dedup_no_risk_amplification: Boolean(values.acknowledge_dedup_no_risk_amplification),
+        acknowledge_audit_trace_required: Boolean(values.acknowledge_audit_trace_required),
+        b_end_report_now: false,
+        sandbox_now: false,
+        public_event_now: false,
+        write_evidence_layer_now: false,
+        create_production_case_now: false,
+        read_original_rows_now: false,
+        fetch_url_now: false,
+        call_llm_now: false,
+        include_rejected_evidence: false,
+        remove_weak_warnings: false,
+        duplicates_amplify_risk: false,
+        provider_output_is_truth: false,
+        official_verification: false,
+        full_web_coverage: false,
+        full_platform_coverage: false,
+        full_thread_coverage: false,
+      })
+      setFinalSummaryReportExportArtifacts(await listAnalysisRequestFinalSummaryReportExportArtifacts(selectedRecord.request_id))
+      setFinalSummaryReportExportArtifactAudits(await listAnalysisRequestFinalSummaryReportExportArtifactAudits(selectedRecord.request_id))
+      message.success(`Created local export artifact: ${artifact?.artifact_type || 'artifact'}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create Final Summary Report Export Artifact.'
+      setFinalSummaryReportExportArtifactError(String(messageText))
+    } finally {
+      setFinalSummaryReportExportArtifactLoading(false)
     }
   }
 
@@ -2510,6 +2602,17 @@ export function AnalysisRequests() {
   const finalSummaryReportExportGateAuditsJson = finalSummaryReportExportGateAudits.length
     ? JSON.stringify(finalSummaryReportExportGateAudits, null, 2)
     : ''
+  const latestFinalSummaryReportExportGateAudit = finalSummaryReportExportGateAudits[0] || null
+  const latestFinalSummaryReportExportArtifact = finalSummaryReportExportArtifacts[0] || null
+  const latestFinalSummaryReportExportArtifactJson = latestFinalSummaryReportExportArtifact
+    ? JSON.stringify(latestFinalSummaryReportExportArtifact, null, 2)
+    : ''
+  const finalSummaryReportExportArtifactsJson = finalSummaryReportExportArtifacts.length
+    ? JSON.stringify(finalSummaryReportExportArtifacts, null, 2)
+    : ''
+  const finalSummaryReportExportArtifactAuditsJson = finalSummaryReportExportArtifactAudits.length
+    ? JSON.stringify(finalSummaryReportExportArtifactAudits, null, 2)
+    : ''
   const analysisReadyPromotionGateValues = Form.useWatch([], analysisReadyPromotionGateForm) || {}
   const dedupGroupsNeedReview = useMemo(
     () => (latestDedupPreview?.groups || []).some((group) => !['confirmed', 'marked_weak', 'representative_changed', 'rejected'].includes(group.group_status)),
@@ -2757,6 +2860,34 @@ export function AnalysisRequests() {
     latestFinalSummaryReport?.final_summary_report_id,
     latestFinalSummaryReport?.status,
     latestFinalSummaryReportAudit?.final_summary_report_audit_id,
+  ])
+  const finalSummaryReportExportArtifactValues = Form.useWatch([], finalSummaryReportExportArtifactForm) || {}
+  const finalSummaryReportExportArtifactReady = useMemo(() => {
+    return Boolean(
+      latestFinalSummaryReportExportGate?.export_gate_id &&
+        latestFinalSummaryReportExportGate?.status === 'ready_for_future_export_runtime' &&
+        latestFinalSummaryReportExportGateAudit?.export_gate_audit_id &&
+        String(finalSummaryReportExportArtifactValues.reviewer_label || '').trim() &&
+        String(finalSummaryReportExportArtifactValues.note || '').trim() &&
+        finalSummaryReportExportArtifactValues.artifact_type &&
+        finalSummaryReportExportArtifactValues.acknowledge_export_artifact_only &&
+        finalSummaryReportExportArtifactValues.acknowledge_no_b_end_report &&
+        finalSummaryReportExportArtifactValues.acknowledge_no_sandbox_or_public_event &&
+        finalSummaryReportExportArtifactValues.acknowledge_no_evidence_layer_write &&
+        finalSummaryReportExportArtifactValues.acknowledge_no_production_case &&
+        finalSummaryReportExportArtifactValues.acknowledge_provider_output_is_evidence_not_truth &&
+        finalSummaryReportExportArtifactValues.acknowledge_not_official_verification &&
+        finalSummaryReportExportArtifactValues.acknowledge_not_full_web_coverage &&
+        finalSummaryReportExportArtifactValues.acknowledge_weak_evidence_warning &&
+        finalSummaryReportExportArtifactValues.acknowledge_rejected_exclusion &&
+        finalSummaryReportExportArtifactValues.acknowledge_dedup_no_risk_amplification &&
+        finalSummaryReportExportArtifactValues.acknowledge_audit_trace_required,
+    )
+  }, [
+    finalSummaryReportExportArtifactValues,
+    latestFinalSummaryReportExportGate?.export_gate_id,
+    latestFinalSummaryReportExportGate?.status,
+    latestFinalSummaryReportExportGateAudit?.export_gate_audit_id,
   ])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
@@ -7177,6 +7308,244 @@ export function AnalysisRequests() {
                                       <Text type="secondary">b_end={boolText(audit.now_flags?.b_end_report_now)}</Text>
                                       <Text type="secondary">sandbox={boolText(audit.now_flags?.sandbox_now)}</Text>
                                       <Text type="secondary">public={boolText(audit.now_flags?.public_event_now)}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Final Summary Report Export Artifact / 最终摘要报告导出物">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Local runtime export artifact only"
+                              description="This creates a local artifact under ignored runtime only. It is not a B-end report, Sandbox fixture, public event, Evidence Layer write, production case, official verification, full-web/full-platform/full-thread coverage, or public download. PDF is unsupported unless a safe repo-local renderer exists; PPTX binary is unsupported and deck outline is JSON only."
+                            />
+                            {finalSummaryReportExportArtifactError ? (
+                              <Alert type="error" showIcon message={finalSummaryReportExportArtifactError} />
+                            ) : null}
+                            <Form
+                              form={finalSummaryReportExportArtifactForm}
+                              layout="vertical"
+                              initialValues={{
+                                reviewer_label: 'local_export_artifact_reviewer',
+                                note: 'Create local export artifact under ignored runtime only.',
+                                artifact_type: 'analyst_markdown',
+                                acknowledge_export_artifact_only: true,
+                                acknowledge_no_b_end_report: true,
+                                acknowledge_no_sandbox_or_public_event: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_provider_output_is_evidence_not_truth: true,
+                                acknowledge_not_official_verification: true,
+                                acknowledge_not_full_web_coverage: true,
+                                acknowledge_weak_evidence_warning: true,
+                                acknowledge_rejected_exclusion: true,
+                                acknowledge_dedup_no_risk_amplification: true,
+                                acknowledge_audit_trace_required: true,
+                              }}
+                              onFinish={handleCreateFinalSummaryReportExportArtifact}
+                            >
+                              <Row gutter={12}>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="final_summary_report_id" label="Final Summary Report ID">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestFinalSummaryReportExportGate?.final_summary_report_id || 'latest final summary report'}
+                                      options={finalSummaryReports.map((item) => ({
+                                        value: item.final_summary_report_id,
+                                        label: `${item.final_summary_report_id} / ${item.status}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="export_gate_id" label="Export Gate ID">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestFinalSummaryReportExportGate?.export_gate_id || 'latest ready export gate'}
+                                      options={finalSummaryReportExportGates.map((item) => ({
+                                        value: item.export_gate_id,
+                                        label: `${item.export_gate_id} / ${item.status}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="export_gate_audit_id" label="Export Gate Audit ID">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestFinalSummaryReportExportGateAudit?.export_gate_audit_id || 'latest export gate audit'}
+                                      options={finalSummaryReportExportGateAudits.map((item) => ({
+                                        value: item.export_gate_audit_id,
+                                        label: `${item.export_gate_audit_id} / ${item.decided_at || '-'}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="review_case_id" label="Review-only Case ID">
+                                    <Input placeholder={latestFinalSummaryReportExportGate?.review_case_id || 'latest review case'} />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="artifact_type" label="Artifact type" rules={[{ required: true }]}>
+                                    <Select options={FINAL_SUMMARY_EXPORT_ARTIFACT_TYPE_OPTIONS} />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="reviewer_label" label="Reviewer label" rules={[{ required: true }]}>
+                                    <Input />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24}>
+                                  <Form.Item name="note" label="Artifact note" rules={[{ required: true }]}>
+                                    <TextArea rows={2} />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={8}>
+                                {[
+                                  ['acknowledge_export_artifact_only', 'local export artifact only'],
+                                  ['acknowledge_no_b_end_report', 'not B-end report'],
+                                  ['acknowledge_no_sandbox_or_public_event', 'no Sandbox/public event'],
+                                  ['acknowledge_no_evidence_layer_write', 'no Evidence Layer write'],
+                                  ['acknowledge_no_production_case', 'no production case'],
+                                  ['acknowledge_provider_output_is_evidence_not_truth', 'provider output is evidence, not truth'],
+                                  ['acknowledge_not_official_verification', 'not official verification'],
+                                  ['acknowledge_not_full_web_coverage', 'not full-web coverage'],
+                                  ['acknowledge_weak_evidence_warning', 'preserve weak evidence warning'],
+                                  ['acknowledge_rejected_exclusion', 'rejected evidence remains excluded'],
+                                  ['acknowledge_dedup_no_risk_amplification', 'dedup no risk amplification'],
+                                  ['acknowledge_audit_trace_required', 'audit trace required'],
+                                ].map(([name, label]) => (
+                                  <Col xs={24} md={12} key={name}>
+                                    <Form.Item name={name} valuePropName="checked">
+                                      <Checkbox>{label}</Checkbox>
+                                    </Form.Item>
+                                  </Col>
+                                ))}
+                              </Row>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  icon={<FileJson size={16} />}
+                                  loading={finalSummaryReportExportArtifactLoading}
+                                  disabled={!finalSummaryReportExportArtifactReady || finalSummaryReportExportArtifactLoading}
+                                >
+                                  Create Local Export Artifact
+                                </Button>
+                                {latestFinalSummaryReportExportArtifact ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestFinalSummaryReportExportArtifactJson, 'Export artifact JSON copied')}
+                                  >
+                                    Copy latest artifact JSON
+                                  </Button>
+                                ) : null}
+                                {finalSummaryReportExportArtifacts.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(finalSummaryReportExportArtifactsJson, 'Export artifact history JSON copied')}
+                                  >
+                                    Copy artifact history JSON
+                                  </Button>
+                                ) : null}
+                                {finalSummaryReportExportArtifactAudits.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(finalSummaryReportExportArtifactAuditsJson, 'Export artifact audit JSON copied')}
+                                  >
+                                    Copy artifact audit JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+                            {latestFinalSummaryReportExportArtifact ? (
+                              <Card size="small" title="Latest Final Summary Report Export Artifact">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={FINAL_SUMMARY_EXPORT_ARTIFACT_STATUS_COLOR[latestFinalSummaryReportExportArtifact.status] || 'default'}>
+                                      {latestFinalSummaryReportExportArtifact.status}
+                                    </Tag>
+                                    <Tag color="blue">{latestFinalSummaryReportExportArtifact.artifact_type}</Tag>
+                                    <Tag>{latestFinalSummaryReportExportArtifact.artifact_format}</Tag>
+                                    <Text type="secondary">{latestFinalSummaryReportExportArtifact.export_artifact_id}</Text>
+                                  </Space>
+                                  <Descriptions size="small" column={1}>
+                                    <Descriptions.Item label="local_runtime_path">
+                                      {latestFinalSummaryReportExportArtifact.artifact_paths?.local_runtime_path || '-'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="public_url">
+                                      {latestFinalSummaryReportExportArtifact.artifact_paths?.public_url || 'none'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="artifact scope">
+                                      {Object.entries(latestFinalSummaryReportExportArtifact.artifact_scope || {})
+                                        .map(([key, value]) => `${key}=${String(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="source and scope">
+                                      {Object.entries(latestFinalSummaryReportExportArtifact.source_and_scope || {})
+                                        .map(([key, value]) => `${key}=${String(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="downstream flags">
+                                      {Object.entries(latestFinalSummaryReportExportArtifact.downstream_flags || {})
+                                        .map(([key, value]) => `${key}=${boolText(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="required next gates">
+                                      {Object.entries(latestFinalSummaryReportExportArtifact.required_next_gates || {})
+                                        .map(([key, value]) => `${key}=${boolText(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <Space wrap>
+                                    {Object.entries(latestFinalSummaryReportExportArtifact.export_sections || {}).map(([key, value]) => (
+                                      <Tag color={value ? 'blue' : 'red'} key={key}>
+                                        {key}={boolText(value)}
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                  <Space wrap>
+                                    {Object.entries(latestFinalSummaryReportExportArtifact.safe_mode || {}).map(([key, value]) => (
+                                      <Tag color={value && key !== 'local_export_artifact_only' ? 'red' : 'default'} key={key}>
+                                        {key}={boolText(value)}
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                  <SummaryList title="Warnings" items={latestFinalSummaryReportExportArtifact.warnings || []} />
+                                  <SummaryList title="Boundary notes" items={latestFinalSummaryReportExportArtifact.boundary_notes || []} />
+                                  <SummaryList
+                                    title="Audit refs"
+                                    items={Object.entries(latestFinalSummaryReportExportArtifact.audit_refs || {}).map(
+                                      ([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
+                                    )}
+                                  />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No Final Summary Report Export Artifact yet.</Text>
+                            )}
+                            {finalSummaryReportExportArtifactAudits.length ? (
+                              <Card size="small" title={`Export artifact audit timeline (${finalSummaryReportExportArtifactAudits.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {finalSummaryReportExportArtifactAudits.map((audit) => (
+                                    <Space wrap key={audit.export_artifact_audit_id}>
+                                      <Tag color="green">{audit.artifact_type}</Tag>
+                                      <Tag>{audit.artifact_format}</Tag>
+                                      <Text type="secondary">{audit.created_at || '-'}</Text>
+                                      <Text type="secondary">effect={audit.analysis_effect}</Text>
+                                      <Text type="secondary">b_end={boolText(audit.now_flags?.b_end_report_now)}</Text>
+                                      <Text type="secondary">sandbox={boolText(audit.now_flags?.generate_sandbox_now)}</Text>
+                                      <Text type="secondary">public={boolText(audit.now_flags?.generate_public_event_now)}</Text>
+                                      <Text type="secondary">llm={boolText(audit.now_flags?.call_llm_now)}</Text>
+                                      <Text type="secondary">fetch={boolText(audit.now_flags?.fetch_url_now)}</Text>
+                                      <Text type="secondary">rows={boolText(audit.now_flags?.read_original_rows_now)}</Text>
                                     </Space>
                                   ))}
                                 </Space>

@@ -37,6 +37,9 @@ from app.schemas.analysis_request import (
     ReportGenerationGateRequest,
     FinalSummaryReport,
     FinalSummaryReportAudit,
+    FinalSummaryReportExportArtifact,
+    FinalSummaryReportExportArtifactAudit,
+    FinalSummaryReportExportArtifactRequest,
     FinalSummaryReportExportGate,
     FinalSummaryReportExportGateAudit,
     FinalSummaryReportExportGateRequest,
@@ -83,6 +86,7 @@ from app.services.analysis_request_store import (
     create_manual_evidence_import_execution_preflight,
     create_manual_analysis_execution,
     create_final_summary_report,
+    create_final_summary_report_export_artifact,
     create_final_summary_report_export_gate,
     create_report_generation_gate,
     create_final_summary_report_review_gate,
@@ -112,6 +116,8 @@ from app.services.analysis_request_store import (
     list_all_report_generation_gate_audits,
     list_all_report_generation_gates,
     list_all_final_summary_report_audits,
+    list_all_final_summary_report_export_artifact_audits,
+    list_all_final_summary_report_export_artifacts,
     list_all_final_summary_report_export_gate_audits,
     list_all_final_summary_report_export_gates,
     list_all_final_summary_reports,
@@ -151,6 +157,9 @@ from app.services.analysis_request_store import (
     list_report_generation_gates,
     list_final_summary_report_audits,
     list_final_summary_report_audits_for_report,
+    list_final_summary_report_export_artifact_audits,
+    list_final_summary_report_export_artifact_audits_for_artifact,
+    list_final_summary_report_export_artifacts,
     list_final_summary_report_export_gate_audits,
     list_final_summary_report_export_gate_audits_for_gate,
     list_final_summary_report_export_gates,
@@ -187,6 +196,7 @@ from app.services.analysis_request_store import (
     read_manual_analysis_execution,
     read_manual_analysis_result_candidate,
     read_final_summary_report,
+    read_final_summary_report_export_artifact,
     read_final_summary_report_export_gate,
     read_report_generation_gate,
     read_final_summary_report_review_gate,
@@ -388,6 +398,16 @@ def analysis_request_final_summary_report_export_gate_all_list() -> list[FinalSu
 @router.get("/final-summary-report-export-gate-audits", response_model=list[FinalSummaryReportExportGateAudit])
 def analysis_request_final_summary_report_export_gate_audit_all_list() -> list[FinalSummaryReportExportGateAudit]:
     return list_all_final_summary_report_export_gate_audits()
+
+
+@router.get("/final-summary-report-export-artifacts", response_model=list[FinalSummaryReportExportArtifact])
+def analysis_request_final_summary_report_export_artifact_all_list() -> list[FinalSummaryReportExportArtifact]:
+    return list_all_final_summary_report_export_artifacts()
+
+
+@router.get("/final-summary-report-export-artifact-audits", response_model=list[FinalSummaryReportExportArtifactAudit])
+def analysis_request_final_summary_report_export_artifact_audit_all_list() -> list[FinalSummaryReportExportArtifactAudit]:
+    return list_all_final_summary_report_export_artifact_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -1426,6 +1446,65 @@ def analysis_request_final_summary_report_export_gate_audit_for_gate_list(
 ) -> list[FinalSummaryReportExportGateAudit]:
     try:
         return list_final_summary_report_export_gate_audits_for_gate(request_id, export_gate_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/final-summary-report-export-artifacts", response_model=list[FinalSummaryReportExportArtifact])
+def analysis_request_final_summary_report_export_artifact_list(request_id: str) -> list[FinalSummaryReportExportArtifact]:
+    try:
+        return list_final_summary_report_export_artifacts(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/final-summary-report-export-artifacts", response_model=FinalSummaryReportExportArtifact)
+def analysis_request_final_summary_report_export_artifact_create(
+    request_id: str,
+    payload: FinalSummaryReportExportArtifactRequest,
+) -> FinalSummaryReportExportArtifact:
+    try:
+        return create_final_summary_report_export_artifact(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/final-summary-report-export-artifacts/{export_artifact_id}",
+    response_model=FinalSummaryReportExportArtifact,
+)
+def analysis_request_final_summary_report_export_artifact_detail(
+    request_id: str,
+    export_artifact_id: str,
+) -> FinalSummaryReportExportArtifact:
+    try:
+        return read_final_summary_report_export_artifact(request_id, export_artifact_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/final-summary-report-export-artifact-audits", response_model=list[FinalSummaryReportExportArtifactAudit])
+def analysis_request_final_summary_report_export_artifact_audit_list(request_id: str) -> list[FinalSummaryReportExportArtifactAudit]:
+    try:
+        return list_final_summary_report_export_artifact_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/final-summary-report-export-artifacts/{export_artifact_id}/audits",
+    response_model=list[FinalSummaryReportExportArtifactAudit],
+)
+def analysis_request_final_summary_report_export_artifact_audit_for_artifact_list(
+    request_id: str,
+    export_artifact_id: str,
+) -> list[FinalSummaryReportExportArtifactAudit]:
+    try:
+        return list_final_summary_report_export_artifact_audits_for_artifact(request_id, export_artifact_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -3977,6 +3977,188 @@ class FinalSummaryReportExportGateAudit(BaseModel):
     )
 
 
+FinalSummaryReportExportArtifactType = Literal[
+    "analyst_markdown",
+    "executive_pdf",
+    "briefing_deck_outline",
+    "evidence_appendix_package",
+]
+
+FinalSummaryReportExportArtifactFormat = Literal["md", "pdf", "pptx_outline", "json_bundle"]
+
+FinalSummaryReportExportArtifactStatus = Literal[
+    "export_artifact_created",
+    "unsupported_format",
+    "blocked",
+    "privacy_hold",
+]
+
+
+class FinalSummaryReportExportArtifactRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    final_summary_report_id: str
+    export_gate_id: str
+    export_gate_audit_id: str
+    review_case_id: str | None = None
+    artifact_type: FinalSummaryReportExportArtifactType
+    reviewer_label: str
+    note: str
+    acknowledge_export_artifact_only: bool = False
+    acknowledge_no_b_end_report: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_provider_output_is_evidence_not_truth: bool = False
+    acknowledge_not_official_verification: bool = False
+    acknowledge_not_full_web_coverage: bool = False
+    acknowledge_weak_evidence_warning: bool = False
+    acknowledge_rejected_exclusion: bool = False
+    acknowledge_dedup_no_risk_amplification: bool = False
+    acknowledge_audit_trace_required: bool = False
+
+
+class FinalSummaryReportExportArtifact(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_final_summary_report_export_artifact_v1"] = Field(
+        default="sentigraph_final_summary_report_export_artifact_v1",
+        alias="schema",
+    )
+    export_artifact_id: str
+    request_id: str
+    review_case_id: str
+    final_summary_report_id: str
+    export_gate_id: str
+    export_gate_audit_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    status: FinalSummaryReportExportArtifactStatus = "export_artifact_created"
+    artifact_type: FinalSummaryReportExportArtifactType
+    artifact_format: FinalSummaryReportExportArtifactFormat
+    artifact_scope: dict[str, bool | str] = Field(
+        default_factory=lambda: {
+            "source": "final_summary_report",
+            "is_b_end_report": False,
+            "is_public_event": False,
+            "is_sandbox": False,
+            "is_production_case": False,
+        }
+    )
+    artifact_paths: dict[str, str | None] = Field(default_factory=dict)
+    export_sections: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "boundary_block": True,
+            "evidence_scope": True,
+            "coverage_limitation": True,
+            "warnings": True,
+            "audit_trace": True,
+            "source_and_scope": True,
+        }
+    )
+    source_and_scope: dict[str, bool | str] = Field(
+        default_factory=lambda: {
+            "provider_output_evidence_not_truth": True,
+            "not_official_verification": True,
+            "not_full_web_coverage": True,
+            "not_full_platform_coverage": True,
+            "not_full_thread_coverage": True,
+        }
+    )
+    downstream_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "b_end_report_ready": False,
+            "sandbox_ready": False,
+            "public_event_ready": False,
+        }
+    )
+    required_next_gates: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "b_end_report_gate": True,
+            "sandbox_generation_gate": True,
+            "public_event_generation_gate": True,
+        }
+    )
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    audit_refs: dict[str, list[str]] = Field(default_factory=dict)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "local_export_artifact_only": True,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_engine_called_again": False,
+            "original_package_rows_re_read": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class FinalSummaryReportExportArtifactAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_final_summary_report_export_artifact_audit_v1"] = Field(
+        default="sentigraph_final_summary_report_export_artifact_audit_v1",
+        alias="schema",
+    )
+    export_artifact_audit_id: str
+    export_artifact_id: str
+    final_summary_report_id: str
+    export_gate_id: str
+    export_gate_audit_id: str
+    request_id: str
+    review_case_id: str
+    reviewer_label: str
+    created_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    artifact_type: FinalSummaryReportExportArtifactType
+    artifact_format: FinalSummaryReportExportArtifactFormat
+    analysis_effect: Literal["local_export_artifact_created_no_b_end_no_sandbox_no_public_event"] = (
+        "local_export_artifact_created_no_b_end_no_sandbox_no_public_event"
+    )
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "b_end_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "call_llm_now": False,
+            "fetch_url_now": False,
+            "read_original_rows_now": False,
+        }
+    )
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "final_summary_report_export_artifact_audit_only": True,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
