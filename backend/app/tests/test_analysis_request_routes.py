@@ -599,6 +599,36 @@ def route_report_export_download_package_gate_payload(**overrides: object) -> di
     return payload
 
 
+def route_report_export_download_package_artifact_payload(**overrides: object) -> dict:
+    payload = {
+        "download_package_gate_id": "",
+        "review_case_id": "",
+        "package_mode": "local_manifest_only",
+        "operator_label": "route_report_export_download_package_artifact_reviewer",
+        "note": "Route local manifest-only report export package artifact.",
+        "acknowledge_local_manifest_only": True,
+        "acknowledge_no_download_route": True,
+        "acknowledge_no_file_bytes": True,
+        "acknowledge_no_zip": True,
+        "acknowledge_no_public_or_signed_url": True,
+        "acknowledge_no_runtime_file_exposure": True,
+        "acknowledge_no_artifact_content_read": True,
+        "acknowledge_no_b_end_report": True,
+        "acknowledge_no_sandbox_or_public_event": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_provider_output_is_evidence_not_truth": True,
+        "acknowledge_not_official_verification": True,
+        "acknowledge_not_full_web_coverage": True,
+        "acknowledge_weak_evidence_warning": True,
+        "acknowledge_rejected_exclusion": True,
+        "acknowledge_dedup_no_risk_amplification": True,
+        "acknowledge_audit_trace_required": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def create_route_manual_trigger_ready_chain(tmp_path: Path):
     request_id, _preflight_id = create_route_real_preview_chain(tmp_path, package_dir=create_route_many_safe_preview_package(tmp_path))
     preview_response = client.post(
@@ -3491,6 +3521,152 @@ def test_analysis_request_report_export_download_package_gate_routes_create_list
     assert revision_response.status_code == 200
     assert revision_response.json()["status"] == "needs_revision"
     assert unsafe_response.status_code == 400
+
+
+def create_route_report_export_download_package_artifact_ready_chain(tmp_path: Path):
+    request_id, review_case_id, final_report, export_gate, artifact, artifact_audit = create_route_report_export_download_package_gate_ready_chain(tmp_path)
+    gate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/report-export-download-package-gates",
+        json=route_report_export_download_package_gate_payload(
+            export_artifact_id=artifact["export_artifact_id"],
+            export_artifact_audit_id=artifact_audit["export_artifact_audit_id"],
+            final_summary_report_id=final_report["final_summary_report_id"],
+            export_gate_id=export_gate["export_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert gate_response.status_code == 200
+    gate = gate_response.json()
+    gate_audit_response = client.get(f"/api/v1/analysis-requests/{request_id}/report-export-download-package-gate-audits")
+    assert gate_audit_response.status_code == 200
+    gate_audit = gate_audit_response.json()[0]
+    return request_id, review_case_id, final_report, export_gate, artifact, artifact_audit, gate, gate_audit
+
+
+def test_analysis_request_report_export_download_package_artifact_routes_create_list_read_audit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, review_case_id, _final_report, _export_gate, _artifact, _artifact_audit, gate, gate_audit = (
+        create_route_report_export_download_package_artifact_ready_chain(tmp_path)
+    )
+
+    create_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/report-export-download-package-artifacts",
+        json=route_report_export_download_package_artifact_payload(
+            download_package_gate_id=gate["download_package_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+
+    assert create_response.status_code == 200
+    body = create_response.json()
+    assert body["schema"] == "sentigraph_report_export_download_package_artifact_v1"
+    assert body["package_status"] == "local_manifest_ready"
+    assert body["package_type"] == "report_export_download_package_artifact"
+    assert body["package_version"] == "sentigraph_report_export_download_package_artifact_v1"
+    assert body["package_mode"] == "local_manifest_only"
+    assert body["download_package_gate_id"] == gate["download_package_gate_id"]
+    assert body["manifest_runtime_ref"].startswith(f"runtime/analysis_requests/report_export_download_packages/{request_id}/")
+    assert body["manifest_runtime_ref"].endswith("/manifest.json")
+    assert not body["manifest_runtime_ref"].startswith("/")
+    assert ":" not in body["manifest_runtime_ref"][:3]
+    assert body["manifest_summary"]["artifact_count"] == 1
+    assert body["manifest_summary"]["contains_public_url"] is False
+    assert body["manifest_summary"]["contains_signed_url"] is False
+    assert body["manifest_summary"]["contains_download_route"] is False
+    assert body["manifest_summary"]["contains_raw_author_identifier"] is False
+    assert body["manifest_summary"]["contains_secret_like_value"] is False
+    assert body["file_inventory_summary"]["absolute_paths_exposed"] is False
+    assert body["file_inventory_summary"]["file_bytes_exposed"] is False
+    assert body["boundary_block"]["creates_download_route_now"] is False
+    assert body["boundary_block"]["returns_file_bytes_now"] is False
+    assert body["boundary_block"]["generates_zip_now"] is False
+    assert body["boundary_block"]["generates_public_url_now"] is False
+    assert body["boundary_block"]["generates_signed_url_now"] is False
+    assert body["boundary_block"]["exposes_runtime_file_now"] is False
+    assert body["boundary_block"]["reads_artifact_file_content_now"] is False
+    assert body["boundary_block"]["generates_local_manifest_package_now"] is True
+    assert body["boundary_block"]["generates_b_end_report_now"] is False
+    assert body["boundary_block"]["generates_sandbox_now"] is False
+    assert body["boundary_block"]["generates_public_event_now"] is False
+    assert body["boundary_block"]["writes_evidence_layer_now"] is False
+    assert body["boundary_block"]["creates_production_case_now"] is False
+    assert body["boundary_block"]["calls_real_api_now"] is False
+    assert body["boundary_block"]["calls_real_llm_now"] is False
+    assert body["boundary_block"]["fetches_url_now"] is False
+    assert body["boundary_block"]["scrapes_now"] is False
+    assert "local_zip_candidate" in body["unsupported_modes"]
+    assert "public_download_route" in body["unsupported_modes"]
+    assert body["audit_trace"]["download_package_gate_audit_ids"] == [gate_audit["download_package_gate_audit_id"]]
+    assert "Provider output is evidence, not truth" in str(body["warnings"]) or "Provider output is evidence, not truth" in str(body["boundary_notes"])
+    assert "full-web" in str(body["warnings"]).lower()
+    body_text = str(body)
+    assert "'raw_author_id':" not in body_text
+    assert "'raw_author_name':" not in body_text
+    assert "'profile_url':" not in body_text
+    assert "'file_bytes':" not in body_text
+
+    read_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/report-export-download-package-artifacts/{body['package_artifact_id']}"
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/report-export-download-package-artifacts")
+    all_response = client.get("/api/v1/analysis-requests/report-export-download-package-artifacts")
+    audit_response = client.get(f"/api/v1/analysis-requests/{request_id}/report-export-download-package-artifact-audits")
+    all_audit_response = client.get("/api/v1/analysis-requests/report-export-download-package-artifact-audits")
+    artifact_audit_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/report-export-download-package-artifacts/{body['package_artifact_id']}/audits"
+    )
+    download_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/report-export-download-package-artifacts/{body['package_artifact_id']}/download"
+    )
+
+    assert read_response.status_code == 200
+    assert list_response.status_code == 200
+    assert all_response.status_code == 200
+    assert audit_response.status_code == 200
+    assert all_audit_response.status_code == 200
+    assert artifact_audit_response.status_code == 200
+    assert download_response.status_code == 404
+    assert list_response.json()[0]["package_artifact_id"] == body["package_artifact_id"]
+    assert audit_response.json()[0]["package_artifact_id"] == body["package_artifact_id"]
+    assert artifact_audit_response.json()[0]["analysis_effect"] == "local_manifest_package_created_no_download_no_zip_no_public_delivery"
+    assert artifact_audit_response.json()[0]["now_flags"]["download_route_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["return_file_bytes_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["zip_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["public_url_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["signed_url_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["read_artifact_file_content_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["generate_b_end_report_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["generate_sandbox_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["generate_public_event_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["write_evidence_layer_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["create_production_case_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["call_llm_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["fetch_url_now"] is False
+    assert artifact_audit_response.json()[0]["now_flags"]["read_original_rows_now"] is False
+    assert not list(tmp_path.rglob("*.zip"))
+    assert not (tmp_path / "download_routes").exists()
+    assert not (tmp_path / "b_end_reports").exists()
+    assert not (tmp_path / "sandbox_fixtures").exists()
+    assert not (tmp_path / "public_events").exists()
+
+    unsafe_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/report-export-download-package-artifacts",
+        json=route_report_export_download_package_artifact_payload(
+            download_package_gate_id=gate["download_package_gate_id"],
+            review_case_id=review_case_id,
+            package_mode="local_zip_candidate",
+        ),
+    )
+    public_url_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/report-export-download-package-artifacts",
+        json=route_report_export_download_package_artifact_payload(
+            download_package_gate_id=gate["download_package_gate_id"],
+            review_case_id=review_case_id,
+            public_url="https://public.example/report",
+        ),
+    )
+    assert unsafe_response.status_code == 400
+    assert public_url_response.status_code == 400
 
 
 def test_analysis_request_route_invalid_result_returns_warning(tmp_path: Path, monkeypatch) -> None:

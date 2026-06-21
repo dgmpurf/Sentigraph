@@ -33,6 +33,7 @@ import {
   createAnalysisRequestFinalSummaryReportExportGate,
   createAnalysisRequestFinalSummaryReportReviewGate,
   createAnalysisRequestReportExportDownloadPackageGate,
+  createAnalysisRequestReportExportDownloadPackageArtifact,
   createAnalysisRequestSummaryReportCandidate,
   createAnalysisRequest,
   createAnalysisRequestDedupGroupReviewAction,
@@ -81,6 +82,8 @@ import {
   listAnalysisRequestFinalSummaryReportReviewGates,
   listAnalysisRequestReportExportDownloadPackageGateAudits,
   listAnalysisRequestReportExportDownloadPackageGates,
+  listAnalysisRequestReportExportDownloadPackageArtifactAudits,
+  listAnalysisRequestReportExportDownloadPackageArtifacts,
   listAnalysisRequestSummaryReportCandidateAudits,
   listAnalysisRequestSummaryReportCandidates,
   listAnalysisRequestRealPackageRowPreviews,
@@ -313,9 +316,11 @@ const REPORT_EXPORT_DOWNLOAD_PACKAGE_DECISION_OPTIONS = [
 
 const REPORT_EXPORT_DOWNLOAD_PACKAGE_STATUS_COLOR = {
   ready_for_future_download_package_runtime: 'green',
+  local_manifest_ready: 'green',
   needs_revision: 'gold',
   blocked: 'red',
   privacy_hold: 'magenta',
+  failed_safe: 'red',
 }
 
 function statusTag(status) {
@@ -721,6 +726,7 @@ export function AnalysisRequests() {
   const [finalSummaryReportExportGateForm] = Form.useForm()
   const [finalSummaryReportExportArtifactForm] = Form.useForm()
   const [reportExportDownloadPackageGateForm] = Form.useForm()
+  const [reportExportDownloadPackageArtifactForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -765,6 +771,8 @@ export function AnalysisRequests() {
   const [finalSummaryReportExportArtifactAudits, setFinalSummaryReportExportArtifactAudits] = useState([])
   const [reportExportDownloadPackageGates, setReportExportDownloadPackageGates] = useState([])
   const [reportExportDownloadPackageGateAudits, setReportExportDownloadPackageGateAudits] = useState([])
+  const [reportExportDownloadPackageArtifacts, setReportExportDownloadPackageArtifacts] = useState([])
+  const [reportExportDownloadPackageArtifactAudits, setReportExportDownloadPackageArtifactAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -794,6 +802,7 @@ export function AnalysisRequests() {
   const [finalSummaryReportExportGateLoading, setFinalSummaryReportExportGateLoading] = useState(false)
   const [finalSummaryReportExportArtifactLoading, setFinalSummaryReportExportArtifactLoading] = useState(false)
   const [reportExportDownloadPackageGateLoading, setReportExportDownloadPackageGateLoading] = useState(false)
+  const [reportExportDownloadPackageArtifactLoading, setReportExportDownloadPackageArtifactLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -821,6 +830,7 @@ export function AnalysisRequests() {
   const [finalSummaryReportExportGateError, setFinalSummaryReportExportGateError] = useState('')
   const [finalSummaryReportExportArtifactError, setFinalSummaryReportExportArtifactError] = useState('')
   const [reportExportDownloadPackageGateError, setReportExportDownloadPackageGateError] = useState('')
+  const [reportExportDownloadPackageArtifactError, setReportExportDownloadPackageArtifactError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -872,6 +882,9 @@ export function AnalysisRequests() {
     setReportExportDownloadPackageGates([])
     setReportExportDownloadPackageGateAudits([])
     setReportExportDownloadPackageGateError('')
+    setReportExportDownloadPackageArtifacts([])
+    setReportExportDownloadPackageArtifactAudits([])
+    setReportExportDownloadPackageArtifactError('')
   }
 
   async function loadDraftAndPlan(requestId) {
@@ -1031,6 +1044,8 @@ export function AnalysisRequests() {
       setFinalSummaryReportExportArtifactAudits(await listAnalysisRequestFinalSummaryReportExportArtifactAudits(requestId))
       setReportExportDownloadPackageGates(await listAnalysisRequestReportExportDownloadPackageGates(requestId))
       setReportExportDownloadPackageGateAudits(await listAnalysisRequestReportExportDownloadPackageGateAudits(requestId))
+      setReportExportDownloadPackageArtifacts(await listAnalysisRequestReportExportDownloadPackageArtifacts(requestId))
+      setReportExportDownloadPackageArtifactAudits(await listAnalysisRequestReportExportDownloadPackageArtifactAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
@@ -2353,6 +2368,73 @@ export function AnalysisRequests() {
     }
   }
 
+  async function handleCreateReportExportDownloadPackageArtifact(values) {
+    if (!selectedRecord?.request_id || !latestReportExportDownloadPackageGate?.download_package_gate_id) return
+    setReportExportDownloadPackageArtifactLoading(true)
+    setReportExportDownloadPackageArtifactError('')
+    try {
+      const artifact = await createAnalysisRequestReportExportDownloadPackageArtifact(selectedRecord.request_id, {
+        download_package_gate_id: values.download_package_gate_id || latestReportExportDownloadPackageGate.download_package_gate_id,
+        review_case_id:
+          values.review_case_id ||
+          latestReportExportDownloadPackageGate.review_case_id ||
+          latestFinalSummaryReportExportArtifact?.review_case_id ||
+          latestFinalSummaryReport?.review_case_id,
+        package_mode: 'local_manifest_only',
+        operator_label: String(values.operator_label || '').trim(),
+        note: String(values.note || '').trim(),
+        acknowledge_local_manifest_only: Boolean(values.acknowledge_local_manifest_only),
+        acknowledge_no_download_route: Boolean(values.acknowledge_no_download_route),
+        acknowledge_no_file_bytes: Boolean(values.acknowledge_no_file_bytes),
+        acknowledge_no_zip: Boolean(values.acknowledge_no_zip),
+        acknowledge_no_public_or_signed_url: Boolean(values.acknowledge_no_public_or_signed_url),
+        acknowledge_no_runtime_file_exposure: Boolean(values.acknowledge_no_runtime_file_exposure),
+        acknowledge_no_artifact_content_read: Boolean(values.acknowledge_no_artifact_content_read),
+        acknowledge_no_b_end_report: Boolean(values.acknowledge_no_b_end_report),
+        acknowledge_no_sandbox_or_public_event: Boolean(values.acknowledge_no_sandbox_or_public_event),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_provider_output_is_evidence_not_truth: Boolean(values.acknowledge_provider_output_is_evidence_not_truth),
+        acknowledge_not_official_verification: Boolean(values.acknowledge_not_official_verification),
+        acknowledge_not_full_web_coverage: Boolean(values.acknowledge_not_full_web_coverage),
+        acknowledge_weak_evidence_warning: Boolean(values.acknowledge_weak_evidence_warning),
+        acknowledge_rejected_exclusion: Boolean(values.acknowledge_rejected_exclusion),
+        acknowledge_dedup_no_risk_amplification: Boolean(values.acknowledge_dedup_no_risk_amplification),
+        acknowledge_audit_trace_required: Boolean(values.acknowledge_audit_trace_required),
+        create_download_route_now: false,
+        return_file_bytes_now: false,
+        generate_public_url_now: false,
+        generate_signed_url_now: false,
+        generate_zip_now: false,
+        generate_binary_archive_now: false,
+        expose_runtime_file_now: false,
+        expose_absolute_path_now: false,
+        copy_artifact_file_content_now: false,
+        read_artifact_file_content_now: false,
+        parse_artifact_file_content_now: false,
+        generate_b_end_report_now: false,
+        generate_sandbox_now: false,
+        generate_public_event_now: false,
+        write_evidence_layer_now: false,
+        create_production_case_now: false,
+        call_real_api_now: false,
+        call_real_llm_now: false,
+        fetch_url_now: false,
+        scrape_now: false,
+        read_original_package_rows_now: false,
+      })
+      setReportExportDownloadPackageArtifacts(await listAnalysisRequestReportExportDownloadPackageArtifacts(selectedRecord.request_id))
+      setReportExportDownloadPackageArtifactAudits(await listAnalysisRequestReportExportDownloadPackageArtifactAudits(selectedRecord.request_id))
+      message.success(`Created local manifest-only package artifact: ${artifact?.package_status || 'created'}`)
+    } catch (requestError) {
+      const messageText =
+        requestError?.response?.data?.detail || requestError?.message || 'Unable to create Report Export Download / Package Artifact.'
+      setReportExportDownloadPackageArtifactError(String(messageText))
+    } finally {
+      setReportExportDownloadPackageArtifactLoading(false)
+    }
+  }
+
   async function copyText(text, successMessage) {
     try {
       await navigator.clipboard.writeText(text)
@@ -2734,6 +2816,16 @@ export function AnalysisRequests() {
   const reportExportDownloadPackageGateAuditsJson = reportExportDownloadPackageGateAudits.length
     ? JSON.stringify(reportExportDownloadPackageGateAudits, null, 2)
     : ''
+  const latestReportExportDownloadPackageArtifact = reportExportDownloadPackageArtifacts[0] || null
+  const latestReportExportDownloadPackageArtifactJson = latestReportExportDownloadPackageArtifact
+    ? JSON.stringify(latestReportExportDownloadPackageArtifact, null, 2)
+    : ''
+  const reportExportDownloadPackageArtifactsJson = reportExportDownloadPackageArtifacts.length
+    ? JSON.stringify(reportExportDownloadPackageArtifacts, null, 2)
+    : ''
+  const reportExportDownloadPackageArtifactAuditsJson = reportExportDownloadPackageArtifactAudits.length
+    ? JSON.stringify(reportExportDownloadPackageArtifactAudits, null, 2)
+    : ''
   const analysisReadyPromotionGateValues = Form.useWatch([], analysisReadyPromotionGateForm) || {}
   const dedupGroupsNeedReview = useMemo(
     () => (latestDedupPreview?.groups || []).some((group) => !['confirmed', 'marked_weak', 'representative_changed', 'rejected'].includes(group.group_status)),
@@ -3045,6 +3137,37 @@ export function AnalysisRequests() {
     latestFinalSummaryReportExportArtifact?.status,
     latestFinalSummaryReportExportArtifactAudit?.export_artifact_audit_id,
     reportExportDownloadPackageGateValues,
+  ])
+  const reportExportDownloadPackageArtifactValues = Form.useWatch([], reportExportDownloadPackageArtifactForm) || {}
+  const reportExportDownloadPackageArtifactReady = useMemo(() => {
+    return Boolean(
+      latestReportExportDownloadPackageGate?.download_package_gate_id &&
+        latestReportExportDownloadPackageGate?.status === 'ready_for_future_download_package_runtime' &&
+        String(reportExportDownloadPackageArtifactValues.operator_label || '').trim() &&
+        String(reportExportDownloadPackageArtifactValues.note || '').trim() &&
+        reportExportDownloadPackageArtifactValues.acknowledge_local_manifest_only &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_download_route &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_file_bytes &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_zip &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_public_or_signed_url &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_runtime_file_exposure &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_artifact_content_read &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_b_end_report &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_sandbox_or_public_event &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_evidence_layer_write &&
+        reportExportDownloadPackageArtifactValues.acknowledge_no_production_case &&
+        reportExportDownloadPackageArtifactValues.acknowledge_provider_output_is_evidence_not_truth &&
+        reportExportDownloadPackageArtifactValues.acknowledge_not_official_verification &&
+        reportExportDownloadPackageArtifactValues.acknowledge_not_full_web_coverage &&
+        reportExportDownloadPackageArtifactValues.acknowledge_weak_evidence_warning &&
+        reportExportDownloadPackageArtifactValues.acknowledge_rejected_exclusion &&
+        reportExportDownloadPackageArtifactValues.acknowledge_dedup_no_risk_amplification &&
+        reportExportDownloadPackageArtifactValues.acknowledge_audit_trace_required,
+    )
+  }, [
+    latestReportExportDownloadPackageGate?.download_package_gate_id,
+    latestReportExportDownloadPackageGate?.status,
+    reportExportDownloadPackageArtifactValues,
   ])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
@@ -7961,6 +8084,228 @@ export function AnalysisRequests() {
                                       <Text type="secondary">signed={boolText(audit.now_flags?.signed_url_now)}</Text>
                                       <Text type="secondary">rows={boolText(audit.now_flags?.read_original_rows_now)}</Text>
                                       <Text type="secondary">file_content={boolText(audit.now_flags?.read_runtime_file_content_now)}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Report Export Download / Package Runtime">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Local manifest-only runtime: no download route, no file bytes, no ZIP, no public or signed URL"
+                              description="This creates only safe local manifest metadata under ignored runtime storage. It does not expose runtime files, read or parse report artifact file content, copy export content into a bundle, generate B-end report, Sandbox, public event, Evidence Layer write, production case, real API, real LLM, URL fetch, or scraping."
+                            />
+                            {reportExportDownloadPackageArtifactError ? (
+                              <Alert type="error" showIcon message={reportExportDownloadPackageArtifactError} />
+                            ) : null}
+                            <Form
+                              form={reportExportDownloadPackageArtifactForm}
+                              layout="vertical"
+                              initialValues={{
+                                package_mode: 'local_manifest_only',
+                                operator_label: 'download_package_artifact_reviewer',
+                                note: 'Create local manifest-only package metadata. Do not create download routes, file bytes, ZIP, public URLs, signed URLs, or external delivery.',
+                                acknowledge_local_manifest_only: true,
+                                acknowledge_no_download_route: true,
+                                acknowledge_no_file_bytes: true,
+                                acknowledge_no_zip: true,
+                                acknowledge_no_public_or_signed_url: true,
+                                acknowledge_no_runtime_file_exposure: true,
+                                acknowledge_no_artifact_content_read: true,
+                                acknowledge_no_b_end_report: true,
+                                acknowledge_no_sandbox_or_public_event: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_provider_output_is_evidence_not_truth: true,
+                                acknowledge_not_official_verification: true,
+                                acknowledge_not_full_web_coverage: true,
+                                acknowledge_weak_evidence_warning: true,
+                                acknowledge_rejected_exclusion: true,
+                                acknowledge_dedup_no_risk_amplification: true,
+                                acknowledge_audit_trace_required: true,
+                              }}
+                              onFinish={handleCreateReportExportDownloadPackageArtifact}
+                            >
+                              <Row gutter={12}>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="download_package_gate_id" label="Download / Package Gate ID">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestReportExportDownloadPackageGate?.download_package_gate_id || 'latest ready gate'}
+                                      options={reportExportDownloadPackageGates
+                                        .filter((item) => item.status === 'ready_for_future_download_package_runtime')
+                                        .map((item) => ({
+                                          value: item.download_package_gate_id,
+                                          label: `${item.download_package_gate_id} / ${item.status}`,
+                                        }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="review_case_id" label="Review-only Case ID">
+                                    <Input placeholder={latestReportExportDownloadPackageGate?.review_case_id || 'latest review case'} />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="package_mode" label="Package mode">
+                                    <Select
+                                      disabled
+                                      options={[{ value: 'local_manifest_only', label: 'local_manifest_only / safe metadata only' }]}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="operator_label" label="Operator label" rules={[{ required: true }]}>
+                                    <Input />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24}>
+                                  <Form.Item name="note" label="Runtime note" rules={[{ required: true }]}>
+                                    <TextArea rows={2} />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={8}>
+                                {[
+                                  ['acknowledge_local_manifest_only', 'local manifest only'],
+                                  ['acknowledge_no_download_route', 'no download route'],
+                                  ['acknowledge_no_file_bytes', 'no file bytes'],
+                                  ['acknowledge_no_zip', 'no ZIP or binary archive'],
+                                  ['acknowledge_no_public_or_signed_url', 'no public or signed URL'],
+                                  ['acknowledge_no_runtime_file_exposure', 'no runtime file exposure'],
+                                  ['acknowledge_no_artifact_content_read', 'do not read artifact content'],
+                                  ['acknowledge_no_b_end_report', 'not B-end report'],
+                                  ['acknowledge_no_sandbox_or_public_event', 'no Sandbox/public event'],
+                                  ['acknowledge_no_evidence_layer_write', 'no Evidence Layer write'],
+                                  ['acknowledge_no_production_case', 'no production case'],
+                                  ['acknowledge_provider_output_is_evidence_not_truth', 'provider output is evidence, not truth'],
+                                  ['acknowledge_not_official_verification', 'not official verification'],
+                                  ['acknowledge_not_full_web_coverage', 'not full-web coverage'],
+                                  ['acknowledge_weak_evidence_warning', 'preserve weak evidence warning'],
+                                  ['acknowledge_rejected_exclusion', 'rejected evidence remains excluded'],
+                                  ['acknowledge_dedup_no_risk_amplification', 'dedup no risk amplification'],
+                                  ['acknowledge_audit_trace_required', 'audit trace required'],
+                                ].map(([name, label]) => (
+                                  <Col xs={24} md={12} key={name}>
+                                    <Form.Item name={name} valuePropName="checked">
+                                      <Checkbox>{label}</Checkbox>
+                                    </Form.Item>
+                                  </Col>
+                                ))}
+                              </Row>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  icon={<ShieldCheck size={16} />}
+                                  loading={reportExportDownloadPackageArtifactLoading}
+                                  disabled={!reportExportDownloadPackageArtifactReady || reportExportDownloadPackageArtifactLoading}
+                                >
+                                  Create local manifest package artifact
+                                </Button>
+                                {latestReportExportDownloadPackageArtifact ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestReportExportDownloadPackageArtifactJson, 'Package artifact JSON copied')}
+                                  >
+                                    Copy latest package artifact JSON
+                                  </Button>
+                                ) : null}
+                                {reportExportDownloadPackageArtifacts.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(reportExportDownloadPackageArtifactsJson, 'Package artifact history JSON copied')}
+                                  >
+                                    Copy package artifact history JSON
+                                  </Button>
+                                ) : null}
+                                {reportExportDownloadPackageArtifactAudits.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(reportExportDownloadPackageArtifactAuditsJson, 'Package artifact audit JSON copied')}
+                                  >
+                                    Copy package artifact audit JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+                            {latestReportExportDownloadPackageArtifact ? (
+                              <Card size="small" title="Latest local manifest package artifact">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={REPORT_EXPORT_DOWNLOAD_PACKAGE_STATUS_COLOR[latestReportExportDownloadPackageArtifact.package_status] || 'default'}>
+                                      {latestReportExportDownloadPackageArtifact.package_status}
+                                    </Tag>
+                                    <Tag color="blue">{latestReportExportDownloadPackageArtifact.package_mode}</Tag>
+                                    <Text type="secondary">{latestReportExportDownloadPackageArtifact.package_artifact_id}</Text>
+                                  </Space>
+                                  <Descriptions size="small" column={1}>
+                                    <Descriptions.Item label="manifest_runtime_ref (text only, not a download link)">
+                                      <Text code>{latestReportExportDownloadPackageArtifact.manifest_runtime_ref || '-'}</Text>
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="manifest summary">
+                                      {Object.entries(latestReportExportDownloadPackageArtifact.manifest_summary || {})
+                                        .map(([key, value]) => `${key}=${String(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="file inventory summary">
+                                      {Object.entries(latestReportExportDownloadPackageArtifact.file_inventory_summary || {})
+                                        .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join('|') : String(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="source export artifacts">
+                                      {(latestReportExportDownloadPackageArtifact.source_export_artifact_refs || [])
+                                        .map((item) =>
+                                          [item.export_artifact_id, item.artifact_type, item.artifact_format, item.status].filter(Boolean).join(' / '),
+                                        )
+                                        .join('; ') || '-'}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <Space wrap>
+                                    {Object.entries(latestReportExportDownloadPackageArtifact.boundary_block || {}).map(([key, value]) => (
+                                      <Tag
+                                        color={value && key !== 'generates_local_manifest_package_now' ? 'red' : 'default'}
+                                        key={key}
+                                      >
+                                        {key}={boolText(value)}
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                  <SummaryList title="Unsupported modes" items={latestReportExportDownloadPackageArtifact.unsupported_modes || []} />
+                                  <SummaryList title="Warnings" items={latestReportExportDownloadPackageArtifact.warnings || []} />
+                                  <SummaryList title="Boundary notes" items={latestReportExportDownloadPackageArtifact.boundary_notes || []} />
+                                  <SummaryList
+                                    title="Audit trace"
+                                    items={Object.entries(latestReportExportDownloadPackageArtifact.audit_trace || {}).map(
+                                      ([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
+                                    )}
+                                  />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No local manifest-only package artifact yet.</Text>
+                            )}
+                            {reportExportDownloadPackageArtifactAudits.length ? (
+                              <Card size="small" title={`Package artifact audit timeline (${reportExportDownloadPackageArtifactAudits.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {reportExportDownloadPackageArtifactAudits.map((audit) => (
+                                    <Space wrap key={audit.package_artifact_audit_id}>
+                                      <Tag color={REPORT_EXPORT_DOWNLOAD_PACKAGE_STATUS_COLOR[audit.new_status] || 'blue'}>
+                                        {audit.new_status}
+                                      </Tag>
+                                      <Text type="secondary">{audit.created_at || '-'}</Text>
+                                      <Text type="secondary">effect={audit.analysis_effect}</Text>
+                                      <Text type="secondary">download={boolText(audit.now_flags?.download_route_now)}</Text>
+                                      <Text type="secondary">file_bytes={boolText(audit.now_flags?.return_file_bytes_now)}</Text>
+                                      <Text type="secondary">zip={boolText(audit.now_flags?.zip_now)}</Text>
+                                      <Text type="secondary">public={boolText(audit.now_flags?.public_url_now)}</Text>
+                                      <Text type="secondary">signed={boolText(audit.now_flags?.signed_url_now)}</Text>
+                                      <Text type="secondary">artifact_content={boolText(audit.now_flags?.read_artifact_file_content_now)}</Text>
                                     </Space>
                                   ))}
                                 </Space>

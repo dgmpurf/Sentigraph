@@ -679,6 +679,38 @@ export async function listAnalysisRequestReportExportDownloadPackageGateAuditsFo
   return Array.isArray(data) ? data.map(normalizeReportExportDownloadPackageGateAudit).filter(Boolean) : []
 }
 
+export async function listAnalysisRequestReportExportDownloadPackageArtifacts(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/report-export-download-package-artifacts`)
+  return Array.isArray(data) ? data.map(normalizeReportExportDownloadPackageArtifact).filter(Boolean) : []
+}
+
+export async function createAnalysisRequestReportExportDownloadPackageArtifact(requestId, payload = {}) {
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/report-export-download-package-artifacts`,
+    payload,
+  )
+  return normalizeReportExportDownloadPackageArtifact(data)
+}
+
+export async function getAnalysisRequestReportExportDownloadPackageArtifact(requestId, packageArtifactId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/report-export-download-package-artifacts/${encodeURIComponent(packageArtifactId)}`,
+  )
+  return normalizeReportExportDownloadPackageArtifact(data)
+}
+
+export async function listAnalysisRequestReportExportDownloadPackageArtifactAudits(requestId) {
+  const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/report-export-download-package-artifact-audits`)
+  return Array.isArray(data) ? data.map(normalizeReportExportDownloadPackageArtifactAudit).filter(Boolean) : []
+}
+
+export async function listAnalysisRequestReportExportDownloadPackageArtifactAuditsForArtifact(requestId, packageArtifactId) {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/analysis-requests/${encodeURIComponent(requestId)}/report-export-download-package-artifacts/${encodeURIComponent(packageArtifactId)}/audits`,
+  )
+  return Array.isArray(data) ? data.map(normalizeReportExportDownloadPackageArtifactAudit).filter(Boolean) : []
+}
+
 export async function getExternalCollectorStatus() {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/status`)
   return data
@@ -3257,6 +3289,93 @@ function normalizeReportExportDownloadPackageGateAudit(data) {
     now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
     required_revisions: Array.isArray(data.required_revisions) ? data.required_revisions.map((item) => String(item)) : [],
     boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeReportExportDownloadPackageArtifact(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_report_export_download_package_artifact_v1'),
+    package_artifact_id: String(data.package_artifact_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    download_package_gate_id: String(data.download_package_gate_id || ''),
+    final_summary_report_export_artifact_ids: Array.isArray(data.final_summary_report_export_artifact_ids)
+      ? data.final_summary_report_export_artifact_ids.map((item) => String(item))
+      : [],
+    final_summary_report_id: String(data.final_summary_report_id || ''),
+    final_summary_report_export_gate_id: String(data.final_summary_report_export_gate_id || ''),
+    package_type: String(data.package_type || 'report_export_download_package_artifact'),
+    package_version: String(data.package_version || 'sentigraph_report_export_download_package_artifact_v1'),
+    package_mode: String(data.package_mode || 'local_manifest_only'),
+    package_status: String(data.package_status || 'blocked'),
+    manifest_id: String(data.manifest_id || ''),
+    manifest_runtime_ref: String(data.manifest_runtime_ref || ''),
+    manifest_summary:
+      data.manifest_summary && typeof data.manifest_summary === 'object'
+        ? normalizeSafeObject(data.manifest_summary)
+        : {},
+    file_inventory_summary:
+      data.file_inventory_summary && typeof data.file_inventory_summary === 'object'
+        ? normalizeSafeObject(data.file_inventory_summary)
+        : {},
+    source_export_artifact_refs: Array.isArray(data.source_export_artifact_refs)
+      ? data.source_export_artifact_refs.map((item) => normalizeSafeObject(item)).filter(Boolean)
+      : [],
+    unsupported_modes: Array.isArray(data.unsupported_modes) ? data.unsupported_modes.map((item) => String(item)) : [],
+    boundary_block:
+      data.boundary_block && typeof data.boundary_block === 'object'
+        ? normalizeBooleanMap(data.boundary_block)
+        : {},
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)) : [],
+    boundary_notes: Array.isArray(data.boundary_notes) ? data.boundary_notes.map((item) => String(item)) : [],
+    audit_trace:
+      data.audit_trace && typeof data.audit_trace === 'object'
+        ? normalizeSafeObject(data.audit_trace)
+        : {},
+    created_at: data.created_at ? String(data.created_at) : '',
+    updated_at: data.updated_at ? String(data.updated_at) : '',
+    created_by: String(data.created_by || 'sentigraph_local_ui'),
+    note: String(data.note || ''),
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+function normalizeReportExportDownloadPackageArtifactAudit(data) {
+  if (!data || typeof data !== 'object') return null
+  return {
+    schema: String(data.schema || 'sentigraph_report_export_download_package_artifact_audit_v1'),
+    package_artifact_audit_id: String(data.package_artifact_audit_id || ''),
+    package_artifact_id: String(data.package_artifact_id || ''),
+    request_id: String(data.request_id || ''),
+    review_case_id: String(data.review_case_id || ''),
+    download_package_gate_id: String(data.download_package_gate_id || ''),
+    final_summary_report_export_artifact_ids: Array.isArray(data.final_summary_report_export_artifact_ids)
+      ? data.final_summary_report_export_artifact_ids.map((item) => String(item))
+      : [],
+    final_summary_report_id: String(data.final_summary_report_id || ''),
+    final_summary_report_export_gate_id: String(data.final_summary_report_export_gate_id || ''),
+    action: String(data.action || 'package_artifact_created'),
+    previous_status: String(data.previous_status || 'not_created'),
+    new_status: String(data.new_status || 'local_manifest_ready'),
+    operator_label: String(data.operator_label || 'sentigraph_local_ui'),
+    created_at: data.created_at ? String(data.created_at) : '',
+    note: String(data.note || ''),
+    analysis_effect: String(data.analysis_effect || 'local_manifest_package_created_no_download_no_zip_no_public_delivery'),
+    boundary_confirmation_snapshot:
+      data.boundary_confirmation_snapshot && typeof data.boundary_confirmation_snapshot === 'object'
+        ? normalizeBooleanMap(data.boundary_confirmation_snapshot)
+        : {},
+    manifest_summary_snapshot:
+      data.manifest_summary_snapshot && typeof data.manifest_summary_snapshot === 'object'
+        ? normalizeSafeObject(data.manifest_summary_snapshot)
+        : {},
+    upstream_gate_refs:
+      data.upstream_gate_refs && typeof data.upstream_gate_refs === 'object'
+        ? normalizeSafeObject(data.upstream_gate_refs)
+        : {},
+    now_flags: data.now_flags && typeof data.now_flags === 'object' ? normalizeBooleanMap(data.now_flags) : {},
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
   }
 }

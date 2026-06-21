@@ -4399,6 +4399,247 @@ class ReportExportDownloadPackageGateAudit(BaseModel):
     )
 
 
+ReportExportDownloadPackageArtifactMode = Literal[
+    "local_manifest_only",
+    "local_controlled_bundle",
+    "local_zip_candidate",
+    "local_download_candidate",
+]
+
+ReportExportDownloadPackageArtifactStatus = Literal[
+    "local_manifest_ready",
+    "blocked",
+    "privacy_hold",
+    "failed_safe",
+]
+
+
+class ReportExportDownloadPackageArtifactRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    download_package_gate_id: str
+    review_case_id: str
+    package_mode: ReportExportDownloadPackageArtifactMode = "local_manifest_only"
+    operator_label: str
+    note: str
+    acknowledge_local_manifest_only: bool = False
+    acknowledge_no_download_route: bool = False
+    acknowledge_no_file_bytes: bool = False
+    acknowledge_no_zip: bool = False
+    acknowledge_no_public_or_signed_url: bool = False
+    acknowledge_no_runtime_file_exposure: bool = False
+    acknowledge_no_artifact_content_read: bool = False
+    acknowledge_no_b_end_report: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_provider_output_is_evidence_not_truth: bool = False
+    acknowledge_not_official_verification: bool = False
+    acknowledge_not_full_web_coverage: bool = False
+    acknowledge_weak_evidence_warning: bool = False
+    acknowledge_rejected_exclusion: bool = False
+    acknowledge_dedup_no_risk_amplification: bool = False
+    acknowledge_audit_trace_required: bool = False
+    create_download_route_now: bool = False
+    return_file_bytes_now: bool = False
+    generate_public_url_now: bool = False
+    generate_signed_url_now: bool = False
+    generate_zip_now: bool = False
+    generate_binary_archive_now: bool = False
+    expose_runtime_file_now: bool = False
+    expose_absolute_path_now: bool = False
+    copy_artifact_file_content_now: bool = False
+    read_artifact_file_content_now: bool = False
+    parse_artifact_file_content_now: bool = False
+    generate_b_end_report_now: bool = False
+    generate_sandbox_now: bool = False
+    generate_public_event_now: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    call_real_api_now: bool = False
+    call_real_llm_now: bool = False
+    fetch_url_now: bool = False
+    scrape_now: bool = False
+    read_original_package_rows_now: bool = False
+
+
+class ReportExportDownloadPackageArtifact(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_report_export_download_package_artifact_v1"] = Field(
+        default="sentigraph_report_export_download_package_artifact_v1",
+        alias="schema",
+    )
+    package_artifact_id: str
+    request_id: str
+    review_case_id: str
+    download_package_gate_id: str
+    final_summary_report_export_artifact_ids: list[str] = Field(default_factory=list)
+    final_summary_report_id: str
+    final_summary_report_export_gate_id: str
+    package_type: Literal["report_export_download_package_artifact"] = "report_export_download_package_artifact"
+    package_version: Literal["sentigraph_report_export_download_package_artifact_v1"] = (
+        "sentigraph_report_export_download_package_artifact_v1"
+    )
+    package_mode: Literal["local_manifest_only"] = "local_manifest_only"
+    package_status: ReportExportDownloadPackageArtifactStatus = "local_manifest_ready"
+    manifest_id: str
+    manifest_runtime_ref: str
+    manifest_summary: dict[str, bool | int | str] = Field(default_factory=dict)
+    file_inventory_summary: dict[str, bool | int | list[str]] = Field(default_factory=dict)
+    source_export_artifact_refs: list[dict[str, str]] = Field(default_factory=list)
+    unsupported_modes: list[str] = Field(
+        default_factory=lambda: [
+            "local_controlled_bundle",
+            "local_zip_candidate",
+            "public_download_route",
+            "signed_url_delivery",
+            "external_delivery",
+        ]
+    )
+    boundary_block: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "creates_download_route_now": False,
+            "returns_file_bytes_now": False,
+            "generates_public_url_now": False,
+            "generates_signed_url_now": False,
+            "generates_zip_now": False,
+            "generates_binary_archive_now": False,
+            "exposes_runtime_file_now": False,
+            "exposes_absolute_path_now": False,
+            "copies_artifact_file_content_now": False,
+            "reads_artifact_file_content_now": False,
+            "parses_artifact_file_content_now": False,
+            "generates_local_manifest_package_now": True,
+            "generates_b_end_report_now": False,
+            "generates_sandbox_now": False,
+            "generates_public_event_now": False,
+            "writes_evidence_layer_now": False,
+            "creates_production_case_now": False,
+            "calls_real_api_now": False,
+            "calls_real_llm_now": False,
+            "fetches_url_now": False,
+            "scrapes_now": False,
+            "reads_original_package_rows_now": False,
+        }
+    )
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    audit_trace: dict[str, list[str]] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    note: str = ""
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "local_manifest_package_artifact_only": True,
+            "download_route_created": False,
+            "file_bytes_returned": False,
+            "zip_package_created": False,
+            "binary_archive_created": False,
+            "public_url_created": False,
+            "signed_url_created": False,
+            "runtime_file_exposed": False,
+            "absolute_path_exposed": False,
+            "artifact_file_content_read": False,
+            "artifact_file_content_copied": False,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_engine_called_again": False,
+            "original_package_rows_re_read": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class ReportExportDownloadPackageArtifactAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_report_export_download_package_artifact_audit_v1"] = Field(
+        default="sentigraph_report_export_download_package_artifact_audit_v1",
+        alias="schema",
+    )
+    package_artifact_audit_id: str
+    package_artifact_id: str
+    request_id: str
+    review_case_id: str
+    download_package_gate_id: str
+    final_summary_report_export_artifact_ids: list[str] = Field(default_factory=list)
+    final_summary_report_id: str
+    final_summary_report_export_gate_id: str
+    action: Literal["package_artifact_created", "package_artifact_blocked", "manifest_created"] = (
+        "package_artifact_created"
+    )
+    previous_status: str = "not_created"
+    new_status: ReportExportDownloadPackageArtifactStatus = "local_manifest_ready"
+    operator_label: str = "sentigraph_local_ui"
+    created_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    analysis_effect: Literal["local_manifest_package_created_no_download_no_zip_no_public_delivery"] = (
+        "local_manifest_package_created_no_download_no_zip_no_public_delivery"
+    )
+    boundary_confirmation_snapshot: dict[str, bool] = Field(default_factory=dict)
+    manifest_summary_snapshot: dict[str, bool | int | str] = Field(default_factory=dict)
+    upstream_gate_refs: dict[str, list[str]] = Field(default_factory=dict)
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "download_route_now": False,
+            "return_file_bytes_now": False,
+            "zip_now": False,
+            "binary_archive_now": False,
+            "public_url_now": False,
+            "signed_url_now": False,
+            "expose_runtime_file_now": False,
+            "expose_absolute_path_now": False,
+            "read_artifact_file_content_now": False,
+            "copy_artifact_file_content_now": False,
+            "generate_b_end_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "call_llm_now": False,
+            "fetch_url_now": False,
+            "read_original_rows_now": False,
+        }
+    )
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "report_export_download_package_artifact_audit_only": True,
+            "download_route_created": False,
+            "file_bytes_returned": False,
+            "zip_package_created": False,
+            "public_url_created": False,
+            "signed_url_created": False,
+            "runtime_file_exposed": False,
+            "artifact_file_content_read": False,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
