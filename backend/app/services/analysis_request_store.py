@@ -96,6 +96,9 @@ from app.schemas.analysis_request import (
     FinalSummaryReport,
     FinalSummaryReportAudit,
     FinalSummaryReportDownstreamReadiness,
+    FinalSummaryReportExportGate,
+    FinalSummaryReportExportGateAudit,
+    FinalSummaryReportExportGateRequest,
     FinalSummaryReportRequest,
     FinalSummaryReportReviewGate,
     FinalSummaryReportReviewGateAudit,
@@ -1828,6 +1831,74 @@ def list_final_summary_report_audits_for_report(
     ]
 
 
+def read_final_summary_report_export_gate(request_id: str, export_gate_id: str) -> FinalSummaryReportExportGate:
+    gate_path = _final_summary_report_export_gate_path(request_id, export_gate_id)
+    if not gate_path.exists():
+        raise AnalysisRequestNotFoundError(f"Final summary report export gate {export_gate_id} was not found.")
+    try:
+        parsed = json.loads(gate_path.read_text(encoding="utf-8-sig"))
+        gate = FinalSummaryReportExportGate.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(f"Final summary report export gate {export_gate_id} is invalid.") from exc
+    if gate.request_id != request_id or gate.export_gate_id != export_gate_id:
+        raise AnalysisRequestValidationError("Final summary report export gate id mismatch.")
+    return gate
+
+
+def list_final_summary_report_export_gates(request_id: str) -> list[FinalSummaryReportExportGate]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    gates: list[FinalSummaryReportExportGate] = []
+    for path in sorted((root / "final_summary_report_export_gates").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        gates.append(read_final_summary_report_export_gate(request_id, _final_summary_report_export_gate_id_from_path(request_id, path)))
+    return gates
+
+
+def list_all_final_summary_report_export_gates() -> list[FinalSummaryReportExportGate]:
+    root = _ensure_root()
+    gates: list[FinalSummaryReportExportGate] = []
+    for path in sorted((root / "final_summary_report_export_gates").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        request_id, gate_id = _split_prefixed_id(path, "final_summary_report_export_gate")
+        gates.append(read_final_summary_report_export_gate(request_id, gate_id))
+    return gates
+
+
+def list_final_summary_report_export_gate_audits(request_id: str) -> list[FinalSummaryReportExportGateAudit]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    audits: list[FinalSummaryReportExportGateAudit] = []
+    for path in sorted((root / "final_summary_report_export_gate_audits").glob(f"{request_id}_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(FinalSummaryReportExportGateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid final summary report export gate audit: {type(exc).__name__}") from exc
+    return audits
+
+
+def list_all_final_summary_report_export_gate_audits() -> list[FinalSummaryReportExportGateAudit]:
+    root = _ensure_root()
+    audits: list[FinalSummaryReportExportGateAudit] = []
+    for path in sorted((root / "final_summary_report_export_gate_audits").glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(FinalSummaryReportExportGateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid final summary report export gate audit: {type(exc).__name__}") from exc
+    return audits
+
+
+def list_final_summary_report_export_gate_audits_for_gate(
+    request_id: str,
+    export_gate_id: str,
+) -> list[FinalSummaryReportExportGateAudit]:
+    return [
+        audit
+        for audit in list_final_summary_report_export_gate_audits(request_id)
+        if audit.export_gate_id == export_gate_id
+    ]
+
+
 def create_evidence_row_reader_dry_run(
     request_id: str,
     payload: EvidenceRowReaderDryRunCreate | dict[str, Any] | None = None,
@@ -3364,6 +3435,153 @@ def create_final_summary_report(
         audit.model_dump(mode="json", by_alias=True),
     )
     return read_final_summary_report(request_id, report_id)
+
+
+def create_final_summary_report_export_gate(
+    request_id: str,
+    payload: FinalSummaryReportExportGateRequest | dict[str, Any],
+) -> FinalSummaryReportExportGate:
+    try:
+        gate_payload = (
+            payload
+            if isinstance(payload, FinalSummaryReportExportGateRequest)
+            else FinalSummaryReportExportGateRequest.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(f"Cannot create final summary report export gate: invalid payload ({exc}).") from exc
+
+    _validate_final_summary_report_export_gate_payload(gate_payload)
+    read_analysis_request(request_id)
+    final_report = read_final_summary_report(request_id, gate_payload.final_summary_report_id)
+    final_report_audits = list_final_summary_report_audits_for_report(request_id, final_report.final_summary_report_id)
+    final_report_audit = next(
+        (
+            audit
+            for audit in final_report_audits
+            if audit.final_summary_report_audit_id == gate_payload.final_summary_report_audit_id
+        ),
+        None,
+    )
+    if final_report_audit is None:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: final summary report audit is missing.")
+    summary_candidate = read_summary_report_candidate(request_id, gate_payload.summary_report_candidate_id)
+    final_review_gate = read_final_summary_report_review_gate(request_id, gate_payload.final_report_review_gate_id)
+    report_gate = read_report_generation_gate(request_id, gate_payload.report_gate_id)
+    execution = read_manual_analysis_execution(request_id, gate_payload.manual_analysis_execution_id)
+    result_candidate = read_manual_analysis_result_candidate(request_id, gate_payload.result_candidate_id)
+    boundary_gate = read_analysis_result_boundary_gate(request_id, gate_payload.boundary_gate_id)
+    read_review_only_case(request_id, gate_payload.review_case_id or final_report.review_case_id)
+    summary_candidate_audits = list_summary_report_candidate_audits_for_candidate(request_id, summary_candidate.summary_report_candidate_id)
+    final_review_gate_audits = list_final_summary_report_review_gate_audits_for_gate(request_id, final_review_gate.final_report_review_gate_id)
+    report_gate_audits = list_report_generation_gate_audits_for_gate(request_id, report_gate.report_gate_id)
+    manual_execution_audits = list_manual_analysis_execution_audits_for_execution(request_id, execution.manual_analysis_execution_id)
+    boundary_gate_audits = list_analysis_result_boundary_gate_audits_for_gate(request_id, boundary_gate.boundary_gate_id)
+    _validate_final_summary_report_export_gate_prerequisites(
+        request_id,
+        gate_payload,
+        final_report,
+        final_report_audit,
+        summary_candidate,
+        final_review_gate,
+        report_gate,
+        execution,
+        result_candidate,
+        boundary_gate,
+        summary_candidate_audits,
+        final_review_gate_audits,
+        report_gate_audits,
+        manual_execution_audits,
+        boundary_gate_audits,
+    )
+
+    gate_id = _new_final_summary_report_export_gate_id()
+    audit_id = _new_final_summary_report_export_gate_audit_id()
+    status = _final_summary_report_export_gate_status(gate_payload.export_decision)
+    can_run_future_export = status == "ready_for_future_export_runtime"
+    audit_refs = {
+        "final_summary_report_audit_ids": [final_report_audit.final_summary_report_audit_id],
+        "final_summary_report_review_gate_audit_ids": [
+            audit.final_report_review_gate_audit_id for audit in final_review_gate_audits
+        ],
+        "summary_report_candidate_audit_ids": [
+            audit.summary_report_candidate_audit_id for audit in summary_candidate_audits
+        ],
+        "report_generation_gate_audit_ids": [audit.report_gate_audit_id for audit in report_gate_audits],
+        "manual_analysis_execution_audit_ids": [
+            audit.manual_analysis_execution_audit_id for audit in manual_execution_audits
+        ],
+        "boundary_gate_audit_ids": [audit.boundary_gate_audit_id for audit in boundary_gate_audits],
+    }
+    boundary_notes = _final_summary_report_export_gate_boundary_notes()
+    warnings = _final_summary_report_export_gate_warnings(final_report)
+    blocked_reasons = _final_summary_report_export_gate_blocked_reasons(
+        gate_payload.export_decision,
+        gate_payload.required_revisions,
+    )
+    downstream_readiness = {
+        "can_run_future_markdown_export_runtime": can_run_future_export,
+        "can_run_future_pdf_export_runtime": can_run_future_export,
+        "can_run_future_deck_outline_runtime": can_run_future_export,
+        "can_generate_export_now": False,
+        "can_generate_b_end_report_now": False,
+        "can_generate_sandbox_now": False,
+        "can_generate_public_event_now": False,
+        "requires_b_end_report_gate": True,
+        "requires_sandbox_gate": True,
+        "requires_public_event_gate": True,
+    }
+    gate = FinalSummaryReportExportGate(
+        export_gate_id=gate_id,
+        request_id=request_id,
+        review_case_id=final_report.review_case_id,
+        final_summary_report_id=final_report.final_summary_report_id,
+        final_summary_report_audit_id=final_report_audit.final_summary_report_audit_id,
+        summary_report_candidate_id=summary_candidate.summary_report_candidate_id,
+        final_report_review_gate_id=final_review_gate.final_report_review_gate_id,
+        report_gate_id=report_gate.report_gate_id,
+        result_candidate_id=result_candidate.result_candidate_id,
+        manual_analysis_execution_id=execution.manual_analysis_execution_id,
+        boundary_gate_id=boundary_gate.boundary_gate_id,
+        created_at=datetime.now(timezone.utc),
+        created_by=gate_payload.reviewer_label.strip(),
+        status=status,
+        export_decision=gate_payload.export_decision,
+        downstream_readiness=downstream_readiness,
+        blocked_reasons=blocked_reasons,
+        required_revisions=[item.strip() for item in gate_payload.required_revisions if item.strip()],
+        warnings=warnings,
+        boundary_notes=boundary_notes,
+        audit_refs=audit_refs,
+    )
+    audit = FinalSummaryReportExportGateAudit(
+        export_gate_audit_id=audit_id,
+        export_gate_id=gate_id,
+        final_summary_report_id=final_report.final_summary_report_id,
+        final_summary_report_audit_id=final_report_audit.final_summary_report_audit_id,
+        summary_report_candidate_id=summary_candidate.summary_report_candidate_id,
+        final_report_review_gate_id=final_review_gate.final_report_review_gate_id,
+        report_gate_id=report_gate.report_gate_id,
+        result_candidate_id=result_candidate.result_candidate_id,
+        manual_analysis_execution_id=execution.manual_analysis_execution_id,
+        boundary_gate_id=boundary_gate.boundary_gate_id,
+        request_id=request_id,
+        review_case_id=final_report.review_case_id,
+        reviewer_label=gate_payload.reviewer_label.strip(),
+        decided_at=datetime.now(timezone.utc),
+        note=gate_payload.note.strip(),
+        export_decision=gate_payload.export_decision,
+        required_revisions=[item.strip() for item in gate_payload.required_revisions if item.strip()],
+        boundary_notes=boundary_notes,
+    )
+    _write_json(
+        _final_summary_report_export_gate_path(request_id, gate_id),
+        gate.model_dump(mode="json", by_alias=True),
+    )
+    _write_json(
+        _final_summary_report_export_gate_audit_path(request_id, gate_id, audit_id),
+        audit.model_dump(mode="json", by_alias=True),
+    )
+    return read_final_summary_report_export_gate(request_id, gate_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -7386,6 +7604,293 @@ def _final_summary_report_payload_has_forbidden_extra(payload: FinalSummaryRepor
     return False
 
 
+def _validate_final_summary_report_export_gate_payload(payload: FinalSummaryReportExportGateRequest) -> None:
+    required_text = {
+        "final_summary_report_id": payload.final_summary_report_id,
+        "final_summary_report_audit_id": payload.final_summary_report_audit_id,
+        "summary_report_candidate_id": payload.summary_report_candidate_id,
+        "final_report_review_gate_id": payload.final_report_review_gate_id,
+        "report_gate_id": payload.report_gate_id,
+        "result_candidate_id": payload.result_candidate_id,
+        "manual_analysis_execution_id": payload.manual_analysis_execution_id,
+        "boundary_gate_id": payload.boundary_gate_id,
+        "reviewer_label": payload.reviewer_label,
+        "note": payload.note,
+    }
+    missing_text = [name for name, value in required_text.items() if not (value or "").strip()]
+    if missing_text:
+        raise AnalysisRequestValidationError(
+            f"Cannot create final summary report export gate: required fields are missing ({', '.join(missing_text)})."
+        )
+    if payload.export_decision == "request_revision" and not [item for item in payload.required_revisions if item.strip()]:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: request_revision requires revisions.")
+    acknowledgements = {
+        "acknowledge_export_gate_only": payload.acknowledge_export_gate_only,
+        "acknowledge_no_markdown_file_now": payload.acknowledge_no_markdown_file_now,
+        "acknowledge_no_pdf_file_now": payload.acknowledge_no_pdf_file_now,
+        "acknowledge_no_pptx_file_now": payload.acknowledge_no_pptx_file_now,
+        "acknowledge_no_b_end_report_generation": payload.acknowledge_no_b_end_report_generation,
+        "acknowledge_no_sandbox_or_public_event": payload.acknowledge_no_sandbox_or_public_event,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_provider_output_is_evidence_not_truth": payload.acknowledge_provider_output_is_evidence_not_truth,
+        "acknowledge_not_official_verification": payload.acknowledge_not_official_verification,
+        "acknowledge_not_full_web_coverage": payload.acknowledge_not_full_web_coverage,
+        "acknowledge_weak_evidence_warning": payload.acknowledge_weak_evidence_warning,
+        "acknowledge_rejected_exclusion": payload.acknowledge_rejected_exclusion,
+        "acknowledge_dedup_no_risk_amplification": payload.acknowledge_dedup_no_risk_amplification,
+        "acknowledge_audit_trace_required": payload.acknowledge_audit_trace_required,
+    }
+    missing_acknowledgements = [name for name, value in acknowledgements.items() if not value]
+    if missing_acknowledgements:
+        raise AnalysisRequestValidationError(
+            f"Cannot create final summary report export gate: acknowledgement flags are required ({', '.join(missing_acknowledgements)})."
+        )
+    side_effect_flags = {
+        "markdown_file_now": payload.markdown_file_now,
+        "pdf_file_now": payload.pdf_file_now,
+        "pptx_file_now": payload.pptx_file_now,
+        "b_end_report_now": payload.b_end_report_now,
+        "sandbox_now": payload.sandbox_now,
+        "public_event_now": payload.public_event_now,
+        "write_evidence_layer_now": payload.write_evidence_layer_now,
+        "create_production_case_now": payload.create_production_case_now,
+        "read_original_package_rows_now": payload.read_original_package_rows_now,
+        "call_llm_now": payload.call_llm_now,
+        "call_external_api_now": payload.call_external_api_now,
+        "provider_execution_requested": payload.provider_execution_requested,
+        "collector_job_requested": payload.collector_job_requested,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(
+            f"Cannot create final summary report export gate: side effect flags must remain false ({', '.join(enabled)})."
+        )
+    unsafe_claims = {
+        "include_rejected_evidence": payload.include_rejected_evidence,
+        "include_privacy_hold_evidence": payload.include_privacy_hold_evidence,
+        "include_needs_more_source_evidence": payload.include_needs_more_source_evidence,
+        "remove_weak_warnings": payload.remove_weak_warnings,
+        "duplicates_amplify_risk": payload.duplicates_amplify_risk,
+        "provider_output_is_truth": payload.provider_output_is_truth,
+        "official_verification": payload.official_verification,
+        "full_web_coverage": payload.full_web_coverage,
+        "full_platform_coverage": payload.full_platform_coverage,
+        "full_thread_coverage": payload.full_thread_coverage,
+    }
+    unsafe = [name for name, value in unsafe_claims.items() if value]
+    if unsafe:
+        raise AnalysisRequestValidationError(
+            f"Cannot create final summary report export gate: unsafe export claims are not allowed ({', '.join(unsafe)})."
+        )
+    if _final_summary_report_export_gate_payload_has_forbidden_extra(payload):
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: raw/private/secret-like fields are not allowed.")
+
+
+def _validate_final_summary_report_export_gate_prerequisites(
+    request_id: str,
+    payload: FinalSummaryReportExportGateRequest,
+    final_report: FinalSummaryReport,
+    final_report_audit: FinalSummaryReportAudit,
+    summary_candidate: SummaryReportCandidate,
+    final_review_gate: FinalSummaryReportReviewGate,
+    report_gate: ReportGenerationGate,
+    execution: ManualAnalysisExecution,
+    result_candidate: ManualAnalysisResultCandidate,
+    boundary_gate: AnalysisResultBoundaryGate,
+    summary_candidate_audits: list[SummaryReportCandidateAudit],
+    final_review_gate_audits: list[FinalSummaryReportReviewGateAudit],
+    report_gate_audits: list[ReportGenerationGateAudit],
+    manual_execution_audits: list[ManualAnalysisExecutionAudit],
+    boundary_gate_audits: list[AnalysisResultBoundaryGateAudit],
+) -> None:
+    if any(
+        item.request_id != request_id
+        for item in [final_report, summary_candidate, final_review_gate, report_gate, execution, result_candidate, boundary_gate]
+    ):
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: request_id mismatch.")
+    if payload.review_case_id and payload.review_case_id != final_report.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: review_case_id mismatch.")
+    if len({final_report.review_case_id, summary_candidate.review_case_id, final_review_gate.review_case_id, report_gate.review_case_id, execution.review_case_id, result_candidate.review_case_id}) != 1:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: review_case_id mismatch.")
+    if final_report.status != "final_summary_report_created":
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: final summary report is not created.")
+    if final_report_audit.final_summary_report_id != final_report.final_summary_report_id:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: final summary report audit mismatch.")
+    if summary_candidate.status != "summary_report_candidate_created":
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: summary report candidate is not created.")
+    if final_review_gate.status != "ready_for_future_final_summary_report_runtime":
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: final summary report review gate is not ready.")
+    if report_gate.status != "report_gate_ready_for_future_runtime":
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: report gate is not ready.")
+    if execution.status != "analysis_result_candidate_created":
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: manual analysis execution is not ready.")
+    if boundary_gate.status != "boundary_ready_for_future_analysis_result_runtime":
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: boundary gate is not ready.")
+    if final_report.summary_report_candidate_id != summary_candidate.summary_report_candidate_id:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: summary candidate mismatch.")
+    if final_report.final_report_review_gate_id != final_review_gate.final_report_review_gate_id:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: final review gate mismatch.")
+    if final_report.report_gate_id != report_gate.report_gate_id or final_review_gate.report_gate_id != report_gate.report_gate_id:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: report gate refs mismatch.")
+    if final_report.result_candidate_id != result_candidate.result_candidate_id or summary_candidate.result_candidate_id != result_candidate.result_candidate_id:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: result candidate refs mismatch.")
+    if final_report.manual_analysis_execution_id != execution.manual_analysis_execution_id or summary_candidate.manual_analysis_execution_id != execution.manual_analysis_execution_id:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: manual analysis execution refs mismatch.")
+    if final_report.boundary_gate_id != boundary_gate.boundary_gate_id or summary_candidate.boundary_gate_id != boundary_gate.boundary_gate_id:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: boundary gate refs mismatch.")
+    if execution.result_candidate_id != result_candidate.result_candidate_id:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: execution result candidate mismatch.")
+    if not summary_candidate_audits:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: summary report candidate audit is missing.")
+    if not final_review_gate_audits:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: final summary report review gate audit is missing.")
+    if not report_gate_audits:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: report generation gate audit is missing.")
+    if not manual_execution_audits:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: manual analysis execution audit is missing.")
+    if not boundary_gate_audits:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: boundary gate audit is missing.")
+    required_sections = ["boundary_block", "evidence_scope", "warnings", "audit_trace"]
+    missing_sections = [section for section in required_sections if not final_report.report_sections.get(section)]
+    if missing_sections:
+        raise AnalysisRequestValidationError(
+            f"Cannot create final summary report export gate: required report sections are missing ({', '.join(missing_sections)})."
+        )
+    source_and_scope = final_report.source_and_scope or {}
+    required_scope_flags = [
+        "provider_output_evidence_not_truth",
+        "not_official_verification",
+        "not_full_web_coverage",
+        "not_full_platform_coverage",
+        "not_full_thread_coverage",
+    ]
+    missing_scope = [flag for flag in required_scope_flags if source_and_scope.get(flag) is not True]
+    if source_and_scope.get("source") != "summary_report_candidate" or missing_scope:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: source and scope boundaries are incomplete.")
+    if any(value is True for value in final_report.downstream_flags.values()):
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: final summary report downstream flags must remain false.")
+    unsafe_safe_mode = [
+        key
+        for key, value in final_report.safe_mode.items()
+        if value is True and key not in {"local_final_summary_report_only"}
+    ]
+    if unsafe_safe_mode:
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: final summary report safe mode is unsafe.")
+    serialized_report = json.dumps(final_report.model_dump(mode="json"), ensure_ascii=False).lower()
+    required_phrases = [
+        "evidence, not truth",
+        "official verification",
+        "full-web",
+        "full-platform",
+        "full-thread",
+        "weak evidence",
+        "rejected evidence",
+        "duplicate evidence",
+    ]
+    missing = [phrase for phrase in required_phrases if phrase not in serialized_report]
+    if missing:
+        raise AnalysisRequestValidationError(
+            f"Cannot create final summary report export gate: required boundary language is missing ({', '.join(missing)})."
+        )
+    serialized_sections = json.dumps(final_report.report_sections, ensure_ascii=False).lower()
+    forbidden_section_tokens = [
+        '"raw_author_id"',
+        '"raw_author_name"',
+        '"profile_url"',
+        '"private_message"',
+        '"cookie"',
+        '"token"',
+        '"api_key"',
+        '"password"',
+    ]
+    if any(token in serialized_sections for token in forbidden_section_tokens):
+        raise AnalysisRequestValidationError("Cannot create final summary report export gate: raw/private/secret-like fields are not allowed.")
+
+
+def _final_summary_report_export_gate_status(export_decision: str) -> str:
+    return {
+        "approve_for_future_export_runtime": "ready_for_future_export_runtime",
+        "request_revision": "needs_revision",
+        "block": "blocked",
+        "privacy_hold": "privacy_hold",
+    }[export_decision]
+
+
+def _final_summary_report_export_gate_blocked_reasons(
+    export_decision: str,
+    required_revisions: list[str],
+) -> list[str]:
+    if export_decision == "request_revision":
+        return ["Final Summary Report requires revision before future export runtime."]
+    if export_decision == "block":
+        return ["Final Summary Report export gate was blocked by human review."]
+    if export_decision == "privacy_hold":
+        return ["Privacy hold blocks export, B-end, Sandbox, and public-event downstream use."]
+    return []
+
+
+def _final_summary_report_export_gate_warnings(final_report: FinalSummaryReport) -> list[str]:
+    return _unique_preserve_order(
+        list(final_report.warnings)
+        + list(final_report.boundary_notes)
+        + [
+            "This is a local Final Summary Report Export Gate only; it does not generate Markdown, PDF, PPTX, B-end report, Sandbox, or public event output.",
+            "Future export runtime must preserve the boundary block.",
+            "Weak evidence remains warning-marked.",
+            "Rejected evidence remains excluded.",
+            "Duplicate evidence must not amplify risk, sentiment, coverage, or report conclusions.",
+            "Provider output is evidence, not truth.",
+            "This is not official verification.",
+            "This is not full-web, full-platform, or full-thread coverage.",
+        ]
+    )
+
+
+def _final_summary_report_export_gate_boundary_notes() -> list[str]:
+    return [
+        "Final Summary Report Export Gate only; no Markdown, PDF, PPTX, or briefing deck file generated.",
+        "No B-end report, Sandbox fixture, or public event page generated.",
+        "No Evidence Layer write and no production case creation.",
+        "No production review queue and no production dedup run.",
+        "No original package rows, evidence_items.jsonl, or evidence_items.csv were read.",
+        "No real API, real LLM, provider, collector, URL fetch, or scraping action was run.",
+        "Provider output is evidence, not truth.",
+        "This export gate is not official verification.",
+        "This export gate is not full-web, not full-platform, and not full-thread coverage.",
+        "Weak evidence remains warning-marked.",
+        "Rejected evidence remains excluded.",
+        "Duplicate evidence does not amplify risk, sentiment, coverage, or report conclusions.",
+        "Future Markdown/PDF/deck export, B-end report, Sandbox, and public event outputs require separate later runtimes or gates.",
+    ]
+
+
+def _final_summary_report_export_gate_payload_has_forbidden_extra(payload: FinalSummaryReportExportGateRequest) -> bool:
+    extra = getattr(payload, "model_extra", None) or {}
+    forbidden_names = {
+        "cookie",
+        "token",
+        "session",
+        "api_key",
+        ".env",
+        "raw_author_id",
+        "raw_author_name",
+        "profile_url",
+        "password",
+        "private_message",
+        "email",
+        "phone",
+    }
+    for key, value in extra.items():
+        key_text = str(key).lower()
+        value_text = str(value).lower() if isinstance(value, (str, int, float, bool)) else ""
+        if any(name in key_text for name in forbidden_names):
+            return True
+        if any(name in value_text for name in forbidden_names):
+            return True
+    return False
+
+
 def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -7816,6 +8321,8 @@ def _ensure_root() -> Path:
     (root / "final_summary_report_review_gate_audits").mkdir(parents=True, exist_ok=True)
     (root / "final_summary_reports").mkdir(parents=True, exist_ok=True)
     (root / "final_summary_report_audits").mkdir(parents=True, exist_ok=True)
+    (root / "final_summary_report_export_gates").mkdir(parents=True, exist_ok=True)
+    (root / "final_summary_report_export_gate_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -8076,6 +8583,21 @@ def _final_summary_report_audit_path(request_id: str, final_summary_report_id: s
     return root / "final_summary_report_audits" / f"{request_id}_{final_summary_report_id}_{audit_id}.json"
 
 
+def _final_summary_report_export_gate_path(request_id: str, export_gate_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(export_gate_id)
+    root = _ensure_root()
+    return root / "final_summary_report_export_gates" / f"{request_id}_{export_gate_id}.json"
+
+
+def _final_summary_report_export_gate_audit_path(request_id: str, export_gate_id: str, audit_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(export_gate_id)
+    _validate_request_id(audit_id)
+    root = _ensure_root()
+    return root / "final_summary_report_export_gate_audits" / f"{request_id}_{export_gate_id}_{audit_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -8141,6 +8663,13 @@ def _final_summary_report_id_from_path(request_id: str, path: Path) -> str:
     if parsed_request_id != request_id:
         raise AnalysisRequestValidationError("Final summary report request id mismatch.")
     return report_id
+
+
+def _final_summary_report_export_gate_id_from_path(request_id: str, path: Path) -> str:
+    parsed_request_id, gate_id = _split_prefixed_id(path, "final_summary_report_export_gate")
+    if parsed_request_id != request_id:
+        raise AnalysisRequestValidationError("Final summary report export gate request id mismatch.")
+    return gate_id
 
 
 def _new_request_id(title: str) -> str:
@@ -8292,6 +8821,16 @@ def _new_final_summary_report_id() -> str:
 def _new_final_summary_report_audit_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"final_summary_report_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_final_summary_report_export_gate_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"final_summary_report_export_gate_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_final_summary_report_export_gate_audit_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"final_summary_report_export_gate_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:

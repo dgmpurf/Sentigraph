@@ -3739,6 +3739,244 @@ class FinalSummaryReportAudit(BaseModel):
     )
 
 
+FinalSummaryReportExportDecision = Literal[
+    "approve_for_future_export_runtime",
+    "request_revision",
+    "block",
+    "privacy_hold",
+]
+
+FinalSummaryReportExportGateStatus = Literal[
+    "ready_for_future_export_runtime",
+    "needs_revision",
+    "blocked",
+    "privacy_hold",
+]
+
+
+class FinalSummaryReportExportGateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    final_summary_report_id: str
+    final_summary_report_audit_id: str
+    summary_report_candidate_id: str
+    final_report_review_gate_id: str
+    report_gate_id: str
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    boundary_gate_id: str
+    review_case_id: str | None = None
+    reviewer_label: str
+    note: str
+    export_decision: FinalSummaryReportExportDecision
+    required_revisions: list[str] = Field(default_factory=list)
+    acknowledge_export_gate_only: bool = False
+    acknowledge_no_markdown_file_now: bool = False
+    acknowledge_no_pdf_file_now: bool = False
+    acknowledge_no_pptx_file_now: bool = False
+    acknowledge_no_b_end_report_generation: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_provider_output_is_evidence_not_truth: bool = False
+    acknowledge_not_official_verification: bool = False
+    acknowledge_not_full_web_coverage: bool = False
+    acknowledge_weak_evidence_warning: bool = False
+    acknowledge_rejected_exclusion: bool = False
+    acknowledge_dedup_no_risk_amplification: bool = False
+    acknowledge_audit_trace_required: bool = False
+    markdown_file_now: bool = False
+    pdf_file_now: bool = False
+    pptx_file_now: bool = False
+    b_end_report_now: bool = False
+    sandbox_now: bool = False
+    public_event_now: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    read_original_package_rows_now: bool = False
+    call_llm_now: bool = False
+    call_external_api_now: bool = False
+    provider_execution_requested: bool = False
+    collector_job_requested: bool = False
+    include_rejected_evidence: bool = False
+    include_privacy_hold_evidence: bool = False
+    include_needs_more_source_evidence: bool = False
+    remove_weak_warnings: bool = False
+    duplicates_amplify_risk: bool = False
+    provider_output_is_truth: bool = False
+    official_verification: bool = False
+    full_web_coverage: bool = False
+    full_platform_coverage: bool = False
+    full_thread_coverage: bool = False
+
+
+class FinalSummaryReportExportGate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_final_summary_report_export_gate_v1"] = Field(
+        default="sentigraph_final_summary_report_export_gate_v1",
+        alias="schema",
+    )
+    export_gate_id: str
+    request_id: str
+    review_case_id: str
+    final_summary_report_id: str
+    final_summary_report_audit_id: str
+    summary_report_candidate_id: str
+    final_report_review_gate_id: str
+    report_gate_id: str
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    boundary_gate_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    status: FinalSummaryReportExportGateStatus
+    export_decision: FinalSummaryReportExportDecision
+    allowed_future_exports: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "markdown_export_candidate": True,
+            "pdf_export_candidate": True,
+            "briefing_deck_outline_candidate": True,
+            "evidence_appendix_package_candidate": True,
+        }
+    )
+    not_allowed_now: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "markdown_file_now": True,
+            "pdf_file_now": True,
+            "pptx_file_now": True,
+            "b_end_report_now": True,
+            "sandbox_now": True,
+            "public_event_now": True,
+        }
+    )
+    input_boundary: dict[str, bool | str] = Field(
+        default_factory=lambda: {
+            "source": "final_summary_report",
+            "read_original_package_rows_now": False,
+            "call_llm_now": False,
+            "call_external_api_now": False,
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+        }
+    )
+    required_export_sections: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "boundary_block": True,
+            "evidence_scope": True,
+            "coverage_limitation": True,
+            "warnings": True,
+            "audit_trace": True,
+            "source_and_scope": True,
+        }
+    )
+    downstream_readiness: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "can_run_future_markdown_export_runtime": True,
+            "can_run_future_pdf_export_runtime": True,
+            "can_run_future_deck_outline_runtime": True,
+            "can_generate_export_now": False,
+            "can_generate_b_end_report_now": False,
+            "can_generate_sandbox_now": False,
+            "can_generate_public_event_now": False,
+            "requires_b_end_report_gate": True,
+            "requires_sandbox_gate": True,
+            "requires_public_event_gate": True,
+        }
+    )
+    blocked_reasons: list[str] = Field(default_factory=list)
+    required_revisions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    audit_refs: dict[str, list[str]] = Field(default_factory=dict)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "final_summary_report_export_gate_only": True,
+            "markdown_file_generated": False,
+            "pdf_file_generated": False,
+            "pptx_file_generated": False,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_engine_called_again": False,
+            "original_package_rows_re_read": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class FinalSummaryReportExportGateAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_final_summary_report_export_gate_audit_v1"] = Field(
+        default="sentigraph_final_summary_report_export_gate_audit_v1",
+        alias="schema",
+    )
+    export_gate_audit_id: str
+    export_gate_id: str
+    final_summary_report_id: str
+    final_summary_report_audit_id: str
+    summary_report_candidate_id: str
+    final_report_review_gate_id: str
+    report_gate_id: str
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    boundary_gate_id: str
+    request_id: str
+    review_case_id: str
+    reviewer_label: str
+    decided_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    export_decision: FinalSummaryReportExportDecision
+    analysis_effect: Literal["final_summary_report_export_gate_record_only_no_export_generated"] = (
+        "final_summary_report_export_gate_record_only_no_export_generated"
+    )
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "markdown_file_now": False,
+            "pdf_file_now": False,
+            "pptx_file_now": False,
+            "b_end_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+        }
+    )
+    required_revisions: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "final_summary_report_export_gate_audit_only": True,
+            "markdown_file_generated": False,
+            "pdf_file_generated": False,
+            "pptx_file_generated": False,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
