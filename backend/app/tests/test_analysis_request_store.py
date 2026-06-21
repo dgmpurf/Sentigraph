@@ -26,6 +26,7 @@ from app.services.analysis_request_store import (
     create_report_generation_gate,
     create_summary_report_candidate,
     create_final_summary_report_review_gate,
+    create_final_summary_report,
     create_manual_analysis_execution,
     create_manual_analysis_trigger,
     create_review_queue_item_action,
@@ -53,6 +54,8 @@ from app.services.analysis_request_store import (
     list_summary_report_candidates,
     list_final_summary_report_review_gate_audits,
     list_final_summary_report_review_gates,
+    list_final_summary_report_audits,
+    list_final_summary_reports,
     list_manual_analysis_execution_audits,
     list_manual_analysis_executions,
     list_manual_analysis_result_candidates,
@@ -74,6 +77,7 @@ from app.services.analysis_request_store import (
     read_report_generation_gate,
     read_summary_report_candidate,
     read_final_summary_report_review_gate,
+    read_final_summary_report,
     read_manual_analysis_execution,
     read_manual_analysis_result_candidate,
     read_manual_analysis_trigger,
@@ -608,6 +612,37 @@ def final_summary_report_review_gate_payload(**overrides: object) -> dict:
         "acknowledge_no_final_summary_report_generation": True,
         "acknowledge_no_b_end_report_generation": True,
         "acknowledge_no_export_generation": True,
+        "acknowledge_no_sandbox_or_public_event": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_provider_output_is_evidence_not_truth": True,
+        "acknowledge_not_official_verification": True,
+        "acknowledge_not_full_web_coverage": True,
+        "acknowledge_weak_evidence_warning": True,
+        "acknowledge_rejected_exclusion": True,
+        "acknowledge_dedup_no_risk_amplification": True,
+        "acknowledge_audit_trace_required": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def final_summary_report_payload(**overrides: object) -> dict:
+    payload = {
+        "summary_report_candidate_id": "",
+        "final_report_review_gate_id": "",
+        "report_gate_id": "",
+        "result_candidate_id": "",
+        "manual_analysis_execution_id": "",
+        "boundary_gate_id": "",
+        "review_case_id": "",
+        "reviewer_label": "final_summary_report_reviewer",
+        "note": "Create local Final Summary Report object only.",
+        "acknowledge_local_final_summary_report_only": True,
+        "acknowledge_no_pdf_export": True,
+        "acknowledge_no_markdown_export": True,
+        "acknowledge_no_deck_export": True,
+        "acknowledge_no_b_end_report": True,
         "acknowledge_no_sandbox_or_public_event": True,
         "acknowledge_no_evidence_layer_write": True,
         "acknowledge_no_production_case": True,
@@ -4559,6 +4594,281 @@ def test_final_summary_report_review_gate_does_not_parse_original_package_rows(t
     serialized = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
     assert result.status == "ready_for_future_final_summary_report_runtime"
     assert "must_not_be_read_by_final_review_gate" not in serialized
+    assert "forbidden.example" not in serialized
+
+
+def create_final_summary_report_ready_chain(tmp_path: Path, request_id: str):
+    queue_init, item_batch, promotion_gate, manual_trigger, boundary_gate, execution, candidate, report_gate, summary_candidate = (
+        create_final_summary_report_review_gate_ready_chain(tmp_path, request_id)
+    )
+    final_review_gate = create_final_summary_report_review_gate(
+        request_id,
+        final_summary_report_review_gate_payload(
+            summary_report_candidate_id=summary_candidate.summary_report_candidate_id,
+            report_gate_id=report_gate.report_gate_id,
+            result_candidate_id=candidate.result_candidate_id,
+            manual_analysis_execution_id=execution.manual_analysis_execution_id,
+            boundary_gate_id=boundary_gate.boundary_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    return (
+        queue_init,
+        item_batch,
+        promotion_gate,
+        manual_trigger,
+        boundary_gate,
+        execution,
+        candidate,
+        report_gate,
+        summary_candidate,
+        final_review_gate,
+    )
+
+
+def test_final_summary_report_creates_local_report_and_audit_without_downstream_outputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Final summary report ready")))
+    (
+        queue_init,
+        item_batch,
+        _promotion_gate,
+        _manual_trigger,
+        boundary_gate,
+        execution,
+        candidate,
+        report_gate,
+        summary_candidate,
+        final_review_gate,
+    ) = create_final_summary_report_ready_chain(tmp_path, record.request_id)
+
+    result = create_final_summary_report(
+        record.request_id,
+        final_summary_report_payload(
+            summary_report_candidate_id=summary_candidate.summary_report_candidate_id,
+            final_report_review_gate_id=final_review_gate.final_report_review_gate_id,
+            report_gate_id=report_gate.report_gate_id,
+            result_candidate_id=candidate.result_candidate_id,
+            manual_analysis_execution_id=execution.manual_analysis_execution_id,
+            boundary_gate_id=boundary_gate.boundary_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    read_back = read_final_summary_report(record.request_id, result.final_summary_report_id)
+    reports = list_final_summary_reports(record.request_id)
+    audits = list_final_summary_report_audits(record.request_id)
+
+    assert result.schema_ == "sentigraph_final_summary_report_v1"
+    assert result.status == "final_summary_report_created"
+    assert result.review_case_id == queue_init.review_case_id
+    assert result.summary_report_candidate_id == summary_candidate.summary_report_candidate_id
+    assert result.final_report_review_gate_id == final_review_gate.final_report_review_gate_id
+    assert result.report_gate_id == report_gate.report_gate_id
+    assert result.result_candidate_id == candidate.result_candidate_id
+    assert result.manual_analysis_execution_id == execution.manual_analysis_execution_id
+    assert result.boundary_gate_id == boundary_gate.boundary_gate_id
+    assert result.report_sections["executive_summary"]["one_sentence_summary"]
+    assert result.report_sections["evidence_scope"]["not_full_web_coverage_note"]
+    assert result.report_sections["analysis_summary"]["analysis_summary"]
+    assert result.report_sections["risk_and_topic"]["risk_caveats"]
+    assert result.report_sections["representative_evidence"]["items"]
+    assert result.report_sections["limitations"]
+    assert result.report_sections["warnings"]
+    assert result.report_sections["boundary_block"]["provider_output_evidence_not_truth_note"]
+    assert result.report_sections["audit_trace"]["summary_report_candidate_audit_ids"]
+    assert result.report_sections["audit_trace"]["final_summary_report_review_gate_audit_ids"]
+    assert result.report_sections["audit_trace"]["report_generation_gate_audit_ids"]
+    assert result.report_sections["audit_trace"]["manual_analysis_execution_audit_ids"]
+    assert result.report_sections["audit_trace"]["boundary_gate_audit_ids"]
+    assert result.source_and_scope["source"] == "summary_report_candidate"
+    assert result.source_and_scope["provider_output_evidence_not_truth"] is True
+    assert result.source_and_scope["not_official_verification"] is True
+    assert result.source_and_scope["not_full_web_coverage"] is True
+    assert result.source_and_scope["not_full_platform_coverage"] is True
+    assert result.source_and_scope["not_full_thread_coverage"] is True
+    assert all(value is False for value in result.downstream_flags.values())
+    assert all(value is True for value in result.required_next_gates.values())
+    assert "Weak evidence" in " ".join(result.warnings + result.boundary_notes)
+    assert "Rejected evidence" in " ".join(result.warnings + result.boundary_notes)
+    assert "Duplicate evidence" in " ".join(result.warnings + result.boundary_notes)
+    assert "Provider output is evidence, not truth" in " ".join(result.warnings + result.boundary_notes)
+    assert read_back.final_summary_report_id == result.final_summary_report_id
+    assert reports[0].final_summary_report_id == result.final_summary_report_id
+    assert all(item.governance.analysis_included is False for item in item_batch.items)
+
+    serialized = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
+    assert "official verification" in serialized
+    assert "full-web" in serialized
+    assert "full-platform" in serialized
+    assert "full-thread" in serialized
+    assert '"raw_author_id"' not in serialized
+    assert '"raw_author_name"' not in serialized
+    assert '"profile_url"' not in serialized
+
+    assert len(audits) == 1
+    assert audits[0].final_summary_report_id == result.final_summary_report_id
+    assert audits[0].summary_report_candidate_id == summary_candidate.summary_report_candidate_id
+    assert audits[0].final_report_review_gate_id == final_review_gate.final_report_review_gate_id
+    assert audits[0].analysis_effect == "local_final_summary_report_created_no_export_no_b_end_no_sandbox_no_public_event"
+    assert audits[0].now_flags["pdf_export_now"] is False
+    assert audits[0].now_flags["markdown_export_now"] is False
+    assert audits[0].now_flags["deck_export_now"] is False
+    assert audits[0].now_flags["b_end_report_now"] is False
+    assert audits[0].now_flags["generate_sandbox_now"] is False
+    assert audits[0].now_flags["generate_public_event_now"] is False
+    assert audits[0].now_flags["write_evidence_layer_now"] is False
+    assert audits[0].now_flags["create_production_case_now"] is False
+    assert not (tmp_path / "exports").exists()
+    assert not (tmp_path / "b_end_reports").exists()
+    assert not (tmp_path / "sandbox_fixtures").exists()
+    assert not (tmp_path / "public_events").exists()
+    assert not (tmp_path / "production_cases").exists()
+
+
+def test_final_summary_report_blocks_unsafe_or_incomplete_payloads(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Final report blockers")))
+    queue_init, _item_batch, _promotion_gate, _manual_trigger, boundary_gate, execution, candidate, report_gate, summary_candidate, final_review_gate = (
+        create_final_summary_report_ready_chain(tmp_path, record.request_id)
+    )
+    base_payload = final_summary_report_payload(
+        summary_report_candidate_id=summary_candidate.summary_report_candidate_id,
+        final_report_review_gate_id=final_review_gate.final_report_review_gate_id,
+        report_gate_id=report_gate.report_gate_id,
+        result_candidate_id=candidate.result_candidate_id,
+        manual_analysis_execution_id=execution.manual_analysis_execution_id,
+        boundary_gate_id=boundary_gate.boundary_gate_id,
+        review_case_id=queue_init.review_case_id,
+    )
+
+    unsafe_payloads = [
+        {**base_payload, "summary_report_candidate_id": ""},
+        {**base_payload, "final_report_review_gate_id": ""},
+        {**base_payload, "report_gate_id": ""},
+        {**base_payload, "result_candidate_id": ""},
+        {**base_payload, "manual_analysis_execution_id": ""},
+        {**base_payload, "boundary_gate_id": ""},
+        {**base_payload, "reviewer_label": ""},
+        {**base_payload, "note": ""},
+        {**base_payload, "acknowledge_local_final_summary_report_only": False},
+        {**base_payload, "acknowledge_no_pdf_export": False},
+        {**base_payload, "acknowledge_no_markdown_export": False},
+        {**base_payload, "acknowledge_no_deck_export": False},
+        {**base_payload, "acknowledge_no_b_end_report": False},
+        {**base_payload, "acknowledge_no_sandbox_or_public_event": False},
+        {**base_payload, "acknowledge_no_evidence_layer_write": False},
+        {**base_payload, "acknowledge_no_production_case": False},
+        {**base_payload, "acknowledge_provider_output_is_evidence_not_truth": False},
+        {**base_payload, "acknowledge_not_official_verification": False},
+        {**base_payload, "acknowledge_not_full_web_coverage": False},
+        {**base_payload, "acknowledge_weak_evidence_warning": False},
+        {**base_payload, "acknowledge_rejected_exclusion": False},
+        {**base_payload, "acknowledge_dedup_no_risk_amplification": False},
+        {**base_payload, "acknowledge_audit_trace_required": False},
+        {**base_payload, "pdf_export_now": True},
+        {**base_payload, "markdown_export_now": True},
+        {**base_payload, "deck_export_now": True},
+        {**base_payload, "b_end_report_now": True},
+        {**base_payload, "sandbox_now": True},
+        {**base_payload, "public_event_now": True},
+        {**base_payload, "write_evidence_layer_now": True},
+        {**base_payload, "create_production_case_now": True},
+        {**base_payload, "read_original_package_rows_now": True},
+        {**base_payload, "call_llm_now": True},
+        {**base_payload, "call_external_api_now": True},
+        {**base_payload, "include_rejected_evidence": True},
+        {**base_payload, "remove_weak_warnings": True},
+        {**base_payload, "duplicates_amplify_risk": True},
+        {**base_payload, "official_verification": True},
+        {**base_payload, "full_web_coverage": True},
+        {**base_payload, "raw_author_id": "unsafe"},
+    ]
+    for payload in unsafe_payloads:
+        try:
+            create_final_summary_report(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - each unsafe payload should block.
+            assert "final summary report" in str(exc).lower()
+        else:
+            raise AssertionError(f"unsafe final summary report payload should block: {payload}")
+
+    audit_path = next((tmp_path / "final_summary_report_review_gate_audits").glob(f"{record.request_id}_{final_review_gate.final_report_review_gate_id}_*.json"))
+    audit_path.unlink()
+    try:
+        create_final_summary_report(record.request_id, base_payload)
+    except Exception as exc:  # noqa: BLE001 - missing final review audit should block.
+        assert "audit" in str(exc).lower()
+    else:
+        raise AssertionError("missing final review gate audit should block final summary report")
+
+
+def test_final_summary_report_requires_ready_review_gate(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Final report requires gate")))
+    queue_init, _item_batch, _promotion_gate, _manual_trigger, boundary_gate, execution, candidate, report_gate, summary_candidate = (
+        create_final_summary_report_review_gate_ready_chain(tmp_path, record.request_id)
+    )
+    revision_gate = create_final_summary_report_review_gate(
+        record.request_id,
+        final_summary_report_review_gate_payload(
+            summary_report_candidate_id=summary_candidate.summary_report_candidate_id,
+            report_gate_id=report_gate.report_gate_id,
+            result_candidate_id=candidate.result_candidate_id,
+            manual_analysis_execution_id=execution.manual_analysis_execution_id,
+            boundary_gate_id=boundary_gate.boundary_gate_id,
+            review_case_id=queue_init.review_case_id,
+            review_decision="request_revision",
+            required_revisions=["Clarify report scope before final runtime."],
+        ),
+    )
+
+    try:
+        create_final_summary_report(
+            record.request_id,
+            final_summary_report_payload(
+                summary_report_candidate_id=summary_candidate.summary_report_candidate_id,
+                final_report_review_gate_id=revision_gate.final_report_review_gate_id,
+                report_gate_id=report_gate.report_gate_id,
+                result_candidate_id=candidate.result_candidate_id,
+                manual_analysis_execution_id=execution.manual_analysis_execution_id,
+                boundary_gate_id=boundary_gate.boundary_gate_id,
+                review_case_id=queue_init.review_case_id,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - non-ready final gate should block.
+        assert "not ready" in str(exc).lower() or "ready" in str(exc).lower()
+    else:
+        raise AssertionError("non-ready final review gate should block final summary report")
+
+
+def test_final_summary_report_does_not_parse_original_package_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Final report no row parse")))
+    queue_init, _item_batch, _promotion_gate, _manual_trigger, boundary_gate, execution, candidate, report_gate, summary_candidate, final_review_gate = (
+        create_final_summary_report_ready_chain(tmp_path, record.request_id)
+    )
+    forbidden_row_file = tmp_path / "many_safe_real_preview_package" / "evidence_items.jsonl"
+    assert forbidden_row_file.exists()
+    forbidden_row_file.write_text(
+        '{"raw_author_id":"must_not_be_read_by_final_report","profile_url":"https://forbidden.example/profile","body_text":"unsafe row"}\n{broken',
+        encoding="utf-8",
+    )
+
+    result = create_final_summary_report(
+        record.request_id,
+        final_summary_report_payload(
+            summary_report_candidate_id=summary_candidate.summary_report_candidate_id,
+            final_report_review_gate_id=final_review_gate.final_report_review_gate_id,
+            report_gate_id=report_gate.report_gate_id,
+            result_candidate_id=candidate.result_candidate_id,
+            manual_analysis_execution_id=execution.manual_analysis_execution_id,
+            boundary_gate_id=boundary_gate.boundary_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+
+    serialized = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
+    assert result.status == "final_summary_report_created"
+    assert "must_not_be_read_by_final_report" not in serialized
     assert "forbidden.example" not in serialized
 
 
