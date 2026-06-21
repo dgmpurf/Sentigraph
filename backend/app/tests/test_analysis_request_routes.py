@@ -445,6 +445,37 @@ def route_summary_report_candidate_payload(**overrides: object) -> dict:
     return payload
 
 
+def route_final_summary_report_review_gate_payload(**overrides: object) -> dict:
+    payload = {
+        "summary_report_candidate_id": "",
+        "report_gate_id": "",
+        "result_candidate_id": "",
+        "manual_analysis_execution_id": "",
+        "boundary_gate_id": "",
+        "review_case_id": "",
+        "reviewer_label": "route_final_summary_reviewer",
+        "note": "Route Final Summary Report Review Gate only.",
+        "review_decision": "approve_for_future_final_runtime",
+        "required_revisions": [],
+        "acknowledge_review_gate_only": True,
+        "acknowledge_no_final_summary_report_generation": True,
+        "acknowledge_no_b_end_report_generation": True,
+        "acknowledge_no_export_generation": True,
+        "acknowledge_no_sandbox_or_public_event": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_provider_output_is_evidence_not_truth": True,
+        "acknowledge_not_official_verification": True,
+        "acknowledge_not_full_web_coverage": True,
+        "acknowledge_weak_evidence_warning": True,
+        "acknowledge_rejected_exclusion": True,
+        "acknowledge_dedup_no_risk_amplification": True,
+        "acknowledge_audit_trace_required": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def create_route_manual_trigger_ready_chain(tmp_path: Path):
     request_id, _preflight_id = create_route_real_preview_chain(tmp_path, package_dir=create_route_many_safe_preview_package(tmp_path))
     preview_response = client.post(
@@ -2536,6 +2567,134 @@ def test_analysis_request_summary_report_candidate_routes_create_list_read_audit
     unsafe_response = client.post(
         f"/api/v1/analysis-requests/{request_id}/summary-report-candidates",
         json=route_summary_report_candidate_payload(
+            report_gate_id=report_gate["report_gate_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+            final_report_now=True,
+        ),
+    )
+    assert unsafe_response.status_code == 400
+
+
+def test_analysis_request_final_summary_report_review_gate_routes_create_list_read_audit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    request_id, review_case_id, promotion_gate, manual_trigger, _item_ids = create_route_manual_trigger_ready_chain(tmp_path)
+    boundary_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/analysis-result-boundary-gates",
+        json=route_analysis_result_boundary_gate_payload(
+            manual_trigger_id=manual_trigger["manual_trigger_id"],
+            promotion_gate_id=promotion_gate["promotion_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert boundary_response.status_code == 200
+    boundary_gate = boundary_response.json()
+    execution_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/manual-analysis-executions",
+        json=route_manual_analysis_execution_payload(
+            manual_trigger_id=manual_trigger["manual_trigger_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            promotion_gate_id=promotion_gate["promotion_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert execution_response.status_code == 200
+    execution = execution_response.json()
+    report_gate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/report-generation-gates",
+        json=route_report_generation_gate_payload(
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert report_gate_response.status_code == 200
+    report_gate = report_gate_response.json()
+    summary_candidate_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/summary-report-candidates",
+        json=route_summary_report_candidate_payload(
+            report_gate_id=report_gate["report_gate_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+    assert summary_candidate_response.status_code == 200
+    summary_candidate = summary_candidate_response.json()
+
+    create_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-review-gates",
+        json=route_final_summary_report_review_gate_payload(
+            summary_report_candidate_id=summary_candidate["summary_report_candidate_id"],
+            report_gate_id=report_gate["report_gate_id"],
+            result_candidate_id=execution["result_candidate_id"],
+            manual_analysis_execution_id=execution["manual_analysis_execution_id"],
+            boundary_gate_id=boundary_gate["boundary_gate_id"],
+            review_case_id=review_case_id,
+        ),
+    )
+
+    assert create_response.status_code == 200
+    body = create_response.json()
+    assert body["schema"] == "sentigraph_final_summary_report_review_gate_v1"
+    assert body["status"] == "ready_for_future_final_summary_report_runtime"
+    assert body["review_decision"] == "approve_for_future_final_runtime"
+    assert body["input_boundary"]["source"] == "summary_report_candidate"
+    assert body["input_boundary"]["read_original_package_rows_now"] is False
+    assert body["input_boundary"]["call_llm_now"] is False
+    assert body["input_boundary"]["call_external_api_now"] is False
+    assert body["input_boundary"]["write_evidence_layer_now"] is False
+    assert body["input_boundary"]["create_production_case_now"] is False
+    assert body["downstream_readiness"]["can_run_future_final_summary_report_runtime"] is True
+    assert body["downstream_readiness"]["can_generate_final_summary_report_now"] is False
+    assert body["downstream_readiness"]["can_export_now"] is False
+    assert body["downstream_readiness"]["can_generate_b_end_report_now"] is False
+    assert body["downstream_readiness"]["can_generate_sandbox_now"] is False
+    assert body["downstream_readiness"]["can_generate_public_event_now"] is False
+    assert all(body["required_final_report_sections"].values())
+    assert body["audit_refs"]["summary_report_candidate_audit_ids"]
+    assert body["audit_refs"]["report_gate_audit_ids"]
+    assert body["audit_refs"]["manual_analysis_execution_audit_ids"]
+    assert body["audit_refs"]["boundary_gate_audit_ids"]
+    assert "Provider output is evidence, not truth" in str(body["boundary_notes"])
+    assert "not official verification" in str(body["boundary_notes"]).lower()
+    assert "full-web" in str(body["boundary_notes"]).lower()
+
+    read_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-review-gates/{body['final_report_review_gate_id']}"
+    )
+    list_response = client.get(f"/api/v1/analysis-requests/{request_id}/final-summary-report-review-gates")
+    all_response = client.get("/api/v1/analysis-requests/final-summary-report-review-gates")
+    audit_response = client.get(f"/api/v1/analysis-requests/{request_id}/final-summary-report-review-gate-audits")
+    all_audit_response = client.get("/api/v1/analysis-requests/final-summary-report-review-gate-audits")
+    gate_audit_response = client.get(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-review-gates/{body['final_report_review_gate_id']}/audits"
+    )
+
+    assert read_response.status_code == 200
+    assert list_response.status_code == 200
+    assert all_response.status_code == 200
+    assert audit_response.status_code == 200
+    assert all_audit_response.status_code == 200
+    assert gate_audit_response.status_code == 200
+    assert read_response.json()["final_report_review_gate_id"] == body["final_report_review_gate_id"]
+    assert list_response.json()[0]["final_report_review_gate_id"] == body["final_report_review_gate_id"]
+    assert audit_response.json()[0]["final_report_review_gate_id"] == body["final_report_review_gate_id"]
+    assert audit_response.json()[0]["analysis_effect"] == "final_summary_report_review_gate_record_only_no_final_report_generated"
+    assert gate_audit_response.json()[0]["now_flags"]["final_summary_report_now"] is False
+    assert gate_audit_response.json()[0]["now_flags"]["b_end_report_now"] is False
+    assert gate_audit_response.json()[0]["now_flags"]["export_now"] is False
+    assert gate_audit_response.json()[0]["now_flags"]["generate_sandbox_now"] is False
+    assert gate_audit_response.json()[0]["now_flags"]["generate_public_event_now"] is False
+
+    unsafe_response = client.post(
+        f"/api/v1/analysis-requests/{request_id}/final-summary-report-review-gates",
+        json=route_final_summary_report_review_gate_payload(
+            summary_report_candidate_id=summary_candidate["summary_report_candidate_id"],
             report_gate_id=report_gate["report_gate_id"],
             result_candidate_id=execution["result_candidate_id"],
             manual_analysis_execution_id=execution["manual_analysis_execution_id"],

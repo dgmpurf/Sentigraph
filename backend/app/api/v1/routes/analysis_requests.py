@@ -35,6 +35,9 @@ from app.schemas.analysis_request import (
     ReportGenerationGate,
     ReportGenerationGateAudit,
     ReportGenerationGateRequest,
+    FinalSummaryReportReviewGate,
+    FinalSummaryReportReviewGateAudit,
+    FinalSummaryReportReviewGateRequest,
     SummaryReportCandidate,
     SummaryReportCandidateAudit,
     SummaryReportCandidateRequest,
@@ -74,6 +77,7 @@ from app.services.analysis_request_store import (
     create_manual_evidence_import_execution_preflight,
     create_manual_analysis_execution,
     create_report_generation_gate,
+    create_final_summary_report_review_gate,
     create_summary_report_candidate,
     create_manual_analysis_trigger,
     create_analysis_request,
@@ -99,6 +103,8 @@ from app.services.analysis_request_store import (
     list_all_manual_analysis_result_candidates,
     list_all_report_generation_gate_audits,
     list_all_report_generation_gates,
+    list_all_final_summary_report_review_gate_audits,
+    list_all_final_summary_report_review_gates,
     list_all_summary_report_candidate_audits,
     list_all_summary_report_candidates,
     list_all_manual_analysis_trigger_audits,
@@ -131,6 +137,9 @@ from app.services.analysis_request_store import (
     list_report_generation_gate_audits,
     list_report_generation_gate_audits_for_gate,
     list_report_generation_gates,
+    list_final_summary_report_review_gate_audits,
+    list_final_summary_report_review_gate_audits_for_gate,
+    list_final_summary_report_review_gates,
     list_summary_report_candidate_audits,
     list_summary_report_candidate_audits_for_candidate,
     list_summary_report_candidates,
@@ -160,6 +169,7 @@ from app.services.analysis_request_store import (
     read_manual_analysis_execution,
     read_manual_analysis_result_candidate,
     read_report_generation_gate,
+    read_final_summary_report_review_gate,
     read_summary_report_candidate,
     read_manual_analysis_trigger,
     read_real_package_row_preview,
@@ -328,6 +338,16 @@ def analysis_request_summary_report_candidate_all_list() -> list[SummaryReportCa
 @router.get("/summary-report-candidate-audits", response_model=list[SummaryReportCandidateAudit])
 def analysis_request_summary_report_candidate_audit_all_list() -> list[SummaryReportCandidateAudit]:
     return list_all_summary_report_candidate_audits()
+
+
+@router.get("/final-summary-report-review-gates", response_model=list[FinalSummaryReportReviewGate])
+def analysis_request_final_summary_report_review_gate_all_list() -> list[FinalSummaryReportReviewGate]:
+    return list_all_final_summary_report_review_gates()
+
+
+@router.get("/final-summary-report-review-gate-audits", response_model=list[FinalSummaryReportReviewGateAudit])
+def analysis_request_final_summary_report_review_gate_audit_all_list() -> list[FinalSummaryReportReviewGateAudit]:
+    return list_all_final_summary_report_review_gate_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -1189,6 +1209,65 @@ def analysis_request_summary_report_candidate_audit_for_candidate_list(
 ) -> list[SummaryReportCandidateAudit]:
     try:
         return list_summary_report_candidate_audits_for_candidate(request_id, summary_report_candidate_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/final-summary-report-review-gates", response_model=list[FinalSummaryReportReviewGate])
+def analysis_request_final_summary_report_review_gate_list(request_id: str) -> list[FinalSummaryReportReviewGate]:
+    try:
+        return list_final_summary_report_review_gates(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/final-summary-report-review-gates", response_model=FinalSummaryReportReviewGate)
+def analysis_request_final_summary_report_review_gate_create(
+    request_id: str,
+    payload: FinalSummaryReportReviewGateRequest,
+) -> FinalSummaryReportReviewGate:
+    try:
+        return create_final_summary_report_review_gate(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/final-summary-report-review-gates/{final_report_review_gate_id}",
+    response_model=FinalSummaryReportReviewGate,
+)
+def analysis_request_final_summary_report_review_gate_detail(
+    request_id: str,
+    final_report_review_gate_id: str,
+) -> FinalSummaryReportReviewGate:
+    try:
+        return read_final_summary_report_review_gate(request_id, final_report_review_gate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/final-summary-report-review-gate-audits", response_model=list[FinalSummaryReportReviewGateAudit])
+def analysis_request_final_summary_report_review_gate_audit_list(request_id: str) -> list[FinalSummaryReportReviewGateAudit]:
+    try:
+        return list_final_summary_report_review_gate_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/final-summary-report-review-gates/{final_report_review_gate_id}/audits",
+    response_model=list[FinalSummaryReportReviewGateAudit],
+)
+def analysis_request_final_summary_report_review_gate_audit_for_gate_list(
+    request_id: str,
+    final_report_review_gate_id: str,
+) -> list[FinalSummaryReportReviewGateAudit]:
+    try:
+        return list_final_summary_report_review_gate_audits_for_gate(request_id, final_report_review_gate_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

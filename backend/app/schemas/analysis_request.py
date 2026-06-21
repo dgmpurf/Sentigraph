@@ -3341,6 +3341,214 @@ class SummaryReportCandidateAudit(BaseModel):
     )
 
 
+FinalSummaryReportReviewDecision = Literal[
+    "approve_for_future_final_runtime",
+    "request_revision",
+    "block",
+    "privacy_hold",
+]
+
+
+FinalSummaryReportReviewGateStatus = Literal[
+    "ready_for_future_final_summary_report_runtime",
+    "needs_revision",
+    "blocked",
+    "privacy_hold",
+]
+
+
+class FinalSummaryReportReviewGateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    summary_report_candidate_id: str
+    report_gate_id: str
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    boundary_gate_id: str
+    review_case_id: str | None = None
+    reviewer_label: str
+    note: str
+    review_decision: FinalSummaryReportReviewDecision
+    required_revisions: list[str] = Field(default_factory=list)
+    acknowledge_review_gate_only: bool = False
+    acknowledge_no_final_summary_report_generation: bool = False
+    acknowledge_no_b_end_report_generation: bool = False
+    acknowledge_no_export_generation: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_provider_output_is_evidence_not_truth: bool = False
+    acknowledge_not_official_verification: bool = False
+    acknowledge_not_full_web_coverage: bool = False
+    acknowledge_weak_evidence_warning: bool = False
+    acknowledge_rejected_exclusion: bool = False
+    acknowledge_dedup_no_risk_amplification: bool = False
+    acknowledge_audit_trace_required: bool = False
+    final_report_now: bool = False
+    final_summary_report_now: bool = False
+    b_end_report_now: bool = False
+    export_now: bool = False
+    sandbox_now: bool = False
+    public_event_now: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    read_original_package_rows_now: bool = False
+    call_llm_now: bool = False
+    call_external_api_now: bool = False
+    provider_execution_requested: bool = False
+    collector_job_requested: bool = False
+    include_rejected_evidence: bool = False
+    include_privacy_hold_evidence: bool = False
+    include_needs_more_source_evidence: bool = False
+    remove_weak_warnings: bool = False
+    duplicates_amplify_risk: bool = False
+    provider_output_is_truth: bool = False
+    official_verification: bool = False
+    full_web_coverage: bool = False
+    full_platform_coverage: bool = False
+    full_thread_coverage: bool = False
+
+
+class FinalSummaryReportRequiredSections(BaseModel):
+    executive_summary: bool = True
+    evidence_scope: bool = True
+    analysis_summary: bool = True
+    risk_and_topic: bool = True
+    representative_evidence: bool = True
+    boundary_block: bool = True
+    limitations: bool = True
+    warnings: bool = True
+    audit_trace: bool = True
+
+
+class FinalSummaryReportInputBoundary(BaseModel):
+    source: Literal["summary_report_candidate"] = "summary_report_candidate"
+    read_original_package_rows_now: bool = False
+    call_llm_now: bool = False
+    call_external_api_now: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+
+
+class FinalSummaryReportDownstreamReadiness(BaseModel):
+    can_run_future_final_summary_report_runtime: bool = False
+    can_generate_final_summary_report_now: bool = False
+    can_export_now: bool = False
+    can_generate_b_end_report_now: bool = False
+    can_generate_sandbox_now: bool = False
+    can_generate_public_event_now: bool = False
+    requires_export_gate: bool = True
+    requires_b_end_report_gate: bool = True
+    requires_sandbox_gate: bool = True
+    requires_public_event_gate: bool = True
+
+
+class FinalSummaryReportReviewGate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_final_summary_report_review_gate_v1"] = Field(
+        default="sentigraph_final_summary_report_review_gate_v1",
+        alias="schema",
+    )
+    final_report_review_gate_id: str
+    request_id: str
+    review_case_id: str
+    summary_report_candidate_id: str
+    report_gate_id: str
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    boundary_gate_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    status: FinalSummaryReportReviewGateStatus
+    review_decision: FinalSummaryReportReviewDecision
+    required_final_report_sections: FinalSummaryReportRequiredSections = Field(default_factory=FinalSummaryReportRequiredSections)
+    input_boundary: FinalSummaryReportInputBoundary = Field(default_factory=FinalSummaryReportInputBoundary)
+    downstream_readiness: FinalSummaryReportDownstreamReadiness = Field(default_factory=FinalSummaryReportDownstreamReadiness)
+    blocked_reasons: list[str] = Field(default_factory=list)
+    required_revisions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    audit_refs: dict[str, list[str]] = Field(default_factory=dict)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "final_summary_report_review_gate_only": True,
+            "final_summary_report_generated": False,
+            "b_end_report_generated": False,
+            "export_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "original_package_rows_re_read": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class FinalSummaryReportReviewGateAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_final_summary_report_review_gate_audit_v1"] = Field(
+        default="sentigraph_final_summary_report_review_gate_audit_v1",
+        alias="schema",
+    )
+    final_report_review_gate_audit_id: str
+    final_report_review_gate_id: str
+    summary_report_candidate_id: str
+    report_gate_id: str
+    result_candidate_id: str
+    manual_analysis_execution_id: str
+    boundary_gate_id: str
+    request_id: str
+    review_case_id: str
+    reviewer_label: str
+    decided_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    review_decision: FinalSummaryReportReviewDecision
+    analysis_effect: Literal["final_summary_report_review_gate_record_only_no_final_report_generated"] = (
+        "final_summary_report_review_gate_record_only_no_final_report_generated"
+    )
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "final_summary_report_now": False,
+            "b_end_report_now": False,
+            "export_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+        }
+    )
+    required_revisions: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "final_summary_report_review_gate_audit_only": True,
+            "final_summary_report_generated": False,
+            "b_end_report_generated": False,
+            "export_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
