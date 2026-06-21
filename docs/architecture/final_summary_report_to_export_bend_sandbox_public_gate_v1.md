@@ -1,146 +1,135 @@
-# Final Summary Report To Export / B-end / Sandbox / Public Gate v1
+# Final Summary Report to Export, B-end, Sandbox, and Public Gate v1
 
 ## Purpose
 
-This document defines downstream gates that must remain separate from Final Summary Report Review Gate and future Final Summary Report Runtime.
+This document defines the downstream boundary after a future Final Summary Report Runtime.
 
-The goal is to prevent one review approval from silently creating export files, B-end deliverables, Sandbox fixtures, or public event pages.
+Creating a local final Summary Report object does not create any downstream artifact.
 
-## Core Principle
+## Core Boundary
 
-Final Summary Report Review Gate does not export.
+Final Summary Report Runtime does not:
 
-Final Summary Report Review Gate does not create:
+- export PDF
+- export Markdown
+- generate briefing deck
+- create B-end report
+- create Sandbox fixture
+- create public event page
+- write Evidence Layer
+- create production case
+- run real-world action
 
-- final Summary Report
-- B-end report
-- PDF export
-- Markdown export
-- briefing deck
-- Sandbox fixture
-- public event page
-- production Evidence Layer records
-- production case records
-
-Future Final Summary Report Runtime, if implemented later, should create only a local final summary report object.
+Each downstream artifact requires a separate future gate.
 
 ## Required Downstream Gates
 
 ### Export Gate
 
-Required before any PDF, Markdown, briefing deck, or downloadable package is created.
+Required before:
 
-Export Gate must verify:
+- PDF export
+- Markdown export
+- briefing deck export
 
-- final summary report exists
-- warnings are preserved
-- privacy blockers are absent
-- public/private audience setting is explicit
-- no raw identifiers or secret-like values are included
-- export metadata does not imply official verification or full-web coverage
+The Export Gate must verify:
+
+- final Summary Report exists
+- warnings remain visible
+- coverage limitations remain visible
+- no official-verification or full-web overclaim appears
+- no raw identifiers or secret-like fields are exposed
+- export format is explicitly approved
 
 ### B-end Report Gate
 
-Required before any customer-facing B-end report is generated.
+Required before B-end customer report generation.
 
-B-end Report Gate must verify:
+The B-end Report Gate must verify:
 
-- business audience is explicit
-- evidence limits remain visible
-- weak evidence warnings remain
-- rejected evidence exclusion remains
-- duplicate non-amplification remains
-- recommendation language does not imply guaranteed outcomes
-- sponsored or commissioned context is transparently labeled when relevant
+- final Summary Report exists
+- commercial-facing language does not overclaim
+- sponsor/client context is transparent where applicable
+- weak/rejected/duplicate boundaries remain visible
+- no legal, PR, business, or outcome guarantee is introduced
+- no private data or raw identifiers are exposed
 
 ### Sandbox Generation Gate
 
-Required before any Sandbox fixture is generated from a final report.
+Required before Sandbox fixture generation.
 
-Sandbox Gate must verify:
+The Sandbox Generation Gate must verify:
 
-- aggregate-only modeling
-- no individual profiling
-- no raw identity fields
-- no causal proof claim
-- no real platform action
-- no simulation-as-real-world-action wording
-- PeopleCluster and InfluenceCore meanings remain bounded if used
+- final Summary Report exists
+- Sandbox data is explicitly labeled as derived visualization data
+- Sandbox does not claim causal proof
+- PeopleCluster and InfluenceCore concepts are not described as verified individuals
+- scenario simulation does not imply real platform action
+- coverage and uncertainty boundaries remain visible
 
 ### Public Event Generation Gate
 
-Required before any C-end public event page is generated.
+Required before public or C-end event page generation.
 
-Public Event Gate must verify:
+The Public Event Generation Gate must verify:
 
-- public language is simplified but not misleading
-- limitations are preserved
-- selected sample status is visible
-- not full-web/full-platform/full-thread coverage remains visible
-- not official verification remains visible
-- vote/request mock states are not represented as natural public-opinion heat unless real measurement exists
-- sponsored analysis is transparently labeled when relevant
+- final Summary Report exists
+- public language is simplified without removing warnings
+- selected sample, coverage, uncertainty, and causality boundaries remain visible
+- sponsored analysis is transparently labeled if applicable
+- request/vote signals are not presented as natural public-opinion heat
+- no official verification or full-web/full-platform/full-thread claim appears
 
-## Public And C-end Simplification Rule
+## Public/C-end Simplification Policy
 
 Public or C-end versions may simplify language, but must not remove:
 
-- coverage limitation
-- evidence, not truth note
-- not official verification note
+- provider output is evidence, not truth
+- not official verification
+- not full-web coverage
+- not full-platform coverage
+- not full-thread coverage
+- selected sample limitation
 - weak evidence warning
-- rejected evidence exclusion note
-- duplicate non-amplification note
-- audit and review caveat
+- rejected evidence exclusion
+- duplicate non-amplification warning
+- uncertainty and causality caveats
 
-Simplification must improve readability, not remove safeguards.
+## Downstream Flags
 
-## Forbidden Shortcut
+The future `sentigraph_final_summary_report_v1` object must keep:
 
-Do not allow:
+- `pdf_export_ready=false`
+- `markdown_export_ready=false`
+- `deck_export_ready=false`
+- `b_end_report_ready=false`
+- `sandbox_ready=false`
+- `public_event_ready=false`
 
-- review gate approval to export directly
-- final report runtime to export directly
-- final report runtime to create B-end report directly
-- final report runtime to create Sandbox directly
-- final report runtime to create public event directly
-- any downstream gate to re-read original package rows
-- any downstream gate to fetch URLs
-- any downstream gate to call providers, collectors, real APIs, or real LLMs
-- any downstream gate to upgrade trust or verification
+Only separate future gates may change downstream readiness.
+
+## Forbidden Shortcuts
+
+Do not treat a final Summary Report as:
+
+- PDF-ready
+- Markdown-ready
+- deck-ready
+- B-end-ready
+- Sandbox-ready
+- public-event-ready
+- production evidence merged
+- production case created
+- official verification
+- full-web coverage
+- causal proof
 
 ## Suggested Future Phases
 
-- 7M: Final Summary Report Review Gate Runtime
-- 7N: Final Summary Report Runtime Design
 - 7O: Final Summary Report Runtime
-- 7P: Export Gate Design
-- 7Q: Export Gate Runtime
-- 7R: B-end Report Gate Design
-- 7S: Sandbox/Public Event Gate Design
-
-These phases should remain separate so each output type has its own safety and audience review.
-
-## Boundary Language
-
-Use:
-
-- separate downstream gate required
-- final report object only
-- export gate required
-- B-end report gate required
-- Sandbox gate required
-- public event gate required
-- public simplification must preserve warnings
-
-Avoid:
-
-- export ready
-- B-end ready
-- public ready
-- Sandbox ready
-- one-click publish
-- verified report
-- full-web report
-- guaranteed risk prediction
+- 7P: Final Summary Report Audit Runtime
+- 7Q: Export Gate Design
+- 7R: Export Gate Runtime
+- 7S: B-end Report Gate Design
+- 7T: Sandbox/Public Event Generation Gate Design
 
