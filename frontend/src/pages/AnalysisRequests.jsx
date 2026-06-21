@@ -32,6 +32,7 @@ import {
   createAnalysisRequestFinalSummaryReportExportArtifact,
   createAnalysisRequestFinalSummaryReportExportGate,
   createAnalysisRequestFinalSummaryReportReviewGate,
+  createAnalysisRequestReportExportDownloadPackageGate,
   createAnalysisRequestSummaryReportCandidate,
   createAnalysisRequest,
   createAnalysisRequestDedupGroupReviewAction,
@@ -78,6 +79,8 @@ import {
   listAnalysisRequestFinalSummaryReports,
   listAnalysisRequestFinalSummaryReportReviewGateAudits,
   listAnalysisRequestFinalSummaryReportReviewGates,
+  listAnalysisRequestReportExportDownloadPackageGateAudits,
+  listAnalysisRequestReportExportDownloadPackageGates,
   listAnalysisRequestSummaryReportCandidateAudits,
   listAnalysisRequestSummaryReportCandidates,
   listAnalysisRequestRealPackageRowPreviews,
@@ -297,6 +300,20 @@ const FINAL_SUMMARY_EXPORT_ARTIFACT_TYPE_OPTIONS = [
 const FINAL_SUMMARY_EXPORT_ARTIFACT_STATUS_COLOR = {
   export_artifact_created: 'green',
   unsupported_format: 'gold',
+  blocked: 'red',
+  privacy_hold: 'magenta',
+}
+
+const REPORT_EXPORT_DOWNLOAD_PACKAGE_DECISION_OPTIONS = [
+  { value: 'approve_for_future_download_package_runtime', label: 'approve_for_future_download_package_runtime' },
+  { value: 'request_revision', label: 'request_revision' },
+  { value: 'block', label: 'block' },
+  { value: 'privacy_hold', label: 'privacy_hold' },
+]
+
+const REPORT_EXPORT_DOWNLOAD_PACKAGE_STATUS_COLOR = {
+  ready_for_future_download_package_runtime: 'green',
+  needs_revision: 'gold',
   blocked: 'red',
   privacy_hold: 'magenta',
 }
@@ -703,6 +720,7 @@ export function AnalysisRequests() {
   const [finalSummaryReportForm] = Form.useForm()
   const [finalSummaryReportExportGateForm] = Form.useForm()
   const [finalSummaryReportExportArtifactForm] = Form.useForm()
+  const [reportExportDownloadPackageGateForm] = Form.useForm()
   const [config, setConfig] = useState(null)
   const [requests, setRequests] = useState([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
@@ -745,6 +763,8 @@ export function AnalysisRequests() {
   const [finalSummaryReportExportGateAudits, setFinalSummaryReportExportGateAudits] = useState([])
   const [finalSummaryReportExportArtifacts, setFinalSummaryReportExportArtifacts] = useState([])
   const [finalSummaryReportExportArtifactAudits, setFinalSummaryReportExportArtifactAudits] = useState([])
+  const [reportExportDownloadPackageGates, setReportExportDownloadPackageGates] = useState([])
+  const [reportExportDownloadPackageGateAudits, setReportExportDownloadPackageGateAudits] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -773,6 +793,7 @@ export function AnalysisRequests() {
   const [finalSummaryReportLoading, setFinalSummaryReportLoading] = useState(false)
   const [finalSummaryReportExportGateLoading, setFinalSummaryReportExportGateLoading] = useState(false)
   const [finalSummaryReportExportArtifactLoading, setFinalSummaryReportExportArtifactLoading] = useState(false)
+  const [reportExportDownloadPackageGateLoading, setReportExportDownloadPackageGateLoading] = useState(false)
   const [error, setError] = useState('')
   const [draftError, setDraftError] = useState('')
   const [planError, setPlanError] = useState('')
@@ -799,6 +820,7 @@ export function AnalysisRequests() {
   const [finalSummaryReportError, setFinalSummaryReportError] = useState('')
   const [finalSummaryReportExportGateError, setFinalSummaryReportExportGateError] = useState('')
   const [finalSummaryReportExportArtifactError, setFinalSummaryReportExportArtifactError] = useState('')
+  const [reportExportDownloadPackageGateError, setReportExportDownloadPackageGateError] = useState('')
 
   const selectedRecord = useMemo(
     () => detail || requests.find((item) => item.request_id === selectedRequestId) || null,
@@ -847,6 +869,9 @@ export function AnalysisRequests() {
     setFinalSummaryReportExportArtifacts([])
     setFinalSummaryReportExportArtifactAudits([])
     setFinalSummaryReportExportArtifactError('')
+    setReportExportDownloadPackageGates([])
+    setReportExportDownloadPackageGateAudits([])
+    setReportExportDownloadPackageGateError('')
   }
 
   async function loadDraftAndPlan(requestId) {
@@ -1004,6 +1029,8 @@ export function AnalysisRequests() {
       setFinalSummaryReportExportGateAudits(await listAnalysisRequestFinalSummaryReportExportGateAudits(requestId))
       setFinalSummaryReportExportArtifacts(await listAnalysisRequestFinalSummaryReportExportArtifacts(requestId))
       setFinalSummaryReportExportArtifactAudits(await listAnalysisRequestFinalSummaryReportExportArtifactAudits(requestId))
+      setReportExportDownloadPackageGates(await listAnalysisRequestReportExportDownloadPackageGates(requestId))
+      setReportExportDownloadPackageGateAudits(await listAnalysisRequestReportExportDownloadPackageGateAudits(requestId))
     } catch {
       setReviewQueueInitializations([])
       setReviewQueueItemBatch(null)
@@ -2243,6 +2270,89 @@ export function AnalysisRequests() {
     }
   }
 
+  async function handleCreateReportExportDownloadPackageGate(values) {
+    if (!selectedRecord?.request_id || !latestFinalSummaryReportExportArtifact?.export_artifact_id) return
+    setReportExportDownloadPackageGateLoading(true)
+    setReportExportDownloadPackageGateError('')
+    try {
+      const gate = await createAnalysisRequestReportExportDownloadPackageGate(selectedRecord.request_id, {
+        export_artifact_id: values.export_artifact_id || latestFinalSummaryReportExportArtifact.export_artifact_id,
+        export_artifact_audit_id:
+          values.export_artifact_audit_id ||
+          latestFinalSummaryReportExportArtifactAudit?.export_artifact_audit_id ||
+          finalSummaryReportExportArtifactAudits[0]?.export_artifact_audit_id,
+        final_summary_report_id:
+          values.final_summary_report_id ||
+          latestFinalSummaryReportExportArtifact.final_summary_report_id ||
+          latestFinalSummaryReport?.final_summary_report_id,
+        export_gate_id:
+          values.export_gate_id ||
+          latestFinalSummaryReportExportArtifact.export_gate_id ||
+          latestFinalSummaryReportExportGate?.export_gate_id,
+        review_case_id:
+          values.review_case_id ||
+          latestFinalSummaryReportExportArtifact.review_case_id ||
+          latestFinalSummaryReportExportGate?.review_case_id ||
+          latestFinalSummaryReport?.review_case_id,
+        reviewer_label: String(values.reviewer_label || '').trim(),
+        note: String(values.note || '').trim(),
+        delivery_decision: values.delivery_decision,
+        required_revisions: splitTags(values.required_revisions),
+        acknowledge_download_package_gate_only: Boolean(values.acknowledge_download_package_gate_only),
+        acknowledge_no_download_route_now: Boolean(values.acknowledge_no_download_route_now),
+        acknowledge_no_package_or_zip_now: Boolean(values.acknowledge_no_package_or_zip_now),
+        acknowledge_no_public_or_signed_url_now: Boolean(values.acknowledge_no_public_or_signed_url_now),
+        acknowledge_no_b_end_report: Boolean(values.acknowledge_no_b_end_report),
+        acknowledge_no_sandbox_or_public_event: Boolean(values.acknowledge_no_sandbox_or_public_event),
+        acknowledge_no_evidence_layer_write: Boolean(values.acknowledge_no_evidence_layer_write),
+        acknowledge_no_production_case: Boolean(values.acknowledge_no_production_case),
+        acknowledge_provider_output_is_evidence_not_truth: Boolean(values.acknowledge_provider_output_is_evidence_not_truth),
+        acknowledge_not_official_verification: Boolean(values.acknowledge_not_official_verification),
+        acknowledge_not_full_web_coverage: Boolean(values.acknowledge_not_full_web_coverage),
+        acknowledge_weak_evidence_warning: Boolean(values.acknowledge_weak_evidence_warning),
+        acknowledge_rejected_exclusion: Boolean(values.acknowledge_rejected_exclusion),
+        acknowledge_dedup_no_risk_amplification: Boolean(values.acknowledge_dedup_no_risk_amplification),
+        acknowledge_audit_trace_required: Boolean(values.acknowledge_audit_trace_required),
+        download_route_now: false,
+        zip_package_now: false,
+        package_now: false,
+        public_url_now: false,
+        signed_url_now: false,
+        b_end_report_now: false,
+        sandbox_now: false,
+        public_event_now: false,
+        write_evidence_layer_now: false,
+        create_production_case_now: false,
+        read_runtime_file_content_now: false,
+        read_original_rows_now: false,
+        read_original_package_rows_now: false,
+        call_llm_now: false,
+        fetch_url_now: false,
+        call_external_api_now: false,
+        provider_execution_requested: false,
+        collector_job_requested: false,
+        include_rejected_evidence: false,
+        include_privacy_hold_evidence: false,
+        include_needs_more_source_evidence: false,
+        remove_weak_warnings: false,
+        duplicates_amplify_risk: false,
+        provider_output_is_truth: false,
+        official_verification: false,
+        full_web_coverage: false,
+        full_platform_coverage: false,
+        full_thread_coverage: false,
+      })
+      setReportExportDownloadPackageGates(await listAnalysisRequestReportExportDownloadPackageGates(selectedRecord.request_id))
+      setReportExportDownloadPackageGateAudits(await listAnalysisRequestReportExportDownloadPackageGateAudits(selectedRecord.request_id))
+      message.success(`Created download/package gate: ${gate?.status || 'created'}`)
+    } catch (requestError) {
+      const messageText = requestError?.response?.data?.detail || requestError?.message || 'Unable to create Report Export Download / Package Gate.'
+      setReportExportDownloadPackageGateError(String(messageText))
+    } finally {
+      setReportExportDownloadPackageGateLoading(false)
+    }
+  }
+
   async function copyText(text, successMessage) {
     try {
       await navigator.clipboard.writeText(text)
@@ -2613,6 +2723,17 @@ export function AnalysisRequests() {
   const finalSummaryReportExportArtifactAuditsJson = finalSummaryReportExportArtifactAudits.length
     ? JSON.stringify(finalSummaryReportExportArtifactAudits, null, 2)
     : ''
+  const latestFinalSummaryReportExportArtifactAudit = finalSummaryReportExportArtifactAudits[0] || null
+  const latestReportExportDownloadPackageGate = reportExportDownloadPackageGates[0] || null
+  const latestReportExportDownloadPackageGateJson = latestReportExportDownloadPackageGate
+    ? JSON.stringify(latestReportExportDownloadPackageGate, null, 2)
+    : ''
+  const reportExportDownloadPackageGatesJson = reportExportDownloadPackageGates.length
+    ? JSON.stringify(reportExportDownloadPackageGates, null, 2)
+    : ''
+  const reportExportDownloadPackageGateAuditsJson = reportExportDownloadPackageGateAudits.length
+    ? JSON.stringify(reportExportDownloadPackageGateAudits, null, 2)
+    : ''
   const analysisReadyPromotionGateValues = Form.useWatch([], analysisReadyPromotionGateForm) || {}
   const dedupGroupsNeedReview = useMemo(
     () => (latestDedupPreview?.groups || []).some((group) => !['confirmed', 'marked_weak', 'representative_changed', 'rejected'].includes(group.group_status)),
@@ -2888,6 +3009,42 @@ export function AnalysisRequests() {
     latestFinalSummaryReportExportGate?.export_gate_id,
     latestFinalSummaryReportExportGate?.status,
     latestFinalSummaryReportExportGateAudit?.export_gate_audit_id,
+  ])
+  const reportExportDownloadPackageGateValues = Form.useWatch([], reportExportDownloadPackageGateForm) || {}
+  const reportExportDownloadPackageGateReady = useMemo(() => {
+    const requiresRevisionText =
+      reportExportDownloadPackageGateValues.delivery_decision === 'request_revision'
+        ? String(reportExportDownloadPackageGateValues.required_revisions || '').trim()
+        : true
+    return Boolean(
+      latestFinalSummaryReportExportArtifact?.export_artifact_id &&
+        latestFinalSummaryReportExportArtifact?.status === 'export_artifact_created' &&
+        latestFinalSummaryReportExportArtifactAudit?.export_artifact_audit_id &&
+        String(reportExportDownloadPackageGateValues.reviewer_label || '').trim() &&
+        String(reportExportDownloadPackageGateValues.note || '').trim() &&
+        reportExportDownloadPackageGateValues.delivery_decision &&
+        requiresRevisionText &&
+        reportExportDownloadPackageGateValues.acknowledge_download_package_gate_only &&
+        reportExportDownloadPackageGateValues.acknowledge_no_download_route_now &&
+        reportExportDownloadPackageGateValues.acknowledge_no_package_or_zip_now &&
+        reportExportDownloadPackageGateValues.acknowledge_no_public_or_signed_url_now &&
+        reportExportDownloadPackageGateValues.acknowledge_no_b_end_report &&
+        reportExportDownloadPackageGateValues.acknowledge_no_sandbox_or_public_event &&
+        reportExportDownloadPackageGateValues.acknowledge_no_evidence_layer_write &&
+        reportExportDownloadPackageGateValues.acknowledge_no_production_case &&
+        reportExportDownloadPackageGateValues.acknowledge_provider_output_is_evidence_not_truth &&
+        reportExportDownloadPackageGateValues.acknowledge_not_official_verification &&
+        reportExportDownloadPackageGateValues.acknowledge_not_full_web_coverage &&
+        reportExportDownloadPackageGateValues.acknowledge_weak_evidence_warning &&
+        reportExportDownloadPackageGateValues.acknowledge_rejected_exclusion &&
+        reportExportDownloadPackageGateValues.acknowledge_dedup_no_risk_amplification &&
+        reportExportDownloadPackageGateValues.acknowledge_audit_trace_required,
+    )
+  }, [
+    latestFinalSummaryReportExportArtifact?.export_artifact_id,
+    latestFinalSummaryReportExportArtifact?.status,
+    latestFinalSummaryReportExportArtifactAudit?.export_artifact_audit_id,
+    reportExportDownloadPackageGateValues,
   ])
   const requestPath = selectedRecord?.request_file || 'runtime/analysis_requests/requests/<request_id>.json'
 
@@ -7546,6 +7703,264 @@ export function AnalysisRequests() {
                                       <Text type="secondary">llm={boolText(audit.now_flags?.call_llm_now)}</Text>
                                       <Text type="secondary">fetch={boolText(audit.now_flags?.fetch_url_now)}</Text>
                                       <Text type="secondary">rows={boolText(audit.now_flags?.read_original_rows_now)}</Text>
+                                    </Space>
+                                  ))}
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
+                        </Card>
+
+                        <Card size="small" title="Report Export Download / Package Gate / 报告导出下载打包门">
+                          <Space direction="vertical" size={12} className="full-width">
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message="Gate record only: no download route, no ZIP package, no public or signed URL"
+                              description="This records whether the local export artifact is eligible for a future download/package runtime. It does not create a downloadable file, package archive, B-end report, Sandbox fixture, public event page, Evidence Layer write, production case, or official verification."
+                            />
+                            {reportExportDownloadPackageGateError ? (
+                              <Alert type="error" showIcon message={reportExportDownloadPackageGateError} />
+                            ) : null}
+                            <Form
+                              form={reportExportDownloadPackageGateForm}
+                              layout="vertical"
+                              initialValues={{
+                                reviewer_label: 'download_package_gate_reviewer',
+                                note: 'Record future download/package eligibility only. Do not create routes, packages, public URLs, or signed URLs.',
+                                delivery_decision: 'approve_for_future_download_package_runtime',
+                                acknowledge_download_package_gate_only: true,
+                                acknowledge_no_download_route_now: true,
+                                acknowledge_no_package_or_zip_now: true,
+                                acknowledge_no_public_or_signed_url_now: true,
+                                acknowledge_no_b_end_report: true,
+                                acknowledge_no_sandbox_or_public_event: true,
+                                acknowledge_no_evidence_layer_write: true,
+                                acknowledge_no_production_case: true,
+                                acknowledge_provider_output_is_evidence_not_truth: true,
+                                acknowledge_not_official_verification: true,
+                                acknowledge_not_full_web_coverage: true,
+                                acknowledge_weak_evidence_warning: true,
+                                acknowledge_rejected_exclusion: true,
+                                acknowledge_dedup_no_risk_amplification: true,
+                                acknowledge_audit_trace_required: true,
+                              }}
+                              onFinish={handleCreateReportExportDownloadPackageGate}
+                            >
+                              <Row gutter={12}>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="export_artifact_id" label="Export Artifact ID">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestFinalSummaryReportExportArtifact?.export_artifact_id || 'latest export artifact'}
+                                      options={finalSummaryReportExportArtifacts.map((item) => ({
+                                        value: item.export_artifact_id,
+                                        label: `${item.export_artifact_id} / ${item.status}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="export_artifact_audit_id" label="Export Artifact Audit ID">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestFinalSummaryReportExportArtifactAudit?.export_artifact_audit_id || 'latest artifact audit'}
+                                      options={finalSummaryReportExportArtifactAudits.map((item) => ({
+                                        value: item.export_artifact_audit_id,
+                                        label: `${item.export_artifact_audit_id} / ${item.created_at || '-'}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="final_summary_report_id" label="Final Summary Report ID">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestFinalSummaryReportExportArtifact?.final_summary_report_id || 'latest final summary report'}
+                                      options={finalSummaryReports.map((item) => ({
+                                        value: item.final_summary_report_id,
+                                        label: `${item.final_summary_report_id} / ${item.status}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="export_gate_id" label="Export Gate ID">
+                                    <Select
+                                      allowClear
+                                      placeholder={latestFinalSummaryReportExportArtifact?.export_gate_id || 'latest export gate'}
+                                      options={finalSummaryReportExportGates.map((item) => ({
+                                        value: item.export_gate_id,
+                                        label: `${item.export_gate_id} / ${item.status}`,
+                                      }))}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="review_case_id" label="Review-only Case ID">
+                                    <Input placeholder={latestFinalSummaryReportExportArtifact?.review_case_id || 'latest review case'} />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="delivery_decision" label="Delivery decision" rules={[{ required: true }]}>
+                                    <Select options={REPORT_EXPORT_DOWNLOAD_PACKAGE_DECISION_OPTIONS} />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="reviewer_label" label="Reviewer label" rules={[{ required: true }]}>
+                                    <Input />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Form.Item name="required_revisions" label="Required revisions">
+                                    <Input placeholder="required when decision=request_revision" />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24}>
+                                  <Form.Item name="note" label="Gate note" rules={[{ required: true }]}>
+                                    <TextArea rows={2} />
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={8}>
+                                {[
+                                  ['acknowledge_download_package_gate_only', 'download/package gate only'],
+                                  ['acknowledge_no_download_route_now', 'no download route now'],
+                                  ['acknowledge_no_package_or_zip_now', 'no package or ZIP now'],
+                                  ['acknowledge_no_public_or_signed_url_now', 'no public or signed URL now'],
+                                  ['acknowledge_no_b_end_report', 'not B-end report'],
+                                  ['acknowledge_no_sandbox_or_public_event', 'no Sandbox/public event'],
+                                  ['acknowledge_no_evidence_layer_write', 'no Evidence Layer write'],
+                                  ['acknowledge_no_production_case', 'no production case'],
+                                  ['acknowledge_provider_output_is_evidence_not_truth', 'provider output is evidence, not truth'],
+                                  ['acknowledge_not_official_verification', 'not official verification'],
+                                  ['acknowledge_not_full_web_coverage', 'not full-web coverage'],
+                                  ['acknowledge_weak_evidence_warning', 'preserve weak evidence warning'],
+                                  ['acknowledge_rejected_exclusion', 'rejected evidence remains excluded'],
+                                  ['acknowledge_dedup_no_risk_amplification', 'dedup no risk amplification'],
+                                  ['acknowledge_audit_trace_required', 'audit trace required'],
+                                ].map(([name, label]) => (
+                                  <Col xs={24} md={12} key={name}>
+                                    <Form.Item name={name} valuePropName="checked">
+                                      <Checkbox>{label}</Checkbox>
+                                    </Form.Item>
+                                  </Col>
+                                ))}
+                              </Row>
+                              <Space wrap>
+                                <Button
+                                  type="primary"
+                                  htmlType="submit"
+                                  icon={<ShieldCheck size={16} />}
+                                  loading={reportExportDownloadPackageGateLoading}
+                                  disabled={!reportExportDownloadPackageGateReady || reportExportDownloadPackageGateLoading}
+                                >
+                                  Create Download / Package Gate
+                                </Button>
+                                {latestReportExportDownloadPackageGate ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(latestReportExportDownloadPackageGateJson, 'Download/package gate JSON copied')}
+                                  >
+                                    Copy latest gate JSON
+                                  </Button>
+                                ) : null}
+                                {reportExportDownloadPackageGates.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(reportExportDownloadPackageGatesJson, 'Download/package gate history JSON copied')}
+                                  >
+                                    Copy gate history JSON
+                                  </Button>
+                                ) : null}
+                                {reportExportDownloadPackageGateAudits.length ? (
+                                  <Button
+                                    icon={<FileJson size={16} />}
+                                    onClick={() => copyText(reportExportDownloadPackageGateAuditsJson, 'Download/package gate audit JSON copied')}
+                                  >
+                                    Copy gate audit JSON
+                                  </Button>
+                                ) : null}
+                              </Space>
+                            </Form>
+                            {latestReportExportDownloadPackageGate ? (
+                              <Card size="small" title="Latest Report Export Download / Package Gate">
+                                <Space direction="vertical" size={8} className="full-width">
+                                  <Space wrap>
+                                    <Tag color={REPORT_EXPORT_DOWNLOAD_PACKAGE_STATUS_COLOR[latestReportExportDownloadPackageGate.status] || 'default'}>
+                                      {latestReportExportDownloadPackageGate.status}
+                                    </Tag>
+                                    <Tag color="blue">{latestReportExportDownloadPackageGate.delivery_decision}</Tag>
+                                    <Text type="secondary">{latestReportExportDownloadPackageGate.download_package_gate_id}</Text>
+                                  </Space>
+                                  <Descriptions size="small" column={1}>
+                                    <Descriptions.Item label="export_artifact_id">
+                                      {latestReportExportDownloadPackageGate.export_artifact_id || '-'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="future delivery candidates">
+                                      {Object.entries(latestReportExportDownloadPackageGate.allowed_future_delivery || {})
+                                        .map(([key, value]) => `${key}=${boolText(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="not allowed now">
+                                      {Object.entries(latestReportExportDownloadPackageGate.not_allowed_now || {})
+                                        .map(([key, value]) => `${key}=${boolText(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="input boundary">
+                                      {Object.entries(latestReportExportDownloadPackageGate.input_boundary || {})
+                                        .map(([key, value]) => `${key}=${String(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="delivery boundary">
+                                      {Object.entries(latestReportExportDownloadPackageGate.delivery_boundary || {})
+                                        .map(([key, value]) => `${key}=${boolText(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="downstream readiness">
+                                      {Object.entries(latestReportExportDownloadPackageGate.downstream_readiness || {})
+                                        .map(([key, value]) => `${key}=${boolText(value)}`)
+                                        .join(', ')}
+                                    </Descriptions.Item>
+                                  </Descriptions>
+                                  <Space wrap>
+                                    {Object.entries(latestReportExportDownloadPackageGate.safe_mode || {}).map(([key, value]) => (
+                                      <Tag color={value && key !== 'report_export_download_package_gate_only' ? 'red' : 'default'} key={key}>
+                                        {key}={boolText(value)}
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                  <SummaryList title="Blocked reasons" items={latestReportExportDownloadPackageGate.blocked_reasons || []} />
+                                  <SummaryList title="Required revisions" items={latestReportExportDownloadPackageGate.required_revisions || []} />
+                                  <SummaryList title="Warnings" items={latestReportExportDownloadPackageGate.warnings || []} />
+                                  <SummaryList title="Boundary notes" items={latestReportExportDownloadPackageGate.boundary_notes || []} />
+                                  <SummaryList
+                                    title="Audit refs"
+                                    items={Object.entries(latestReportExportDownloadPackageGate.audit_refs || {}).map(
+                                      ([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
+                                    )}
+                                  />
+                                </Space>
+                              </Card>
+                            ) : (
+                              <Text type="secondary">No Report Export Download / Package Gate yet.</Text>
+                            )}
+                            {reportExportDownloadPackageGateAudits.length ? (
+                              <Card size="small" title={`Download/package gate audit timeline (${reportExportDownloadPackageGateAudits.length})`}>
+                                <Space direction="vertical" size={8} className="full-width">
+                                  {reportExportDownloadPackageGateAudits.map((audit) => (
+                                    <Space wrap key={audit.download_package_gate_audit_id}>
+                                      <Tag color={REPORT_EXPORT_DOWNLOAD_PACKAGE_STATUS_COLOR[audit.delivery_decision] || 'blue'}>
+                                        {audit.delivery_decision}
+                                      </Tag>
+                                      <Text type="secondary">{audit.decided_at || '-'}</Text>
+                                      <Text type="secondary">effect={audit.analysis_effect}</Text>
+                                      <Text type="secondary">download={boolText(audit.now_flags?.download_route_now)}</Text>
+                                      <Text type="secondary">zip={boolText(audit.now_flags?.zip_package_now)}</Text>
+                                      <Text type="secondary">public={boolText(audit.now_flags?.public_url_now)}</Text>
+                                      <Text type="secondary">signed={boolText(audit.now_flags?.signed_url_now)}</Text>
+                                      <Text type="secondary">rows={boolText(audit.now_flags?.read_original_rows_now)}</Text>
+                                      <Text type="secondary">file_content={boolText(audit.now_flags?.read_runtime_file_content_now)}</Text>
                                     </Space>
                                   ))}
                                 </Space>

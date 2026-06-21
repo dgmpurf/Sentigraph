@@ -723,6 +723,37 @@ def final_summary_report_export_artifact_payload(**overrides: object) -> dict:
     return payload
 
 
+def report_export_download_package_gate_payload(**overrides: object) -> dict:
+    payload = {
+        "export_artifact_id": "",
+        "export_artifact_audit_id": "",
+        "final_summary_report_id": "",
+        "export_gate_id": "",
+        "review_case_id": "",
+        "reviewer_label": "report_export_download_package_reviewer",
+        "note": "Record local download/package gate only.",
+        "delivery_decision": "approve_for_future_download_package_runtime",
+        "required_revisions": [],
+        "acknowledge_download_package_gate_only": True,
+        "acknowledge_no_download_route_now": True,
+        "acknowledge_no_package_or_zip_now": True,
+        "acknowledge_no_public_or_signed_url_now": True,
+        "acknowledge_no_b_end_report": True,
+        "acknowledge_no_sandbox_or_public_event": True,
+        "acknowledge_no_evidence_layer_write": True,
+        "acknowledge_no_production_case": True,
+        "acknowledge_provider_output_is_evidence_not_truth": True,
+        "acknowledge_not_official_verification": True,
+        "acknowledge_not_full_web_coverage": True,
+        "acknowledge_weak_evidence_warning": True,
+        "acknowledge_rejected_exclusion": True,
+        "acknowledge_dedup_no_risk_amplification": True,
+        "acknowledge_audit_trace_required": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def create_review_queue_ready_chain(tmp_path: Path, request_id: str, *, package_dir: Path | None = None):
     if package_dir is None:
         package_dir = create_real_preview_package(tmp_path)
@@ -5609,6 +5640,357 @@ def test_final_summary_report_export_runtime_does_not_parse_original_package_row
     assert artifact.status == "export_artifact_created"
     assert "must_not_be_read_by_export_runtime" not in serialized
     assert "forbidden.example" not in serialized
+
+
+def create_report_export_download_package_gate_ready_chain(tmp_path: Path, request_id: str):
+    (
+        queue_init,
+        item_batch,
+        promotion_gate,
+        manual_trigger,
+        boundary_gate,
+        execution,
+        candidate,
+        report_gate,
+        summary_candidate,
+        final_review_gate,
+        final_report,
+        final_report_audit,
+        export_gate,
+        export_gate_audit,
+    ) = create_final_summary_report_export_artifact_ready_chain(tmp_path, request_id)
+    artifact = analysis_request_store.create_final_summary_report_export_artifact(
+        request_id,
+        final_summary_report_export_artifact_payload(
+            final_summary_report_id=final_report.final_summary_report_id,
+            export_gate_id=export_gate.export_gate_id,
+            export_gate_audit_id=export_gate_audit.export_gate_audit_id,
+            review_case_id=queue_init.review_case_id,
+            artifact_type="analyst_markdown",
+        ),
+    )
+    artifact_audit = analysis_request_store.list_final_summary_report_export_artifact_audits(request_id)[0]
+    return (
+        queue_init,
+        item_batch,
+        promotion_gate,
+        manual_trigger,
+        boundary_gate,
+        execution,
+        candidate,
+        report_gate,
+        summary_candidate,
+        final_review_gate,
+        final_report,
+        final_report_audit,
+        export_gate,
+        export_gate_audit,
+        artifact,
+        artifact_audit,
+    )
+
+
+def test_report_export_download_package_gate_runtime_creates_gate_and_audit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Download package gate runtime")))
+    (
+        queue_init,
+        _item_batch,
+        _promotion_gate,
+        _manual_trigger,
+        _boundary_gate,
+        _execution,
+        _candidate,
+        _report_gate,
+        _summary_candidate,
+        _final_review_gate,
+        final_report,
+        _final_report_audit,
+        export_gate,
+        _export_gate_audit,
+        artifact,
+        artifact_audit,
+    ) = create_report_export_download_package_gate_ready_chain(tmp_path, record.request_id)
+
+    expected_statuses = {
+        "approve_for_future_download_package_runtime": "ready_for_future_download_package_runtime",
+        "request_revision": "needs_revision",
+        "block": "blocked",
+        "privacy_hold": "privacy_hold",
+    }
+    created = []
+    for decision, expected_status in expected_statuses.items():
+        gate = analysis_request_store.create_report_export_download_package_gate(
+            record.request_id,
+            report_export_download_package_gate_payload(
+                export_artifact_id=artifact.export_artifact_id,
+                export_artifact_audit_id=artifact_audit.export_artifact_audit_id,
+                final_summary_report_id=final_report.final_summary_report_id,
+                export_gate_id=export_gate.export_gate_id,
+                review_case_id=queue_init.review_case_id,
+                delivery_decision=decision,
+                required_revisions=["Clarify delivery boundary."] if decision == "request_revision" else [],
+            ),
+        )
+        created.append(gate)
+
+        assert gate.schema_ == "sentigraph_report_export_download_package_gate_v1"
+        assert gate.status == expected_status
+        assert gate.delivery_decision == decision
+        assert gate.allowed_future_delivery["local_metadata_download_candidate"] is True
+        assert gate.allowed_future_delivery["local_file_download_candidate"] is True
+        assert gate.allowed_future_delivery["zip_package_candidate"] is True
+        assert gate.allowed_future_delivery["signed_url_candidate"] is False
+        assert gate.allowed_future_delivery["public_url_candidate"] is False
+        assert gate.not_allowed_now["download_route_now"] is True
+        assert gate.not_allowed_now["zip_package_now"] is True
+        assert gate.not_allowed_now["public_url_now"] is True
+        assert gate.not_allowed_now["signed_url_now"] is True
+        assert gate.not_allowed_now["b_end_report_now"] is True
+        assert gate.not_allowed_now["sandbox_now"] is True
+        assert gate.not_allowed_now["public_event_now"] is True
+        assert gate.input_boundary["source"] == "final_summary_report_export_artifact"
+        assert gate.input_boundary["read_runtime_file_content_now"] is False
+        assert gate.input_boundary["read_original_package_rows_now"] is False
+        assert gate.input_boundary["call_llm_now"] is False
+        assert gate.input_boundary["call_external_api_now"] is False
+        assert gate.input_boundary["write_evidence_layer_now"] is False
+        assert gate.input_boundary["create_production_case_now"] is False
+        assert gate.delivery_boundary["runtime_path_only"] is True
+        assert gate.delivery_boundary["public_url"] is False
+        assert gate.delivery_boundary["download_requires_future_runtime"] is True
+        assert gate.delivery_boundary["package_requires_future_runtime"] is True
+        assert gate.delivery_boundary["human_review_required"] is True
+        assert gate.downstream_readiness["can_run_future_download_package_runtime"] is (
+            decision == "approve_for_future_download_package_runtime"
+        )
+        assert gate.downstream_readiness["can_generate_download_now"] is False
+        assert gate.downstream_readiness["can_generate_package_now"] is False
+        assert gate.downstream_readiness["can_generate_b_end_report_now"] is False
+        assert gate.downstream_readiness["can_generate_sandbox_now"] is False
+        assert gate.downstream_readiness["can_generate_public_event_now"] is False
+        assert gate.downstream_readiness["requires_b_end_report_gate"] is True
+        assert gate.downstream_readiness["requires_sandbox_gate"] is True
+        assert gate.downstream_readiness["requires_public_event_gate"] is True
+        assert gate.audit_refs["export_artifact_audit_ids"] == [artifact_audit.export_artifact_audit_id]
+        assert gate.audit_refs["export_gate_ids"] == [export_gate.export_gate_id]
+        assert "Provider output is evidence, not truth" in json.dumps(gate.model_dump(mode="json"), ensure_ascii=False)
+        assert "official verification" in json.dumps(gate.model_dump(mode="json"), ensure_ascii=False)
+        assert "full-web" in json.dumps(gate.model_dump(mode="json"), ensure_ascii=False)
+        assert "Weak evidence remains warning-marked" in json.dumps(gate.model_dump(mode="json"), ensure_ascii=False)
+        assert "Rejected evidence remains excluded" in json.dumps(gate.model_dump(mode="json"), ensure_ascii=False)
+        assert "Duplicate evidence" in json.dumps(gate.model_dump(mode="json"), ensure_ascii=False)
+
+    listed = analysis_request_store.list_report_export_download_package_gates(record.request_id)
+    audits = analysis_request_store.list_report_export_download_package_gate_audits(record.request_id)
+    assert {gate.download_package_gate_id for gate in listed} == {gate.download_package_gate_id for gate in created}
+    assert len(audits) == 4
+    assert {audit.download_package_gate_id for audit in audits} == {gate.download_package_gate_id for gate in created}
+    assert all(audit.analysis_effect == "report_export_download_package_gate_record_only_no_download_or_package_generated" for audit in audits)
+    assert all(audit.now_flags["download_route_now"] is False for audit in audits)
+    assert all(audit.now_flags["zip_package_now"] is False for audit in audits)
+    assert all(audit.now_flags["public_url_now"] is False for audit in audits)
+    assert all(audit.now_flags["signed_url_now"] is False for audit in audits)
+    assert all(audit.now_flags["b_end_report_now"] is False for audit in audits)
+    assert all(audit.now_flags["generate_sandbox_now"] is False for audit in audits)
+    assert all(audit.now_flags["generate_public_event_now"] is False for audit in audits)
+    assert all(audit.now_flags["write_evidence_layer_now"] is False for audit in audits)
+    assert all(audit.now_flags["create_production_case_now"] is False for audit in audits)
+    assert all(audit.now_flags["read_runtime_file_content_now"] is False for audit in audits)
+    assert all(audit.now_flags["read_original_rows_now"] is False for audit in audits)
+    assert all(audit.now_flags["call_llm_now"] is False for audit in audits)
+    assert all(audit.now_flags["fetch_url_now"] is False for audit in audits)
+    assert not list(tmp_path.rglob("*.zip"))
+    assert not (tmp_path / "download_routes").exists()
+    assert not (tmp_path / "report_export_download_packages").exists()
+    assert not (tmp_path / "b_end_reports").exists()
+    assert not (tmp_path / "sandbox_fixtures").exists()
+    assert not (tmp_path / "public_events").exists()
+    assert not (tmp_path / "production_cases").exists()
+
+
+def test_report_export_download_package_gate_blocks_unsafe_requests_and_metadata(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Download package blockers")))
+    (
+        queue_init,
+        _item_batch,
+        _promotion_gate,
+        _manual_trigger,
+        _boundary_gate,
+        _execution,
+        _candidate,
+        _report_gate,
+        _summary_candidate,
+        _final_review_gate,
+        final_report,
+        _final_report_audit,
+        export_gate,
+        _export_gate_audit,
+        artifact,
+        artifact_audit,
+    ) = create_report_export_download_package_gate_ready_chain(tmp_path, record.request_id)
+    base_payload = report_export_download_package_gate_payload(
+        export_artifact_id=artifact.export_artifact_id,
+        export_artifact_audit_id=artifact_audit.export_artifact_audit_id,
+        final_summary_report_id=final_report.final_summary_report_id,
+        export_gate_id=export_gate.export_gate_id,
+        review_case_id=queue_init.review_case_id,
+    )
+
+    unsafe_payloads = [
+        {**base_payload, "export_artifact_id": ""},
+        {**base_payload, "export_artifact_audit_id": ""},
+        {**base_payload, "final_summary_report_id": ""},
+        {**base_payload, "export_gate_id": ""},
+        {**base_payload, "review_case_id": ""},
+        {**base_payload, "reviewer_label": ""},
+        {**base_payload, "note": ""},
+        {**base_payload, "delivery_decision": "request_revision", "required_revisions": []},
+        {**base_payload, "acknowledge_download_package_gate_only": False},
+        {**base_payload, "acknowledge_no_download_route_now": False},
+        {**base_payload, "acknowledge_no_package_or_zip_now": False},
+        {**base_payload, "acknowledge_no_public_or_signed_url_now": False},
+        {**base_payload, "acknowledge_no_b_end_report": False},
+        {**base_payload, "acknowledge_no_sandbox_or_public_event": False},
+        {**base_payload, "acknowledge_no_evidence_layer_write": False},
+        {**base_payload, "acknowledge_no_production_case": False},
+        {**base_payload, "acknowledge_provider_output_is_evidence_not_truth": False},
+        {**base_payload, "acknowledge_not_official_verification": False},
+        {**base_payload, "acknowledge_not_full_web_coverage": False},
+        {**base_payload, "acknowledge_weak_evidence_warning": False},
+        {**base_payload, "acknowledge_rejected_exclusion": False},
+        {**base_payload, "acknowledge_dedup_no_risk_amplification": False},
+        {**base_payload, "acknowledge_audit_trace_required": False},
+        {**base_payload, "download_route_now": True},
+        {**base_payload, "zip_package_now": True},
+        {**base_payload, "package_now": True},
+        {**base_payload, "public_url_now": True},
+        {**base_payload, "signed_url_now": True},
+        {**base_payload, "b_end_report_now": True},
+        {**base_payload, "sandbox_now": True},
+        {**base_payload, "public_event_now": True},
+        {**base_payload, "write_evidence_layer_now": True},
+        {**base_payload, "create_production_case_now": True},
+        {**base_payload, "read_runtime_file_content_now": True},
+        {**base_payload, "read_original_rows_now": True},
+        {**base_payload, "fetch_url_now": True},
+        {**base_payload, "call_llm_now": True},
+        {**base_payload, "provider_execution_requested": True},
+        {**base_payload, "collector_job_requested": True},
+        {**base_payload, "remove_weak_warnings": True},
+        {**base_payload, "include_rejected_evidence": True},
+        {**base_payload, "duplicates_amplify_risk": True},
+        {**base_payload, "provider_output_is_truth": True},
+        {**base_payload, "official_verification": True},
+        {**base_payload, "full_web_coverage": True},
+        {**base_payload, "raw_author_id": "unsafe"},
+    ]
+    for payload in unsafe_payloads:
+        try:
+            analysis_request_store.create_report_export_download_package_gate(record.request_id, payload)
+        except Exception as exc:  # noqa: BLE001 - each unsafe payload should block.
+            assert "download/package" in str(exc).lower() or "download package" in str(exc).lower() or "export artifact" in str(exc).lower()
+        else:
+            raise AssertionError(f"unsafe report export download/package payload should block: {payload}")
+
+    artifact_path = tmp_path / "final_summary_report_export_artifacts" / f"{record.request_id}_{artifact.export_artifact_id}.json"
+    artifact_data = json.loads(artifact_path.read_text(encoding="utf-8"))
+    metadata_mutations = [
+        ("status", "blocked"),
+        ("artifact_paths", {"local_runtime_path": "../escape.md", "public_url": None}),
+        ("artifact_paths", {"local_runtime_path": artifact.artifact_paths["local_runtime_path"], "public_url": "https://public.example/report"}),
+        ("artifact_scope", {**artifact.artifact_scope, "is_b_end_report": True}),
+        ("export_sections", {**artifact.export_sections, "boundary_block": False}),
+        ("source_and_scope", {**artifact.source_and_scope, "not_official_verification": False}),
+        ("downstream_flags", {**artifact.downstream_flags, "b_end_report_ready": True}),
+        ("warnings", []),
+        ("boundary_notes", ["Provider output is truth. Official verification. Full-web coverage."]),
+        ("raw_author_id", "unsafe"),
+    ]
+    for key, value in metadata_mutations:
+        mutated = dict(artifact_data)
+        mutated[key] = value
+        artifact_path.write_text(json.dumps(mutated), encoding="utf-8")
+        try:
+            analysis_request_store.create_report_export_download_package_gate(record.request_id, base_payload)
+        except Exception as exc:  # noqa: BLE001 - unsafe artifact metadata should block.
+            assert "export artifact" in str(exc).lower() or "download/package" in str(exc).lower()
+        else:
+            raise AssertionError(f"unsafe export artifact metadata should block: {key}={value}")
+    artifact_path.write_text(json.dumps(artifact_data), encoding="utf-8")
+
+    audit_path = tmp_path / "final_summary_report_export_artifact_audits" / (
+        f"{record.request_id}_{artifact.export_artifact_id}_{artifact_audit.export_artifact_audit_id}.json"
+    )
+    audit_backup = audit_path.read_text(encoding="utf-8")
+    audit_path.unlink()
+    try:
+        analysis_request_store.create_report_export_download_package_gate(record.request_id, base_payload)
+    except Exception as exc:  # noqa: BLE001 - missing audit should block.
+        assert "artifact audit" in str(exc).lower()
+    else:
+        raise AssertionError("missing export artifact audit should block download/package gate")
+    audit_path.write_text(audit_backup, encoding="utf-8")
+
+    export_gate_path = tmp_path / "final_summary_report_export_gates" / f"{record.request_id}_{export_gate.export_gate_id}.json"
+    export_gate_data = json.loads(export_gate_path.read_text(encoding="utf-8"))
+    export_gate_data["status"] = "blocked"
+    export_gate_path.write_text(json.dumps(export_gate_data), encoding="utf-8")
+    try:
+        analysis_request_store.create_report_export_download_package_gate(record.request_id, base_payload)
+    except Exception as exc:  # noqa: BLE001 - non-ready export gate should block.
+        assert "export gate" in str(exc).lower() and "ready" in str(exc).lower()
+    else:
+        raise AssertionError("non-ready export gate should block download/package gate")
+
+
+def test_report_export_download_package_gate_does_not_read_artifact_file_content(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SENTIGRAPH_ANALYSIS_REQUESTS_DIR", str(tmp_path))
+    record = create_analysis_request(AnalysisRequestCreate(case_seed=AnalysisRequestCaseSeed(title="Download package no file read")))
+    (
+        queue_init,
+        _item_batch,
+        _promotion_gate,
+        _manual_trigger,
+        _boundary_gate,
+        _execution,
+        _candidate,
+        _report_gate,
+        _summary_candidate,
+        _final_review_gate,
+        final_report,
+        _final_report_audit,
+        export_gate,
+        _export_gate_audit,
+        artifact,
+        artifact_audit,
+    ) = create_report_export_download_package_gate_ready_chain(tmp_path, record.request_id)
+    artifact_file = tmp_path / Path(artifact.artifact_paths["local_runtime_path"]).relative_to("runtime/analysis_requests")
+    artifact_file.write_text(
+        "raw_author_id=must_not_be_read_by_download_gate\nprofile_url=https://forbidden.example/profile\n{broken",
+        encoding="utf-8",
+    )
+
+    gate = analysis_request_store.create_report_export_download_package_gate(
+        record.request_id,
+        report_export_download_package_gate_payload(
+            export_artifact_id=artifact.export_artifact_id,
+            export_artifact_audit_id=artifact_audit.export_artifact_audit_id,
+            final_summary_report_id=final_report.final_summary_report_id,
+            export_gate_id=export_gate.export_gate_id,
+            review_case_id=queue_init.review_case_id,
+        ),
+    )
+    audits = analysis_request_store.list_report_export_download_package_gate_audits(record.request_id)
+    serialized = json.dumps(gate.model_dump(mode="json"), ensure_ascii=False)
+    serialized += json.dumps([audit.model_dump(mode="json") for audit in audits], ensure_ascii=False)
+
+    assert gate.status == "ready_for_future_download_package_runtime"
+    assert "must_not_be_read_by_download_gate" not in serialized
+    assert "forbidden.example" not in serialized
+    assert not list(tmp_path.rglob("*.zip"))
+    assert not (tmp_path / "report_export_download_packages").exists()
 
 
 def test_config_uses_default_runtime_label_without_absolute_path(monkeypatch) -> None:

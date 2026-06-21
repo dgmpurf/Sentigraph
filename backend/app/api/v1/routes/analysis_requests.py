@@ -56,6 +56,9 @@ from app.schemas.analysis_request import (
     PromotionDecisionAudit,
     RealPackageRowPreview,
     RealPackageRowPreviewCreate,
+    ReportExportDownloadPackageGate,
+    ReportExportDownloadPackageGateAudit,
+    ReportExportDownloadPackageGateRequest,
     ReviewOnlyCase,
     ReviewOnlyCaseCreate,
     ReviewOnlyCaseStagingImport,
@@ -88,6 +91,7 @@ from app.services.analysis_request_store import (
     create_final_summary_report,
     create_final_summary_report_export_artifact,
     create_final_summary_report_export_gate,
+    create_report_export_download_package_gate,
     create_report_generation_gate,
     create_final_summary_report_review_gate,
     create_summary_report_candidate,
@@ -130,6 +134,8 @@ from app.services.analysis_request_store import (
     list_all_promotion_decision_audits,
     list_all_evidence_import_review_decisions,
     list_all_real_package_row_previews,
+    list_all_report_export_download_package_gate_audits,
+    list_all_report_export_download_package_gates,
     list_all_review_only_cases,
     list_all_review_only_case_staging_imports,
     list_all_review_queue_action_audits,
@@ -176,6 +182,9 @@ from app.services.analysis_request_store import (
     list_promotion_decision_audits,
     list_promotion_decision_audits_for_gate,
     list_real_package_row_previews,
+    list_report_export_download_package_gate_audits,
+    list_report_export_download_package_gate_audits_for_gate,
+    list_report_export_download_package_gates,
     list_review_only_cases,
     list_review_only_case_staging_imports,
     list_review_queue_action_audits,
@@ -203,6 +212,7 @@ from app.services.analysis_request_store import (
     read_summary_report_candidate,
     read_manual_analysis_trigger,
     read_real_package_row_preview,
+    read_report_export_download_package_gate,
     read_review_only_case,
     read_review_only_case_staging_import,
     read_review_queue_action_audits_for_item,
@@ -408,6 +418,16 @@ def analysis_request_final_summary_report_export_artifact_all_list() -> list[Fin
 @router.get("/final-summary-report-export-artifact-audits", response_model=list[FinalSummaryReportExportArtifactAudit])
 def analysis_request_final_summary_report_export_artifact_audit_all_list() -> list[FinalSummaryReportExportArtifactAudit]:
     return list_all_final_summary_report_export_artifact_audits()
+
+
+@router.get("/report-export-download-package-gates", response_model=list[ReportExportDownloadPackageGate])
+def analysis_request_report_export_download_package_gate_all_list() -> list[ReportExportDownloadPackageGate]:
+    return list_all_report_export_download_package_gates()
+
+
+@router.get("/report-export-download-package-gate-audits", response_model=list[ReportExportDownloadPackageGateAudit])
+def analysis_request_report_export_download_package_gate_audit_all_list() -> list[ReportExportDownloadPackageGateAudit]:
+    return list_all_report_export_download_package_gate_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -1505,6 +1525,65 @@ def analysis_request_final_summary_report_export_artifact_audit_for_artifact_lis
 ) -> list[FinalSummaryReportExportArtifactAudit]:
     try:
         return list_final_summary_report_export_artifact_audits_for_artifact(request_id, export_artifact_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/report-export-download-package-gates", response_model=list[ReportExportDownloadPackageGate])
+def analysis_request_report_export_download_package_gate_list(request_id: str) -> list[ReportExportDownloadPackageGate]:
+    try:
+        return list_report_export_download_package_gates(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/report-export-download-package-gates", response_model=ReportExportDownloadPackageGate)
+def analysis_request_report_export_download_package_gate_create(
+    request_id: str,
+    payload: ReportExportDownloadPackageGateRequest,
+) -> ReportExportDownloadPackageGate:
+    try:
+        return create_report_export_download_package_gate(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/report-export-download-package-gates/{download_package_gate_id}",
+    response_model=ReportExportDownloadPackageGate,
+)
+def analysis_request_report_export_download_package_gate_detail(
+    request_id: str,
+    download_package_gate_id: str,
+) -> ReportExportDownloadPackageGate:
+    try:
+        return read_report_export_download_package_gate(request_id, download_package_gate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{request_id}/report-export-download-package-gate-audits", response_model=list[ReportExportDownloadPackageGateAudit])
+def analysis_request_report_export_download_package_gate_audit_list(request_id: str) -> list[ReportExportDownloadPackageGateAudit]:
+    try:
+        return list_report_export_download_package_gate_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/report-export-download-package-gates/{download_package_gate_id}/audits",
+    response_model=list[ReportExportDownloadPackageGateAudit],
+)
+def analysis_request_report_export_download_package_gate_audit_for_gate_list(
+    request_id: str,
+    download_package_gate_id: str,
+) -> list[ReportExportDownloadPackageGateAudit]:
+    try:
+        return list_report_export_download_package_gate_audits_for_gate(request_id, download_package_gate_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

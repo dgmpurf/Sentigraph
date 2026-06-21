@@ -4159,6 +4159,246 @@ class FinalSummaryReportExportArtifactAudit(BaseModel):
     )
 
 
+ReportExportDownloadPackageDeliveryDecision = Literal[
+    "approve_for_future_download_package_runtime",
+    "request_revision",
+    "block",
+    "privacy_hold",
+]
+
+ReportExportDownloadPackageGateStatus = Literal[
+    "ready_for_future_download_package_runtime",
+    "needs_revision",
+    "blocked",
+    "privacy_hold",
+]
+
+
+class ReportExportDownloadPackageGateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    export_artifact_id: str
+    export_artifact_audit_id: str
+    final_summary_report_id: str
+    export_gate_id: str
+    review_case_id: str
+    reviewer_label: str
+    note: str
+    delivery_decision: ReportExportDownloadPackageDeliveryDecision
+    required_revisions: list[str] = Field(default_factory=list)
+    acknowledge_download_package_gate_only: bool = False
+    acknowledge_no_download_route_now: bool = False
+    acknowledge_no_package_or_zip_now: bool = False
+    acknowledge_no_public_or_signed_url_now: bool = False
+    acknowledge_no_b_end_report: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_provider_output_is_evidence_not_truth: bool = False
+    acknowledge_not_official_verification: bool = False
+    acknowledge_not_full_web_coverage: bool = False
+    acknowledge_weak_evidence_warning: bool = False
+    acknowledge_rejected_exclusion: bool = False
+    acknowledge_dedup_no_risk_amplification: bool = False
+    acknowledge_audit_trace_required: bool = False
+    download_route_now: bool = False
+    zip_package_now: bool = False
+    package_now: bool = False
+    public_url_now: bool = False
+    signed_url_now: bool = False
+    b_end_report_now: bool = False
+    sandbox_now: bool = False
+    public_event_now: bool = False
+    write_evidence_layer_now: bool = False
+    create_production_case_now: bool = False
+    read_runtime_file_content_now: bool = False
+    read_original_rows_now: bool = False
+    read_original_package_rows_now: bool = False
+    call_llm_now: bool = False
+    fetch_url_now: bool = False
+    call_external_api_now: bool = False
+    provider_execution_requested: bool = False
+    collector_job_requested: bool = False
+    include_rejected_evidence: bool = False
+    include_privacy_hold_evidence: bool = False
+    include_needs_more_source_evidence: bool = False
+    remove_weak_warnings: bool = False
+    duplicates_amplify_risk: bool = False
+    provider_output_is_truth: bool = False
+    official_verification: bool = False
+    full_web_coverage: bool = False
+    full_platform_coverage: bool = False
+    full_thread_coverage: bool = False
+
+
+class ReportExportDownloadPackageGate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_report_export_download_package_gate_v1"] = Field(
+        default="sentigraph_report_export_download_package_gate_v1",
+        alias="schema",
+    )
+    download_package_gate_id: str
+    request_id: str
+    review_case_id: str
+    export_artifact_id: str
+    export_artifact_audit_id: str
+    final_summary_report_id: str
+    export_gate_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    created_by: str = "sentigraph_local_ui"
+    status: ReportExportDownloadPackageGateStatus
+    delivery_decision: ReportExportDownloadPackageDeliveryDecision
+    allowed_future_delivery: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "local_metadata_download_candidate": True,
+            "local_file_download_candidate": True,
+            "zip_package_candidate": True,
+            "signed_url_candidate": False,
+            "public_url_candidate": False,
+        }
+    )
+    not_allowed_now: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "download_route_now": True,
+            "zip_package_now": True,
+            "public_url_now": True,
+            "signed_url_now": True,
+            "b_end_report_now": True,
+            "sandbox_now": True,
+            "public_event_now": True,
+        }
+    )
+    input_boundary: dict[str, bool | str] = Field(
+        default_factory=lambda: {
+            "source": "final_summary_report_export_artifact",
+            "read_runtime_file_content_now": False,
+            "read_original_package_rows_now": False,
+            "call_llm_now": False,
+            "call_external_api_now": False,
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+        }
+    )
+    delivery_boundary: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "runtime_path_only": True,
+            "public_url": False,
+            "download_requires_future_runtime": True,
+            "package_requires_future_runtime": True,
+            "human_review_required": True,
+        }
+    )
+    downstream_readiness: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "can_run_future_download_package_runtime": True,
+            "can_generate_download_now": False,
+            "can_generate_package_now": False,
+            "can_generate_b_end_report_now": False,
+            "can_generate_sandbox_now": False,
+            "can_generate_public_event_now": False,
+            "requires_b_end_report_gate": True,
+            "requires_sandbox_gate": True,
+            "requires_public_event_gate": True,
+        }
+    )
+    blocked_reasons: list[str] = Field(default_factory=list)
+    required_revisions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    audit_refs: dict[str, list[str]] = Field(default_factory=dict)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "report_export_download_package_gate_only": True,
+            "download_route_created": False,
+            "zip_package_created": False,
+            "public_url_created": False,
+            "signed_url_created": False,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "analysis_engine_called_again": False,
+            "runtime_file_content_read": False,
+            "original_package_rows_re_read": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class ReportExportDownloadPackageGateAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_report_export_download_package_gate_audit_v1"] = Field(
+        default="sentigraph_report_export_download_package_gate_audit_v1",
+        alias="schema",
+    )
+    download_package_gate_audit_id: str
+    download_package_gate_id: str
+    export_artifact_id: str
+    export_artifact_audit_id: str
+    final_summary_report_id: str
+    export_gate_id: str
+    request_id: str
+    review_case_id: str
+    reviewer_label: str
+    decided_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    delivery_decision: ReportExportDownloadPackageDeliveryDecision
+    analysis_effect: Literal["report_export_download_package_gate_record_only_no_download_or_package_generated"] = (
+        "report_export_download_package_gate_record_only_no_download_or_package_generated"
+    )
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "download_route_now": False,
+            "zip_package_now": False,
+            "public_url_now": False,
+            "signed_url_now": False,
+            "b_end_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "read_runtime_file_content_now": False,
+            "read_original_rows_now": False,
+            "call_llm_now": False,
+            "fetch_url_now": False,
+        }
+    )
+    required_revisions: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "report_export_download_package_gate_audit_only": True,
+            "download_route_created": False,
+            "zip_package_created": False,
+            "public_url_created": False,
+            "signed_url_created": False,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
