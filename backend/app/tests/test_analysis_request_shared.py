@@ -4,6 +4,7 @@ import inspect
 import re
 
 from app.services import analysis_request_shared
+from app.services import analysis_request_store
 
 
 def test_utc_compact_timestamp_preserves_existing_shape() -> None:
@@ -46,3 +47,24 @@ def test_shared_id_helper_does_not_touch_runtime_files_or_network() -> None:
     for token in forbidden_tokens:
         assert token not in source
 
+
+def test_selected_download_package_id_helpers_delegate_to_shared_generator() -> None:
+    selected_helpers = [
+        (
+            analysis_request_store._new_report_export_download_package_artifact_id,
+            'generate_record_id("report_export_download_package_artifact")',
+        ),
+        (
+            analysis_request_store._new_report_export_download_package_artifact_audit_id,
+            'generate_record_id("report_export_download_package_artifact_audit")',
+        ),
+        (
+            analysis_request_store._new_report_export_download_package_manifest_id,
+            'generate_record_id("report_export_download_package_manifest")',
+        ),
+    ]
+
+    for helper, expected_call in selected_helpers:
+        source = inspect.getsource(helper)
+        assert expected_call in source
+        assert "datetime.now" not in source

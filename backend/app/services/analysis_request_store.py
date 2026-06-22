@@ -11282,18 +11282,15 @@ def _new_report_export_download_package_gate_audit_id() -> str:
 
 
 def _new_report_export_download_package_artifact_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return f"report_export_download_package_artifact_{timestamp}_{uuid.uuid4().hex[:8]}"
+    return generate_record_id("report_export_download_package_artifact")
 
 
 def _new_report_export_download_package_artifact_audit_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return f"report_export_download_package_artifact_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
+    return generate_record_id("report_export_download_package_artifact_audit")
 
 
 def _new_report_export_download_package_manifest_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return f"report_export_download_package_manifest_{timestamp}_{uuid.uuid4().hex[:8]}"
+    return generate_record_id("report_export_download_package_manifest")
 
 
 def _new_report_export_public_access_external_delivery_gate_id() -> str:
