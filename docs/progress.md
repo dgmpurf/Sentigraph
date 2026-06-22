@@ -1,10 +1,33 @@
 # Sentigraph Progress
 
-Last updated: 2026-06-20
+Last updated: 2026-06-22
 
 ## 1. Current Project Status
 
 Sentigraph is currently a mock-default, YouTube-real-capable, evidence-ingestion-ready desktop web MVP.
+
+Latest Phase 7X/7Y Report Export Public Access / External Delivery Gate
+update: designed and implemented on 2026-06-22. Phase 7X added the
+public-access / external-delivery gate architecture docs, contract, policy,
+boundary-audit policy, and downstream gate handoff notes. Phase 7Y added a
+local-only runtime gate after the report export download/package runtime. The
+runtime creates `ReportExportPublicAccessExternalDeliveryGate` and
+`ReportExportPublicAccessExternalDeliveryGateAudit` records, exposes
+request-scoped and global list/read/create APIs, and adds an Analysis Requests
+frontend panel for human gate decisions. The gate records future access or
+delivery candidates only; it does not create download routes, file-byte
+responses, public URLs, signed URLs, ZIP files, external delivery, object
+storage publication, portal access, B-end reports, Sandbox outputs, public
+events, Evidence Layer writes, production cases, production review queues,
+provider jobs, collector jobs, real API calls, URL fetching, scraping, or real
+LLM calls. Validation passed with targeted Phase 7Y backend tests (`3 passed`),
+analysis request store/API tests (`168 passed`), full backend pytest (`794
+passed, 1 warning`), offline benchmarks (`522 passed, 0 failed, 0 warnings`),
+`npm --prefix frontend run build` (successful build; existing large chunk
+warning remains), and `git diff --check`. Runtime/build folders remain ignored
+and no ZIP files or runtime artifacts were staged. Next recommended task:
+Phase 7Z public-access / external-delivery gate browser/API smoke and docs
+sync, still without generating public access or delivery.
 
 Latest Phase 7B Analysis-ready Promotion Gate Runtime update: implemented on
 2026-06-20. Added a local-only `AnalysisReadyPromotionGate` runtime after the
