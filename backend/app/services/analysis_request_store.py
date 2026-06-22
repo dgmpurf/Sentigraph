@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.services.analysis_request_shared import generate_record_id
 from app.schemas.analysis_request import (
     AnalysisRequestCancelResult,
     AnalysisRequestConfig,
@@ -11296,13 +11297,11 @@ def _new_report_export_download_package_manifest_id() -> str:
 
 
 def _new_report_export_public_access_external_delivery_gate_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return f"report_export_public_access_external_delivery_gate_{timestamp}_{uuid.uuid4().hex[:8]}"
+    return generate_record_id("report_export_public_access_external_delivery_gate")
 
 
 def _new_report_export_public_access_external_delivery_gate_audit_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return f"report_export_public_access_external_delivery_gate_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
+    return generate_record_id("report_export_public_access_external_delivery_gate_audit")
 
 
 def _slugify(value: str) -> str:
