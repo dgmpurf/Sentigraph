@@ -62,6 +62,9 @@ from app.schemas.analysis_request import (
     ReportExportDownloadPackageArtifact,
     ReportExportDownloadPackageArtifactAudit,
     ReportExportDownloadPackageArtifactRequest,
+    ReportExportPublicAccessExternalDeliveryGate,
+    ReportExportPublicAccessExternalDeliveryGateAudit,
+    ReportExportPublicAccessExternalDeliveryGateRequest,
     ReviewOnlyCase,
     ReviewOnlyCaseCreate,
     ReviewOnlyCaseStagingImport,
@@ -96,6 +99,7 @@ from app.services.analysis_request_store import (
     create_final_summary_report_export_gate,
     create_report_export_download_package_gate,
     create_report_export_download_package_artifact,
+    create_report_export_public_access_external_delivery_gate,
     create_report_generation_gate,
     create_final_summary_report_review_gate,
     create_summary_report_candidate,
@@ -142,6 +146,8 @@ from app.services.analysis_request_store import (
     list_all_report_export_download_package_gates,
     list_all_report_export_download_package_artifact_audits,
     list_all_report_export_download_package_artifacts,
+    list_all_report_export_public_access_external_delivery_gate_audits,
+    list_all_report_export_public_access_external_delivery_gates,
     list_all_review_only_cases,
     list_all_review_only_case_staging_imports,
     list_all_review_queue_action_audits,
@@ -194,6 +200,9 @@ from app.services.analysis_request_store import (
     list_report_export_download_package_artifact_audits,
     list_report_export_download_package_artifact_audits_for_artifact,
     list_report_export_download_package_artifacts,
+    list_report_export_public_access_external_delivery_gate_audits,
+    list_report_export_public_access_external_delivery_gate_audits_for_gate,
+    list_report_export_public_access_external_delivery_gates,
     list_review_only_cases,
     list_review_only_case_staging_imports,
     list_review_queue_action_audits,
@@ -223,6 +232,7 @@ from app.services.analysis_request_store import (
     read_real_package_row_preview,
     read_report_export_download_package_gate,
     read_report_export_download_package_artifact,
+    read_report_export_public_access_external_delivery_gate,
     read_review_only_case,
     read_review_only_case_staging_import,
     read_review_queue_action_audits_for_item,
@@ -448,6 +458,19 @@ def analysis_request_report_export_download_package_artifact_all_list() -> list[
 @router.get("/report-export-download-package-artifact-audits", response_model=list[ReportExportDownloadPackageArtifactAudit])
 def analysis_request_report_export_download_package_artifact_audit_all_list() -> list[ReportExportDownloadPackageArtifactAudit]:
     return list_all_report_export_download_package_artifact_audits()
+
+
+@router.get("/report-export-public-access-external-delivery-gates", response_model=list[ReportExportPublicAccessExternalDeliveryGate])
+def analysis_request_report_export_public_access_external_delivery_gate_all_list() -> list[ReportExportPublicAccessExternalDeliveryGate]:
+    return list_all_report_export_public_access_external_delivery_gates()
+
+
+@router.get(
+    "/report-export-public-access-external-delivery-gate-audits",
+    response_model=list[ReportExportPublicAccessExternalDeliveryGateAudit],
+)
+def analysis_request_report_export_public_access_external_delivery_gate_audit_all_list() -> list[ReportExportPublicAccessExternalDeliveryGateAudit]:
+    return list_all_report_export_public_access_external_delivery_gate_audits()
 
 
 @router.get("/{request_id}/case-draft", response_model=CaseDraftHandoff)
@@ -1663,6 +1686,78 @@ def analysis_request_report_export_download_package_artifact_audit_for_artifact_
 ) -> list[ReportExportDownloadPackageArtifactAudit]:
     try:
         return list_report_export_download_package_artifact_audits_for_artifact(request_id, package_artifact_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/report-export-public-access-external-delivery-gates",
+    response_model=list[ReportExportPublicAccessExternalDeliveryGate],
+)
+def analysis_request_report_export_public_access_external_delivery_gate_list(
+    request_id: str,
+) -> list[ReportExportPublicAccessExternalDeliveryGate]:
+    try:
+        return list_report_export_public_access_external_delivery_gates(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{request_id}/report-export-public-access-external-delivery-gates",
+    response_model=ReportExportPublicAccessExternalDeliveryGate,
+)
+def analysis_request_report_export_public_access_external_delivery_gate_create(
+    request_id: str,
+    payload: ReportExportPublicAccessExternalDeliveryGateRequest,
+) -> ReportExportPublicAccessExternalDeliveryGate:
+    try:
+        return create_report_export_public_access_external_delivery_gate(request_id, payload)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/report-export-public-access-external-delivery-gates/{public_access_delivery_gate_id}",
+    response_model=ReportExportPublicAccessExternalDeliveryGate,
+)
+def analysis_request_report_export_public_access_external_delivery_gate_detail(
+    request_id: str,
+    public_access_delivery_gate_id: str,
+) -> ReportExportPublicAccessExternalDeliveryGate:
+    try:
+        return read_report_export_public_access_external_delivery_gate(request_id, public_access_delivery_gate_id)
+    except AnalysisRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/report-export-public-access-external-delivery-gate-audits",
+    response_model=list[ReportExportPublicAccessExternalDeliveryGateAudit],
+)
+def analysis_request_report_export_public_access_external_delivery_gate_audit_list(
+    request_id: str,
+) -> list[ReportExportPublicAccessExternalDeliveryGateAudit]:
+    try:
+        return list_report_export_public_access_external_delivery_gate_audits(request_id)
+    except AnalysisRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{request_id}/report-export-public-access-external-delivery-gates/{public_access_delivery_gate_id}/audits",
+    response_model=list[ReportExportPublicAccessExternalDeliveryGateAudit],
+)
+def analysis_request_report_export_public_access_external_delivery_gate_audit_for_gate_list(
+    request_id: str,
+    public_access_delivery_gate_id: str,
+) -> list[ReportExportPublicAccessExternalDeliveryGateAudit]:
+    try:
+        return list_report_export_public_access_external_delivery_gate_audits_for_gate(request_id, public_access_delivery_gate_id)
     except AnalysisRequestValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

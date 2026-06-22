@@ -4640,6 +4640,260 @@ class ReportExportDownloadPackageArtifactAudit(BaseModel):
     )
 
 
+ReportExportPublicAccessExternalDeliveryDecision = Literal[
+    "approve_for_future_public_access_external_delivery_runtime",
+    "request_revision",
+    "block",
+    "privacy_hold",
+]
+
+ReportExportPublicAccessExternalDeliveryGateStatus = Literal[
+    "ready_for_future_public_access_external_delivery_runtime",
+    "needs_revision",
+    "blocked",
+    "privacy_hold",
+]
+
+ReportExportPublicAccessExternalDeliveryFutureMode = Literal[
+    "public_download_route_future_candidate",
+    "file_byte_response_future_candidate",
+    "signed_url_future_candidate",
+    "public_url_future_candidate",
+    "restricted_portal_access_future_candidate",
+    "object_storage_publication_future_candidate",
+    "external_delivery_future_candidate",
+    "internal_handoff_future_candidate",
+]
+
+
+class ReportExportPublicAccessExternalDeliveryGateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    package_artifact_id: str
+    download_package_gate_id: str
+    final_summary_report_id: str
+    review_case_id: str
+    reviewer_label: str
+    note: str
+    access_delivery_decision: ReportExportPublicAccessExternalDeliveryDecision
+    requested_future_access_modes: list[ReportExportPublicAccessExternalDeliveryFutureMode] = Field(default_factory=list)
+    requested_future_delivery_modes: list[ReportExportPublicAccessExternalDeliveryFutureMode] = Field(default_factory=list)
+    required_revisions: list[str] = Field(default_factory=list)
+    acknowledge_gate_only: bool = False
+    acknowledge_no_public_download_route: bool = False
+    acknowledge_no_file_byte_response: bool = False
+    acknowledge_no_zip: bool = False
+    acknowledge_no_public_or_signed_url: bool = False
+    acknowledge_no_external_delivery: bool = False
+    acknowledge_no_email: bool = False
+    acknowledge_no_object_storage: bool = False
+    acknowledge_no_portal_publication: bool = False
+    acknowledge_no_runtime_file_exposure: bool = False
+    acknowledge_no_manifest_content_exposure: bool = False
+    acknowledge_no_export_artifact_content_read: bool = False
+    acknowledge_no_b_end_report: bool = False
+    acknowledge_no_sandbox_or_public_event: bool = False
+    acknowledge_no_evidence_layer_write: bool = False
+    acknowledge_no_production_case: bool = False
+    acknowledge_provider_output_is_evidence_not_truth: bool = False
+    acknowledge_not_official_verification: bool = False
+    acknowledge_not_full_web_coverage: bool = False
+    acknowledge_downstream_gates_required: bool = False
+    creates_public_download_route_now: bool = False
+    creates_file_byte_response_now: bool = False
+    generates_public_url_now: bool = False
+    generates_signed_url_now: bool = False
+    performs_external_delivery_now: bool = False
+    sends_email_now: bool = False
+    uploads_to_object_storage_now: bool = False
+    publishes_to_portal_now: bool = False
+    exposes_runtime_file_now: bool = False
+    exposes_absolute_path_now: bool = False
+    exposes_manifest_file_content_now: bool = False
+    exposes_export_artifact_content_now: bool = False
+    reads_export_artifact_file_content_now: bool = False
+    copies_export_artifact_content_now: bool = False
+    generates_zip_now: bool = False
+    generates_binary_archive_now: bool = False
+    generates_b_end_report_now: bool = False
+    generates_sandbox_now: bool = False
+    generates_public_event_now: bool = False
+    writes_evidence_layer_now: bool = False
+    creates_production_case_now: bool = False
+    calls_real_api_now: bool = False
+    calls_real_llm_now: bool = False
+    fetches_url_now: bool = False
+    scrapes_now: bool = False
+    reads_original_package_rows_now: bool = False
+
+
+class ReportExportPublicAccessExternalDeliveryGate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_report_export_public_access_external_delivery_gate_v1"] = Field(
+        default="sentigraph_report_export_public_access_external_delivery_gate_v1",
+        alias="schema",
+    )
+    public_access_delivery_gate_id: str
+    request_id: str
+    review_case_id: str
+    package_artifact_id: str
+    download_package_gate_id: str
+    final_summary_report_id: str
+    gate_type: Literal["report_export_public_access_external_delivery_gate"] = "report_export_public_access_external_delivery_gate"
+    gate_version: Literal["sentigraph_report_export_public_access_external_delivery_gate_v1"] = (
+        "sentigraph_report_export_public_access_external_delivery_gate_v1"
+    )
+    gate_status: ReportExportPublicAccessExternalDeliveryGateStatus
+    access_delivery_decision: ReportExportPublicAccessExternalDeliveryDecision
+    requested_future_access_modes: list[ReportExportPublicAccessExternalDeliveryFutureMode] = Field(default_factory=list)
+    requested_future_delivery_modes: list[ReportExportPublicAccessExternalDeliveryFutureMode] = Field(default_factory=list)
+    upstream_package_artifact_status: str = ""
+    package_manifest_summary: dict[str, bool | int | str] = Field(default_factory=dict)
+    eligibility_summary: dict[str, bool | str] = Field(default_factory=dict)
+    boundary_block: dict[str, bool] = Field(default_factory=dict)
+    downstream_gate_policy: dict[str, bool] = Field(default_factory=dict)
+    audit_trace: dict[str, list[str]] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    required_revisions: list[str] = Field(default_factory=list)
+    boundary_notes: list[str] = Field(default_factory=list)
+    operator_label: str = "sentigraph_local_ui"
+    reviewer_label: str = "sentigraph_local_ui"
+    note: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "public_access_external_delivery_gate_only": True,
+            "public_download_route_created": False,
+            "file_byte_response_created": False,
+            "zip_generated": False,
+            "public_url_generated": False,
+            "signed_url_generated": False,
+            "external_delivery_performed": False,
+            "email_sent": False,
+            "object_storage_uploaded": False,
+            "portal_published": False,
+            "runtime_file_exposed": False,
+            "absolute_path_exposed": False,
+            "manifest_file_content_exposed": False,
+            "export_artifact_content_read": False,
+            "export_artifact_content_copied": False,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "production_review_queue_created": False,
+            "production_dedup_run": False,
+            "provider_execution": False,
+            "collector_jobs_run": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
+class ReportExportPublicAccessExternalDeliveryGateAudit(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: Literal["sentigraph_report_export_public_access_external_delivery_gate_audit_v1"] = Field(
+        default="sentigraph_report_export_public_access_external_delivery_gate_audit_v1",
+        alias="schema",
+    )
+    public_access_delivery_gate_audit_id: str
+    public_access_delivery_gate_id: str
+    package_artifact_id: str
+    package_artifact_audit_id: str
+    download_package_gate_id: str
+    final_summary_report_id: str
+    request_id: str
+    review_case_id: str
+    action: Literal[
+        "public_access_delivery_gate_created",
+        "public_access_delivery_gate_blocked",
+        "privacy_hold",
+        "public_access_external_delivery_gate_record_only_no_public_access_or_delivery_generated",
+    ] = "public_access_delivery_gate_created"
+    previous_status: str = "not_created"
+    new_status: ReportExportPublicAccessExternalDeliveryGateStatus
+    access_delivery_decision: ReportExportPublicAccessExternalDeliveryDecision
+    reviewer_label: str
+    decided_at: datetime = Field(default_factory=utc_now)
+    note: str = ""
+    analysis_effect: Literal["public_access_external_delivery_gate_record_only_no_public_access_or_delivery_generated"] = (
+        "public_access_external_delivery_gate_record_only_no_public_access_or_delivery_generated"
+    )
+    boundary_confirmation_snapshot: dict[str, bool] = Field(default_factory=dict)
+    eligibility_summary_snapshot: dict[str, bool | str] = Field(default_factory=dict)
+    upstream_refs: dict[str, list[str]] = Field(default_factory=dict)
+    required_revisions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    now_flags: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "public_download_route_now": False,
+            "file_byte_response_now": False,
+            "public_url_now": False,
+            "signed_url_now": False,
+            "external_delivery_now": False,
+            "email_now": False,
+            "object_storage_upload_now": False,
+            "portal_publication_now": False,
+            "runtime_file_exposure_now": False,
+            "absolute_path_exposure_now": False,
+            "manifest_file_content_exposure_now": False,
+            "export_artifact_content_exposure_now": False,
+            "read_export_artifact_file_content_now": False,
+            "copy_export_artifact_content_now": False,
+            "zip_now": False,
+            "binary_archive_now": False,
+            "generate_b_end_report_now": False,
+            "generate_sandbox_now": False,
+            "generate_public_event_now": False,
+            "write_evidence_layer_now": False,
+            "create_production_case_now": False,
+            "call_real_api_now": False,
+            "call_real_llm_now": False,
+            "fetch_url_now": False,
+            "scrape_now": False,
+            "read_original_package_rows_now": False,
+        }
+    )
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "public_access_external_delivery_gate_audit_only": True,
+            "public_download_route_created": False,
+            "file_byte_response_created": False,
+            "zip_generated": False,
+            "public_url_generated": False,
+            "signed_url_generated": False,
+            "external_delivery_performed": False,
+            "email_sent": False,
+            "object_storage_uploaded": False,
+            "portal_published": False,
+            "runtime_file_exposed": False,
+            "export_artifact_content_read": False,
+            "b_end_report_generated": False,
+            "sandbox_fixture_generated": False,
+            "public_event_page_generated": False,
+            "evidence_layer_written": False,
+            "production_case_created": False,
+            "real_api_calls": False,
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+            "raw_author_identifiers_exposed": False,
+        }
+    )
+
+
 class ProviderJobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

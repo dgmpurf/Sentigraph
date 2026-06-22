@@ -138,6 +138,9 @@ from app.schemas.analysis_request import (
     ReportExportDownloadPackageArtifact,
     ReportExportDownloadPackageArtifactAudit,
     ReportExportDownloadPackageArtifactRequest,
+    ReportExportPublicAccessExternalDeliveryGate,
+    ReportExportPublicAccessExternalDeliveryGateAudit,
+    ReportExportPublicAccessExternalDeliveryGateRequest,
     ReviewOnlyCase,
     ReviewOnlyCaseAudit,
     ReviewOnlyCaseCreate,
@@ -2115,6 +2118,103 @@ def list_report_export_download_package_artifact_audits_for_artifact(
         audit
         for audit in list_report_export_download_package_artifact_audits(request_id)
         if audit.package_artifact_id == package_artifact_id
+    ]
+
+
+def read_report_export_public_access_external_delivery_gate(
+    request_id: str,
+    public_access_delivery_gate_id: str,
+) -> ReportExportPublicAccessExternalDeliveryGate:
+    gate_path = _report_export_public_access_external_delivery_gate_path(request_id, public_access_delivery_gate_id)
+    if not gate_path.exists():
+        raise AnalysisRequestNotFoundError(
+            f"Report export public access / external delivery gate {public_access_delivery_gate_id} was not found."
+        )
+    try:
+        parsed = json.loads(gate_path.read_text(encoding="utf-8-sig"))
+        gate = ReportExportPublicAccessExternalDeliveryGate.model_validate(parsed)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise AnalysisRequestValidationError(
+            f"Report export public access / external delivery gate {public_access_delivery_gate_id} is invalid."
+        ) from exc
+    if gate.request_id != request_id or gate.public_access_delivery_gate_id != public_access_delivery_gate_id:
+        raise AnalysisRequestValidationError("Report export public access / external delivery gate id mismatch.")
+    return gate
+
+
+def list_report_export_public_access_external_delivery_gates(
+    request_id: str,
+) -> list[ReportExportPublicAccessExternalDeliveryGate]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    gates: list[ReportExportPublicAccessExternalDeliveryGate] = []
+    for path in sorted(
+        (root / "report_export_public_access_external_delivery_gates").glob(f"{request_id}_*.json"),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    ):
+        request_id_from_path, gate_id = _split_prefixed_id(path, "report_export_public_access_external_delivery_gate")
+        if request_id_from_path == request_id:
+            gates.append(read_report_export_public_access_external_delivery_gate(request_id, gate_id))
+    return gates
+
+
+def list_all_report_export_public_access_external_delivery_gates() -> list[ReportExportPublicAccessExternalDeliveryGate]:
+    root = _ensure_root()
+    gates: list[ReportExportPublicAccessExternalDeliveryGate] = []
+    for path in sorted(
+        (root / "report_export_public_access_external_delivery_gates").glob("*.json"),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    ):
+        request_id, gate_id = _split_prefixed_id(path, "report_export_public_access_external_delivery_gate")
+        gates.append(read_report_export_public_access_external_delivery_gate(request_id, gate_id))
+    return gates
+
+
+def list_report_export_public_access_external_delivery_gate_audits(
+    request_id: str,
+) -> list[ReportExportPublicAccessExternalDeliveryGateAudit]:
+    _validate_request_id(request_id)
+    root = _ensure_root()
+    audits: list[ReportExportPublicAccessExternalDeliveryGateAudit] = []
+    for path in sorted(
+        (root / "report_export_public_access_external_delivery_gate_audits").glob(f"{request_id}_*.json"),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    ):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ReportExportPublicAccessExternalDeliveryGateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid report export public access / external delivery gate audit.") from exc
+    return audits
+
+
+def list_all_report_export_public_access_external_delivery_gate_audits() -> list[ReportExportPublicAccessExternalDeliveryGateAudit]:
+    root = _ensure_root()
+    audits: list[ReportExportPublicAccessExternalDeliveryGateAudit] = []
+    for path in sorted(
+        (root / "report_export_public_access_external_delivery_gate_audits").glob("*.json"),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    ):
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+            audits.append(ReportExportPublicAccessExternalDeliveryGateAudit.model_validate(parsed))
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AnalysisRequestValidationError(f"{path.name} is not a valid report export public access / external delivery gate audit.") from exc
+    return audits
+
+
+def list_report_export_public_access_external_delivery_gate_audits_for_gate(
+    request_id: str,
+    public_access_delivery_gate_id: str,
+) -> list[ReportExportPublicAccessExternalDeliveryGateAudit]:
+    return [
+        audit
+        for audit in list_report_export_public_access_external_delivery_gate_audits(request_id)
+        if audit.public_access_delivery_gate_id == public_access_delivery_gate_id
     ]
 
 
@@ -4187,6 +4287,137 @@ def create_report_export_download_package_artifact(
         audit.model_dump(mode="json", by_alias=True),
     )
     return read_report_export_download_package_artifact(request_id, package_artifact_id)
+
+
+def create_report_export_public_access_external_delivery_gate(
+    request_id: str,
+    payload: ReportExportPublicAccessExternalDeliveryGateRequest | dict[str, Any],
+) -> ReportExportPublicAccessExternalDeliveryGate:
+    try:
+        gate_payload = (
+            payload
+            if isinstance(payload, ReportExportPublicAccessExternalDeliveryGateRequest)
+            else ReportExportPublicAccessExternalDeliveryGateRequest.model_validate(payload or {})
+        )
+    except ValidationError as exc:
+        raise AnalysisRequestValidationError(
+            f"Cannot create report export public access / external delivery gate: invalid payload ({exc})."
+        ) from exc
+
+    _validate_report_export_public_access_external_delivery_gate_payload(gate_payload)
+    read_analysis_request(request_id)
+    package_artifact = read_report_export_download_package_artifact(request_id, gate_payload.package_artifact_id)
+    package_artifact_audits = list_report_export_download_package_artifact_audits_for_artifact(
+        request_id,
+        package_artifact.package_artifact_id,
+    )
+    package_artifact_audit = package_artifact_audits[0] if package_artifact_audits else None
+    if package_artifact_audit is None:
+        raise AnalysisRequestValidationError(
+            "Cannot create report export public access / external delivery gate: package artifact audit is missing."
+        )
+    download_package_gate = read_report_export_download_package_gate(request_id, gate_payload.download_package_gate_id)
+    download_package_gate_audits = list_report_export_download_package_gate_audits_for_gate(
+        request_id,
+        download_package_gate.download_package_gate_id,
+    )
+    final_report = read_final_summary_report(request_id, gate_payload.final_summary_report_id)
+    review_case = read_review_only_case(request_id, gate_payload.review_case_id)
+
+    _validate_report_export_public_access_external_delivery_gate_prerequisites(
+        request_id,
+        gate_payload,
+        package_artifact,
+        package_artifact_audit,
+        download_package_gate,
+        download_package_gate_audits,
+        final_report,
+        review_case,
+    )
+
+    gate_id = _new_report_export_public_access_external_delivery_gate_id()
+    audit_id = _new_report_export_public_access_external_delivery_gate_audit_id()
+    created_at = datetime.now(timezone.utc)
+    required_revisions = [item.strip() for item in gate_payload.required_revisions if item.strip()]
+    status = _report_export_public_access_external_delivery_gate_status(gate_payload.access_delivery_decision)
+    boundary_block = _report_export_public_access_external_delivery_boundary_block()
+    eligibility_summary = _report_export_public_access_external_delivery_eligibility_summary(package_artifact)
+    warnings = _report_export_public_access_external_delivery_warnings(package_artifact, download_package_gate)
+    boundary_notes = _report_export_public_access_external_delivery_boundary_notes()
+    downstream_gate_policy = _report_export_public_access_external_delivery_downstream_gate_policy()
+    audit_trace = {
+        "public_access_delivery_gate_audit_ids": [audit_id],
+        "package_artifact_ids": [package_artifact.package_artifact_id],
+        "package_artifact_audit_ids": [package_artifact_audit.package_artifact_audit_id],
+        "download_package_gate_ids": [download_package_gate.download_package_gate_id],
+        "download_package_gate_audit_ids": [audit.download_package_gate_audit_id for audit in download_package_gate_audits],
+        "final_summary_report_ids": [final_report.final_summary_report_id],
+    }
+    blockers = [] if status in {"ready_for_future_public_access_external_delivery_runtime", "needs_revision"} else [status]
+    action = "public_access_delivery_gate_created"
+    if status == "privacy_hold":
+        action = "privacy_hold"
+    elif status == "blocked":
+        action = "public_access_delivery_gate_blocked"
+
+    gate = ReportExportPublicAccessExternalDeliveryGate(
+        public_access_delivery_gate_id=gate_id,
+        request_id=request_id,
+        review_case_id=review_case.review_case_id,
+        package_artifact_id=package_artifact.package_artifact_id,
+        download_package_gate_id=download_package_gate.download_package_gate_id,
+        final_summary_report_id=final_report.final_summary_report_id,
+        gate_status=status,
+        access_delivery_decision=gate_payload.access_delivery_decision,
+        requested_future_access_modes=gate_payload.requested_future_access_modes,
+        requested_future_delivery_modes=gate_payload.requested_future_delivery_modes,
+        upstream_package_artifact_status=package_artifact.package_status,
+        package_manifest_summary=dict(package_artifact.manifest_summary),
+        eligibility_summary=eligibility_summary,
+        boundary_block=boundary_block,
+        downstream_gate_policy=downstream_gate_policy,
+        audit_trace=audit_trace,
+        warnings=warnings,
+        blockers=blockers,
+        required_revisions=required_revisions,
+        boundary_notes=boundary_notes,
+        operator_label=gate_payload.reviewer_label.strip(),
+        reviewer_label=gate_payload.reviewer_label.strip(),
+        note=gate_payload.note.strip(),
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    audit = ReportExportPublicAccessExternalDeliveryGateAudit(
+        public_access_delivery_gate_audit_id=audit_id,
+        public_access_delivery_gate_id=gate_id,
+        package_artifact_id=package_artifact.package_artifact_id,
+        package_artifact_audit_id=package_artifact_audit.package_artifact_audit_id,
+        download_package_gate_id=download_package_gate.download_package_gate_id,
+        final_summary_report_id=final_report.final_summary_report_id,
+        request_id=request_id,
+        review_case_id=review_case.review_case_id,
+        action=action,
+        new_status=status,
+        access_delivery_decision=gate_payload.access_delivery_decision,
+        reviewer_label=gate_payload.reviewer_label.strip(),
+        decided_at=created_at,
+        note=gate_payload.note.strip(),
+        boundary_confirmation_snapshot=boundary_block,
+        eligibility_summary_snapshot=eligibility_summary,
+        upstream_refs=audit_trace,
+        required_revisions=required_revisions,
+        warnings=warnings,
+        blockers=blockers,
+    )
+    _write_json(
+        _report_export_public_access_external_delivery_gate_path(request_id, gate_id),
+        gate.model_dump(mode="json", by_alias=True),
+    )
+    _write_json(
+        _report_export_public_access_external_delivery_gate_audit_path(request_id, gate_id, audit_id),
+        audit.model_dump(mode="json", by_alias=True),
+    )
+    return read_report_export_public_access_external_delivery_gate(request_id, gate_id)
 
 
 def _record_from_path(path: Path) -> AnalysisRequestRecord:
@@ -9492,6 +9723,365 @@ def _report_export_download_package_artifact_payload_has_forbidden_extra(payload
     return False
 
 
+def _validate_report_export_public_access_external_delivery_gate_payload(
+    payload: ReportExportPublicAccessExternalDeliveryGateRequest,
+) -> None:
+    required_text = {
+        "package_artifact_id": payload.package_artifact_id,
+        "download_package_gate_id": payload.download_package_gate_id,
+        "final_summary_report_id": payload.final_summary_report_id,
+        "review_case_id": payload.review_case_id,
+        "reviewer_label": payload.reviewer_label,
+        "note": payload.note,
+    }
+    missing_text = [name for name, value in required_text.items() if not (value or "").strip()]
+    if missing_text:
+        raise AnalysisRequestValidationError(
+            f"Cannot create report export public access / external delivery gate: required fields are missing ({', '.join(missing_text)})."
+        )
+    if payload.access_delivery_decision == "request_revision" and not [item for item in payload.required_revisions if item.strip()]:
+        raise AnalysisRequestValidationError(
+            "Cannot create report export public access / external delivery gate: request_revision requires required_revisions."
+        )
+    if not payload.requested_future_access_modes and not payload.requested_future_delivery_modes:
+        raise AnalysisRequestValidationError(
+            "Cannot create report export public access / external delivery gate: at least one future access or delivery mode label is required."
+        )
+    acknowledgements = {
+        "acknowledge_gate_only": payload.acknowledge_gate_only,
+        "acknowledge_no_public_download_route": payload.acknowledge_no_public_download_route,
+        "acknowledge_no_file_byte_response": payload.acknowledge_no_file_byte_response,
+        "acknowledge_no_zip": payload.acknowledge_no_zip,
+        "acknowledge_no_public_or_signed_url": payload.acknowledge_no_public_or_signed_url,
+        "acknowledge_no_external_delivery": payload.acknowledge_no_external_delivery,
+        "acknowledge_no_email": payload.acknowledge_no_email,
+        "acknowledge_no_object_storage": payload.acknowledge_no_object_storage,
+        "acknowledge_no_portal_publication": payload.acknowledge_no_portal_publication,
+        "acknowledge_no_runtime_file_exposure": payload.acknowledge_no_runtime_file_exposure,
+        "acknowledge_no_manifest_content_exposure": payload.acknowledge_no_manifest_content_exposure,
+        "acknowledge_no_export_artifact_content_read": payload.acknowledge_no_export_artifact_content_read,
+        "acknowledge_no_b_end_report": payload.acknowledge_no_b_end_report,
+        "acknowledge_no_sandbox_or_public_event": payload.acknowledge_no_sandbox_or_public_event,
+        "acknowledge_no_evidence_layer_write": payload.acknowledge_no_evidence_layer_write,
+        "acknowledge_no_production_case": payload.acknowledge_no_production_case,
+        "acknowledge_provider_output_is_evidence_not_truth": payload.acknowledge_provider_output_is_evidence_not_truth,
+        "acknowledge_not_official_verification": payload.acknowledge_not_official_verification,
+        "acknowledge_not_full_web_coverage": payload.acknowledge_not_full_web_coverage,
+        "acknowledge_downstream_gates_required": payload.acknowledge_downstream_gates_required,
+    }
+    missing_acknowledgements = [name for name, value in acknowledgements.items() if not value]
+    if missing_acknowledgements:
+        raise AnalysisRequestValidationError(
+            f"Cannot create report export public access / external delivery gate: acknowledgement flags are required ({', '.join(missing_acknowledgements)})."
+        )
+    side_effect_flags = {
+        "creates_public_download_route_now": payload.creates_public_download_route_now,
+        "creates_file_byte_response_now": payload.creates_file_byte_response_now,
+        "generates_public_url_now": payload.generates_public_url_now,
+        "generates_signed_url_now": payload.generates_signed_url_now,
+        "performs_external_delivery_now": payload.performs_external_delivery_now,
+        "sends_email_now": payload.sends_email_now,
+        "uploads_to_object_storage_now": payload.uploads_to_object_storage_now,
+        "publishes_to_portal_now": payload.publishes_to_portal_now,
+        "exposes_runtime_file_now": payload.exposes_runtime_file_now,
+        "exposes_absolute_path_now": payload.exposes_absolute_path_now,
+        "exposes_manifest_file_content_now": payload.exposes_manifest_file_content_now,
+        "exposes_export_artifact_content_now": payload.exposes_export_artifact_content_now,
+        "reads_export_artifact_file_content_now": payload.reads_export_artifact_file_content_now,
+        "copies_export_artifact_content_now": payload.copies_export_artifact_content_now,
+        "generates_zip_now": payload.generates_zip_now,
+        "generates_binary_archive_now": payload.generates_binary_archive_now,
+        "generates_b_end_report_now": payload.generates_b_end_report_now,
+        "generates_sandbox_now": payload.generates_sandbox_now,
+        "generates_public_event_now": payload.generates_public_event_now,
+        "writes_evidence_layer_now": payload.writes_evidence_layer_now,
+        "creates_production_case_now": payload.creates_production_case_now,
+        "calls_real_api_now": payload.calls_real_api_now,
+        "calls_real_llm_now": payload.calls_real_llm_now,
+        "fetches_url_now": payload.fetches_url_now,
+        "scrapes_now": payload.scrapes_now,
+        "reads_original_package_rows_now": payload.reads_original_package_rows_now,
+    }
+    enabled = [name for name, value in side_effect_flags.items() if value]
+    if enabled:
+        raise AnalysisRequestValidationError(
+            f"Cannot create report export public access / external delivery gate: side effect flags must remain false ({', '.join(sorted(enabled))})."
+        )
+    extra = getattr(payload, "model_extra", None) or {}
+    output_controls = {
+        "public_url",
+        "signed_url",
+        "download_url",
+        "external_delivery_url",
+        "object_storage_url",
+        "portal_url",
+        "file_bytes",
+        "zip_path",
+        "absolute_path",
+        "runtime_file_path",
+        "manifest_file_content",
+        "manifest_runtime_content",
+        "raw_artifact_content",
+        "export_artifact_content",
+        "email_recipient",
+    }
+    supplied_controls = [name for name in output_controls if name in extra]
+    if supplied_controls:
+        raise AnalysisRequestValidationError(
+            f"Cannot create report export public access / external delivery gate: public access / external delivery controls are not accepted ({', '.join(sorted(supplied_controls))})."
+        )
+    if _report_export_public_access_external_delivery_payload_has_forbidden_extra(payload):
+        raise AnalysisRequestValidationError(
+            "Cannot create report export public access / external delivery gate: raw/private/secret-like fields are not allowed."
+        )
+
+
+def _validate_report_export_public_access_external_delivery_gate_prerequisites(
+    request_id: str,
+    payload: ReportExportPublicAccessExternalDeliveryGateRequest,
+    package_artifact: ReportExportDownloadPackageArtifact,
+    package_artifact_audit: ReportExportDownloadPackageArtifactAudit,
+    download_package_gate: ReportExportDownloadPackageGate,
+    download_package_gate_audits: list[ReportExportDownloadPackageGateAudit],
+    final_report: FinalSummaryReport,
+    review_case: ReviewOnlyCase,
+) -> None:
+    if any(item.request_id != request_id for item in [package_artifact, package_artifact_audit, download_package_gate, final_report, review_case]):
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: request_id mismatch.")
+    if payload.review_case_id != review_case.review_case_id:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: review_case_id mismatch.")
+    if len({package_artifact.review_case_id, download_package_gate.review_case_id, final_report.review_case_id, review_case.review_case_id}) != 1:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: review_case_id mismatch.")
+    if payload.download_package_gate_id != download_package_gate.download_package_gate_id:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: download/package gate mismatch.")
+    if payload.final_summary_report_id != final_report.final_summary_report_id:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: final summary report mismatch.")
+    if package_artifact.download_package_gate_id != download_package_gate.download_package_gate_id:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: download/package gate mismatch.")
+    if package_artifact.final_summary_report_id != final_report.final_summary_report_id:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: final summary report mismatch.")
+    if package_artifact.package_status != "local_manifest_ready":
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package artifact is not ready.")
+    if package_artifact.package_mode != "local_manifest_only":
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package artifact mode is unsupported.")
+    if download_package_gate.status != "ready_for_future_download_package_runtime":
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: download/package gate is not ready.")
+    if not download_package_gate_audits:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: download/package gate audit is missing.")
+    if package_artifact_audit.package_artifact_id != package_artifact.package_artifact_id:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package artifact audit mismatch.")
+    if package_artifact.package_artifact_id not in {package_artifact_audit.package_artifact_id}:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package artifact audit mismatch.")
+    _validate_report_export_public_access_external_delivery_package_metadata(package_artifact)
+
+
+def _validate_report_export_public_access_external_delivery_package_metadata(
+    package_artifact: ReportExportDownloadPackageArtifact,
+) -> None:
+    if package_artifact.manifest_summary.get("contains_public_url") is not False:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package manifest summary contains public_url.")
+    if package_artifact.manifest_summary.get("contains_signed_url") is not False:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package manifest summary contains signed_url.")
+    if package_artifact.manifest_summary.get("contains_download_route") is not False:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package manifest summary contains download route.")
+    if package_artifact.manifest_summary.get("contains_raw_author_identifier") is not False:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package manifest summary contains raw author identifiers.")
+    if package_artifact.manifest_summary.get("contains_secret_like_value") is not False:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package manifest summary contains secret-like values.")
+    if package_artifact.file_inventory_summary.get("absolute_paths_exposed") is not False:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package file inventory exposes absolute paths.")
+    if package_artifact.file_inventory_summary.get("file_bytes_exposed") is not False:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package file inventory exposes file bytes.")
+    if package_artifact.file_inventory_summary.get("artifact_content_copied") is not False:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package file inventory copied artifact content.")
+    if package_artifact.file_inventory_summary.get("artifact_content_read") is not False:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package file inventory read artifact content.")
+    enabled_boundaries = [name for name, value in package_artifact.boundary_block.items() if value is True and name != "generates_local_manifest_package_now"]
+    if enabled_boundaries:
+        raise AnalysisRequestValidationError(
+            f"Cannot create report export public access / external delivery gate: package boundary contains unsafe side effects ({', '.join(enabled_boundaries)})."
+        )
+    if not package_artifact.warnings or not package_artifact.boundary_notes:
+        raise AnalysisRequestValidationError("Cannot create report export public access / external delivery gate: package boundary warnings are missing.")
+    serialized = json.dumps(package_artifact.model_dump(mode="json"), ensure_ascii=False).lower()
+    forbidden_metadata_tokens = [
+        '"raw_author_id"',
+        '"raw_author_name"',
+        '"profile_url"',
+        '"private_message"',
+        '"cookie"',
+        '"token"',
+        '"api_key"',
+        '"password"',
+        '"file_bytes"',
+    ]
+    if any(token in serialized for token in forbidden_metadata_tokens):
+        raise AnalysisRequestValidationError(
+            "Cannot create report export public access / external delivery gate: raw/private/secret-like fields are not allowed."
+        )
+
+
+def _report_export_public_access_external_delivery_gate_status(decision: str) -> str:
+    return {
+        "approve_for_future_public_access_external_delivery_runtime": "ready_for_future_public_access_external_delivery_runtime",
+        "request_revision": "needs_revision",
+        "block": "blocked",
+        "privacy_hold": "privacy_hold",
+    }[decision]
+
+
+def _report_export_public_access_external_delivery_boundary_block() -> dict[str, bool]:
+    return {
+        "creates_public_download_route_now": False,
+        "creates_file_byte_response_now": False,
+        "generates_public_url_now": False,
+        "generates_signed_url_now": False,
+        "performs_external_delivery_now": False,
+        "sends_email_now": False,
+        "uploads_to_object_storage_now": False,
+        "publishes_to_portal_now": False,
+        "exposes_runtime_file_now": False,
+        "exposes_absolute_path_now": False,
+        "exposes_manifest_file_content_now": False,
+        "exposes_export_artifact_content_now": False,
+        "reads_export_artifact_file_content_now": False,
+        "copies_export_artifact_content_now": False,
+        "generates_zip_now": False,
+        "generates_binary_archive_now": False,
+        "generates_b_end_report_now": False,
+        "generates_sandbox_now": False,
+        "generates_public_event_now": False,
+        "writes_evidence_layer_now": False,
+        "creates_production_case_now": False,
+        "calls_real_api_now": False,
+        "calls_real_llm_now": False,
+        "fetches_url_now": False,
+        "scrapes_now": False,
+        "reads_original_package_rows_now": False,
+    }
+
+
+def _report_export_public_access_external_delivery_eligibility_summary(
+    package_artifact: ReportExportDownloadPackageArtifact,
+) -> dict[str, bool | str]:
+    return {
+        "source": "report_export_download_package_artifact",
+        "safe_metadata_only": True,
+        "upstream_artifact_exists": True,
+        "upstream_status_ready": package_artifact.package_status == "local_manifest_ready",
+        "upstream_audit_exists": True,
+        "no_public_url": package_artifact.manifest_summary.get("contains_public_url") is False,
+        "no_signed_url": package_artifact.manifest_summary.get("contains_signed_url") is False,
+        "no_download_url": package_artifact.manifest_summary.get("contains_download_route") is False,
+        "no_zip_or_binary_archive": True,
+        "no_absolute_path_exposed": package_artifact.file_inventory_summary.get("absolute_paths_exposed") is False,
+        "no_raw_author_identifiers": package_artifact.manifest_summary.get("contains_raw_author_identifier") is False,
+        "no_secrets": package_artifact.manifest_summary.get("contains_secret_like_value") is False,
+        "no_file_bytes": package_artifact.file_inventory_summary.get("file_bytes_exposed") is False,
+        "no_artifact_content": package_artifact.file_inventory_summary.get("artifact_content_copied") is False,
+        "no_original_package_rows": package_artifact.boundary_block.get("reads_original_package_rows_now") is False,
+    }
+
+
+def _report_export_public_access_external_delivery_downstream_gate_policy() -> dict[str, bool]:
+    return {
+        "requires_public_access_runtime_gate": True,
+        "requires_external_delivery_runtime_gate": True,
+        "requires_b_end_report_gate": True,
+        "requires_sandbox_generation_gate": True,
+        "requires_public_event_generation_gate": True,
+        "can_create_public_access_now": False,
+        "can_perform_external_delivery_now": False,
+        "can_generate_b_end_report_now": False,
+        "can_generate_sandbox_now": False,
+        "can_generate_public_event_now": False,
+    }
+
+
+def _report_export_public_access_external_delivery_warnings(
+    package_artifact: ReportExportDownloadPackageArtifact,
+    download_package_gate: ReportExportDownloadPackageGate,
+) -> list[str]:
+    return _unique_preserve_order(
+        list(package_artifact.warnings)
+        + list(download_package_gate.warnings)
+        + [
+            "This is a public access / external delivery gate record only.",
+            "No public download route, file-byte response, ZIP, public URL, signed URL, email, object storage upload, portal publication, or external delivery was created.",
+            "No package manifest file content or export artifact file content was read, parsed, copied, zipped, or exposed.",
+            "B-end report, Sandbox fixture, public event page, Evidence Layer write, and production case require separate later gates.",
+            "Provider output is evidence, not truth.",
+            "This gate is not official verification.",
+            "This gate is not full-web, full-platform, or full-thread coverage.",
+            "Weak evidence remains warning-marked.",
+            "Rejected evidence remains excluded.",
+            "Duplicate evidence does not amplify risk, sentiment, coverage, or report conclusions.",
+        ]
+    )
+
+
+def _report_export_public_access_external_delivery_boundary_notes() -> list[str]:
+    return [
+        "No public download route is created by this gate.",
+        "No file-byte response route, ZIP, binary archive, public URL, signed URL, email, object storage upload, portal publication, or external delivery is generated.",
+        "No runtime files are exposed and no absolute filesystem paths are returned.",
+        "No package manifest file content or export artifact file content was read, parsed, copied, zipped, bundled, or exposed.",
+        "No evidence_items.jsonl, evidence_items.csv, or original package rows were read.",
+        "No B-end report, Sandbox fixture, public event page, Evidence Layer write, production case, production review queue, or production dedup was created.",
+        "No real API, real LLM, provider execution, collector job, URL fetch, or scraping action was run.",
+        "Provider output is evidence, not truth.",
+        "This gate is not official verification.",
+        "This gate is not full-web, not full-platform, and not full-thread coverage.",
+        "Downstream public access, external delivery, B-end, Sandbox, and public event gates remain separate.",
+    ]
+
+
+def _report_export_public_access_external_delivery_payload_has_forbidden_extra(
+    payload: ReportExportPublicAccessExternalDeliveryGateRequest,
+) -> bool:
+    extra = getattr(payload, "model_extra", None) or {}
+    forbidden_names = {
+        "cookie",
+        "token",
+        "session",
+        "api_key",
+        ".env",
+        "raw_author_id",
+        "raw_author_name",
+        "profile_url",
+        "password",
+        "private_message",
+        "email",
+        "phone",
+        "salt",
+    }
+    path_or_delivery_names = {
+        "public_url",
+        "signed_url",
+        "download_url",
+        "external_delivery_url",
+        "object_storage_url",
+        "portal_url",
+        "file_bytes",
+        "zip_path",
+        "absolute_path",
+        "runtime_file_path",
+        "manifest_file_content",
+        "raw_artifact_content",
+        "export_artifact_content",
+    }
+    for key, value in extra.items():
+        key_text = str(key).lower()
+        value_text = str(value).lower() if isinstance(value, (str, int, float, bool)) else ""
+        if any(name in key_text for name in forbidden_names | path_or_delivery_names):
+            return True
+        if any(name in value_text for name in forbidden_names):
+            return True
+        if isinstance(value, str) and (_looks_like_path_escape(value) or _looks_like_absolute_path(value)):
+            return True
+    return False
+
+
 def _looks_like_path_escape(value: str) -> bool:
     normalized = value.replace("\\", "/")
     parts = [part for part in normalized.split("/") if part]
@@ -10072,6 +10662,8 @@ def _ensure_root() -> Path:
     (root / "report_export_download_package_gate_audits").mkdir(parents=True, exist_ok=True)
     (root / "report_export_download_package_artifacts").mkdir(parents=True, exist_ok=True)
     (root / "report_export_download_package_artifact_audits").mkdir(parents=True, exist_ok=True)
+    (root / "report_export_public_access_external_delivery_gates").mkdir(parents=True, exist_ok=True)
+    (root / "report_export_public_access_external_delivery_gate_audits").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -10407,6 +10999,25 @@ def _report_export_download_package_manifest_dir(request_id: str, package_artifa
     return root / "report_export_download_packages" / request_id / package_artifact_id
 
 
+def _report_export_public_access_external_delivery_gate_path(request_id: str, public_access_delivery_gate_id: str) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(public_access_delivery_gate_id)
+    root = _ensure_root()
+    return root / "report_export_public_access_external_delivery_gates" / f"{request_id}_{public_access_delivery_gate_id}.json"
+
+
+def _report_export_public_access_external_delivery_gate_audit_path(
+    request_id: str,
+    public_access_delivery_gate_id: str,
+    audit_id: str,
+) -> Path:
+    _validate_request_id(request_id)
+    _validate_request_id(public_access_delivery_gate_id)
+    _validate_request_id(audit_id)
+    root = _ensure_root()
+    return root / "report_export_public_access_external_delivery_gate_audits" / f"{request_id}_{public_access_delivery_gate_id}_{audit_id}.json"
+
+
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
@@ -10682,6 +11293,16 @@ def _new_report_export_download_package_artifact_audit_id() -> str:
 def _new_report_export_download_package_manifest_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"report_export_download_package_manifest_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_report_export_public_access_external_delivery_gate_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"report_export_public_access_external_delivery_gate_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_report_export_public_access_external_delivery_gate_audit_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"report_export_public_access_external_delivery_gate_audit_{timestamp}_{uuid.uuid4().hex[:8]}"
 
 
 def _slugify(value: str) -> str:
