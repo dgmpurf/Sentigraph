@@ -64,13 +64,17 @@ const VALIDATION_STATUS_COLOR = {
   fail: 'red',
 }
 
-function initialDataSourceModeFromHash() {
-  const query = window.location.hash.split('?')[1] || ''
+function dataSourceModeFromHash(hash = window.location.hash) {
+  const query = hash.split('?')[1] || ''
   const params = new URLSearchParams(query)
   const sample = params.get('sample')
   if (sample === 'donglu-sunjihai-youth-football') return 'donglu_sunjihai_sample'
   if (sample === 'helldivers-psn') return 'helldivers_psn_sample'
-  return 'helldivers_psn_sample'
+  return null
+}
+
+function initialDataSourceModeFromHash() {
+  return dataSourceModeFromHash() || 'helldivers_psn_sample'
 }
 
 function phaseIdForMode(mode, scenarioKey) {
@@ -432,6 +436,21 @@ export function OpinionEcosystemSandbox() {
       scenarioRef.current.reputationMemory,
     ),
   )
+
+  useEffect(() => {
+    const syncSampleFromHash = () => {
+      const nextMode = dataSourceModeFromHash() || 'helldivers_psn_sample'
+      setViewMode('ecology_v2')
+      setDataSourceMode((currentMode) => (currentMode === nextMode ? currentMode : nextMode))
+      setScenarioKey('natural')
+      setTimelinePhaseId(phaseIdForMode(nextMode, 'natural'))
+    }
+    window.addEventListener('hashchange', syncSampleFromHash)
+    syncSampleFromHash()
+    return () => {
+      window.removeEventListener('hashchange', syncSampleFromHash)
+    }
+  }, [])
 
   const refreshScenario = useCallback((nextMode = dataSourceMode, nextScenarioKey = scenarioKey, resetClusters = false, nextTimelinePhaseId = timelinePhaseId) => {
     if (resetClusters || !baseModelRef.current || baseModelRef.current.mappingStatus?.mode !== nextMode) {

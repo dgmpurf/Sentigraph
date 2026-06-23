@@ -74,8 +74,12 @@ export function PublicEventDetail({ onNavigate }) {
 
   const openSandbox = () => {
     if (!hasSandbox) return
-    window.location.hash = event.sandbox_route || '#/opinion-ecosystem'
-    onNavigate?.('opinionEcosystem')
+    const targetHash = event.sandbox_route || '#/opinion-ecosystem'
+    if (onNavigate) {
+      onNavigate('opinionEcosystem', targetHash)
+    } else {
+      window.location.hash = targetHash
+    }
   }
 
   const openPlaza = () => {

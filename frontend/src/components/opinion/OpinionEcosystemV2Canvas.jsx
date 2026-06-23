@@ -77,6 +77,10 @@ const DYNAMICS_LABELS = [
 ]
 
 const V2_VISUAL_LEGEND = [
+  [
+    'Pink orbit / active marker',
+    'Local animation cue for an active event token or breakout signal; not live tracking, not a real person, not platform telemetry.',
+  ],
   ['PeopleCluster 小球', '匿名人群簇，不是真实个人，也不代表个人画像。'],
   ['InfluenceCore 节点', '内容 / 叙事 / 官方 / 媒体 / 梗化核心，不是人群。'],
   ['EchoBox 容器', '讨论圈层或讨论空间，边界强弱只用于视觉解释。'],
@@ -638,6 +642,27 @@ function ResponseTimeline({ timelinePresets, activeTimelinePhaseId, onTimelinePh
   )
 }
 
+function TimelinePhaseQuickControls({ timelinePresets, activeTimelinePhaseId, onTimelinePhaseChange }) {
+  return (
+    <div className="ecosystem-v2-phase-quick-controls" aria-label="T0-T6 local historical replay controls">
+      {timelinePresets.map((preset) => {
+        const active = preset.phase_id === activeTimelinePhaseId
+        return (
+          <button
+            type="button"
+            key={preset.phase_id}
+            className={active ? 'active' : ''}
+            onClick={() => onTimelinePhaseChange?.(preset.phase_id)}
+          >
+            <span>{preset.phase_id.toUpperCase()}</span>
+            <small>{preset.label_zh}</small>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function CoreLegend({ scenarioView }) {
   const scenarioVisual = getScenarioVisual(scenarioView)
   return (
@@ -703,6 +728,7 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
     [scenarioView, timelinePresets],
   )
   const scenarioVisual = getScenarioVisual(scenarioView)
+  const sampleStats = scenarioView.mappingStatus?.sampleStats
 
   return (
     <div className="ecosystem-v2-shell">
@@ -727,6 +753,33 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
             <div className="ecosystem-v2-topline">
               <ScenarioTokenStrip scenarioKey={scenarioView.scenarioKey} />
             </div>
+            <TimelinePhaseQuickControls
+              timelinePresets={timelinePresets}
+              activeTimelinePhaseId={activeTimeline.phase_id}
+              onTimelinePhaseChange={onTimelinePhaseChange}
+            />
+            {sampleStats && (
+              <div className="ecosystem-v2-local-sample-summary">
+                <Space wrap>
+                  <Tag color="purple">{scenarioView.mappingStatus?.sampleLabel || scenarioView.mappingStatus?.label}</Tag>
+                  <Tag>{sampleStats.evidence} evidence</Tag>
+                  <Tag>{sampleStats.sources} sources</Tag>
+                  <Tag>{sampleStats.comments} comments</Tag>
+                  <Tag>{sampleStats.roots} roots</Tag>
+                </Space>
+                <Paragraph>
+                  Selected local public sample only. PeopleCluster means anonymous aggregate groups, not real individuals.
+                  Behavioral proxy metrics are sample-based heuristics, not personality diagnosis, psychological profiling, or
+                  individual persuasion scoring.
+                </Paragraph>
+                <Space wrap>
+                  <Tag>not full-web</Tag>
+                  <Tag>not full-platform</Tag>
+                  <Tag>not official verification</Tag>
+                  <Tag>not causal proof</Tag>
+                </Space>
+              </div>
+            )}
             <div
               className="ecosystem-v2-canvas-frame"
               style={{
@@ -750,6 +803,14 @@ export function OpinionEcosystemV2Canvas({ scenarioView, peopleClusters, metrics
             <MetricProgress label="退出 / 疲劳" value={scenarioView.campDynamics.withdrawal_score} color="#667085" />
             <MetricProgress label="反噬风险" value={scenarioView.campDynamics.backlash_score} color="#ff5d8f" />
             <MetricProgress label="潜在不满再激活风险" value={metrics.dormantGrievanceRisk} color="#f5c44b" />
+            <div className="ecosystem-v2-proxy-note">
+              <Text strong>Behavioral proxy / aggregate weight</Text>
+              <Paragraph>
+                Stance strength, activity weight, expression intensity, bridge score, amplification tendency, fatigue / exit,
+                and source trust are aggregate sample heuristics. They are not personality analysis, psychological diagnosis,
+                real-person tracking, or individual persuasion scoring.
+              </Paragraph>
+            </div>
             <div className="ecosystem-v2-note">
               <Text type="secondary">本地阶段说明</Text>
               <Paragraph>{scenarioView.responseTempo.recommendation_text}</Paragraph>

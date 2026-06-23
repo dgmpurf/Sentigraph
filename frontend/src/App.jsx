@@ -703,7 +703,7 @@ function App() {
     window.location.reload()
   }, [])
 
-  const handleNavigate = useCallback((pageKey) => {
+  const handleNavigate = useCallback((pageKey, hashOverride = null) => {
     const hashByPage = {
       publicDemoGuide: '#/demo',
       publicEventPlaza: '#/public-events',
@@ -715,7 +715,9 @@ function App() {
       externalCollectorBridge: '#/external-collector',
       analysisRequests: '#/analysis-requests',
     }
-    if (hashByPage[pageKey]) {
+    if (hashOverride) {
+      window.location.hash = hashOverride
+    } else if (hashByPage[pageKey]) {
       window.location.hash = hashByPage[pageKey]
     } else if (window.location.hash) {
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)

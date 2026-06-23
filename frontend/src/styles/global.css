@@ -1962,6 +1962,64 @@ body {
   content: "";
 }
 
+.ecosystem-v2-phase-quick-controls {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ecosystem-v2-phase-quick-controls button {
+  display: grid;
+  gap: 4px;
+  min-height: 50px;
+  padding: 8px;
+  border: 1px solid rgba(154, 166, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 13, 0.34);
+  color: #9aa6bf;
+  text-align: center;
+  cursor: pointer;
+}
+
+.ecosystem-v2-phase-quick-controls button.active {
+  border-color: rgba(66, 245, 215, 0.62);
+  background: rgba(66, 245, 215, 0.1);
+  color: #d6fff6;
+  box-shadow: 0 0 22px rgba(66, 245, 215, 0.12);
+}
+
+.ecosystem-v2-phase-quick-controls span {
+  color: inherit;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.ecosystem-v2-phase-quick-controls small {
+  color: inherit;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.ecosystem-v2-phase-quick-controls button:focus-visible {
+  outline: 2px solid rgba(66, 245, 215, 0.58);
+  outline-offset: 2px;
+}
+
+.ecosystem-v2-local-sample-summary,
+.ecosystem-v2-proxy-note {
+  padding: 12px;
+  border: 1px solid rgba(120, 166, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(120, 166, 255, 0.06);
+}
+
+.ecosystem-v2-local-sample-summary p,
+.ecosystem-v2-proxy-note p {
+  margin: 8px 0 !important;
+  color: #c9d4ea;
+  line-height: 1.58;
+}
+
 .ecosystem-v2-canvas-frame {
   display: grid;
   place-items: center;
