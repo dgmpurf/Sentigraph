@@ -188,6 +188,21 @@ def test_local_exchange_reader_unknown_future_platform_requires_manual_review(tm
     _assert_safe_invariants(result)
 
 
+def test_local_exchange_reader_future_forum_platform_requires_manual_review(tmp_path: Path) -> None:
+    payload = _safe_provider_result_payload()
+    payload["platforms"] = [{"platform": "future_forum", "queue_status": "runnable_safe"}]
+    result_file = _write_json(tmp_path / "results" / "future_forum_platform.json", payload)
+    config = LocalExchangeReaderConfig(exchange_enabled=True, resultsDir=str(tmp_path / "results"))
+
+    result = read_provider_result_metadata(config, result_file)
+
+    assert result.status in {"manual_review_required", "blocked"}
+    assert result.metadata is None
+    assert any("future_forum" in warning for warning in result.warnings)
+    assert any("unknown" in warning or "unsupported" in warning for warning in result.warnings)
+    _assert_safe_invariants(result)
+
+
 def test_local_exchange_reader_does_not_parse_evidence_item_files(tmp_path: Path) -> None:
     payload = _safe_provider_result_payload()
     result_file = _write_json(tmp_path / "results" / "provider_result.json", payload)

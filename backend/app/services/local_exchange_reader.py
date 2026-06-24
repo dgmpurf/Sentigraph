@@ -77,6 +77,23 @@ FORBIDDEN_VALUE_MARKERS = {
     "evidence_items.csv",
 }
 
+PLATFORM_LIST_FIELDS = {
+    "platforms",
+    "source_platforms",
+}
+PLATFORM_SUMMARY_FIELDS = {
+    "platform_summary",
+    "source_summaries",
+}
+UNKNOWN_FUTURE_PLATFORM_MARKERS = {
+    "future",
+    "unknown",
+    "unsupported",
+    "unconfigured",
+    "placeholder",
+    "experimental",
+}
+
 
 def read_provider_result_metadata(
     config: LocalExchangeReaderConfig,
@@ -167,10 +184,14 @@ def read_provider_result_metadata(
             result_file_exists=True,
         )
 
-    if _contains_unknown_future_platform(payload):
+    unknown_platforms = _unknown_future_platform_values(payload)
+    if unknown_platforms:
+        platform_summary = ", ".join(unknown_platforms[:5])
         return _reader_result(
             "manual_review_required",
-            warnings=["unknown future platform metadata requires manual review"],
+            warnings=[
+                f"unknown future platform or unsupported platform metadata requires manual review: {platform_summary}"
+            ],
             file_read_attempted=True,
             result_file_exists=True,
         )
@@ -299,14 +320,61 @@ def _validate_contract(payload: dict[str, Any], config: LocalExchangeReaderConfi
     return None
 
 
-def _contains_unknown_future_platform(payload: dict[str, Any]) -> bool:
+def _unknown_future_platform_values(payload: dict[str, Any]) -> list[str]:
+    unknown_platforms: set[str] = set()
     for candidate in _walk_values(payload):
         if not isinstance(candidate, dict):
             continue
-        platform = str(candidate.get("platform") or candidate.get("platform_hint") or "").strip().lower()
-        if platform.startswith("unknown") or "future_platform" in platform:
-            return True
-    return False
+        for key in ("platform", "platform_hint"):
+            value = candidate.get(key)
+            if _is_unknown_future_platform(value):
+                unknown_platforms.add(str(value).strip())
+        for key in PLATFORM_LIST_FIELDS:
+            for value in _flatten_platform_metadata(candidate.get(key), include_keys=False):
+                if _is_unknown_future_platform(value):
+                    unknown_platforms.add(value)
+        for key in PLATFORM_SUMMARY_FIELDS:
+            for value in _flatten_platform_metadata(candidate.get(key), include_keys=True):
+                if _is_unknown_future_platform(value):
+                    unknown_platforms.add(value)
+        package_summary = candidate.get("package_summary")
+        if isinstance(package_summary, dict):
+            for value in _flatten_platform_metadata(package_summary.get("platforms"), include_keys=False):
+                if _is_unknown_future_platform(value):
+                    unknown_platforms.add(value)
+    return sorted(unknown_platforms)
+
+
+def _flatten_platform_metadata(value: Any, *, include_keys: bool) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, (int, float, bool)):
+        return []
+    if isinstance(value, list):
+        flattened: list[str] = []
+        for item in value:
+            flattened.extend(_flatten_platform_metadata(item, include_keys=include_keys))
+        return flattened
+    if isinstance(value, dict):
+        flattened = []
+        for key, nested_value in value.items():
+            if include_keys and str(key).strip():
+                flattened.append(str(key).strip())
+            flattened.extend(_flatten_platform_metadata(nested_value, include_keys=include_keys))
+        return flattened
+    return []
+
+
+def _is_unknown_future_platform(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower().replace("-", "_")
+    if not normalized:
+        return False
+    tokens = {token for token in normalized.split("_") if token}
+    return bool(tokens & UNKNOWN_FUTURE_PLATFORM_MARKERS)
 
 
 def _walk_values(value: Any) -> list[Any]:
