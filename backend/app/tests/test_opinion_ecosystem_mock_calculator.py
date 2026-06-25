@@ -154,6 +154,34 @@ def _influencecore_fixture(core: dict | None = None, evidence_items: list[dict] 
     return fixture
 
 
+def _echobox_fixture(echo_box: dict | None = None, evidence_items: list[dict] | None = None) -> dict:
+    fixture = _influencecore_fixture(evidence_items=evidence_items)
+    fixture["fixture_metadata"]["fixture_id"] = "fixture_8p4_echobox"
+    fixture["echo_boxes"] = [
+        echo_box
+        or {
+            "echo_box_id": "echo_001",
+            "echo_box_role": "mixed_discussion_box",
+            "echo_type": "mixed_discussion_box",
+            "platform_refs": ["sample_forum"],
+            "aggregate_ids": ["agg_001"],
+            "influence_core_ids": ["core_official_001"],
+            "stance_distribution": {"support": 0.40, "oppose": 0.35, "neutral": 0.15, "mixed": 0.10},
+            "interaction_proxy_summary": {"internal_density": 0.45},
+            "cross_cutting_proxy_summary": {"cross_cutting_exposure": 0.40},
+            "cross_box_exposure_hint": 0.35,
+            "bridge_cluster_share_hint": 0.42,
+            "low_identity_threat_language_hint": 0.72,
+            "media_or_third_party_relay_hint": 0.20,
+            "novelty_constructive_hint": 0.22,
+            "repetition_hint": 0.20,
+        }
+    ]
+    for evidence in fixture["evidence_items_safe"]:
+        evidence["echo_box_refs"] = ["echo_001"]
+    return fixture
+
+
 def _walk_keys(value: object) -> set[str]:
     keys: set[str] = set()
     if isinstance(value, dict):
@@ -595,6 +623,12 @@ def _influence_output(run: dict, index: int = 0) -> dict:
     return outputs[index]
 
 
+def _echo_output(run: dict, index: int = 0) -> dict:
+    outputs = run["module_outputs"]["echo_box"]
+    assert isinstance(outputs, list)
+    return outputs[index]
+
+
 def test_influencecore_minimal_fixture_calculates_weight_v0_1() -> None:
     run = calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture())
     influence = _influence_output(run)
@@ -924,3 +958,380 @@ def test_deterministic_same_fixture_same_output_after_influencecore_scoring() ->
     second = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
 
     assert first == second
+
+
+def test_echobox_minimal_fixture_calculates_weight_v0_1() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture())
+    echo = _echo_output(run)
+
+    assert echo["schema"] == "sentigraph_echobox_weight_v0_1"
+    assert echo["echo_box_id"] == "echo_001"
+    assert echo["echo_box_role"] == "mixed_discussion_box"
+    assert echo["model_status"] == "8P_4_echobox_formula"
+    assert echo["coefficient_source"] == "mock_default"
+    assert echo["calibration_status"] == "uncalibrated"
+    assert echo["empirical_validation"] == "not_started"
+    assert echo["sample_scope"] == "selected_sample_or_local_fixture_only"
+    assert echo["evidence_mass"]["analysis_ready_evidence_count"] == 2
+    assert echo["evidence_mass"]["associated_aggregate_count"] == 1
+    assert echo["evidence_mass"]["associated_influence_core_count"] == 1
+
+    for score in echo["scores"].values():
+        assert 0 <= score <= 1
+
+    for flag in [
+        "not_real_community_map",
+        "not_full_graph",
+        "not_full_platform",
+        "not_official_verification",
+        "not_causal_proof",
+        "not_prediction",
+        "not_individual_tracking",
+        "not_target_user_list",
+        "evidence_not_truth",
+        "human_review_required",
+    ]:
+        assert echo["boundary_flags"][flag] is True
+
+    assert isinstance(run["module_outputs"]["content_aggregate"], list)
+    assert isinstance(run["module_outputs"]["influence_core"], list)
+    assert run["module_outputs"]["people_cluster"] == "not_calculated_in_8P_4"
+    assert run["module_outputs"]["response_strategy"] == "not_calculated_in_8P_4"
+
+
+def test_strong_echo_no_breakout_high_closure_low_breakout() -> None:
+    echo_box = {
+        "echo_box_id": "echo_sealed_001",
+        "echo_box_role": "sealed_echo_box",
+        "platform_refs": ["sample_forum"],
+        "aggregate_ids": ["agg_001"],
+        "influence_core_ids": ["core_official_001"],
+        "stance_distribution": {"support": 0.92, "neutral": 0.04, "oppose": 0.02, "mixed": 0.02},
+        "interaction_proxy_summary": {"internal_density": 0.92},
+        "cross_cutting_proxy_summary": {"cross_cutting_exposure": 0.04},
+        "cross_box_exposure_hint": 0.03,
+        "bridge_cluster_share_hint": 0.05,
+        "bridge_capacity_hint": 0.05,
+        "low_identity_threat_language_hint": 0.20,
+        "media_or_third_party_relay_hint": 0.05,
+        "novelty_constructive_hint": 0.05,
+        "repetition_hint": 0.88,
+        "core_dominance_hint": 0.84,
+    }
+
+    echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture(echo_box)))
+
+    assert echo["scores"]["saturation_score"] > 0.70
+    assert echo["scores"]["closure_score"] > 0.75
+    assert echo["scores"]["constructive_breakout_score"] < echo["scores"]["closure_score"]
+    assert "causal_chain_confirmed" not in _walk_keys(echo)
+    assert "prediction_probability" not in _walk_keys(echo)
+
+
+def test_bridgeable_controversy_has_bridge_capacity() -> None:
+    echo_box = {
+        "echo_box_id": "echo_bridge_001",
+        "echo_box_role": "bridge_ready_box",
+        "platform_refs": ["sample_forum"],
+        "aggregate_ids": ["agg_001"],
+        "influence_core_ids": ["core_official_001"],
+        "stance_distribution": {"support": 0.45, "oppose": 0.42, "neutral": 0.08, "mixed": 0.05},
+        "interaction_proxy_summary": {"internal_density": 0.55},
+        "cross_cutting_proxy_summary": {"cross_cutting_exposure": 0.78},
+        "cross_box_exposure_hint": 0.70,
+        "bridge_cluster_share_hint": 0.80,
+        "bridge_core_share_hint": 0.86,
+        "neutral_or_mixed_cluster_share_hint": 0.52,
+        "explanatory_core_share_hint": 0.78,
+        "low_identity_threat_language_hint": 0.88,
+        "media_or_third_party_relay_hint": 0.75,
+        "novelty_constructive_hint": 0.35,
+    }
+
+    echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture(echo_box)))
+
+    assert echo["scores"]["bridge_capacity_score"] > 0.65
+    assert echo["scores"]["constructive_breakout_score"] > 0.50
+    assert not any("guarantee" in line.lower() for line in echo["explanation"])
+
+
+def test_sealed_echo_box_has_high_closure_low_bridge_capacity() -> None:
+    echo_box = {
+        "echo_box_id": "echo_closed_001",
+        "echo_box_role": "sealed_echo_box",
+        "platform_refs": ["sample_forum"],
+        "aggregate_ids": ["agg_001"],
+        "influence_core_ids": ["core_official_001"],
+        "stance_distribution": {"support": 0.90, "neutral": 0.05, "oppose": 0.03, "mixed": 0.02},
+        "interaction_proxy_summary": {"internal_density": 0.88},
+        "cross_cutting_proxy_summary": {"cross_cutting_exposure": 0.02},
+        "cross_box_exposure_hint": 0.02,
+        "bridge_cluster_share_hint": 0.02,
+        "bridge_core_share_hint": 0.05,
+        "neutral_or_mixed_cluster_share_hint": 0.04,
+        "explanatory_core_share_hint": 0.04,
+        "low_identity_threat_language_hint": 0.10,
+    }
+
+    echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture(echo_box)))
+
+    assert echo["scores"]["closure_score"] > 0.75
+    assert echo["scores"]["bridge_capacity_score"] < 0.20
+
+
+def test_low_trust_evidence_lowers_echobox_confidence_and_raises_warning() -> None:
+    low_trust_evidence = [
+        {
+            "evidence_id": "low_echo_001",
+            "platform": "sample_forum",
+            "provenance_type": "screenshot_transcription",
+            "trust_label": "low",
+            "review_status": "review_needed",
+            "duplicate_count": 1,
+            "relevance_label": "strong_case_match",
+            "recency_label": "inside_stage_window",
+            "stance_hint": "oppose",
+            "emotion_intensity_hint": 0.90,
+            "source_url_present": False,
+            "aggregate_ref": "agg_001",
+            "influence_core_refs": ["core_official_001"],
+            "echo_box_refs": ["echo_001"],
+        }
+    ]
+
+    high_echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture()))
+    low_echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture(evidence_items=low_trust_evidence)))
+
+    assert low_echo["scores"]["saturation_confidence_adjusted"] < high_echo["scores"]["saturation_confidence_adjusted"]
+    assert low_echo["warnings"]["low_trust_warnings"]
+    assert low_echo["warnings"]["low_confidence_warnings"]
+    assert "truth_score" not in _walk_keys(low_echo)
+    assert "official_verified" not in _walk_keys(low_echo)
+
+
+def test_duplicate_evidence_folded_not_linear_saturation() -> None:
+    base = _echobox_fixture()
+    duplicate_fixture = _echobox_fixture()
+    duplicate_fixture["evidence_items_safe"][0]["duplicate_group_id"] = "dup_echo_large"
+    duplicate_fixture["evidence_items_safe"][0]["duplicate_count"] = 200
+
+    base_echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(base))
+    duplicate_echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(duplicate_fixture))
+
+    assert duplicate_echo["components"]["repetition_signal"] <= 1
+    assert duplicate_echo["scores"]["saturation_score"] - base_echo["scores"]["saturation_score"] < 0.25
+    assert duplicate_echo["warnings"]["duplicate_folded_warnings"]
+
+
+def test_one_sided_high_heat_does_not_automatically_mean_echo_chamber() -> None:
+    fixture = _echobox_fixture()
+    fixture["content_aggregates"][0].update({"volume_score": 0.95, "interaction_score": 0.90})
+    for evidence in fixture["evidence_items_safe"]:
+        evidence["stance_hint"] = "support"
+    fixture["echo_boxes"][0] = {
+        "echo_box_id": "echo_heat_001",
+        "echo_box_role": "mixed_discussion_box",
+        "platform_refs": ["sample_forum"],
+        "aggregate_ids": ["agg_001"],
+        "influence_core_ids": ["core_official_001"],
+        "interaction_proxy_summary": {"internal_density": 0.25},
+        "cross_cutting_proxy_summary": {"cross_cutting_exposure": 0.60},
+        "cross_box_exposure_hint": 0.55,
+        "bridge_cluster_share_hint": 0.40,
+        "low_identity_threat_language_hint": 0.60,
+    }
+
+    echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert echo["scores"]["saturation_score"] < 0.75
+    assert echo["boundary_flags"]["not_real_community_map"] is True
+    assert any("selected-sample" in line.lower() for line in echo["explanation"])
+
+
+def test_unknown_echobox_role_uses_unknown_warning() -> None:
+    fixture = _echobox_fixture({"echo_box_id": "echo_unknown_001", "echo_box_role": "future_role", "aggregate_ids": ["agg_001"]})
+
+    echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert echo["echo_box_role"] == "unknown_echo_box"
+    assert echo["warnings"]["unknown_echo_box_role_warnings"]
+    assert all(0 <= score <= 1 for score in echo["scores"].values())
+
+
+def test_missing_aggregate_or_evidence_yields_insufficient_data_warning() -> None:
+    fixture = _echobox_fixture({"echo_box_id": "echo_orphan_001", "echo_box_role": "mixed_discussion_box", "aggregate_ids": ["missing_agg"]})
+    fixture["evidence_items_safe"] = []
+
+    echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert echo["warnings"]["insufficient_data_warnings"]
+    assert echo["evidence_mass"]["analysis_ready_evidence_count"] == 0
+    assert all(score <= 0.30 for score in echo["scores"].values())
+    assert echo["schema"] == "sentigraph_echobox_weight_v0_1"
+
+
+def test_rejected_evidence_excluded_from_echobox_scores() -> None:
+    base = _echobox_fixture()
+    rejected_fixture = _echobox_fixture()
+    rejected_fixture["evidence_items_safe"].append(
+        {
+            "evidence_id": "rejected_echo_001",
+            "platform": "sample_forum",
+            "provenance_type": "official_api_public",
+            "trust_label": "high",
+            "review_status": "rejected",
+            "duplicate_count": 20,
+            "relevance_label": "strong_case_match",
+            "recency_label": "inside_stage_window",
+            "stance_hint": "oppose",
+            "emotion_intensity_hint": 1.0,
+            "source_url_present": True,
+            "aggregate_ref": "agg_001",
+            "influence_core_refs": ["core_official_001"],
+            "echo_box_refs": ["echo_001"],
+        }
+    )
+
+    base_echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(base))
+    rejected_echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(rejected_fixture))
+
+    assert rejected_echo["scores"]["saturation_score"] <= base_echo["scores"]["saturation_score"]
+    assert rejected_echo["scores"]["echo_risk_score"] <= base_echo["scores"]["echo_risk_score"]
+    assert rejected_echo["evidence_mass"]["rejected_excluded_count"] == 1
+    assert rejected_echo["warnings"]["rejected_excluded_warnings"]
+
+
+def test_forbidden_fields_still_block_before_echobox_scoring() -> None:
+    fixture = _echobox_fixture()
+    fixture["evidence_items_safe"][0]["raw_author_id"] = "hidden"
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "blocked"
+    assert not isinstance(run["module_outputs"]["echo_box"], list)
+
+
+def test_overclaim_fields_still_block_before_echobox_scoring() -> None:
+    fixture = _echobox_fixture()
+    fixture["fixture_metadata"]["causal_proof_claim"] = True
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "blocked"
+    assert not isinstance(run["module_outputs"]["echo_box"], list)
+
+
+def test_auto_execute_still_blocks_before_echobox_scoring() -> None:
+    fixture = _echobox_fixture()
+    fixture["response_strategy_candidates"].append({"recommendation_level": "auto_execute"})
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "blocked"
+    assert not isinstance(run["module_outputs"]["echo_box"], list)
+
+
+def test_future_unknown_platform_does_not_imply_provider_runnable_for_echobox() -> None:
+    fixture = _echobox_fixture()
+    fixture["evidence_items_safe"][0]["platform"] = "future_forum"
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "manual_review_required"
+    assert run["validation_summary"]["unknown_platform_warning_count"] == 1
+    assert not isinstance(run["module_outputs"]["echo_box"], list)
+    assert all("provider" not in str(value).lower() or "not" in str(value).lower() for value in _walk_values(run))
+
+
+def test_contentaggregate_and_influencecore_outputs_preserved_in_8P_4() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture())
+
+    assert isinstance(run["module_outputs"]["content_aggregate"], list)
+    assert run["module_outputs"]["content_aggregate"][0]["schema"] == "sentigraph_content_aggregate_weight_v0_1"
+    assert isinstance(run["module_outputs"]["influence_core"], list)
+    assert run["module_outputs"]["influence_core"][0]["schema"] == "sentigraph_influence_core_weight_v0_1"
+    assert isinstance(run["module_outputs"]["echo_box"], list)
+
+
+def test_no_peoplecluster_response_strategy_scores_in_8P_4() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_keys = {
+        "stance_delta",
+        "fatigue_delta",
+        "transition_probability",
+        "strategy_score",
+        "persuasion_score",
+    }
+
+    assert not (forbidden_keys & keys)
+    assert run["module_outputs"]["people_cluster"] == "not_calculated_in_8P_4"
+    assert run["module_outputs"]["response_strategy"] == "not_calculated_in_8P_4"
+
+
+def test_no_pull_or_stance_effect_in_8P_4() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_keys = {
+        "pull_ik",
+        "stance_effect_ik",
+        "stance_effect_ik_adjusted",
+        "InfluenceCoreToClusterEffectV01",
+    }
+
+    assert not (forbidden_keys & keys)
+
+
+def test_no_real_community_map_or_full_graph_output() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture())
+    echo = _echo_output(run)
+    keys = _walk_keys(run)
+
+    assert "real_community_map" not in keys
+    assert "full_social_graph" not in keys
+    assert "target_user_list" not in keys
+    assert echo["boundary_flags"]["not_real_community_map"] is True
+    assert echo["boundary_flags"]["not_full_graph"] is True
+
+
+def test_no_forbidden_output_fields_after_echobox_scoring() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_output_fields = {
+        "truth_score",
+        "official_verified",
+        "causal_chain_confirmed",
+        "prediction_probability",
+        "persuasion_score",
+        "target_user_list",
+        "raw_author_identifiers",
+        "real_hotlist_score",
+    }
+
+    assert not (forbidden_output_fields & keys)
+
+
+def test_deterministic_same_fixture_same_output_after_echobox_scoring() -> None:
+    fixture = _echobox_fixture()
+
+    first = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+    second = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert first == second
+
+
+def test_content_aggregate_existing_8p_2_tests_still_pass() -> None:
+    content = _content_output(calculator.calculate_opinion_ecosystem_mock_fixture(_content_aggregate_fixture()))
+
+    assert content["schema"] == "sentigraph_content_aggregate_weight_v0_1"
+    assert content["model_status"] == "8P_2_content_aggregate_formula"
+
+
+def test_influencecore_existing_8p_3_tests_still_pass() -> None:
+    influence = _influence_output(calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture()))
+
+    assert influence["schema"] == "sentigraph_influence_core_weight_v0_1"
+    assert influence["model_status"] == "8P_3_influencecore_formula"

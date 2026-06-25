@@ -197,6 +197,35 @@ KNOWN_INFLUENCE_CORE_TYPES = {
     "unknown_source_core",
 }
 
+KNOWN_ECHO_BOX_TYPES = {
+    "sealed_echo_box",
+    "saturated_but_bridgeable",
+    "bridge_ready_box",
+    "risk_breakout_box",
+    "fatigue_decay_box",
+    "mixed_discussion_box",
+    "unknown_echo_box",
+}
+
+EXPLANATORY_CORE_TYPES = {
+    "expert_explanation",
+    "faq_or_longform_explanation",
+    "third_party_context",
+    "media_report",
+    "recognized_media_report",
+    "correction_or_apology",
+    "progress_update",
+}
+
+RELAY_CORE_TYPES = {
+    "media_report",
+    "recognized_media_report",
+    "third_party_context",
+    "expert_explanation",
+}
+
+STANCE_BUCKETS = ("support", "neutral", "oppose", "mixed", "unknown")
+
 
 def _iter_fields(value: Any, path: str = "") -> Iterable[tuple[str, str, Any]]:
     if isinstance(value, dict):
@@ -657,6 +686,20 @@ def _module_outputs_with_content_and_influence(
         "echo_box": "not_calculated_in_8P_3",
         "people_cluster": "not_calculated_in_8P_3",
         "response_strategy": "not_calculated_in_8P_3",
+    }
+
+
+def _module_outputs_with_content_influence_and_echo(
+    content_outputs: list[dict[str, Any]],
+    influence_outputs: list[dict[str, Any]],
+    echo_outputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "content_aggregate": content_outputs if content_outputs else "not_calculated_in_8P_4",
+        "influence_core": influence_outputs if influence_outputs else "not_calculated_in_8P_4",
+        "echo_box": echo_outputs,
+        "people_cluster": "not_calculated_in_8P_4",
+        "response_strategy": "not_calculated_in_8P_4",
     }
 
 
@@ -1772,6 +1815,807 @@ def calculate_all_influencecore_weights(fixture: dict) -> list[dict[str, Any]]:
     ]
 
 
+def _as_string_set(value: Any) -> set[str]:
+    if isinstance(value, list):
+        return {str(item) for item in value if item not in (None, "")}
+    if value in (None, ""):
+        return set()
+    return {str(value)}
+
+
+def _echo_box_role(echo_box: dict[str, Any]) -> str:
+    for field in ("echo_box_role", "echo_type"):
+        role = _label(echo_box.get(field))
+        if role in KNOWN_ECHO_BOX_TYPES:
+            return role
+    return "unknown_echo_box"
+
+
+def get_echobox_associated_evidence(
+    echo_box: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    echo_box_id = str(echo_box.get("echo_box_id") or "")
+    aggregate_ids = _as_string_set(echo_box.get("aggregate_ids"))
+    platform_refs = {_label(platform) for platform in _as_string_set(echo_box.get("platform_refs"))}
+
+    direct_matches: list[dict[str, Any]] = []
+    aggregate_matches: list[dict[str, Any]] = []
+    platform_matches: list[dict[str, Any]] = []
+
+    for evidence in evidence_items:
+        refs = _as_string_set(evidence.get("echo_box_refs"))
+        aggregate_ref = str(evidence.get("aggregate_ref") or "")
+        platform = _label(evidence.get("platform"))
+        if echo_box_id and echo_box_id in refs:
+            direct_matches.append(evidence)
+        if aggregate_ids and aggregate_ref in aggregate_ids:
+            aggregate_matches.append(evidence)
+        if platform_refs and platform in platform_refs:
+            platform_matches.append(evidence)
+
+    ordered: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for evidence in [*direct_matches, *aggregate_matches]:
+        marker = id(evidence)
+        if marker not in seen:
+            seen.add(marker)
+            ordered.append(evidence)
+    if ordered:
+        return ordered
+    return platform_matches
+
+
+def get_echobox_content_aggregate_refs(
+    echo_box: dict[str, Any],
+    content_aggregate_outputs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    aggregate_ids = _as_string_set(echo_box.get("aggregate_ids"))
+    if not aggregate_ids:
+        return []
+    return [
+        output
+        for output in content_aggregate_outputs
+        if isinstance(output, dict) and str(output.get("aggregate_id") or "") in aggregate_ids
+    ]
+
+
+def get_echobox_influence_core_refs(
+    echo_box: dict[str, Any],
+    influence_core_outputs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    core_ids = _as_string_set(echo_box.get("influence_core_ids"))
+    if not core_ids:
+        return []
+    return [
+        output
+        for output in influence_core_outputs
+        if isinstance(output, dict) and str(output.get("core_id") or "") in core_ids
+    ]
+
+
+def _normalize_stance_distribution(raw_distribution: Any) -> dict[str, float] | None:
+    if not isinstance(raw_distribution, dict):
+        return None
+    values = {bucket: max(0.0, _as_float(raw_distribution.get(bucket)) or 0.0) for bucket in STANCE_BUCKETS}
+    total = sum(values.values())
+    if total <= 0:
+        return None
+    return {bucket: clamp01(value / total) for bucket, value in values.items()}
+
+
+def _derive_echobox_stance_distribution(
+    echo_box: dict[str, Any],
+    associated_evidence: list[dict[str, Any]],
+    warnings: dict[str, list[str]],
+) -> dict[str, float]:
+    explicit = _normalize_stance_distribution(echo_box.get("stance_distribution"))
+    if explicit is not None:
+        return explicit
+
+    counts = {bucket: 0.0 for bucket in STANCE_BUCKETS}
+    for evidence in _eligible_evidence(associated_evidence):
+        stance = _label(evidence.get("stance_hint"))
+        if stance in counts:
+            counts[stance] += 1.0
+        else:
+            counts["unknown"] += 1.0
+
+    derived = _normalize_stance_distribution(counts)
+    if derived is None:
+        warnings["missing_component_warnings"].append("stance_distribution")
+        return {"support": 0.0, "neutral": 0.0, "oppose": 0.0, "mixed": 0.0, "unknown": 1.0}
+    return derived
+
+
+def calculate_stance_entropy(stance_distribution: dict[str, Any]) -> float:
+    normalized = _normalize_stance_distribution(stance_distribution)
+    if normalized is None:
+        return 0.0
+    nonzero = [value for value in normalized.values() if value > 0]
+    k = len(nonzero)
+    if k <= 1:
+        return 0.0
+    entropy = -sum(value * log(value) for value in nonzero) / log(k)
+    return clamp01(entropy)
+
+
+def calculate_stance_concentration(stance_distribution: dict[str, Any]) -> float:
+    normalized = _normalize_stance_distribution(stance_distribution)
+    if normalized is None:
+        return 0.0
+    max_known = max(
+        normalized.get("support", 0.0),
+        normalized.get("neutral", 0.0),
+        normalized.get("oppose", 0.0),
+        normalized.get("mixed", 0.0),
+    )
+    return clamp01(max_known * (1 - normalized.get("unknown", 0.0)))
+
+
+def _echobox_warnings() -> dict[str, list[str]]:
+    return {
+        "low_confidence_warnings": [],
+        "low_trust_warnings": [],
+        "review_needed_warnings": [],
+        "duplicate_folded_warnings": [],
+        "rejected_excluded_warnings": [],
+        "missing_component_warnings": [],
+        "insufficient_data_warnings": [],
+        "unknown_echo_box_role_warnings": [],
+        "model_card_warnings": [
+            "selected_sample_only",
+            "not_real_community_map",
+            "not_full_graph",
+            "evidence_not_truth",
+            "human_review_required",
+        ],
+        "overclaim_warnings": [],
+    }
+
+
+def _echobox_boundary_flags() -> dict[str, bool]:
+    return {
+        "not_real_community_map": True,
+        "not_full_graph": True,
+        "not_full_platform": True,
+        "not_official_verification": True,
+        "not_causal_proof": True,
+        "not_prediction": True,
+        "not_individual_tracking": True,
+        "not_target_user_list": True,
+        "evidence_not_truth": True,
+        "human_review_required": True,
+    }
+
+
+def _zero_echobox_scores() -> dict[str, float]:
+    return {
+        "saturation_score": 0.0,
+        "saturation_confidence_adjusted": 0.0,
+        "closure_score": 0.0,
+        "bridge_capacity_score": 0.0,
+        "constructive_breakout_score": 0.0,
+        "risk_breakout_score": 0.0,
+        "echo_risk_score": 0.0,
+        "stance_entropy": 0.0,
+        "stance_concentration": 0.0,
+    }
+
+
+def _echobox_quality_flags() -> list[str]:
+    return [
+        "selected_sample_only",
+        "uncalibrated",
+        "mock_default_coefficients",
+        "evidence_not_truth",
+        "not_real_community_map",
+        "not_full_graph",
+        "not_full_platform",
+    ]
+
+
+def _score_mean(outputs: list[dict[str, Any]], key: str) -> float | None:
+    values = [
+        clamp01(value)
+        for value in (
+            output.get("scores", {}).get(key)
+            for output in outputs
+            if isinstance(output, dict) and isinstance(output.get("scores"), dict)
+        )
+        if _as_float(value) is not None
+    ]
+    if not values:
+        return None
+    return clamp01(sum(values) / len(values))
+
+
+def _component_mean(outputs: list[dict[str, Any]], component_group: str, key: str) -> float | None:
+    values: list[float] = []
+    for output in outputs:
+        components = output.get("components") if isinstance(output, dict) else None
+        group = components.get(component_group) if isinstance(components, dict) else None
+        value = group.get(key) if isinstance(group, dict) else None
+        if _as_float(value) is not None:
+            values.append(clamp01(value))
+    if not values:
+        return None
+    return clamp01(sum(values) / len(values))
+
+
+def _content_component_mean(outputs: list[dict[str, Any]], key: str) -> float | None:
+    values: list[float] = []
+    for output in outputs:
+        components = output.get("components") if isinstance(output, dict) else None
+        if not isinstance(components, dict):
+            continue
+        value = components.get(key)
+        if _as_float(value) is not None:
+            values.append(clamp01(value))
+    if not values:
+        return None
+    return clamp01(sum(values) / len(values))
+
+
+def _echo_hint(echo_box: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = echo_box.get(key)
+        if _as_float(value) is not None:
+            return clamp01(value)
+    return None
+
+
+def _summary_value(echo_box: dict[str, Any], summary_key: str, value_key: str) -> float | None:
+    summary = echo_box.get(summary_key)
+    if not isinstance(summary, dict):
+        return None
+    value = summary.get(value_key)
+    if _as_float(value) is None:
+        return None
+    return clamp01(value)
+
+
+def _component_or_default(
+    value: float | None,
+    name: str,
+    warnings: dict[str, list[str]],
+    default: float = 0.50,
+) -> float:
+    if value is None:
+        warnings["missing_component_warnings"].append(name)
+        return clamp01(default)
+    return clamp01(value)
+
+
+def _echobox_evidence_mass(
+    associated_evidence: list[dict[str, Any]],
+    content_refs: list[dict[str, Any]],
+    influence_refs: list[dict[str, Any]],
+) -> dict[str, int]:
+    eligible = _eligible_evidence(associated_evidence)
+    groups = {
+        str(evidence.get("duplicate_group_id") or evidence.get("evidence_id") or index)
+        for index, evidence in enumerate(eligible)
+    }
+    return {
+        "evidence_count": len(associated_evidence),
+        "analysis_ready_evidence_count": len(eligible),
+        "rejected_excluded_count": len(associated_evidence) - len(eligible),
+        "duplicate_group_count": len(groups),
+        "low_trust_count": sum(
+            1
+            for evidence in eligible
+            if _label(evidence.get("trust_label")) in LOW_TRUST_LABELS or get_trust_weight(evidence) <= 0.30
+        ),
+        "review_needed_count": sum(1 for evidence in eligible if _label(evidence.get("review_status")) in REVIEW_NEEDED_STATUSES),
+        "associated_aggregate_count": len(content_refs),
+        "associated_influence_core_count": len(influence_refs),
+    }
+
+
+def _derive_source_spread(evidence_items: list[dict[str, Any]]) -> float | None:
+    eligible = _eligible_evidence(evidence_items)
+    if not eligible:
+        return None
+    groups = {
+        str(evidence.get("duplicate_group_id") or evidence.get("evidence_id") or index)
+        for index, evidence in enumerate(eligible)
+    }
+    source_url_share = sum(1 for evidence in eligible if evidence.get("source_url_present") is True) / len(eligible)
+    return clamp01(0.55 * log_norm(len(groups), 8) + 0.45 * source_url_share)
+
+
+def _stance_polarization(stance_distribution: dict[str, float]) -> float:
+    support = stance_distribution.get("support", 0.0)
+    oppose = stance_distribution.get("oppose", 0.0)
+    unknown = stance_distribution.get("unknown", 0.0)
+    conflict_mass = support + oppose
+    if conflict_mass <= 0:
+        return 0.0
+    balance = 1 - abs(support - oppose) / (conflict_mass + 0.000001)
+    known_ratio = 1 - unknown
+    return clamp01(conflict_mass * balance * sqrt(max(0.0, known_ratio)))
+
+
+def _core_type_share(outputs: list[dict[str, Any]], allowed_types: set[str]) -> float | None:
+    if not outputs:
+        return None
+    matches = sum(1 for output in outputs if _label(output.get("core_type")) in allowed_types)
+    return clamp01(matches / len(outputs))
+
+
+def _echobox_context(
+    echo_box: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    warnings = _echobox_warnings()
+    role = _echo_box_role(echo_box)
+    if role == "unknown_echo_box":
+        warnings["unknown_echo_box_role_warnings"].append("unknown_echo_box_role_defaulted_to_unknown_echo_box")
+
+    associated = get_echobox_associated_evidence(echo_box, evidence_items)
+    eligible = _eligible_evidence(associated)
+    content_refs = get_echobox_content_aggregate_refs(echo_box, content_aggregate_outputs)
+    influence_refs = get_echobox_influence_core_refs(echo_box, influence_core_outputs)
+    evidence_mass = _echobox_evidence_mass(associated, content_refs, influence_refs)
+
+    if not _as_string_set(echo_box.get("aggregate_ids")):
+        warnings["missing_component_warnings"].append("aggregate_ids")
+    if not _as_string_set(echo_box.get("influence_core_ids")):
+        warnings["missing_component_warnings"].append("influence_core_ids")
+    if evidence_mass["rejected_excluded_count"]:
+        warnings["rejected_excluded_warnings"].append("rejected_evidence_excluded_from_echobox_scores")
+    if evidence_mass["low_trust_count"]:
+        warnings["low_trust_warnings"].append("low_trust_evidence_lowers_echobox_confidence")
+    if evidence_mass["review_needed_count"]:
+        warnings["review_needed_warnings"].append("review_needed_evidence_keeps_human_review_required")
+    if any((_as_float(evidence.get("duplicate_count")) or 1.0) > 1 for evidence in eligible):
+        warnings["duplicate_folded_warnings"].append("duplicate_count_used_only_as_bounded_repetition_signal")
+
+    if not eligible and not content_refs:
+        warnings["insufficient_data_warnings"].append("no_associated_analysis_ready_evidence_or_aggregate")
+
+    stance_distribution = _derive_echobox_stance_distribution(echo_box, associated, warnings)
+    stance_entropy = calculate_stance_entropy(stance_distribution)
+    stance_concentration = calculate_stance_concentration(stance_distribution)
+    platform_spread = _component_or_default(
+        _echo_hint(echo_box, "platform_spread_hint") if _echo_hint(echo_box, "platform_spread_hint") is not None else _derive_spread(eligible),
+        "platform_spread",
+        warnings,
+        0.0 if not eligible else 0.50,
+    )
+    source_spread = _component_or_default(
+        _echo_hint(echo_box, "source_spread_hint") if _echo_hint(echo_box, "source_spread_hint") is not None else _derive_source_spread(eligible),
+        "source_spread",
+        warnings,
+        0.0 if not eligible else 0.50,
+    )
+    repetition = _component_or_default(
+        _echo_hint(echo_box, "repetition_hint") if _echo_hint(echo_box, "repetition_hint") is not None else _repetition_signal(eligible),
+        "repetition",
+        warnings,
+        0.0,
+    )
+    internal_density = _component_or_default(
+        _echo_hint(echo_box, "internal_density_hint")
+        if _echo_hint(echo_box, "internal_density_hint") is not None
+        else _summary_value(echo_box, "interaction_proxy_summary", "internal_density"),
+        "internal_density",
+        warnings,
+    )
+    core_dominance = _component_or_default(
+        _echo_hint(echo_box, "core_dominance_hint")
+        if _echo_hint(echo_box, "core_dominance_hint") is not None
+        else max(
+            (
+                value
+                for value in [
+                    _score_mean(influence_refs, "amplification_score"),
+                    _score_mean(influence_refs, "core_strength"),
+                ]
+                if value is not None
+            ),
+            default=None,
+        ),
+        "core_dominance",
+        warnings,
+    )
+    emotion = _component_or_default(
+        _echo_hint(echo_box, "emotion_hint")
+        if _echo_hint(echo_box, "emotion_hint") is not None
+        else _average_emotion(eligible),
+        "emotion",
+        warnings,
+    )
+    cross_cutting_explicit = _echo_hint(echo_box, "cross_cutting_exposure_hint")
+    cross_cutting_summary = _summary_value(echo_box, "cross_cutting_proxy_summary", "cross_cutting_exposure")
+    cross_cutting_derived = clamp01(0.65 * (1 - stance_concentration) + 0.35 * max(platform_spread, source_spread))
+    cross_cutting_exposure = _component_or_default(
+        cross_cutting_explicit if cross_cutting_explicit is not None else (cross_cutting_summary if cross_cutting_summary is not None else cross_cutting_derived),
+        "cross_cutting_exposure",
+        warnings,
+    )
+    cross_box_exposure = _component_or_default(
+        _echo_hint(echo_box, "cross_box_exposure_hint")
+        if _echo_hint(echo_box, "cross_box_exposure_hint") is not None
+        else max(platform_spread, source_spread),
+        "cross_box_exposure",
+        warnings,
+    )
+    bridge_cluster_share = _component_or_default(
+        _echo_hint(echo_box, "bridge_cluster_share_hint")
+        if _echo_hint(echo_box, "bridge_cluster_share_hint") is not None
+        else _echo_hint(echo_box, "bridge_hint", "bridge_capacity_hint"),
+        "bridge_cluster_share",
+        warnings,
+    )
+    bridge_core_share = _component_or_default(
+        _echo_hint(echo_box, "bridge_core_share_hint")
+        if _echo_hint(echo_box, "bridge_core_share_hint") is not None
+        else _score_mean(influence_refs, "bridge_potential"),
+        "bridge_core_share",
+        warnings,
+    )
+    neutral_or_mixed_cluster_share = _component_or_default(
+        _echo_hint(echo_box, "neutral_or_mixed_cluster_share_hint"),
+        "neutral_or_mixed_cluster_share",
+        warnings,
+        stance_distribution.get("neutral", 0.0) + stance_distribution.get("mixed", 0.0),
+    )
+    explanatory_core_share = _component_or_default(
+        _echo_hint(echo_box, "explanatory_core_share_hint")
+        if _echo_hint(echo_box, "explanatory_core_share_hint") is not None
+        else _core_type_share(influence_refs, EXPLANATORY_CORE_TYPES),
+        "explanatory_core_share",
+        warnings,
+    )
+    low_identity_threat_language = _component_or_default(
+        _echo_hint(echo_box, "low_identity_threat_language_hint"),
+        "low_identity_threat_language",
+        warnings,
+    )
+    evidence_confidence = _component_or_default(
+        _score_mean(content_refs, "evidence_confidence_score")
+        if _score_mean(content_refs, "evidence_confidence_score") is not None
+        else (calculate_evidence_confidence(eligible) if eligible else None),
+        "evidence_confidence",
+        warnings,
+        0.0,
+    )
+    deescalation_core_share = _component_or_default(
+        _score_mean(influence_refs, "deescalation_potential"),
+        "deescalation_core_share",
+        warnings,
+    )
+    clarity_mean = _component_or_default(
+        _component_mean(influence_refs, "narrative_resonance_components", "clarity_score"),
+        "clarity_mean",
+        warnings,
+    )
+    media_or_third_party_relay = _component_or_default(
+        _echo_hint(echo_box, "media_or_third_party_relay_hint")
+        if _echo_hint(echo_box, "media_or_third_party_relay_hint") is not None
+        else _core_type_share(influence_refs, RELAY_CORE_TYPES),
+        "media_or_third_party_relay",
+        warnings,
+    )
+    novelty_constructive = _component_or_default(
+        _echo_hint(echo_box, "novelty_constructive_hint")
+        if _echo_hint(echo_box, "novelty_constructive_hint") is not None
+        else _component_mean(influence_refs, "narrative_resonance_components", "novelty_score"),
+        "novelty_constructive",
+        warnings,
+    )
+    controversy = _component_or_default(
+        _score_mean(content_refs, "sample_controversy_score"),
+        "controversy",
+        warnings,
+        _stance_polarization(stance_distribution),
+    )
+    observed_amplification_mean = _component_or_default(
+        _score_mean(influence_refs, "amplification_score")
+        if _score_mean(influence_refs, "amplification_score") is not None
+        else (_score_mean(content_refs, "heat_confidence_adjusted") or _score_mean(content_refs, "sample_heat_score")),
+        "observed_amplification_mean",
+        warnings,
+    )
+    backlash_risk_mean = _component_or_default(
+        _score_mean(influence_refs, "backlash_risk")
+        if _score_mean(influence_refs, "backlash_risk") is not None
+        else _echo_hint(echo_box, "risk_breakout_hint"),
+        "backlash_risk_mean",
+        warnings,
+    )
+    low_trust_share = _content_component_mean(content_refs, "low_trust_share")
+    if low_trust_share is None:
+        low_trust_share = _low_trust_share(eligible)
+    review_risk = _component_or_default(
+        _score_mean(content_refs, "review_risk_score"),
+        "review_risk",
+        warnings,
+        _review_risk_score(
+            evidence_confidence=evidence_confidence,
+            low_trust_share=low_trust_share,
+            review_needed_share=_review_needed_share(eligible),
+            missing_source_url_share=_missing_source_url_share(eligible),
+            sensitive_privacy_share=_sensitive_privacy_flag_share(eligible),
+        )[0]
+        if eligible
+        else 0.0,
+    )
+    low_trust_conflict = clamp01(low_trust_share * max(_stance_polarization(stance_distribution), stance_concentration * 0.40))
+
+    bridge_capacity = clamp01(
+        0.22 * bridge_cluster_share
+        + 0.20 * bridge_core_share
+        + 0.16 * neutral_or_mixed_cluster_share
+        + 0.14 * explanatory_core_share
+        + 0.12 * cross_cutting_exposure
+        + 0.10 * low_identity_threat_language
+        + 0.06 * evidence_confidence
+    )
+    saturation = clamp01(
+        0.24 * stance_concentration
+        + 0.20 * repetition
+        + 0.18 * internal_density
+        + 0.16 * core_dominance
+        + 0.12 * emotion
+        + 0.10 * (1 - cross_cutting_exposure)
+    )
+    saturation_confidence_adjusted = clamp01(saturation * (0.65 + 0.35 * evidence_confidence))
+    closure = clamp01(
+        0.30 * (1 - cross_cutting_exposure)
+        + 0.25 * (1 - cross_box_exposure)
+        + 0.20 * stance_concentration
+        + 0.15 * internal_density
+        + 0.10 * (1 - bridge_capacity)
+    )
+    constructive_breakout = clamp01(
+        0.24 * bridge_capacity
+        + 0.20 * deescalation_core_share
+        + 0.16 * evidence_confidence
+        + 0.14 * clarity_mean
+        + 0.12 * cross_box_exposure
+        + 0.08 * media_or_third_party_relay
+        + 0.06 * novelty_constructive
+    )
+    risk_breakout = clamp01(
+        0.22 * emotion
+        + 0.20 * controversy
+        + 0.16 * observed_amplification_mean
+        + 0.14 * backlash_risk_mean
+        + 0.12 * low_trust_conflict
+        + 0.10 * platform_spread
+        + 0.06 * repetition
+    )
+    echo_risk = clamp01(
+        0.20 * saturation
+        + 0.18 * closure
+        + 0.16 * risk_breakout
+        + 0.14 * controversy
+        + 0.12 * emotion
+        + 0.10 * low_trust_conflict
+        + 0.10 * review_risk
+    )
+
+    if evidence_confidence < 0.45:
+        warnings["low_confidence_warnings"].append("low_evidence_confidence_downgrades_echobox_scores")
+    if stance_concentration > 0.80 and _score_mean(content_refs, "sample_heat_score") is not None:
+        warnings["model_card_warnings"].append("one_sided_heat_is_sample_scoped_not_full_community_truth")
+
+    components = {
+        "saturation_components": {
+            "stance_concentration": stance_concentration,
+            "repetition": repetition,
+            "internal_density": internal_density,
+            "core_dominance": core_dominance,
+            "emotion": emotion,
+            "cross_cutting_gap": clamp01(1 - cross_cutting_exposure),
+        },
+        "closure_components": {
+            "cross_cutting_gap": clamp01(1 - cross_cutting_exposure),
+            "cross_box_gap": clamp01(1 - cross_box_exposure),
+            "stance_concentration": stance_concentration,
+            "internal_density": internal_density,
+            "bridge_capacity_gap": clamp01(1 - bridge_capacity),
+        },
+        "bridge_capacity_components": {
+            "bridge_cluster_share": bridge_cluster_share,
+            "bridge_core_share": bridge_core_share,
+            "neutral_or_mixed_cluster_share": neutral_or_mixed_cluster_share,
+            "explanatory_core_share": explanatory_core_share,
+            "cross_cutting_exposure": cross_cutting_exposure,
+            "low_identity_threat_language": low_identity_threat_language,
+            "evidence_confidence": evidence_confidence,
+        },
+        "constructive_breakout_components": {
+            "bridge_capacity": bridge_capacity,
+            "deescalation_core_share": deescalation_core_share,
+            "evidence_confidence": evidence_confidence,
+            "clarity_mean": clarity_mean,
+            "cross_box_exposure": cross_box_exposure,
+            "media_or_third_party_relay": media_or_third_party_relay,
+            "novelty_constructive": novelty_constructive,
+        },
+        "risk_breakout_components": {
+            "emotion": emotion,
+            "controversy": controversy,
+            "observed_amplification_mean": observed_amplification_mean,
+            "backlash_risk_mean": backlash_risk_mean,
+            "low_trust_conflict": low_trust_conflict,
+            "platform_spread": platform_spread,
+            "repetition": repetition,
+        },
+        "echo_risk_components": {
+            "saturation": saturation,
+            "closure": closure,
+            "risk_breakout": risk_breakout,
+            "controversy": controversy,
+            "emotion": emotion,
+            "low_trust_conflict": low_trust_conflict,
+            "review_risk": review_risk,
+        },
+        "stance_distribution": stance_distribution,
+        "platform_spread": platform_spread,
+        "source_spread": source_spread,
+        "cross_cutting_proxy_summary": echo_box.get("cross_cutting_proxy_summary") if isinstance(echo_box.get("cross_cutting_proxy_summary"), dict) else {},
+        "associated_aggregate_ids_used": [str(output.get("aggregate_id")) for output in content_refs if output.get("aggregate_id")],
+        "associated_influence_core_ids_used": [str(output.get("core_id")) for output in influence_refs if output.get("core_id")],
+        "associated_evidence_ids_used": [str(evidence.get("evidence_id")) for evidence in eligible if evidence.get("evidence_id")],
+        "repetition_signal": repetition,
+        "internal_density": internal_density,
+        "core_dominance": core_dominance,
+        "evidence_confidence": evidence_confidence,
+        "low_trust_conflict": low_trust_conflict,
+        "review_risk": review_risk,
+    }
+    scores = {
+        "saturation_score": saturation,
+        "saturation_confidence_adjusted": saturation_confidence_adjusted,
+        "closure_score": closure,
+        "bridge_capacity_score": bridge_capacity,
+        "constructive_breakout_score": constructive_breakout,
+        "risk_breakout_score": risk_breakout,
+        "echo_risk_score": echo_risk,
+        "stance_entropy": stance_entropy,
+        "stance_concentration": stance_concentration,
+    }
+    return {
+        "role": role,
+        "evidence_mass": evidence_mass,
+        "scores": scores,
+        "components": components,
+        "warnings": warnings,
+        "content_refs": content_refs,
+        "influence_refs": influence_refs,
+        "eligible": eligible,
+    }
+
+
+def calculate_echobox_saturation(
+    echo_box: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+) -> float:
+    return _echobox_context(echo_box, evidence_items, content_aggregate_outputs, influence_core_outputs)["scores"]["saturation_score"]
+
+
+def calculate_echobox_closure(
+    echo_box: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+) -> float:
+    return _echobox_context(echo_box, evidence_items, content_aggregate_outputs, influence_core_outputs)["scores"]["closure_score"]
+
+
+def calculate_echobox_bridge_capacity(
+    echo_box: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+) -> float:
+    return _echobox_context(echo_box, evidence_items, content_aggregate_outputs, influence_core_outputs)["scores"]["bridge_capacity_score"]
+
+
+def calculate_echobox_constructive_breakout(
+    echo_box: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+) -> float:
+    return _echobox_context(echo_box, evidence_items, content_aggregate_outputs, influence_core_outputs)["scores"]["constructive_breakout_score"]
+
+
+def calculate_echobox_risk_breakout(
+    echo_box: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+) -> float:
+    return _echobox_context(echo_box, evidence_items, content_aggregate_outputs, influence_core_outputs)["scores"]["risk_breakout_score"]
+
+
+def calculate_echobox_risk(
+    echo_box: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+) -> float:
+    return _echobox_context(echo_box, evidence_items, content_aggregate_outputs, influence_core_outputs)["scores"]["echo_risk_score"]
+
+
+def calculate_echobox_weight(
+    echo_box: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    echo_box_id = str(echo_box.get("echo_box_id") or "echo_box_unknown")
+    context = _echobox_context(echo_box, evidence_items, content_aggregate_outputs, influence_core_outputs)
+    role = context["role"]
+    warnings = context["warnings"]
+    if context["evidence_mass"]["analysis_ready_evidence_count"] == 0 and context["evidence_mass"]["associated_aggregate_count"] == 0:
+        scores = _zero_echobox_scores()
+        components = {
+            **context["components"],
+            "associated_evidence_ids_used": [],
+            "associated_aggregate_ids_used": [],
+            "associated_influence_core_ids_used": [],
+        }
+    else:
+        scores = context["scores"]
+        components = context["components"]
+
+    explanation = [
+        "EchoBox scores use selected-sample discussion-container metadata only.",
+        "EchoBox is not a real community map, full graph, official verification, causal proof, or prediction.",
+        "Bridge and breakout scores are sample-scoped discussion-structure proxies.",
+        "Evidence is evidence, not truth.",
+    ]
+
+    return {
+        "schema": "sentigraph_echobox_weight_v0_1",
+        "echo_box_id": echo_box_id,
+        "echo_box_role": role,
+        "echo_type": role,
+        "model_status": "8P_4_echobox_formula",
+        "coefficient_source": COEFFICIENT_SOURCE,
+        "calibration_status": CALIBRATION_STATUS,
+        "empirical_validation": EMPIRICAL_VALIDATION,
+        "sample_scope": SCOPE_NOTE,
+        "evidence_mass": context["evidence_mass"],
+        "scores": scores,
+        "components": components,
+        "quality_flags": _echobox_quality_flags(),
+        "warnings": warnings,
+        "explanation": explanation,
+        "boundary_flags": _echobox_boundary_flags(),
+    }
+
+
+def calculate_all_echobox_weights(
+    fixture: dict,
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    echo_boxes = fixture.get("echo_boxes") if isinstance(fixture, dict) else None
+    evidence_items = fixture.get("evidence_items_safe") if isinstance(fixture, dict) else None
+    if not isinstance(echo_boxes, list) or not echo_boxes:
+        return []
+    safe_evidence = [item for item in evidence_items if isinstance(item, dict)] if isinstance(evidence_items, list) else []
+    safe_content = [item for item in content_aggregate_outputs if isinstance(item, dict)]
+    safe_influence = [item for item in influence_core_outputs if isinstance(item, dict)]
+    return [
+        calculate_echobox_weight(echo_box, safe_evidence, safe_content, safe_influence)
+        for echo_box in echo_boxes
+        if isinstance(echo_box, dict)
+    ]
+
+
 def build_mock_calculator_run_metadata(fixture: dict) -> dict[str, Any]:
     validation = validate_mock_fixture_contract(fixture)
     fixture_id = _fixture_value(fixture, "fixture_id", "missing_fixture_id")
@@ -1874,7 +2718,14 @@ def calculate_opinion_ecosystem_mock_fixture(fixture: dict) -> dict[str, Any]:
     if run["validation_summary"]["status"] == "metadata_ready":
         content_outputs = calculate_all_content_aggregate_weights(fixture)
         influence_outputs = calculate_all_influencecore_weights(fixture)
-        if influence_outputs:
+        echo_outputs = calculate_all_echobox_weights(fixture, content_outputs, influence_outputs)
+        if echo_outputs:
+            run["module_outputs"] = _module_outputs_with_content_influence_and_echo(
+                content_outputs,
+                influence_outputs,
+                echo_outputs,
+            )
+        elif influence_outputs:
             run["module_outputs"] = _module_outputs_with_content_and_influence(content_outputs, influence_outputs)
         elif content_outputs:
             run["module_outputs"] = _module_outputs_with_content_aggregate(content_outputs)
