@@ -117,6 +117,43 @@ def _content_aggregate_fixture() -> dict:
     return fixture
 
 
+def _influencecore_fixture(core: dict | None = None, evidence_items: list[dict] | None = None) -> dict:
+    fixture = _content_aggregate_fixture()
+    fixture["fixture_metadata"]["fixture_id"] = "fixture_8p3_influencecore"
+    fixture["influence_cores"] = [
+        core
+        or {
+            "core_id": "core_official_001",
+            "core_type": "official_statement",
+            "associated_evidence_ids": ["evidence_001"],
+            "clarity_hint": 0.86,
+            "novelty_hint": 0.20,
+            "bridge_hint": 0.62,
+            "backlash_hint": 0.12,
+            "emotional_charge_hint": 0.20,
+            "repetition_hint": 0.10,
+            "resolution_signal_hint": 0.78,
+            "source_transparency_hint": 0.94,
+            "cross_source_consistency_hint": 0.85,
+            "privacy_safety_pass": True,
+            "identity_or_group_relevance_hint": 0.45,
+            "meme_or_symbolic_density_hint": 0.05,
+            "neutral_or_explanatory_frame_hint": 0.80,
+            "source_credibility_across_camps_hint": 0.72,
+            "low_identity_threat_language_hint": 0.88,
+            "shared_value_language_hint": 0.60,
+            "media_or_third_party_relay_hint": 0.20,
+            "empathy_or_context_hint": 0.72,
+        }
+    ]
+    if evidence_items is not None:
+        fixture["evidence_items_safe"] = evidence_items
+    else:
+        for evidence in fixture["evidence_items_safe"]:
+            evidence["influence_core_refs"] = ["core_official_001"]
+    return fixture
+
+
 def _walk_keys(value: object) -> set[str]:
     keys: set[str] = set()
     if isinstance(value, dict):
@@ -545,6 +582,343 @@ def test_no_forbidden_output_fields_after_content_aggregate_scoring() -> None:
 
 def test_deterministic_same_fixture_same_output_after_scoring() -> None:
     fixture = _content_aggregate_fixture()
+
+    first = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+    second = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert first == second
+
+
+def _influence_output(run: dict, index: int = 0) -> dict:
+    outputs = run["module_outputs"]["influence_core"]
+    assert isinstance(outputs, list)
+    return outputs[index]
+
+
+def test_influencecore_minimal_fixture_calculates_weight_v0_1() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture())
+    influence = _influence_output(run)
+
+    assert influence["schema"] == "sentigraph_influence_core_weight_v0_1"
+    assert influence["core_id"] == "core_official_001"
+    assert influence["core_type"] == "official_statement"
+    assert influence["model_status"] == "8P_3_influencecore_formula"
+    assert influence["coefficient_source"] == "mock_default"
+    assert influence["calibration_status"] == "uncalibrated"
+    assert influence["empirical_validation"] == "not_started"
+    assert influence["sample_scope"] == "selected_sample_or_local_fixture_only"
+    assert influence["evidence_mass"]["associated_evidence_count"] >= 1
+
+    for score in influence["scores"].values():
+        assert 0 <= score <= 1
+
+    for flag in [
+        "not_official_verification",
+        "not_truth_score",
+        "not_causal_proof",
+        "not_prediction",
+        "not_persuasion_probability",
+        "not_people_cluster",
+        "not_real_person",
+        "evidence_not_truth",
+        "human_review_required",
+    ]:
+        assert influence["boundary_flags"][flag] is True
+
+    assert isinstance(run["module_outputs"]["content_aggregate"], list)
+    assert run["module_outputs"]["echo_box"] == "not_calculated_in_8P_3"
+    assert run["module_outputs"]["people_cluster"] == "not_calculated_in_8P_3"
+    assert run["module_outputs"]["response_strategy"] == "not_calculated_in_8P_3"
+
+
+def test_official_statement_credible_but_low_exposure() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture())
+    influence = _influence_output(run)
+
+    assert influence["scores"]["factual_credibility"] > 0.70
+    assert influence["scores"]["sample_exposure"] < 0.40
+    assert influence["scores"]["amplification_score"] < influence["scores"]["factual_credibility"]
+    assert not any("changed discourse" in line.lower() for line in influence["explanation"])
+
+
+def test_viral_meme_low_credibility_high_amplification_warning() -> None:
+    core = {
+        "core_id": "core_meme_001",
+        "core_type": "meme_deconstruction",
+        "associated_evidence_ids": ["meme_001"],
+        "clarity_hint": 0.70,
+        "novelty_hint": 0.90,
+        "emotional_charge_hint": 0.95,
+        "repetition_hint": 0.95,
+        "meme_or_symbolic_density_hint": 1.0,
+        "bridge_hint": 0.45,
+        "backlash_hint": 0.55,
+        "privacy_safety_pass": True,
+    }
+    evidence = [
+        {
+            "evidence_id": "meme_001",
+            "platform": "sample_forum",
+            "provenance_type": "screenshot_transcription",
+            "trust_label": "low",
+            "review_status": "review_needed",
+            "duplicate_group_id": "dup_meme",
+            "duplicate_count": 18,
+            "relevance_label": "strong_case_match",
+            "recency_label": "inside_stage_window",
+            "emotion_intensity_hint": 0.95,
+            "source_url_present": False,
+            "aggregate_ref": "agg_001",
+            "influence_core_refs": ["core_meme_001"],
+        }
+    ]
+
+    influence = _influence_output(calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture(core, evidence)))
+
+    assert influence["scores"]["amplification_score"] > 0.55
+    assert influence["scores"]["factual_credibility"] < 0.50
+    assert "high_attention_low_credibility" in influence["warnings"]["low_confidence_warnings"]
+    assert "truth_score" not in _walk_keys(influence)
+    assert "official_verified" not in _walk_keys(influence)
+
+
+def test_low_trust_claim_raises_core_risk_but_not_truth() -> None:
+    core = {
+        "core_id": "core_claim_001",
+        "core_type": "low_trust_claim",
+        "associated_evidence_ids": ["claim_001"],
+        "clarity_hint": 0.55,
+        "novelty_hint": 0.75,
+        "emotional_charge_hint": 0.88,
+        "repetition_hint": 0.80,
+        "low_trust_conflict_hint": 0.95,
+        "privacy_or_sensitivity_risk_hint": 0.50,
+        "contradiction_risk_hint": 0.70,
+        "unresolved_grievance_hint": 0.80,
+    }
+    evidence = [
+        {
+            "evidence_id": "claim_001",
+            "platform": "sample_forum",
+            "provenance_type": "manual_text_without_source",
+            "trust_label": "low",
+            "review_status": "review_needed",
+            "duplicate_count": 8,
+            "relevance_label": "strong_case_match",
+            "recency_label": "inside_stage_window",
+            "source_url_present": False,
+            "aggregate_ref": "agg_001",
+            "influence_core_refs": ["core_claim_001"],
+        }
+    ]
+
+    influence = _influence_output(calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture(core, evidence)))
+
+    assert influence["scores"]["core_risk"] > 0.50
+    assert influence["scores"]["factual_credibility"] < 0.45
+    assert "truth_score" not in _walk_keys(influence)
+    assert "official_verified" not in _walk_keys(influence)
+
+
+def test_third_party_explanation_can_have_bridge_and_deescalation_potential() -> None:
+    core = {
+        "core_id": "core_context_001",
+        "core_type": "third_party_context",
+        "associated_evidence_ids": ["context_001"],
+        "clarity_hint": 0.90,
+        "novelty_hint": 0.35,
+        "bridge_hint": 0.88,
+        "backlash_hint": 0.08,
+        "emotional_charge_hint": 0.20,
+        "resolution_signal_hint": 0.90,
+        "source_transparency_hint": 0.88,
+        "cross_source_consistency_hint": 0.82,
+        "privacy_safety_pass": True,
+        "neutral_or_explanatory_frame_hint": 0.96,
+        "source_credibility_across_camps_hint": 0.84,
+        "low_identity_threat_language_hint": 0.95,
+        "shared_value_language_hint": 0.78,
+        "media_or_third_party_relay_hint": 0.92,
+        "empathy_or_context_hint": 0.85,
+    }
+    evidence = [
+        {
+            "evidence_id": "context_001",
+            "platform": "sample_forum",
+            "provenance_type": "manual_url_with_attestation",
+            "trust_label": "medium",
+            "trust_score": 0.70,
+            "review_status": "approved",
+            "duplicate_count": 1,
+            "relevance_label": "strong_case_match",
+            "recency_label": "inside_stage_window",
+            "source_url_present": True,
+            "aggregate_ref": "agg_001",
+            "influence_core_refs": ["core_context_001"],
+        }
+    ]
+
+    influence = _influence_output(calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture(core, evidence)))
+
+    assert influence["scores"]["bridge_potential"] > 0.70
+    assert influence["scores"]["deescalation_potential"] > 0.65
+    assert not any("guarantee" in line.lower() for line in influence["explanation"])
+
+
+def test_unknown_core_type_uses_unknown_source_core_warning() -> None:
+    core = {
+        "core_id": "core_unknown_001",
+        "core_type": "future_unknown_core",
+        "associated_evidence_ids": ["evidence_001"],
+        "clarity_hint": 0.50,
+        "novelty_hint": 0.50,
+        "privacy_safety_pass": True,
+    }
+
+    influence = _influence_output(calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture(core)))
+
+    assert influence["core_type"] == "unknown_source_core"
+    assert influence["components"]["source_identity_weight"] == 0.25
+    assert influence["warnings"]["unknown_core_type_warnings"]
+
+
+def test_rejected_evidence_excluded_from_influencecore_scores() -> None:
+    base = _influencecore_fixture()
+    rejected_fixture = _influencecore_fixture()
+    rejected_fixture["evidence_items_safe"].append(
+        {
+            "evidence_id": "rejected_core_001",
+            "platform": "sample_forum",
+            "provenance_type": "official_api_public",
+            "trust_label": "high",
+            "review_status": "rejected",
+            "duplicate_count": 20,
+            "relevance_label": "strong_case_match",
+            "recency_label": "inside_stage_window",
+            "emotion_intensity_hint": 1.0,
+            "source_url_present": True,
+            "aggregate_ref": "agg_001",
+            "influence_core_refs": ["core_official_001"],
+        }
+    )
+
+    base_influence = _influence_output(calculator.calculate_opinion_ecosystem_mock_fixture(base))
+    rejected_influence = _influence_output(calculator.calculate_opinion_ecosystem_mock_fixture(rejected_fixture))
+
+    assert rejected_influence["scores"]["amplification_score"] == base_influence["scores"]["amplification_score"]
+    assert rejected_influence["scores"]["core_risk"] == base_influence["scores"]["core_risk"]
+    assert rejected_influence["evidence_mass"]["rejected_excluded_count"] == 1
+    assert rejected_influence["warnings"]["rejected_excluded_warnings"]
+
+
+def test_missing_associated_evidence_yields_insufficient_data_warning() -> None:
+    core = {
+        "core_id": "core_orphan_001",
+        "core_type": "official_statement",
+        "associated_evidence_ids": ["missing_evidence"],
+        "clarity_hint": 0.95,
+    }
+
+    influence = _influence_output(calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture(core)))
+
+    assert influence["warnings"]["insufficient_data_warnings"]
+    assert influence["evidence_mass"]["analysis_ready_evidence_count"] == 0
+    assert all(score <= 0.30 for score in influence["scores"].values())
+    assert influence["schema"] == "sentigraph_influence_core_weight_v0_1"
+
+
+def test_forbidden_fields_still_block_before_influencecore_scoring() -> None:
+    fixture = _influencecore_fixture()
+    fixture["evidence_items_safe"][0]["profile_url"] = "hidden"
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "blocked"
+    assert not isinstance(run["module_outputs"]["influence_core"], list)
+
+
+def test_overclaim_fields_still_block_before_influencecore_scoring() -> None:
+    fixture = _influencecore_fixture()
+    fixture["fixture_metadata"]["official_verification_claim"] = True
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "blocked"
+    assert not isinstance(run["module_outputs"]["influence_core"], list)
+
+
+def test_auto_execute_still_blocks_before_influencecore_scoring() -> None:
+    fixture = _influencecore_fixture()
+    fixture["response_strategy_candidates"].append({"recommendation_level": "auto_execute"})
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "blocked"
+    assert not isinstance(run["module_outputs"]["influence_core"], list)
+
+
+def test_future_unknown_platform_does_not_imply_provider_runnable_for_influencecore() -> None:
+    fixture = _influencecore_fixture()
+    fixture["evidence_items_safe"][0]["platform"] = "future_forum"
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "manual_review_required"
+    assert run["validation_summary"]["unknown_platform_warning_count"] == 1
+    assert not isinstance(run["module_outputs"]["influence_core"], list)
+    assert all("provider" not in str(value).lower() or "not" in str(value).lower() for value in _walk_values(run))
+
+
+def test_no_echobox_peoplecluster_response_strategy_scores_in_8P_3() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_non_influence_keys = {
+        "saturation_score",
+        "stance_delta",
+        "strategy_score",
+        "persuasion_score",
+    }
+
+    assert not (forbidden_non_influence_keys & keys)
+    assert run["module_outputs"]["echo_box"] == "not_calculated_in_8P_3"
+    assert run["module_outputs"]["people_cluster"] == "not_calculated_in_8P_3"
+    assert run["module_outputs"]["response_strategy"] == "not_calculated_in_8P_3"
+
+
+def test_no_peoplecluster_pull_or_stance_effect_in_8P_3() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_keys = {
+        "pull_ik",
+        "stance_effect_ik",
+        "stance_effect_ik_adjusted",
+        "InfluenceCoreToClusterEffectV01",
+    }
+
+    assert not (forbidden_keys & keys)
+
+
+def test_no_forbidden_output_fields_after_influencecore_scoring() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_output_fields = {
+        "truth_score",
+        "official_verified",
+        "causal_chain_confirmed",
+        "prediction_probability",
+        "persuasion_score",
+        "target_user_list",
+        "raw_author_identifiers",
+    }
+
+    assert not (forbidden_output_fields & keys)
+
+
+def test_deterministic_same_fixture_same_output_after_influencecore_scoring() -> None:
+    fixture = _influencecore_fixture()
 
     first = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
     second = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)

@@ -159,6 +159,44 @@ LOW_TRUST_LABELS = {"low", "unverified", "rejected"}
 UNKNOWN_STANCE_VALUES = {"", "unknown", "unclear", "not_sure", "missing"}
 DEFAULT_DUPLICATE_CAP = 20
 
+SOURCE_IDENTITY_WEIGHTS = {
+    "official_statement": 0.95,
+    "recognized_media_report": 0.78,
+    "media_report": 0.78,
+    "expert_explanation": 0.72,
+    "known_org_or_institution": 0.70,
+    "kol_creator_content": 0.58,
+    "ordinary_viral_content": 0.45,
+    "forum_thread": 0.42,
+    "community_comment_cluster": 0.38,
+    "meme_deconstruction": 0.30,
+    "unknown_source_core": 0.25,
+    "low_trust_claim": 0.15,
+    "faq_or_longform_explanation": 0.72,
+    "correction_or_apology": 0.88,
+    "progress_update": 0.82,
+    "third_party_context": 0.70,
+}
+
+KNOWN_INFLUENCE_CORE_TYPES = {
+    "official_statement",
+    "media_report",
+    "recognized_media_report",
+    "expert_explanation",
+    "known_org_or_institution",
+    "kol_creator_content",
+    "ordinary_viral_content",
+    "forum_thread",
+    "community_comment_cluster",
+    "meme_deconstruction",
+    "faq_or_longform_explanation",
+    "correction_or_apology",
+    "progress_update",
+    "third_party_context",
+    "low_trust_claim",
+    "unknown_source_core",
+}
+
 
 def _iter_fields(value: Any, path: str = "") -> Iterable[tuple[str, str, Any]]:
     if isinstance(value, dict):
@@ -609,6 +647,19 @@ def _module_outputs_with_content_aggregate(outputs: list[dict[str, Any]]) -> dic
     }
 
 
+def _module_outputs_with_content_and_influence(
+    content_outputs: list[dict[str, Any]],
+    influence_outputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "content_aggregate": content_outputs if content_outputs else "not_calculated_in_8P_3",
+        "influence_core": influence_outputs,
+        "echo_box": "not_calculated_in_8P_3",
+        "people_cluster": "not_calculated_in_8P_3",
+        "response_strategy": "not_calculated_in_8P_3",
+    }
+
+
 def _zero_content_scores() -> dict[str, float]:
     return {
         "sample_heat_score": 0.0,
@@ -1048,6 +1099,679 @@ def calculate_all_content_aggregate_weights(fixture: dict) -> list[dict[str, Any
     ]
 
 
+def _influence_core_type(core: dict[str, Any]) -> str:
+    core_type = _label(core.get("core_type"))
+    if core_type in KNOWN_INFLUENCE_CORE_TYPES:
+        return core_type
+    return "unknown_source_core"
+
+
+def get_source_identity_weight(core: dict[str, Any]) -> float:
+    for field in ("source_identity_hint", "core_type"):
+        label = _label(core.get(field))
+        if label in SOURCE_IDENTITY_WEIGHTS:
+            return SOURCE_IDENTITY_WEIGHTS[label]
+    return SOURCE_IDENTITY_WEIGHTS["unknown_source_core"]
+
+
+def get_influencecore_associated_evidence(
+    core: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    core_id = str(core.get("core_id") or "")
+    raw_ids = core.get("associated_evidence_ids")
+    wanted_ids = {str(item) for item in raw_ids if item not in (None, "")} if isinstance(raw_ids, list) else set()
+    associated: list[dict[str, Any]] = []
+
+    for evidence in evidence_items:
+        evidence_id = str(evidence.get("evidence_id") or "")
+        refs = evidence.get("influence_core_refs")
+        if isinstance(refs, list):
+            ref_ids = {str(ref) for ref in refs}
+        elif refs in (None, ""):
+            ref_ids = set()
+        else:
+            ref_ids = {str(refs)}
+
+        if evidence_id in wanted_ids or (core_id and core_id in ref_ids):
+            associated.append(evidence)
+
+    return associated
+
+
+def _mean(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    return clamp01(sum(clamp01(value) for value in values) / len(values))
+
+
+def _hint(core: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = _as_float(core.get(key))
+        if value is not None:
+            return clamp01(value)
+    return None
+
+
+def _safe_metric_sum(evidence_items: list[dict[str, Any]], *keys: str) -> float | None:
+    total = 0.0
+    found = False
+    for evidence in evidence_items:
+        nested = evidence.get("raw_metric_summary")
+        for key in keys:
+            value = evidence.get(key)
+            if value is None and isinstance(nested, dict):
+                value = nested.get(key)
+            number = _as_float(value)
+            if number is not None:
+                total += max(0.0, number)
+                found = True
+                break
+    return total if found else None
+
+
+def _has_risk_flag(core: dict[str, Any], *terms: str) -> bool:
+    flags = core.get("risk_flags")
+    if not isinstance(flags, list):
+        return False
+    labels = {_label(flag) for flag in flags}
+    return any(term in label for label in labels for term in terms)
+
+
+def _influence_warnings() -> dict[str, list[str]]:
+    return {
+        "low_confidence_warnings": [],
+        "low_trust_warnings": [],
+        "review_needed_warnings": [],
+        "duplicate_folded_warnings": [],
+        "rejected_excluded_warnings": [],
+        "missing_component_warnings": [],
+        "insufficient_data_warnings": [],
+        "unknown_core_type_warnings": [],
+        "model_card_warnings": [
+            "selected_sample_only",
+            "uncalibrated",
+            "mock_default_coefficients",
+            "evidence_not_truth",
+            "human_review_required",
+            "not_official_verification",
+            "not_people_cluster",
+        ],
+    }
+
+
+def _influence_boundary_flags() -> dict[str, bool]:
+    return {
+        "not_official_verification": True,
+        "not_truth_score": True,
+        "not_causal_proof": True,
+        "not_prediction": True,
+        "not_persuasion_probability": True,
+        "not_people_cluster": True,
+        "not_real_person": True,
+        "evidence_not_truth": True,
+        "human_review_required": True,
+    }
+
+
+def _influence_zero_scores() -> dict[str, float]:
+    return {
+        "factual_credibility": 0.0,
+        "narrative_resonance": 0.0,
+        "sample_exposure": 0.0,
+        "bridge_potential": 0.0,
+        "backlash_risk": 0.0,
+        "core_strength": 0.0,
+        "attention_amplification": 0.0,
+        "amplification_score": 0.0,
+        "credibility_adjusted_influence_score": 0.0,
+        "deescalation_potential": 0.0,
+        "core_risk": 0.0,
+    }
+
+
+def _influence_evidence_mass(evidence_items: list[dict[str, Any]]) -> dict[str, int]:
+    eligible = _eligible_evidence(evidence_items)
+    return {
+        "evidence_count": len(evidence_items),
+        "analysis_ready_evidence_count": len(eligible),
+        "rejected_excluded_count": len(evidence_items) - len(eligible),
+        "low_trust_count": sum(
+            1
+            for evidence in eligible
+            if _label(evidence.get("trust_label")) in LOW_TRUST_LABELS or get_trust_weight(evidence) <= 0.30
+        ),
+        "review_needed_count": sum(1 for evidence in eligible if _label(evidence.get("review_status")) in REVIEW_NEEDED_STATUSES),
+        "associated_evidence_count": len(evidence_items),
+    }
+
+
+def _source_url_present_share(evidence_items: list[dict[str, Any]]) -> float:
+    eligible = _eligible_evidence(evidence_items)
+    if not eligible:
+        return 0.0
+    return sum(1 for evidence in eligible if evidence.get("source_url_present") is True) / len(eligible)
+
+
+def _privacy_safety_value(core: dict[str, Any]) -> float:
+    explicit = _as_float(core.get("privacy_safety_pass"))
+    if explicit is not None:
+        return clamp01(explicit)
+    if _has_risk_flag(core, "privacy", "sensitive", "minor", "private"):
+        return 0.30
+    return 1.0
+
+
+def _penalty_value(core: dict[str, Any], evidence_items: list[dict[str, Any]]) -> float:
+    evidence_count = len(evidence_items)
+    rejected_share = 0.0 if evidence_count == 0 else (evidence_count - len(_eligible_evidence(evidence_items))) / evidence_count
+    penalty = 0.15 * rejected_share
+    if _influence_core_type(core) == "low_trust_claim":
+        penalty += 0.20
+    if _has_risk_flag(core, "privacy", "sensitive", "minor", "private"):
+        penalty += 0.15
+    penalty += 0.10 * (_hint(core, "contradiction_risk_hint") or 0.0)
+    return clamp01(penalty)
+
+
+def _factual_credibility_detail(
+    core: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    warnings: dict[str, list[str]],
+) -> tuple[float, dict[str, float]]:
+    eligible = _eligible_evidence(evidence_items)
+    if not eligible:
+        warnings["insufficient_data_warnings"].append("no_analysis_ready_evidence_for_influencecore")
+        return 0.0, {
+            "source_identity_weight": get_source_identity_weight(core),
+            "evidence_trust_mean": 0.0,
+            "review_quality": 0.0,
+            "source_transparency": 0.0,
+            "cross_source_consistency": 0.0,
+            "privacy_safety_pass": _privacy_safety_value(core),
+            "penalty": 0.0,
+        }
+
+    source_transparency = _hint(core, "source_transparency_hint")
+    if source_transparency is None:
+        source_transparency = _source_url_present_share(eligible)
+        warnings["missing_component_warnings"].append("source_transparency_hint")
+
+    cross_source_consistency = _hint(core, "cross_source_consistency_hint")
+    if cross_source_consistency is None:
+        cross_source_consistency = 0.50
+        warnings["missing_component_warnings"].append("cross_source_consistency_hint")
+
+    components = {
+        "source_identity_weight": get_source_identity_weight(core),
+        "evidence_trust_mean": _mean([get_trust_weight(evidence) for evidence in eligible]),
+        "review_quality": _mean([get_review_weight(evidence) for evidence in eligible]),
+        "source_transparency": clamp01(source_transparency),
+        "cross_source_consistency": clamp01(cross_source_consistency),
+        "privacy_safety_pass": _privacy_safety_value(core),
+        "penalty": _penalty_value(core, evidence_items),
+    }
+    score = clamp01(
+        0.28 * components["source_identity_weight"]
+        + 0.24 * components["evidence_trust_mean"]
+        + 0.18 * components["review_quality"]
+        + 0.14 * components["source_transparency"]
+        + 0.10 * components["cross_source_consistency"]
+        + 0.06 * components["privacy_safety_pass"]
+        - components["penalty"]
+    )
+    return score, components
+
+
+def calculate_factual_credibility(core: dict[str, Any], evidence_items: list[dict[str, Any]]) -> float:
+    warnings = _influence_warnings()
+    score, _components = _factual_credibility_detail(core, get_influencecore_associated_evidence(core, evidence_items), warnings)
+    return score
+
+
+def _narrative_resonance_detail(
+    core: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    warnings: dict[str, list[str]],
+) -> tuple[float, dict[str, float]]:
+    eligible = _eligible_evidence(evidence_items)
+    clarity = _hint(core, "clarity_hint")
+    novelty = _hint(core, "novelty_hint")
+    emotional_charge = _hint(core, "emotional_charge_hint")
+    repetition = _hint(core, "repetition_hint")
+    identity_relevance = _hint(core, "identity_or_group_relevance_hint")
+    meme_density = _hint(core, "meme_or_symbolic_density_hint")
+
+    if clarity is None:
+        clarity = 0.50
+        warnings["missing_component_warnings"].append("clarity_hint")
+    if novelty is None:
+        novelty = 0.50
+        warnings["missing_component_warnings"].append("novelty_hint")
+    if emotional_charge is None:
+        emotional_charge = _average_emotion(eligible)
+        if emotional_charge is None:
+            emotional_charge = 0.35
+            warnings["missing_component_warnings"].append("emotional_charge_hint")
+    if repetition is None:
+        repetition = _repetition_signal(eligible)
+        warnings["missing_component_warnings"].append("repetition_hint")
+    if identity_relevance is None:
+        identity_relevance = 0.50
+        warnings["missing_component_warnings"].append("identity_or_group_relevance_hint")
+    if meme_density is None:
+        meme_density = 1.0 if _influence_core_type(core) == "meme_deconstruction" else 0.35
+        warnings["missing_component_warnings"].append("meme_or_symbolic_density_hint")
+
+    components = {
+        "clarity_score": clamp01(clarity),
+        "emotional_charge": clamp01(emotional_charge),
+        "repetition_signal": clamp01(repetition),
+        "novelty_score": clamp01(novelty),
+        "identity_or_group_relevance_proxy": clamp01(identity_relevance),
+        "meme_or_symbolic_density": clamp01(meme_density),
+    }
+    score = clamp01(
+        0.22 * components["clarity_score"]
+        + 0.20 * components["emotional_charge"]
+        + 0.18 * components["repetition_signal"]
+        + 0.15 * components["novelty_score"]
+        + 0.15 * components["identity_or_group_relevance_proxy"]
+        + 0.10 * components["meme_or_symbolic_density"]
+    )
+    return score, components
+
+
+def calculate_narrative_resonance(core: dict[str, Any], evidence_items: list[dict[str, Any]]) -> float:
+    warnings = _influence_warnings()
+    score, _components = _narrative_resonance_detail(core, get_influencecore_associated_evidence(core, evidence_items), warnings)
+    return score
+
+
+def _sample_exposure_detail(
+    _core: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    warnings: dict[str, list[str]],
+) -> tuple[float, dict[str, float | None]]:
+    eligible = _eligible_evidence(evidence_items)
+    weighted_mentions = sum(calculate_evidence_base_weight(evidence) for evidence in eligible)
+    weighted_replies = _safe_metric_sum(eligible, "reply_count", "reply_proxy", "weighted_replies")
+    weighted_shares = _safe_metric_sum(eligible, "share_count", "repost_count", "weighted_shares_or_reposts")
+    platform_spread = _derive_spread(eligible)
+    source_spread = log_norm(sum(1 for evidence in eligible if evidence.get("source_url_present") is True), 8)
+
+    if weighted_replies is None:
+        warnings["missing_component_warnings"].append("weighted_replies")
+    if weighted_shares is None:
+        warnings["missing_component_warnings"].append("weighted_shares_or_reposts")
+    if platform_spread is None:
+        warnings["missing_component_warnings"].append("platform_spread")
+
+    components = {
+        "weighted_mentions": log_norm(weighted_mentions, DEFAULT_DUPLICATE_CAP),
+        "weighted_replies": log_norm(weighted_replies, 100) if weighted_replies is not None else None,
+        "weighted_shares_or_reposts": log_norm(weighted_shares, 100) if weighted_shares is not None else None,
+        "platform_spread": platform_spread,
+        "source_spread": source_spread,
+    }
+    score, _missing = _weighted_available(
+        [
+            ("weighted_mentions", components["weighted_mentions"], 0.35),
+            ("weighted_replies", components["weighted_replies"], 0.20),
+            ("weighted_shares_or_reposts", components["weighted_shares_or_reposts"], 0.15),
+            ("platform_spread", components["platform_spread"], 0.15),
+            ("source_spread", components["source_spread"], 0.15),
+        ]
+    )
+    return score, components
+
+
+def calculate_sample_exposure(core: dict[str, Any], evidence_items: list[dict[str, Any]]) -> float:
+    warnings = _influence_warnings()
+    score, _components = _sample_exposure_detail(core, get_influencecore_associated_evidence(core, evidence_items), warnings)
+    return score
+
+
+def _bridge_potential_detail(
+    core: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    factual_credibility: float,
+    warnings: dict[str, list[str]],
+) -> tuple[float, dict[str, float]]:
+    platform_spread = _derive_spread(evidence_items) or 0.0
+    core_type = _influence_core_type(core)
+    explanatory_core = core_type in {"faq_or_longform_explanation", "expert_explanation", "third_party_context"}
+    relay_core = core_type in {"media_report", "recognized_media_report", "third_party_context", "expert_explanation"}
+
+    components = {
+        "cross_platform_presence": _hint(core, "cross_platform_presence_hint") if _hint(core, "cross_platform_presence_hint") is not None else platform_spread,
+        "neutral_or_explanatory_frame": _hint(core, "neutral_or_explanatory_frame_hint") if _hint(core, "neutral_or_explanatory_frame_hint") is not None else (0.80 if explanatory_core else 0.40),
+        "source_credibility_across_camps": _hint(core, "source_credibility_across_camps_hint") if _hint(core, "source_credibility_across_camps_hint") is not None else factual_credibility,
+        "low_identity_threat_language": _hint(core, "low_identity_threat_language_hint") if _hint(core, "low_identity_threat_language_hint") is not None else 0.50,
+        "shared_value_language": _hint(core, "shared_value_language_hint") if _hint(core, "shared_value_language_hint") is not None else 0.40,
+        "media_or_third_party_relay": _hint(core, "media_or_third_party_relay_hint") if _hint(core, "media_or_third_party_relay_hint") is not None else (0.80 if relay_core else 0.20),
+    }
+    for name, value in components.items():
+        components[name] = clamp01(value)
+    for missing_name in ("cross_platform_presence_hint", "neutral_or_explanatory_frame_hint", "source_credibility_across_camps_hint"):
+        if _hint(core, missing_name) is None:
+            warnings["missing_component_warnings"].append(missing_name)
+    score = clamp01(
+        0.25 * components["cross_platform_presence"]
+        + 0.20 * components["neutral_or_explanatory_frame"]
+        + 0.20 * components["source_credibility_across_camps"]
+        + 0.15 * components["low_identity_threat_language"]
+        + 0.10 * components["shared_value_language"]
+        + 0.10 * components["media_or_third_party_relay"]
+    )
+    return score, components
+
+
+def calculate_bridge_potential(core: dict[str, Any], evidence_items: list[dict[str, Any]]) -> float:
+    warnings = _influence_warnings()
+    associated = get_influencecore_associated_evidence(core, evidence_items)
+    factual_credibility, _components = _factual_credibility_detail(core, associated, warnings)
+    score, _bridge_components = _bridge_potential_detail(core, associated, factual_credibility, warnings)
+    return score
+
+
+def _backlash_risk_detail(
+    core: dict[str, Any],
+    warnings: dict[str, list[str]],
+) -> tuple[float, dict[str, float | None]]:
+    components = {
+        "mismatch_with_cluster_concerns": _hint(core, "mismatch_with_cluster_concerns_hint"),
+        "perceived_defensiveness": _hint(core, "perceived_defensiveness_hint"),
+        "timing_lag": _hint(core, "timing_lag_hint"),
+        "low_empathy_language": _hint(core, "low_empathy_language_hint"),
+        "contradiction_with_prior_record": _hint(core, "contradiction_with_prior_record_hint"),
+        "high_identity_threat": _hint(core, "high_identity_threat_hint"),
+        "ambiguity_or_missing_detail": _hint(core, "ambiguity_or_missing_detail_hint"),
+    }
+    backlash_hint = _hint(core, "backlash_hint")
+    if backlash_hint is not None and all(value is None for value in components.values()):
+        components["mismatch_with_cluster_concerns"] = backlash_hint
+        components["ambiguity_or_missing_detail"] = backlash_hint
+    for name, value in components.items():
+        if value is None:
+            warnings["missing_component_warnings"].append(name)
+    score, _missing = _weighted_available(
+        [
+            ("mismatch_with_cluster_concerns", components["mismatch_with_cluster_concerns"], 0.22),
+            ("perceived_defensiveness", components["perceived_defensiveness"], 0.18),
+            ("timing_lag", components["timing_lag"], 0.16),
+            ("low_empathy_language", components["low_empathy_language"], 0.14),
+            ("contradiction_with_prior_record", components["contradiction_with_prior_record"], 0.12),
+            ("high_identity_threat", components["high_identity_threat"], 0.10),
+            ("ambiguity_or_missing_detail", components["ambiguity_or_missing_detail"], 0.08),
+        ]
+    )
+    return score, components
+
+
+def calculate_backlash_risk(core: dict[str, Any], evidence_items: list[dict[str, Any]]) -> float:
+    _ = evidence_items
+    warnings = _influence_warnings()
+    score, _components = _backlash_risk_detail(core, warnings)
+    return score
+
+
+def calculate_core_strength(core: dict[str, Any], evidence_items: list[dict[str, Any]]) -> float:
+    warnings = _influence_warnings()
+    associated = get_influencecore_associated_evidence(core, evidence_items)
+    fc, _fc_components = _factual_credibility_detail(core, associated, warnings)
+    nr, nr_components = _narrative_resonance_detail(core, associated, warnings)
+    ex, _ex_components = _sample_exposure_detail(core, associated, warnings)
+    br, _br_components = _bridge_potential_detail(core, associated, fc, warnings)
+    return clamp01(
+        0.24 * fc
+        + 0.22 * nr
+        + 0.18 * ex
+        + 0.14 * nr_components["clarity_score"]
+        + 0.12 * nr_components["novelty_score"]
+        + 0.10 * br
+    )
+
+
+def calculate_attention_amplification(core: dict[str, Any], evidence_items: list[dict[str, Any]]) -> float:
+    warnings = _influence_warnings()
+    associated = get_influencecore_associated_evidence(core, evidence_items)
+    fc, _fc_components = _factual_credibility_detail(core, associated, warnings)
+    nr, nr_components = _narrative_resonance_detail(core, associated, warnings)
+    ex, _ex_components = _sample_exposure_detail(core, associated, warnings)
+    br, _br_components = _bridge_potential_detail(core, associated, fc, warnings)
+    return clamp01(
+        0.24 * ex
+        + 0.20 * nr
+        + 0.18 * nr_components["emotional_charge"]
+        + 0.16 * nr_components["novelty_score"]
+        + 0.12 * nr_components["repetition_signal"]
+        + 0.10 * br
+    )
+
+
+def _influence_quality_flags() -> list[str]:
+    return [
+        "selected_sample_only",
+        "uncalibrated",
+        "mock_default_coefficients",
+        "evidence_not_truth",
+        "not_official_verification",
+        "not_truth_score",
+        "not_people_cluster",
+        "not_real_person",
+    ]
+
+
+def calculate_influencecore_weight(
+    core: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    core_id = str(core.get("core_id") or "core_unknown")
+    core_type = _influence_core_type(core)
+    associated = get_influencecore_associated_evidence(core, evidence_items)
+    eligible = _eligible_evidence(associated)
+    warnings = _influence_warnings()
+    evidence_mass = _influence_evidence_mass(associated)
+
+    if _label(core.get("core_type")) not in KNOWN_INFLUENCE_CORE_TYPES:
+        warnings["unknown_core_type_warnings"].append("unknown_core_type_defaulted_to_unknown_source_core")
+    if evidence_mass["rejected_excluded_count"]:
+        warnings["rejected_excluded_warnings"].append("rejected_evidence_excluded_from_influencecore_scores")
+    if evidence_mass["low_trust_count"]:
+        warnings["low_trust_warnings"].append("low_trust_evidence_lowers_factual_credibility")
+    if evidence_mass["review_needed_count"]:
+        warnings["review_needed_warnings"].append("review_needed_evidence_keeps_human_review_required")
+    if any((_as_float(evidence.get("duplicate_count")) or 1.0) > 1 for evidence in eligible):
+        warnings["duplicate_folded_warnings"].append("duplicate_count_used_only_as_bounded_repetition_signal")
+
+    if not eligible:
+        warnings["insufficient_data_warnings"].append("no_associated_analysis_ready_evidence")
+        return {
+            "schema": "sentigraph_influence_core_weight_v0_1",
+            "core_id": core_id,
+            "core_type": core_type,
+            "model_status": "8P_3_influencecore_formula",
+            "coefficient_source": COEFFICIENT_SOURCE,
+            "calibration_status": CALIBRATION_STATUS,
+            "empirical_validation": EMPIRICAL_VALIDATION,
+            "sample_scope": SCOPE_NOTE,
+            "evidence_mass": evidence_mass,
+            "scores": _influence_zero_scores(),
+            "components": {
+                "factual_credibility_components": {},
+                "narrative_resonance_components": {},
+                "sample_exposure_components": {},
+                "bridge_potential_components": {},
+                "backlash_risk_components": {},
+                "core_strength_components": {},
+                "attention_amplification_components": {},
+                "core_risk_components": {},
+                "source_identity_weight": get_source_identity_weight(core),
+                "associated_evidence_ids_used": [],
+            },
+            "quality_flags": _influence_quality_flags(),
+            "warnings": warnings,
+            "explanation": [
+                "No analysis-ready evidence matched this InfluenceCore.",
+                "InfluenceCore scores are selected-sample metadata only.",
+            ],
+            "boundary_flags": _influence_boundary_flags(),
+        }
+
+    fc, fc_components = _factual_credibility_detail(core, associated, warnings)
+    nr, nr_components = _narrative_resonance_detail(core, associated, warnings)
+    ex, ex_components = _sample_exposure_detail(core, associated, warnings)
+    br, br_components = _bridge_potential_detail(core, associated, fc, warnings)
+    bk, bk_components = _backlash_risk_detail(core, warnings)
+
+    core_strength = clamp01(
+        0.24 * fc
+        + 0.22 * nr
+        + 0.18 * ex
+        + 0.14 * nr_components["clarity_score"]
+        + 0.12 * nr_components["novelty_score"]
+        + 0.10 * br
+    )
+    attention_amplification = clamp01(
+        0.24 * ex
+        + 0.20 * nr
+        + 0.18 * nr_components["emotional_charge"]
+        + 0.16 * nr_components["novelty_score"]
+        + 0.12 * nr_components["repetition_signal"]
+        + 0.10 * br
+    )
+    amplification = clamp01(
+        0.25 * attention_amplification
+        + 0.20 * ex
+        + 0.18 * nr_components["repetition_signal"]
+        + 0.15 * br
+        + 0.12 * nr_components["novelty_score"]
+        + 0.10 * nr_components["emotional_charge"]
+    )
+    credibility_adjusted = clamp01(amplification * (0.55 + 0.45 * fc))
+
+    empathy_or_context = _hint(core, "empathy_or_context_hint")
+    if empathy_or_context is None:
+        empathy_or_context = 0.40
+        warnings["missing_component_warnings"].append("empathy_or_context_hint")
+    resolution_signal = _hint(core, "resolution_signal_hint")
+    if resolution_signal is None:
+        resolution_signal = 0.35
+        warnings["missing_component_warnings"].append("resolution_signal_hint")
+    deescalation = clamp01(
+        0.24 * fc
+        + 0.22 * nr_components["clarity_score"]
+        + 0.20 * resolution_signal
+        + 0.16 * br
+        + 0.10 * empathy_or_context
+        + 0.08 * br_components["low_identity_threat_language"]
+        - 0.20 * bk
+    )
+
+    low_trust_conflict = _hint(core, "low_trust_conflict_hint") if _hint(core, "low_trust_conflict_hint") is not None else _low_trust_share(eligible)
+    privacy_risk = _hint(core, "privacy_or_sensitivity_risk_hint") if _hint(core, "privacy_or_sensitivity_risk_hint") is not None else _sensitive_privacy_flag_share(eligible)
+    contradiction_risk = _hint(core, "contradiction_risk_hint") or 0.0
+    unresolved_grievance = _hint(core, "unresolved_grievance_hint") or 0.0
+    core_risk = clamp01(
+        0.20 * amplification
+        + 0.18 * bk
+        + 0.16 * nr_components["emotional_charge"]
+        + 0.14 * low_trust_conflict
+        + 0.12 * privacy_risk
+        + 0.10 * contradiction_risk
+        + 0.10 * unresolved_grievance
+    )
+
+    if amplification > 0.55 and fc < 0.50:
+        warnings["low_confidence_warnings"].append("high_attention_low_credibility")
+
+    scores = {
+        "factual_credibility": fc,
+        "narrative_resonance": nr,
+        "sample_exposure": ex,
+        "bridge_potential": br,
+        "backlash_risk": bk,
+        "core_strength": core_strength,
+        "attention_amplification": attention_amplification,
+        "amplification_score": amplification,
+        "credibility_adjusted_influence_score": credibility_adjusted,
+        "deescalation_potential": deescalation,
+        "core_risk": core_risk,
+    }
+    components = {
+        "factual_credibility_components": fc_components,
+        "narrative_resonance_components": nr_components,
+        "sample_exposure_components": ex_components,
+        "bridge_potential_components": br_components,
+        "backlash_risk_components": bk_components,
+        "core_strength_components": {
+            "factual_credibility": fc,
+            "narrative_resonance": nr,
+            "sample_exposure": ex,
+            "clarity_score": nr_components["clarity_score"],
+            "novelty_score": nr_components["novelty_score"],
+            "bridge_potential": br,
+        },
+        "attention_amplification_components": {
+            "sample_exposure": ex,
+            "narrative_resonance": nr,
+            "emotional_charge": nr_components["emotional_charge"],
+            "novelty_score": nr_components["novelty_score"],
+            "repetition_signal": nr_components["repetition_signal"],
+            "bridge_potential": br,
+        },
+        "core_risk_components": {
+            "amplification_score": amplification,
+            "backlash_risk": bk,
+            "emotional_charge": nr_components["emotional_charge"],
+            "low_trust_conflict": clamp01(low_trust_conflict),
+            "privacy_or_sensitivity_risk": clamp01(privacy_risk),
+            "contradiction_risk": clamp01(contradiction_risk),
+            "unresolved_grievance": clamp01(unresolved_grievance),
+        },
+        "source_identity_weight": fc_components["source_identity_weight"],
+        "associated_evidence_ids_used": [str(evidence.get("evidence_id")) for evidence in eligible if evidence.get("evidence_id")],
+    }
+    explanation = [
+        "InfluenceCore scores use selected-sample metadata only.",
+        "Scores are uncalibrated mock-default heuristics.",
+        "InfluenceCore is a content or narrative core, not a person or PeopleCluster.",
+        "Evidence is evidence, not truth.",
+    ]
+
+    return {
+        "schema": "sentigraph_influence_core_weight_v0_1",
+        "core_id": core_id,
+        "core_type": core_type,
+        "model_status": "8P_3_influencecore_formula",
+        "coefficient_source": COEFFICIENT_SOURCE,
+        "calibration_status": CALIBRATION_STATUS,
+        "empirical_validation": EMPIRICAL_VALIDATION,
+        "sample_scope": SCOPE_NOTE,
+        "evidence_mass": evidence_mass,
+        "scores": scores,
+        "components": components,
+        "quality_flags": _influence_quality_flags(),
+        "warnings": warnings,
+        "explanation": explanation,
+        "boundary_flags": _influence_boundary_flags(),
+    }
+
+
+def calculate_all_influencecore_weights(fixture: dict) -> list[dict[str, Any]]:
+    cores = fixture.get("influence_cores") if isinstance(fixture, dict) else None
+    evidence_items = fixture.get("evidence_items_safe") if isinstance(fixture, dict) else None
+    if not isinstance(cores, list) or not cores:
+        return []
+    safe_evidence = [item for item in evidence_items if isinstance(item, dict)] if isinstance(evidence_items, list) else []
+    return [
+        calculate_influencecore_weight(core, safe_evidence)
+        for core in cores
+        if isinstance(core, dict)
+    ]
+
+
 def build_mock_calculator_run_metadata(fixture: dict) -> dict[str, Any]:
     validation = validate_mock_fixture_contract(fixture)
     fixture_id = _fixture_value(fixture, "fixture_id", "missing_fixture_id")
@@ -1149,6 +1873,9 @@ def calculate_opinion_ecosystem_mock_fixture(fixture: dict) -> dict[str, Any]:
         ]
     if run["validation_summary"]["status"] == "metadata_ready":
         content_outputs = calculate_all_content_aggregate_weights(fixture)
-        if content_outputs:
+        influence_outputs = calculate_all_influencecore_weights(fixture)
+        if influence_outputs:
+            run["module_outputs"] = _module_outputs_with_content_and_influence(content_outputs, influence_outputs)
+        elif content_outputs:
             run["module_outputs"] = _module_outputs_with_content_aggregate(content_outputs)
     return run
