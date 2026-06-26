@@ -3,6 +3,7 @@ import { PauseCircle, PlayCircle, RotateCcw, ScanLine, Sparkles } from 'lucide-r
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { OpinionEcosystemV2Canvas } from '../components/opinion/OpinionEcosystemV2Canvas.jsx'
+import { OpinionEcosystemModelExplanation } from '../components/opinion/OpinionEcosystemModelExplanation.jsx'
 import {
   dongluSunjihaiYouthFootballEvidenceItems,
   dongluSunjihaiYouthFootballSampleManifest,
@@ -709,6 +710,8 @@ export function OpinionEcosystemSandbox() {
 
       {dataSourceMode === 'helldivers_psn_sample' && <HelldiversSampleStatusCard />}
       {dataSourceMode === 'donglu_sunjihai_sample' && <DongluSunjihaiSampleStatusCard />}
+
+      <OpinionEcosystemModelExplanation />
 
       <Card
         className="panel-card"

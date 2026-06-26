@@ -2265,6 +2265,93 @@ body {
   gap: 8px;
 }
 
+.ecosystem-model-explanation {
+  display: grid;
+  gap: 16px;
+}
+
+.ecosystem-model-boundary-card,
+.ecosystem-model-module-card,
+.ecosystem-model-deferred-card,
+.ecosystem-model-copy-card {
+  border: 1px solid rgba(66, 245, 215, 0.16);
+  background: rgba(7, 16, 34, 0.86);
+}
+
+.ecosystem-model-boundary-card {
+  border-color: rgba(66, 245, 215, 0.28);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+.ecosystem-model-boundary-card h4 {
+  margin: 0 !important;
+}
+
+.ecosystem-model-boundary-card p,
+.ecosystem-model-module-card p,
+.ecosystem-model-deferred-card p {
+  margin-bottom: 0 !important;
+  color: #cbd5ea;
+  line-height: 1.62;
+}
+
+.ecosystem-model-human-review-alert,
+.ecosystem-model-inline-alert {
+  border-radius: 12px;
+  background: rgba(10, 22, 44, 0.72);
+}
+
+.ecosystem-model-module-card {
+  min-height: 100%;
+}
+
+.ecosystem-model-module-card.response-strategy {
+  border-color: rgba(255, 193, 7, 0.34);
+  background: linear-gradient(145deg, rgba(47, 37, 12, 0.72), rgba(7, 16, 34, 0.88));
+}
+
+.ecosystem-model-score-list {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ecosystem-model-score-list .ant-list-item {
+  padding: 9px 11px !important;
+  border-block-end-color: rgba(148, 163, 184, 0.12) !important;
+}
+
+.ecosystem-model-score-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(160px, 0.35fr) minmax(0, 0.65fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.ecosystem-model-score-row .ant-typography:last-child {
+  color: #9aa7bf;
+  line-height: 1.45;
+}
+
+.ecosystem-model-card-section {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.ecosystem-model-deferred-card {
+  border-color: rgba(255, 93, 143, 0.24);
+}
+
+.ecosystem-model-copy-card {
+  border-color: rgba(66, 245, 215, 0.22);
+}
+
 .public-event-page {
   color: #f4f7fb;
 }
@@ -3093,6 +3180,10 @@ body {
   }
 
   .ecosystem-v2-dynamics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ecosystem-model-score-row {
     grid-template-columns: 1fr;
   }
 
