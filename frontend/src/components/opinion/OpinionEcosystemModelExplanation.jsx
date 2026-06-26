@@ -79,7 +79,7 @@ function ModuleExplanationCard({ module }) {
         <Alert
           type="warning"
           showIcon
-          message="What this does not mean"
+          message="这不代表什么"
           description={module.does_not_mean}
           className="ecosystem-model-inline-alert"
         />
@@ -88,7 +88,7 @@ function ModuleExplanationCard({ module }) {
             type="info"
             showIcon
             message="透明回应候选比较 / human-review-only"
-            description="This card is not response text generation, not Strategy Lab runtime, not automatic execution. Blockers come before score; high score cannot override privacy, evidence, overclaim, or implementation blockers."
+            description="不是回应文案生成，不是 Strategy Lab runtime，不自动执行。Blockers come before score; high score cannot override privacy, evidence, overclaim, or implementation blockers."
             className="ecosystem-model-inline-alert"
           />
         )}
@@ -123,13 +123,12 @@ function DeferredNotice() {
       title={
         <Space>
           <AlertTriangle size={17} />
-          <span>Not calculated / deferred</span>
+          <span>未计算 / deferred</span>
         </Space>
       }
     >
       <Paragraph>
-        These modules or integrations are intentionally not implemented in 8Q-1. The page explains safe local snapshots only and does
-        not turn deferred items into visible capabilities.
+        这些模块或集成在 8Q-2 中没有实现。本页只解释安全的本地快照，不把 deferred 项伪装成可用能力。
       </Paragraph>
       <CompactTagList items={OPINION_ECOSYSTEM_DEFERRED_NOTICES} color="default" limit={10} />
     </Card>
@@ -143,17 +142,17 @@ function CopyGuardrails() {
       title={
         <Space>
           <Eye size={17} />
-          <span>Copy guardrails</span>
+          <span>文案护栏</span>
         </Space>
       }
     >
       <Row gutter={[12, 12]}>
         <Col xs={24} md={12}>
-          <Text strong>Use in visible UI</Text>
+          <Text strong>适合展示</Text>
           <CompactTagList items={OPINION_ECOSYSTEM_UI_COPY_GUARDRAILS.use} color="green" limit={8} />
         </Col>
         <Col xs={24} md={12}>
-          <Text strong>Avoid as capability</Text>
+          <Text strong>避免作为能力宣称</Text>
           <CompactTagList items={OPINION_ECOSYSTEM_UI_COPY_GUARDRAILS.avoid_as_capability} color="red" limit={8} />
         </Col>
       </Row>
@@ -186,13 +185,10 @@ export function OpinionEcosystemModelExplanation() {
                 <StatusTag label="sample scope" value={status.sample_scope} />
               </Space>
               <Title level={4}>Selected-sample score explanation, not production runtime</Title>
+              <Paragraph>当前为本地解释快照，不是生产分数；本页只展示安全解释，不调用 calculator API。</Paragraph>
               <Paragraph>
-                当前为本地解释快照，不是生产分数。后端 pure-local calculator 已有模型切片，但本页第一版只展示安全解释，
-                不调用 calculator API。
-              </Paragraph>
-              <Paragraph>
-                分数用于理解 selected sample 的结构，不代表全网、全平台、完整讨论串、官方验证、因果证明或预测。
-                ResponseStrategyComparison 只用于人工复核前的候选比较，不生成回应文案，也不自动执行。
+                分数只用于理解 selected sample 的结构，不代表全网、全平台、完整讨论串、官方验证、因果证明或预测。
+                ResponseStrategyComparison 只做人工复核前的候选比较，不生成回应文案，也不自动执行。
               </Paragraph>
             </Space>
           </Col>

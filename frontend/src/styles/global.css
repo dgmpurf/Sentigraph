@@ -1771,6 +1771,16 @@ body {
   line-height: 1.58;
 }
 
+.ecosystem-control-tile .ant-segmented {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ecosystem-control-tile .ant-segmented-group {
+  min-width: max-content;
+}
+
 .ecosystem-control-note {
   margin-top: 12px;
   border-color: rgba(66, 245, 215, 0.24);
