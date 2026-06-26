@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from math import log, sqrt
+from math import exp, log, sqrt
 from typing import Any
 
 
@@ -207,6 +207,19 @@ KNOWN_ECHO_BOX_TYPES = {
     "unknown_echo_box",
 }
 
+KNOWN_PEOPLE_CLUSTER_TYPES = {
+    "support_core",
+    "support_edge",
+    "neutral_observer",
+    "neutral_uncertain",
+    "oppose_core",
+    "oppose_edge",
+    "mixed_bridge",
+    "fatigued_exit",
+    "reactivated_group",
+    "unknown_people_cluster",
+}
+
 EXPLANATORY_CORE_TYPES = {
     "expert_explanation",
     "faq_or_longform_explanation",
@@ -294,12 +307,59 @@ def clamp01(value: Any) -> float:
     return max(0.0, min(1.0, number))
 
 
+def clamp_neg1_pos1(value: Any) -> float:
+    number = _as_float(value)
+    if number is None:
+        return 0.0
+    return max(-1.0, min(1.0, number))
+
+
+def sigmoid(value: Any) -> float:
+    number = _as_float(value)
+    if number is None:
+        number = 0.0
+    if number >= 60:
+        return 1.0
+    if number <= -60:
+        return 0.0
+    return clamp01(1 / (1 + exp(-number)))
+
+
 def log_norm(value: Any, cap: Any) -> float:
     number = max(0.0, _as_float(value) or 0.0)
     cap_number = max(0.0, _as_float(cap) or 0.0)
     if cap_number <= 0:
         return 0.0
     return clamp01(log(1 + number) / log(1 + cap_number))
+
+
+def normalize_stance_distribution(stance_distribution: Any) -> dict[str, float] | None:
+    if not isinstance(stance_distribution, dict):
+        return None
+    values = {bucket: max(0.0, _as_float(stance_distribution.get(bucket)) or 0.0) for bucket in STANCE_BUCKETS}
+    total = sum(values.values())
+    if total <= 0:
+        return None
+    return {bucket: clamp01(value / total) for bucket, value in values.items()}
+
+
+def stance_distribution_to_score(stance_distribution: Any) -> float:
+    normalized = normalize_stance_distribution(stance_distribution)
+    if normalized is None:
+        return 0.0
+    return clamp_neg1_pos1(normalized.get("support", 0.0) - normalized.get("oppose", 0.0))
+
+
+def stance_score_to_label(stance_score: Any, fatigue_level: Any = None) -> str:
+    fatigue = clamp01(fatigue_level)
+    score = clamp_neg1_pos1(stance_score)
+    if fatigue >= 0.78:
+        return "exited_or_fatigued"
+    if score >= 0.22:
+        return "support"
+    if score <= -0.22:
+        return "oppose"
+    return "neutral_or_uncertain"
 
 
 def _component_value(source: dict[str, Any], *keys: str) -> float | None:
@@ -700,6 +760,21 @@ def _module_outputs_with_content_influence_and_echo(
         "echo_box": echo_outputs,
         "people_cluster": "not_calculated_in_8P_4",
         "response_strategy": "not_calculated_in_8P_4",
+    }
+
+
+def _module_outputs_with_people_cluster(
+    content_outputs: list[dict[str, Any]],
+    influence_outputs: list[dict[str, Any]],
+    echo_outputs: list[dict[str, Any]],
+    people_outputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "content_aggregate": content_outputs if content_outputs else "not_calculated_in_8P_5",
+        "influence_core": influence_outputs if influence_outputs else "not_calculated_in_8P_5",
+        "echo_box": echo_outputs if echo_outputs else "not_calculated_in_8P_5",
+        "people_cluster": people_outputs,
+        "response_strategy": "not_calculated_in_8P_5",
     }
 
 
@@ -1895,13 +1970,7 @@ def get_echobox_influence_core_refs(
 
 
 def _normalize_stance_distribution(raw_distribution: Any) -> dict[str, float] | None:
-    if not isinstance(raw_distribution, dict):
-        return None
-    values = {bucket: max(0.0, _as_float(raw_distribution.get(bucket)) or 0.0) for bucket in STANCE_BUCKETS}
-    total = sum(values.values())
-    if total <= 0:
-        return None
-    return {bucket: clamp01(value / total) for bucket, value in values.items()}
+    return normalize_stance_distribution(raw_distribution)
 
 
 def _derive_echobox_stance_distribution(
@@ -2616,6 +2685,984 @@ def calculate_all_echobox_weights(
     ]
 
 
+def _peoplecluster_role(cluster: dict[str, Any]) -> str:
+    for field in ("cluster_role", "cluster_type"):
+        role = _label(cluster.get(field))
+        if role in KNOWN_PEOPLE_CLUSTER_TYPES:
+            return role
+    return "unknown_people_cluster"
+
+
+def _peoplecluster_warnings() -> dict[str, list[str]]:
+    return {
+        "low_confidence_warnings": [],
+        "low_trust_warnings": [],
+        "review_needed_warnings": [],
+        "duplicate_folded_warnings": [],
+        "rejected_excluded_warnings": [],
+        "missing_component_warnings": [],
+        "insufficient_data_warnings": [],
+        "unknown_people_cluster_warnings": [],
+        "transition_low_confidence_warnings": [],
+        "model_card_warnings": [
+            "selected_sample_only",
+            "anonymous_aggregate_only",
+            "evidence_not_truth",
+            "human_review_required",
+        ],
+        "overclaim_warnings": [],
+    }
+
+
+def _peoplecluster_boundary_flags() -> dict[str, bool]:
+    return {
+        "anonymous_aggregate_only": True,
+        "not_real_person": True,
+        "not_real_account": True,
+        "not_psychological_profile": True,
+        "not_personality_diagnosis": True,
+        "not_individual_tracking": True,
+        "not_target_user_list": True,
+        "not_persuasion_probability": True,
+        "not_causal_proof": True,
+        "not_prediction": True,
+        "evidence_not_truth": True,
+        "human_review_required": True,
+    }
+
+
+def _peoplecluster_quality_flags() -> list[str]:
+    return [
+        "selected_sample_only",
+        "uncalibrated",
+        "mock_default_coefficients",
+        "evidence_not_truth",
+        "anonymous_aggregate_only",
+        "not_real_person",
+        "not_real_account",
+        "not_psychological_profile",
+        "not_personality_diagnosis",
+        "not_individual_tracking",
+        "not_target_user_list",
+        "not_persuasion_probability",
+        "not_prediction",
+    ]
+
+
+def get_peoplecluster_associated_evidence(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    cluster_id = str(cluster.get("cluster_id") or "")
+    aggregate_ids = _as_string_set(cluster.get("aggregate_ids"))
+    influence_core_ids = _as_string_set(cluster.get("influence_core_ids"))
+    echo_box_ids = _as_string_set(cluster.get("echo_box_ids"))
+
+    direct_matches: list[dict[str, Any]] = []
+    fallback_matches: list[dict[str, Any]] = []
+    for evidence in evidence_items:
+        people_refs = _as_string_set(evidence.get("people_cluster_refs"))
+        if cluster_id and cluster_id in people_refs:
+            direct_matches.append(evidence)
+            continue
+
+        aggregate_ref = str(evidence.get("aggregate_ref") or "")
+        influence_refs = _as_string_set(evidence.get("influence_core_refs"))
+        echo_refs = _as_string_set(evidence.get("echo_box_refs"))
+        if (aggregate_ids and aggregate_ref in aggregate_ids) or (influence_core_ids & influence_refs) or (echo_box_ids & echo_refs):
+            fallback_matches.append(evidence)
+
+    return direct_matches if direct_matches else fallback_matches
+
+
+def get_peoplecluster_content_aggregate_refs(
+    cluster: dict[str, Any],
+    content_aggregate_outputs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    aggregate_ids = _as_string_set(cluster.get("aggregate_ids"))
+    if not aggregate_ids:
+        return []
+    return [
+        output
+        for output in content_aggregate_outputs
+        if isinstance(output, dict) and str(output.get("aggregate_id") or "") in aggregate_ids
+    ]
+
+
+def get_peoplecluster_influence_core_refs(
+    cluster: dict[str, Any],
+    influence_core_outputs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    core_ids = _as_string_set(cluster.get("influence_core_ids"))
+    if not core_ids:
+        return []
+    return [
+        output
+        for output in influence_core_outputs
+        if isinstance(output, dict) and str(output.get("core_id") or "") in core_ids
+    ]
+
+
+def get_peoplecluster_echobox_refs(
+    cluster: dict[str, Any],
+    echo_box_outputs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    echo_box_ids = _as_string_set(cluster.get("echo_box_ids"))
+    if not echo_box_ids:
+        return []
+    return [
+        output
+        for output in echo_box_outputs
+        if isinstance(output, dict) and str(output.get("echo_box_id") or "") in echo_box_ids
+    ]
+
+
+def _peoplecluster_evidence_mass(
+    associated_evidence: list[dict[str, Any]],
+    content_refs: list[dict[str, Any]],
+    influence_refs: list[dict[str, Any]],
+    echo_refs: list[dict[str, Any]],
+) -> dict[str, int]:
+    eligible = _eligible_evidence(associated_evidence)
+    groups = {
+        str(evidence.get("duplicate_group_id") or evidence.get("evidence_id") or index)
+        for index, evidence in enumerate(eligible)
+    }
+    return {
+        "evidence_count": len(associated_evidence),
+        "analysis_ready_evidence_count": len(eligible),
+        "rejected_excluded_count": len(associated_evidence) - len(eligible),
+        "duplicate_group_count": len(groups),
+        "low_trust_count": sum(
+            1
+            for evidence in eligible
+            if _label(evidence.get("trust_label")) in LOW_TRUST_LABELS or get_trust_weight(evidence) <= 0.30
+        ),
+        "review_needed_count": sum(1 for evidence in eligible if _label(evidence.get("review_status")) in REVIEW_NEEDED_STATUSES),
+        "associated_aggregate_count": len(content_refs),
+        "associated_influence_core_count": len(influence_refs),
+        "associated_echo_box_count": len(echo_refs),
+    }
+
+
+def _peoplecluster_hint(cluster: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = _as_float(cluster.get(key))
+        if value is not None:
+            return clamp01(value)
+    return None
+
+
+def _peoplecluster_component_or_default(
+    value: float | None,
+    name: str,
+    warnings: dict[str, list[str]],
+    default: float = 0.50,
+) -> float:
+    if value is None:
+        warnings["missing_component_warnings"].append(name)
+        return clamp01(default)
+    return clamp01(value)
+
+
+def _average_output_stance_distribution(outputs: list[dict[str, Any]]) -> dict[str, float] | None:
+    distributions: list[dict[str, float]] = []
+    for output in outputs:
+        components = output.get("components") if isinstance(output, dict) else None
+        distribution = components.get("stance_distribution") if isinstance(components, dict) else None
+        normalized = normalize_stance_distribution(distribution)
+        if normalized is not None:
+            distributions.append(normalized)
+    if not distributions:
+        return None
+    averaged = {
+        bucket: sum(distribution.get(bucket, 0.0) for distribution in distributions) / len(distributions)
+        for bucket in STANCE_BUCKETS
+    }
+    return normalize_stance_distribution(averaged)
+
+
+def _derive_peoplecluster_stance_distribution(
+    cluster: dict[str, Any],
+    associated_evidence: list[dict[str, Any]],
+    echo_refs: list[dict[str, Any]],
+    warnings: dict[str, list[str]],
+) -> dict[str, float]:
+    explicit = normalize_stance_distribution(cluster.get("stance_distribution"))
+    if explicit is not None:
+        return explicit
+
+    counts = {bucket: 0.0 for bucket in STANCE_BUCKETS}
+    for evidence in _eligible_evidence(associated_evidence):
+        stance = _label(evidence.get("stance_hint"))
+        if stance in counts:
+            counts[stance] += 1.0
+        else:
+            counts["unknown"] += 1.0
+    derived = normalize_stance_distribution(counts)
+    if derived is not None:
+        warnings["missing_component_warnings"].append("stance_distribution_derived_from_associated_evidence")
+        return derived
+
+    echo_distribution = _average_output_stance_distribution(echo_refs)
+    if echo_distribution is not None:
+        warnings["missing_component_warnings"].append("stance_distribution_derived_from_echobox")
+        return echo_distribution
+
+    warnings["insufficient_data_warnings"].append("stance_distribution_missing")
+    return {"support": 0.0, "neutral": 0.0, "oppose": 0.0, "mixed": 0.0, "unknown": 1.0}
+
+
+def _peoplecluster_evidence_confidence(
+    associated_evidence: list[dict[str, Any]],
+    content_refs: list[dict[str, Any]],
+    warnings: dict[str, list[str]],
+) -> float:
+    score = _score_mean(content_refs, "evidence_confidence_score")
+    if score is not None:
+        return score
+    eligible = _eligible_evidence(associated_evidence)
+    if eligible:
+        warnings["missing_component_warnings"].append("content_aggregate_evidence_confidence_missing")
+        return calculate_evidence_confidence(eligible)
+    warnings["low_confidence_warnings"].append("evidence_confidence_default_low")
+    return 0.25
+
+
+def _peoplecluster_low_trust_share(eligible: list[dict[str, Any]], content_refs: list[dict[str, Any]]) -> float:
+    value = _content_component_mean(content_refs, "low_trust_share")
+    if value is not None:
+        return value
+    return _low_trust_share(eligible)
+
+
+def _peoplecluster_review_needed_share(eligible: list[dict[str, Any]], content_refs: list[dict[str, Any]]) -> float:
+    value = _content_component_mean(content_refs, "review_needed_share")
+    if value is not None:
+        return value
+    return _review_needed_share(eligible)
+
+
+def _peoplecluster_repetition_signal(eligible: list[dict[str, Any]], content_refs: list[dict[str, Any]], echo_refs: list[dict[str, Any]]) -> float:
+    values = [
+        value
+        for value in [
+            _content_component_mean(content_refs, "repetition_signal"),
+            _content_component_mean(echo_refs, "repetition_signal"),
+            _repetition_signal(eligible) if eligible else None,
+        ]
+        if value is not None
+    ]
+    return max(values) if values else 0.0
+
+
+def _peoplecluster_heat_proxy(content_refs: list[dict[str, Any]]) -> float:
+    return max(
+        (
+            value
+            for value in [
+                _score_mean(content_refs, "heat_confidence_adjusted"),
+                _score_mean(content_refs, "sample_heat_score"),
+            ]
+            if value is not None
+        ),
+        default=0.0,
+    )
+
+
+def _peoplecluster_controversy_proxy(content_refs: list[dict[str, Any]], echo_refs: list[dict[str, Any]]) -> float:
+    return max(
+        (
+            value
+            for value in [
+                _score_mean(content_refs, "sample_controversy_score"),
+                _score_mean(echo_refs, "echo_risk_score"),
+                _score_mean(echo_refs, "closure_score"),
+            ]
+            if value is not None
+        ),
+        default=0.0,
+    )
+
+
+def _peoplecluster_bridge_proxy(cluster: dict[str, Any], influence_refs: list[dict[str, Any]], echo_refs: list[dict[str, Any]]) -> float:
+    return max(
+        (
+            value
+            for value in [
+                _peoplecluster_hint(cluster, "bridge_exposure_hint"),
+                _score_mean(echo_refs, "bridge_capacity_score"),
+                _score_mean(influence_refs, "bridge_potential"),
+                _score_mean(echo_refs, "constructive_breakout_score"),
+            ]
+            if value is not None
+        ),
+        default=0.0,
+    )
+
+
+def _peoplecluster_resolution_signal(cluster: dict[str, Any], influence_refs: list[dict[str, Any]], echo_refs: list[dict[str, Any]]) -> float:
+    return max(
+        (
+            value
+            for value in [
+                _peoplecluster_hint(cluster, "resolution_signal_hint"),
+                _score_mean(influence_refs, "deescalation_potential"),
+                _score_mean(echo_refs, "constructive_breakout_score"),
+            ]
+            if value is not None
+        ),
+        default=0.30,
+    )
+
+
+def calculate_peoplecluster_stance_state(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    upstream_outputs: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    warnings = upstream_outputs["warnings"]
+    echo_refs = upstream_outputs["echo_refs"]
+    distribution = _derive_peoplecluster_stance_distribution(cluster, evidence_items, echo_refs, warnings)
+    stance_score = stance_distribution_to_score(distribution)
+    stance_label = stance_score_to_label(stance_score, _peoplecluster_hint(cluster, "fatigue_hint"))
+    known_ratio = clamp01(1 - distribution.get("unknown", 0.0))
+    if known_ratio < 0.50:
+        warnings["low_confidence_warnings"].append("stance_distribution_has_high_unknown_share")
+    return {
+        "stance_score": stance_score,
+        "stance_label": stance_label,
+        "stance_distribution": distribution,
+        "known_ratio": known_ratio,
+    }
+
+
+def calculate_peoplecluster_stance_confidence(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    upstream_outputs: dict[str, Any],
+) -> dict[str, Any]:
+    warnings = upstream_outputs["warnings"]
+    eligible = _eligible_evidence(evidence_items)
+    content_refs = upstream_outputs["content_refs"]
+    stance_state = upstream_outputs["stance_state"]
+    evidence_confidence = upstream_outputs["evidence_confidence"]
+    low_trust_share = upstream_outputs["low_trust_share"]
+    review_needed_share = upstream_outputs["review_needed_share"]
+    repetition_signal = upstream_outputs["repetition_signal"]
+    fatigue_level = upstream_outputs["base_fatigue"]
+    openness = upstream_outputs["openness_score"]
+    stance_score = stance_state["stance_score"]
+    distribution = stance_state["stance_distribution"]
+
+    aligned_i = clamp01(distribution.get("support", 0.0) if stance_score >= 0 else distribution.get("oppose", 0.0))
+    cross_i = clamp01(1 - max(distribution.get("support", 0.0), distribution.get("oppose", 0.0), distribution.get("neutral", 0.0), distribution.get("mixed", 0.0)))
+    uncertainty = clamp01(distribution.get("unknown", 0.0) + 0.50 * low_trust_share + 0.35 * review_needed_share)
+    base_confidence = _peoplecluster_hint(cluster, "stance_confidence_hint")
+    if base_confidence is None:
+        if eligible or content_refs:
+            base_confidence = clamp01(0.60 * evidence_confidence + 0.40 * stance_state["known_ratio"])
+        else:
+            base_confidence = 0.25
+            warnings["low_confidence_warnings"].append("stance_confidence_default_low")
+    confidence = clamp01(
+        base_confidence
+        + 0.08 * aligned_i * repetition_signal
+        + 0.06 * aligned_i * evidence_confidence
+        - 0.07 * cross_i * openness
+        - 0.05 * uncertainty
+        - 0.04 * fatigue_level
+    )
+    if confidence < 0.45:
+        warnings["low_confidence_warnings"].append("peoplecluster_stance_confidence_low")
+    return {
+        "stance_confidence": confidence,
+        "components": {
+            "base_confidence": base_confidence,
+            "aligned_i": aligned_i,
+            "cross_i": cross_i,
+            "uncertainty": uncertainty,
+            "evidence_confidence": evidence_confidence,
+            "repetition_signal": repetition_signal,
+            "fatigue_i": fatigue_level,
+            "low_trust_share": low_trust_share,
+            "review_needed_share": review_needed_share,
+        },
+    }
+
+
+def calculate_peoplecluster_attention_level(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    upstream_outputs: dict[str, Any],
+) -> dict[str, Any]:
+    _ = evidence_items
+    warnings = upstream_outputs["warnings"]
+    heat = upstream_outputs["heat_proxy"]
+    controversy = upstream_outputs["controversy_proxy"]
+    fatigue = upstream_outputs["base_fatigue"]
+    resolution_signal = upstream_outputs["resolution_signal"]
+    base_attention = _peoplecluster_hint(cluster, "attention_hint")
+    if base_attention is None:
+        base_attention = clamp01(0.45 * heat + 0.30 * controversy + 0.25 * upstream_outputs["evidence_activity"])
+        warnings["missing_component_warnings"].append("attention_hint")
+    novelty_signal = _peoplecluster_component_or_default(_peoplecluster_hint(cluster, "novelty_signal_hint"), "novelty_signal_hint", warnings, 0.25)
+    personal_relevance = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "personal_relevance_proxy_hint"),
+        "personal_relevance_proxy_hint",
+        warnings,
+        0.25,
+    )
+    reactivation_trigger = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "reactivation_trigger_hint"),
+        "reactivation_trigger_hint",
+        warnings,
+        0.20,
+    )
+    attention = clamp01(
+        (1 - 0.08) * base_attention
+        + 0.22 * heat
+        + 0.14 * controversy
+        + 0.12 * novelty_signal
+        + 0.08 * personal_relevance
+        + 0.08 * reactivation_trigger
+        - 0.18 * fatigue
+        - 0.10 * resolution_signal
+    )
+    return {
+        "attention_level": attention,
+        "components": {
+            "base_attention": base_attention,
+            "heat_proxy": heat,
+            "controversy_proxy": controversy,
+            "novelty_signal": novelty_signal,
+            "personal_relevance_proxy": personal_relevance,
+            "reactivation_trigger": reactivation_trigger,
+            "fatigue": fatigue,
+            "resolution_signal": resolution_signal,
+        },
+    }
+
+
+def calculate_peoplecluster_fatigue_level(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    upstream_outputs: dict[str, Any],
+) -> dict[str, Any]:
+    _ = evidence_items
+    warnings = upstream_outputs["warnings"]
+    heat = upstream_outputs["heat_proxy"]
+    controversy = upstream_outputs["controversy_proxy"]
+    repetition_signal = upstream_outputs["repetition_signal"]
+    resolution_signal = upstream_outputs["resolution_signal"]
+    base_fatigue = upstream_outputs["base_fatigue"]
+    unresolved_grievance = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "unresolved_grievance_hint"),
+        "unresolved_grievance_hint",
+        warnings,
+        0.25,
+    )
+    constructive_new_info = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "constructive_new_info_hint")
+        if _peoplecluster_hint(cluster, "constructive_new_info_hint") is not None
+        else _score_mean(upstream_outputs["influence_refs"], "deescalation_potential"),
+        "constructive_new_info_hint",
+        warnings,
+        0.35,
+    )
+    bridge_understanding = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "bridge_understanding_hint")
+        if _peoplecluster_hint(cluster, "bridge_understanding_hint") is not None
+        else upstream_outputs["bridge_proxy"],
+        "bridge_understanding_hint",
+        warnings,
+        0.30,
+    )
+    fatigue = clamp01(
+        (1 - 0.04) * base_fatigue
+        + 0.22 * heat
+        + 0.18 * controversy
+        + 0.14 * repetition_signal
+        + 0.10 * unresolved_grievance
+        - 0.18 * resolution_signal
+        - 0.12 * constructive_new_info
+        - 0.08 * bridge_understanding
+    )
+    return {
+        "fatigue_level": fatigue,
+        "components": {
+            "base_fatigue": base_fatigue,
+            "heat_proxy": heat,
+            "controversy_proxy": controversy,
+            "repetition_signal": repetition_signal,
+            "unresolved_grievance": unresolved_grievance,
+            "resolution_signal": resolution_signal,
+            "constructive_new_info": constructive_new_info,
+            "bridge_understanding": bridge_understanding,
+        },
+    }
+
+
+def calculate_peoplecluster_expression_intensity(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    upstream_outputs: dict[str, Any],
+) -> dict[str, Any]:
+    warnings = upstream_outputs["warnings"]
+    stance_score = upstream_outputs["stance_state"]["stance_score"]
+    stance_confidence = upstream_outputs["stance_confidence"]
+    attention_level = upstream_outputs["attention_level"]
+    fatigue_level = upstream_outputs["fatigue_level"]
+    controversy = upstream_outputs["controversy_proxy"]
+    emotion = _average_emotion(_eligible_evidence(evidence_items))
+    if emotion is None:
+        emotion = _score_mean(upstream_outputs["influence_refs"], "attention_amplification")
+    emotion = _peoplecluster_component_or_default(emotion, "emotion_intensity", warnings, 0.35)
+    social_norm_pressure = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "social_norm_pressure_hint"),
+        "social_norm_pressure_hint",
+        warnings,
+        0.35,
+    )
+    theta_i = _peoplecluster_component_or_default(_peoplecluster_hint(cluster, "action_threshold_hint"), "action_threshold_hint", warnings, 0.50)
+    raw_expression = (
+        1.80 * attention_level
+        + 1.25 * controversy
+        + 1.10 * emotion
+        + 0.80 * abs(stance_score) * stance_confidence
+        + 0.50 * social_norm_pressure
+        - 1.40 * fatigue_level
+        - 1.20 * theta_i
+    )
+    expression_hint = _peoplecluster_hint(cluster, "expression_hint")
+    expression = sigmoid(raw_expression)
+    if expression_hint is not None:
+        expression = clamp01(0.55 * expression + 0.45 * expression_hint)
+    return {
+        "expression_intensity": expression,
+        "components": {
+            "raw_expression": raw_expression,
+            "attention_level": attention_level,
+            "controversy_proxy": controversy,
+            "emotion_intensity": emotion,
+            "stance_strength_confidence": clamp01(abs(stance_score) * stance_confidence),
+            "social_norm_pressure": social_norm_pressure,
+            "fatigue_level": fatigue_level,
+            "action_threshold": theta_i,
+        },
+    }
+
+
+def calculate_peoplecluster_exit_risk(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    upstream_outputs: dict[str, Any],
+) -> dict[str, Any]:
+    _ = evidence_items
+    warnings = upstream_outputs["warnings"]
+    fatigue = upstream_outputs["fatigue_level"]
+    repetition_signal = upstream_outputs["repetition_signal"]
+    unresolved_grievance = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "unresolved_grievance_hint"),
+        "unresolved_grievance_hint",
+        warnings,
+        0.25,
+    )
+    new_information_signal = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "constructive_new_info_hint"),
+        "new_information_signal",
+        warnings,
+        0.35,
+    )
+    resolution_signal = upstream_outputs["resolution_signal"]
+    controversy = upstream_outputs["controversy_proxy"]
+    new_trigger = _peoplecluster_component_or_default(_peoplecluster_hint(cluster, "new_trigger_hint"), "new_trigger_hint", warnings, 0.20)
+    fatigue_exit = sigmoid(
+        -1.60
+        + 2.20 * fatigue
+        + 0.90 * repetition_signal
+        + 0.70 * unresolved_grievance
+        - 0.80 * new_information_signal
+    )
+    cooling_exit = sigmoid(
+        -1.40
+        + 1.50 * resolution_signal
+        + 0.90 * fatigue
+        - 0.80 * controversy
+        - 0.60 * new_trigger
+    )
+    return {
+        "fatigue_exit_risk": fatigue_exit,
+        "cooling_exit_risk": cooling_exit,
+        "exit_risk": max(fatigue_exit, cooling_exit),
+        "components": {
+            "fatigue": fatigue,
+            "repetition_signal": repetition_signal,
+            "unresolved_grievance": unresolved_grievance,
+            "new_information_signal": new_information_signal,
+            "resolution_signal": resolution_signal,
+            "controversy": controversy,
+            "new_trigger": new_trigger,
+        },
+    }
+
+
+def calculate_peoplecluster_reactivation_potential(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    upstream_outputs: dict[str, Any],
+) -> dict[str, Any]:
+    _ = evidence_items
+    warnings = upstream_outputs["warnings"]
+    reputation_memory = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "reputation_memory_hint"),
+        "reputation_memory_hint",
+        warnings,
+        0.30,
+    )
+    new_trigger = _peoplecluster_component_or_default(_peoplecluster_hint(cluster, "new_trigger_hint"), "new_trigger_hint", warnings, 0.20)
+    unresolved_grievance = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "unresolved_grievance_hint"),
+        "unresolved_grievance_hint",
+        warnings,
+        0.25,
+    )
+    identity_relevance_proxy = _peoplecluster_component_or_default(
+        _peoplecluster_hint(cluster, "identity_relevance_proxy_hint"),
+        "identity_relevance_proxy_hint",
+        warnings,
+        0.25,
+    )
+    fatigue = upstream_outputs["fatigue_level"]
+    resolution_signal = upstream_outputs["resolution_signal"]
+    reactivation = sigmoid(
+        -2.00
+        + 1.40 * reputation_memory
+        + 1.20 * new_trigger
+        + 1.00 * unresolved_grievance
+        + 0.60 * identity_relevance_proxy
+        - 1.10 * fatigue
+        - 0.70 * resolution_signal
+    )
+    return {
+        "reactivation_potential": reactivation,
+        "components": {
+            "reputation_memory": reputation_memory,
+            "new_trigger": new_trigger,
+            "unresolved_grievance": unresolved_grievance,
+            "identity_relevance_proxy": identity_relevance_proxy,
+            "fatigue": fatigue,
+            "resolution_signal": resolution_signal,
+        },
+    }
+
+
+def calculate_peoplecluster_openness_radius(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    upstream_outputs: dict[str, Any],
+) -> dict[str, Any]:
+    _ = evidence_items
+    warnings = upstream_outputs["warnings"]
+    bridge_proxy = upstream_outputs["bridge_proxy"]
+    stance_distribution = upstream_outputs["stance_state"]["stance_distribution"]
+    mixed_or_neutral = clamp01(stance_distribution.get("mixed", 0.0) + stance_distribution.get("neutral", 0.0))
+    openness_hint = _peoplecluster_hint(cluster, "openness_hint")
+    openness = clamp01(openness_hint if openness_hint is not None else 0.55 * bridge_proxy + 0.45 * mixed_or_neutral)
+    if openness_hint is None:
+        warnings["missing_component_warnings"].append("openness_hint_derived_from_bridge_and_mixed_stance")
+    explicit_radius = _peoplecluster_hint(cluster, "confidence_radius_hint")
+    confidence_radius = explicit_radius if explicit_radius is not None else clamp01(0.25 + (0.85 - 0.25) * openness)
+    return {
+        "openness_score": openness,
+        "confidence_radius": confidence_radius,
+        "components": {
+            "bridge_proxy": bridge_proxy,
+            "mixed_or_neutral_share": mixed_or_neutral,
+            "epsilon_min": 0.25,
+            "epsilon_max": 0.85,
+        },
+    }
+
+
+def _peoplecluster_peer_field_proxy(
+    cluster: dict[str, Any],
+    stance_state: dict[str, Any],
+    echo_refs: list[dict[str, Any]],
+    warnings: dict[str, list[str]],
+) -> float:
+    hint = _peoplecluster_hint(cluster, "peer_field_hint")
+    if hint is not None:
+        return clamp_neg1_pos1(2 * hint - 1)
+    echo_distribution = _average_output_stance_distribution(echo_refs)
+    if echo_distribution is not None:
+        warnings["transition_low_confidence_warnings"].append("peer_field_derived_from_safe_echobox_stance_distribution")
+        return stance_distribution_to_score(echo_distribution)
+    warnings["transition_low_confidence_warnings"].append("peer_field_derived_from_weak_aggregate_stance_distribution")
+    return stance_state["stance_score"]
+
+
+def _peoplecluster_influence_core_field_proxy(influence_refs: list[dict[str, Any]], warnings: dict[str, list[str]]) -> float:
+    weighted_total = 0.0
+    weight_total = 0.0
+    for output in influence_refs:
+        core_type = _label(output.get("core_type"))
+        if core_type in {"correction_or_apology", "progress_update"}:
+            direction = 0.35
+        elif core_type in EXPLANATORY_CORE_TYPES:
+            direction = 0.0
+        elif core_type in {"low_trust_claim", "meme_deconstruction"}:
+            direction = -0.35
+        else:
+            direction = 0.0
+            warnings["transition_low_confidence_warnings"].append("influence_core_frame_direction_missing_or_neutral")
+        scores = output.get("scores") if isinstance(output.get("scores"), dict) else {}
+        weight = max(
+            (
+                value
+                for value in [
+                    clamp01(scores.get("credibility_adjusted_influence_score")),
+                    clamp01(scores.get("core_strength")),
+                    clamp01(scores.get("factual_credibility")),
+                ]
+            ),
+            default=0.0,
+        )
+        weighted_total += direction * weight
+        weight_total += weight
+    if weight_total <= 0:
+        warnings["transition_low_confidence_warnings"].append("influence_core_field_low_confidence")
+        return 0.0
+    return clamp_neg1_pos1(weighted_total / weight_total)
+
+
+def calculate_peoplecluster_transition_pressure(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    upstream_outputs: dict[str, Any],
+) -> dict[str, Any]:
+    _ = evidence_items
+    warnings = upstream_outputs["warnings"]
+    previous_state = cluster.get("previous_state")
+    current_state_only = not isinstance(previous_state, dict)
+    stance_score = upstream_outputs["stance_state"]["stance_score"]
+    previous_stance = clamp_neg1_pos1(previous_state.get("stance_score")) if isinstance(previous_state, dict) else stance_score
+    peer_field = _peoplecluster_peer_field_proxy(cluster, upstream_outputs["stance_state"], upstream_outputs["echo_refs"], warnings)
+    influence_core_field = _peoplecluster_influence_core_field_proxy(upstream_outputs["influence_refs"], warnings)
+    evidence_confidence = upstream_outputs["evidence_confidence"]
+    damping = clamp01(0.40 + 0.60 * evidence_confidence)
+    resistance = clamp01(
+        0.55 * upstream_outputs["stance_confidence"]
+        + 0.25 * (1 - upstream_outputs["openness_score"])
+        + 0.20 * upstream_outputs["fatigue_level"]
+    )
+    eta = clamp01(
+        0.20
+        * upstream_outputs["attention_level"]
+        * (1 - upstream_outputs["fatigue_level"])
+        * (1 - resistance)
+        * damping
+    )
+    transition_pressure = clamp_neg1_pos1(0.45 * (peer_field - previous_stance) + 0.40 * (influence_core_field - previous_stance))
+    state_delta = 0.0 if current_state_only else clamp_neg1_pos1(eta * transition_pressure)
+    if current_state_only:
+        warnings["transition_low_confidence_warnings"].append("missing_previous_state_current_state_only")
+    warnings["transition_low_confidence_warnings"].append("response_strategy_component_not_available_in_8P_5")
+    return {
+        "transition_pressure": transition_pressure,
+        "state_delta": state_delta,
+        "current_state_only": current_state_only,
+        "components": {
+            "peer_field_proxy": peer_field,
+            "influence_core_field_proxy": influence_core_field,
+            "evidence_confidence_damping": damping,
+            "resistance": resistance,
+            "eta": eta,
+            "response_strategy_component": "not_calculated_in_8P_5",
+        },
+    }
+
+
+def calculate_peoplecluster_state(
+    cluster: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+    echo_box_outputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    cluster_id = str(cluster.get("cluster_id") or "people_cluster_unknown")
+    role = _peoplecluster_role(cluster)
+    cluster_type = role
+    warnings = _peoplecluster_warnings()
+    if role == "unknown_people_cluster":
+        warnings["unknown_people_cluster_warnings"].append("unknown_people_cluster_role_or_type_defaulted")
+
+    associated = get_peoplecluster_associated_evidence(cluster, evidence_items)
+    eligible = _eligible_evidence(associated)
+    content_refs = get_peoplecluster_content_aggregate_refs(cluster, content_aggregate_outputs)
+    influence_refs = get_peoplecluster_influence_core_refs(cluster, influence_core_outputs)
+    echo_refs = get_peoplecluster_echobox_refs(cluster, echo_box_outputs)
+    evidence_mass = _peoplecluster_evidence_mass(associated, content_refs, influence_refs, echo_refs)
+
+    if not _as_string_set(cluster.get("aggregate_ids")):
+        warnings["missing_component_warnings"].append("aggregate_ids")
+    if not _as_string_set(cluster.get("echo_box_ids")):
+        warnings["missing_component_warnings"].append("echo_box_ids")
+    if not _as_string_set(cluster.get("influence_core_ids")):
+        warnings["missing_component_warnings"].append("influence_core_ids")
+    if evidence_mass["rejected_excluded_count"]:
+        warnings["rejected_excluded_warnings"].append("rejected_evidence_excluded_from_peoplecluster_scores")
+    if evidence_mass["low_trust_count"]:
+        warnings["low_trust_warnings"].append("low_trust_evidence_lowers_peoplecluster_confidence")
+    if evidence_mass["review_needed_count"]:
+        warnings["review_needed_warnings"].append("review_needed_evidence_keeps_human_review_required")
+    if any((_as_float(evidence.get("duplicate_count")) or 1.0) > 1 for evidence in eligible):
+        warnings["duplicate_folded_warnings"].append("duplicate_count_used_only_as_bounded_repetition_signal")
+    if not eligible and not content_refs and not echo_refs:
+        warnings["insufficient_data_warnings"].append("no_associated_analysis_ready_evidence_or_upstream_context")
+
+    evidence_confidence = _peoplecluster_evidence_confidence(associated, content_refs, warnings)
+    low_trust_share = _peoplecluster_low_trust_share(eligible, content_refs)
+    review_needed_share = _peoplecluster_review_needed_share(eligible, content_refs)
+    repetition_signal = _peoplecluster_repetition_signal(eligible, content_refs, echo_refs)
+    heat_proxy = _peoplecluster_heat_proxy(content_refs)
+    controversy_proxy = _peoplecluster_controversy_proxy(content_refs, echo_refs)
+    bridge_proxy = _peoplecluster_bridge_proxy(cluster, influence_refs, echo_refs)
+    resolution_signal = _peoplecluster_resolution_signal(cluster, influence_refs, echo_refs)
+    evidence_activity = log_norm(len(eligible), 8)
+    base_fatigue = _peoplecluster_hint(cluster, "fatigue_hint")
+    if base_fatigue is None:
+        base_fatigue = clamp01(0.30 * heat_proxy + 0.30 * controversy_proxy + 0.20 * repetition_signal + 0.20 * (_score_mean(echo_refs, "closure_score") or 0.0))
+        warnings["missing_component_warnings"].append("fatigue_hint")
+
+    upstream: dict[str, Any] = {
+        "warnings": warnings,
+        "content_refs": content_refs,
+        "influence_refs": influence_refs,
+        "echo_refs": echo_refs,
+        "evidence_confidence": evidence_confidence,
+        "low_trust_share": low_trust_share,
+        "review_needed_share": review_needed_share,
+        "repetition_signal": repetition_signal,
+        "heat_proxy": heat_proxy,
+        "controversy_proxy": controversy_proxy,
+        "bridge_proxy": bridge_proxy,
+        "resolution_signal": resolution_signal,
+        "evidence_activity": evidence_activity,
+        "base_fatigue": base_fatigue,
+    }
+    stance_state = calculate_peoplecluster_stance_state(cluster, associated, upstream)
+    upstream["stance_state"] = stance_state
+    openness = calculate_peoplecluster_openness_radius(cluster, associated, upstream)
+    upstream["openness_score"] = openness["openness_score"]
+    confidence = calculate_peoplecluster_stance_confidence(cluster, associated, upstream)
+    upstream["stance_confidence"] = confidence["stance_confidence"]
+    attention = calculate_peoplecluster_attention_level(cluster, associated, upstream)
+    upstream["attention_level"] = attention["attention_level"]
+    fatigue = calculate_peoplecluster_fatigue_level(cluster, associated, upstream)
+    upstream["fatigue_level"] = fatigue["fatigue_level"]
+    expression = calculate_peoplecluster_expression_intensity(cluster, associated, upstream)
+    exit_risk = calculate_peoplecluster_exit_risk(cluster, associated, upstream)
+    reactivation = calculate_peoplecluster_reactivation_potential(cluster, associated, upstream)
+    transition = calculate_peoplecluster_transition_pressure(cluster, associated, upstream)
+    final_stance_score = clamp_neg1_pos1(stance_state["stance_score"] + transition["state_delta"])
+    stance_label = stance_score_to_label(final_stance_score, fatigue["fatigue_level"])
+
+    if evidence_confidence < 0.45:
+        warnings["low_confidence_warnings"].append("low_evidence_confidence_downgrades_peoplecluster_state")
+
+    components = {
+        "stance_components": {
+            "stance_distribution": stance_state["stance_distribution"],
+            "derived_stance_score": stance_state["stance_score"],
+            "known_ratio": stance_state["known_ratio"],
+        },
+        "confidence_components": confidence["components"],
+        "attention_components": attention["components"],
+        "fatigue_components": fatigue["components"],
+        "expression_components": expression["components"],
+        "exit_risk_components": exit_risk["components"],
+        "reactivation_components": reactivation["components"],
+        "openness_components": openness["components"],
+        "transition_pressure_components": transition["components"],
+        "associated_aggregate_ids_used": [str(output.get("aggregate_id")) for output in content_refs if output.get("aggregate_id")],
+        "associated_influence_core_ids_used": [str(output.get("core_id")) for output in influence_refs if output.get("core_id")],
+        "associated_echo_box_ids_used": [str(output.get("echo_box_id")) for output in echo_refs if output.get("echo_box_id")],
+        "associated_evidence_ids_used": [str(evidence.get("evidence_id")) for evidence in eligible if evidence.get("evidence_id")],
+        "evidence_confidence": evidence_confidence,
+        "repetition_signal": repetition_signal,
+        "heat_proxy": heat_proxy,
+        "controversy_proxy": controversy_proxy,
+        "echo_closure_proxy": _score_mean(echo_refs, "closure_score") or 0.0,
+        "bridge_proxy": bridge_proxy,
+        "low_trust_share": low_trust_share,
+        "review_needed_share": review_needed_share,
+    }
+    state = {
+        "stance_score": final_stance_score,
+        "stance_label": stance_label,
+        "stance_distribution": stance_state["stance_distribution"],
+        "stance_confidence": confidence["stance_confidence"],
+        "attention_level": attention["attention_level"],
+        "fatigue_level": fatigue["fatigue_level"],
+        "expression_intensity": expression["expression_intensity"],
+        "exit_risk": exit_risk["exit_risk"],
+        "fatigue_exit_risk": exit_risk["fatigue_exit_risk"],
+        "cooling_exit_risk": exit_risk["cooling_exit_risk"],
+        "reactivation_potential": reactivation["reactivation_potential"],
+        "openness_score": openness["openness_score"],
+        "confidence_radius": openness["confidence_radius"],
+        "transition_pressure": transition["transition_pressure"],
+        "state_delta": transition["state_delta"],
+        "current_state_only": transition["current_state_only"],
+    }
+    explanation = [
+        "PeopleClusterStateV01 is a sample-scoped anonymous aggregate behavior proxy.",
+        "PeopleCluster is not a real person, account, psychological profile, target list, causal proof, or prediction.",
+        "Transition fields are bounded aggregate proxies and do not claim private belief change.",
+        "Evidence is evidence, not truth.",
+    ]
+    return {
+        "schema": "sentigraph_people_cluster_state_v0_1",
+        "cluster_id": cluster_id,
+        "cluster_role": role,
+        "cluster_type": cluster_type,
+        "model_status": "8P_5_peoplecluster_transition",
+        "coefficient_source": COEFFICIENT_SOURCE,
+        "calibration_status": CALIBRATION_STATUS,
+        "empirical_validation": EMPIRICAL_VALIDATION,
+        "sample_scope": SCOPE_NOTE,
+        "evidence_mass": evidence_mass,
+        "state": state,
+        "components": components,
+        "quality_flags": _peoplecluster_quality_flags(),
+        "warnings": warnings,
+        "explanation": explanation,
+        "boundary_flags": _peoplecluster_boundary_flags(),
+    }
+
+
+def calculate_all_peoplecluster_states(
+    fixture: dict,
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+    echo_box_outputs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    clusters = fixture.get("people_clusters") if isinstance(fixture, dict) else None
+    evidence_items = fixture.get("evidence_items_safe") if isinstance(fixture, dict) else None
+    if not isinstance(clusters, list) or not clusters:
+        return []
+    safe_evidence = [item for item in evidence_items if isinstance(item, dict)] if isinstance(evidence_items, list) else []
+    safe_content = [item for item in content_aggregate_outputs if isinstance(item, dict)]
+    safe_influence = [item for item in influence_core_outputs if isinstance(item, dict)]
+    safe_echo = [item for item in echo_box_outputs if isinstance(item, dict)]
+    return [
+        calculate_peoplecluster_state(cluster, safe_evidence, safe_content, safe_influence, safe_echo)
+        for cluster in clusters
+        if isinstance(cluster, dict)
+    ]
+
+
 def build_mock_calculator_run_metadata(fixture: dict) -> dict[str, Any]:
     validation = validate_mock_fixture_contract(fixture)
     fixture_id = _fixture_value(fixture, "fixture_id", "missing_fixture_id")
@@ -2719,7 +3766,15 @@ def calculate_opinion_ecosystem_mock_fixture(fixture: dict) -> dict[str, Any]:
         content_outputs = calculate_all_content_aggregate_weights(fixture)
         influence_outputs = calculate_all_influencecore_weights(fixture)
         echo_outputs = calculate_all_echobox_weights(fixture, content_outputs, influence_outputs)
-        if echo_outputs:
+        people_outputs = calculate_all_peoplecluster_states(fixture, content_outputs, influence_outputs, echo_outputs)
+        if people_outputs:
+            run["module_outputs"] = _module_outputs_with_people_cluster(
+                content_outputs,
+                influence_outputs,
+                echo_outputs,
+                people_outputs,
+            )
+        elif echo_outputs:
             run["module_outputs"] = _module_outputs_with_content_influence_and_echo(
                 content_outputs,
                 influence_outputs,

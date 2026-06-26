@@ -178,7 +178,47 @@ def _echobox_fixture(echo_box: dict | None = None, evidence_items: list[dict] | 
         }
     ]
     for evidence in fixture["evidence_items_safe"]:
-        evidence["echo_box_refs"] = ["echo_001"]
+            evidence["echo_box_refs"] = ["echo_001"]
+    return fixture
+
+
+def _peoplecluster_fixture(cluster: dict | None = None, evidence_items: list[dict] | None = None) -> dict:
+    fixture = _echobox_fixture(evidence_items=evidence_items)
+    fixture["fixture_metadata"]["fixture_id"] = "fixture_8p5_peoplecluster"
+    fixture["people_clusters"] = [
+        cluster
+        or {
+            "cluster_id": "cluster_mixed_001",
+            "cluster_role": "mixed_bridge",
+            "cluster_type": "mixed_bridge",
+            "sample_share_hint": 0.42,
+            "stance_distribution": {"support": 0.36, "oppose": 0.30, "neutral": 0.22, "mixed": 0.12},
+            "stance_confidence_hint": 0.58,
+            "attention_hint": 0.46,
+            "fatigue_hint": 0.30,
+            "expression_hint": 0.44,
+            "openness_hint": 0.66,
+            "confidence_radius_hint": 0.64,
+            "aggregate_ids": ["agg_001"],
+            "influence_core_ids": ["core_official_001"],
+            "echo_box_ids": ["echo_001"],
+            "previous_state": {"stance_score": 0.05, "attention_level": 0.40, "fatigue_level": 0.22},
+            "novelty_signal_hint": 0.30,
+            "personal_relevance_proxy_hint": 0.35,
+            "reactivation_trigger_hint": 0.22,
+            "resolution_signal_hint": 0.42,
+            "unresolved_grievance_hint": 0.28,
+            "constructive_new_info_hint": 0.50,
+            "bridge_understanding_hint": 0.46,
+            "social_norm_pressure_hint": 0.34,
+            "action_threshold_hint": 0.52,
+            "reputation_memory_hint": 0.38,
+            "new_trigger_hint": 0.24,
+            "identity_relevance_proxy_hint": 0.30,
+        }
+    ]
+    for evidence in fixture["evidence_items_safe"]:
+        evidence["people_cluster_refs"] = ["cluster_mixed_001"]
     return fixture
 
 
@@ -625,6 +665,12 @@ def _influence_output(run: dict, index: int = 0) -> dict:
 
 def _echo_output(run: dict, index: int = 0) -> dict:
     outputs = run["module_outputs"]["echo_box"]
+    assert isinstance(outputs, list)
+    return outputs[index]
+
+
+def _peoplecluster_output(run: dict, index: int = 0) -> dict:
+    outputs = run["module_outputs"]["people_cluster"]
     assert isinstance(outputs, list)
     return outputs[index]
 
@@ -1335,3 +1381,349 @@ def test_influencecore_existing_8p_3_tests_still_pass() -> None:
 
     assert influence["schema"] == "sentigraph_influence_core_weight_v0_1"
     assert influence["model_status"] == "8P_3_influencecore_formula"
+
+
+def test_peoplecluster_minimal_fixture_calculates_state_v0_1() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture())
+    cluster = _peoplecluster_output(run)
+
+    assert cluster["schema"] == "sentigraph_people_cluster_state_v0_1"
+    assert cluster["cluster_id"] == "cluster_mixed_001"
+    assert cluster["cluster_role"] == "mixed_bridge"
+    assert cluster["cluster_type"] == "mixed_bridge"
+    assert cluster["model_status"] == "8P_5_peoplecluster_transition"
+    assert cluster["coefficient_source"] == "mock_default"
+    assert cluster["calibration_status"] == "uncalibrated"
+    assert cluster["empirical_validation"] == "not_started"
+    assert cluster["sample_scope"] == "selected_sample_or_local_fixture_only"
+    assert cluster["evidence_mass"]["analysis_ready_evidence_count"] == 2
+    assert cluster["evidence_mass"]["associated_aggregate_count"] == 1
+    assert cluster["evidence_mass"]["associated_influence_core_count"] == 1
+    assert cluster["evidence_mass"]["associated_echo_box_count"] == 1
+
+    for score in cluster["state"].values():
+        if isinstance(score, (int, float)):
+            assert -1 <= score <= 1
+
+    for flag in [
+        "anonymous_aggregate_only",
+        "not_real_person",
+        "not_real_account",
+        "not_psychological_profile",
+        "not_personality_diagnosis",
+        "not_individual_tracking",
+        "not_target_user_list",
+        "not_persuasion_probability",
+        "not_causal_proof",
+        "not_prediction",
+        "evidence_not_truth",
+        "human_review_required",
+    ]:
+        assert cluster["boundary_flags"][flag] is True
+
+    assert isinstance(run["module_outputs"]["content_aggregate"], list)
+    assert isinstance(run["module_outputs"]["influence_core"], list)
+    assert isinstance(run["module_outputs"]["echo_box"], list)
+    assert run["module_outputs"]["response_strategy"] == "not_calculated_in_8P_5"
+
+
+def test_peoplecluster_output_is_anonymous_aggregate_only() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture())
+    cluster = _peoplecluster_output(run)
+    keys = _walk_keys(cluster)
+
+    for flag in [
+        "anonymous_aggregate_only",
+        "not_real_person",
+        "not_real_account",
+        "not_individual_tracking",
+        "not_target_user_list",
+    ]:
+        assert cluster["boundary_flags"][flag] is True
+
+    assert not ({"raw_author_id", "author_name", "profile_url", "target_user_list"} & keys)
+
+
+def test_high_heat_does_not_imply_all_people_changed_stance() -> None:
+    fixture = _peoplecluster_fixture()
+    fixture["content_aggregates"][0].update({"volume_score": 0.98, "interaction_score": 0.95, "growth_score": 0.92})
+    fixture["people_clusters"][0]["previous_state"] = {"stance_score": 0.02}
+
+    cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert abs(cluster["state"]["state_delta"]) < 0.20
+    assert any("sample-scoped" in line.lower() for line in cluster["explanation"])
+    keys = _walk_keys(cluster)
+    assert "prediction_probability" not in keys
+    assert "causal_chain_confirmed" not in keys
+
+
+def test_high_echobox_closure_can_raise_fatigue_without_personal_claim() -> None:
+    base_cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture()))
+    fixture = _peoplecluster_fixture()
+    fixture["echo_boxes"][0].update(
+        {
+            "echo_box_role": "sealed_echo_box",
+            "stance_distribution": {"support": 0.02, "neutral": 0.02, "oppose": 0.92, "mixed": 0.04},
+            "interaction_proxy_summary": {"internal_density": 0.95},
+            "cross_cutting_proxy_summary": {"cross_cutting_exposure": 0.02},
+            "cross_box_exposure_hint": 0.02,
+            "bridge_cluster_share_hint": 0.02,
+            "bridge_capacity_hint": 0.02,
+            "repetition_hint": 0.90,
+        }
+    )
+
+    sealed_cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert sealed_cluster["state"]["fatigue_level"] >= base_cluster["state"]["fatigue_level"]
+    assert sealed_cluster["state"]["exit_risk"] >= base_cluster["state"]["exit_risk"]
+    assert sealed_cluster["boundary_flags"]["anonymous_aggregate_only"] is True
+    assert "psychological_profile" not in _walk_keys(sealed_cluster)
+
+
+def test_bridgeable_mixed_cluster_has_reactivation_or_openness_potential_without_persuasion_claim() -> None:
+    fixture = _peoplecluster_fixture()
+    fixture["echo_boxes"][0].update({"bridge_cluster_share_hint": 0.90, "cross_box_exposure_hint": 0.86})
+    fixture["influence_cores"][0].update({"core_type": "third_party_context", "bridge_hint": 0.88, "resolution_signal_hint": 0.70})
+
+    cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+    keys = _walk_keys(cluster)
+
+    assert cluster["state"]["openness_score"] > 0.55
+    assert cluster["state"]["reactivation_potential"] > 0
+    assert "persuasion_score" not in keys
+    assert "pull_ik" not in keys
+    assert "stance_effect_ik" not in keys
+
+
+def test_missing_previous_state_yields_current_state_only_warning() -> None:
+    fixture = _peoplecluster_fixture()
+    fixture["people_clusters"][0].pop("previous_state", None)
+
+    cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert cluster["state"]["current_state_only"] is True
+    assert "missing_previous_state_current_state_only" in cluster["warnings"]["transition_low_confidence_warnings"]
+    assert abs(cluster["state"]["state_delta"]) <= 0.05
+
+
+def test_low_trust_evidence_lowers_peoplecluster_confidence() -> None:
+    high_cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture()))
+    low_trust_evidence = [
+        {
+            "evidence_id": "low_cluster_001",
+            "platform": "sample_forum",
+            "provenance_type": "screenshot_transcription",
+            "trust_label": "low",
+            "review_status": "review_needed",
+            "duplicate_count": 1,
+            "relevance_label": "strong_case_match",
+            "recency_label": "inside_stage_window",
+            "stance_hint": "oppose",
+            "emotion_intensity_hint": 0.90,
+            "source_url_present": False,
+            "aggregate_ref": "agg_001",
+            "influence_core_refs": ["core_official_001"],
+            "echo_box_refs": ["echo_001"],
+            "people_cluster_refs": ["cluster_mixed_001"],
+        }
+    ]
+
+    low_cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture(evidence_items=low_trust_evidence)))
+
+    assert low_cluster["state"]["stance_confidence"] < high_cluster["state"]["stance_confidence"]
+    assert low_cluster["warnings"]["low_trust_warnings"]
+    assert "truth_score" not in _walk_keys(low_cluster)
+
+
+def test_rejected_evidence_excluded_from_peoplecluster_scores() -> None:
+    base = _peoplecluster_fixture()
+    rejected_fixture = _peoplecluster_fixture()
+    rejected_fixture["evidence_items_safe"].append(
+        {
+            "evidence_id": "rejected_cluster_001",
+            "platform": "sample_forum",
+            "provenance_type": "official_api_public",
+            "trust_label": "high",
+            "review_status": "rejected",
+            "duplicate_count": 20,
+            "relevance_label": "strong_case_match",
+            "recency_label": "inside_stage_window",
+            "stance_hint": "oppose",
+            "emotion_intensity_hint": 1.0,
+            "source_url_present": True,
+            "aggregate_ref": "agg_001",
+            "influence_core_refs": ["core_official_001"],
+            "echo_box_refs": ["echo_001"],
+            "people_cluster_refs": ["cluster_mixed_001"],
+        }
+    )
+
+    base_cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(base))
+    rejected_cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(rejected_fixture))
+
+    assert rejected_cluster["state"]["attention_level"] - base_cluster["state"]["attention_level"] < 0.01
+    assert rejected_cluster["state"]["expression_intensity"] - base_cluster["state"]["expression_intensity"] < 0.01
+    assert rejected_cluster["evidence_mass"]["rejected_excluded_count"] == 1
+    assert rejected_cluster["warnings"]["rejected_excluded_warnings"]
+
+
+def test_duplicate_evidence_folded_not_linear_attention() -> None:
+    base = _peoplecluster_fixture()
+    duplicate_fixture = _peoplecluster_fixture()
+    duplicate_fixture["evidence_items_safe"][0]["duplicate_group_id"] = "dup_cluster_large"
+    duplicate_fixture["evidence_items_safe"][0]["duplicate_count"] = 200
+
+    base_cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(base))
+    duplicate_cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(duplicate_fixture))
+
+    assert duplicate_cluster["components"]["repetition_signal"] <= 1
+    assert duplicate_cluster["state"]["attention_level"] - base_cluster["state"]["attention_level"] < 0.25
+    assert duplicate_cluster["warnings"]["duplicate_folded_warnings"]
+
+
+def test_unknown_peoplecluster_role_uses_unknown_warning() -> None:
+    fixture = _peoplecluster_fixture({"cluster_id": "cluster_unknown_001", "cluster_role": "future_cluster", "aggregate_ids": ["agg_001"]})
+
+    cluster = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert cluster["cluster_role"] == "unknown_people_cluster"
+    assert cluster["cluster_type"] == "unknown_people_cluster"
+    assert cluster["warnings"]["unknown_people_cluster_warnings"]
+    for value in cluster["state"].values():
+        if isinstance(value, (int, float)):
+            assert -1 <= value <= 1
+
+
+def test_forbidden_fields_still_block_before_peoplecluster_scoring() -> None:
+    fixture = _peoplecluster_fixture()
+    fixture["evidence_items_safe"][0]["raw_author_id"] = "hidden"
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "blocked"
+    assert not isinstance(run["module_outputs"]["people_cluster"], list)
+
+
+def test_overclaim_fields_still_block_before_peoplecluster_scoring() -> None:
+    fixture = _peoplecluster_fixture()
+    fixture["fixture_metadata"]["causal_proof_claim"] = True
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "blocked"
+    assert not isinstance(run["module_outputs"]["people_cluster"], list)
+
+
+def test_auto_execute_still_blocks_before_peoplecluster_scoring() -> None:
+    fixture = _peoplecluster_fixture()
+    fixture["response_strategy_candidates"].append({"recommendation_level": "auto_execute"})
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "blocked"
+    assert not isinstance(run["module_outputs"]["people_cluster"], list)
+
+
+def test_future_unknown_platform_does_not_imply_provider_runnable_for_peoplecluster() -> None:
+    fixture = _peoplecluster_fixture()
+    fixture["evidence_items_safe"][0]["platform"] = "future_forum"
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "manual_review_required"
+    assert run["validation_summary"]["unknown_platform_warning_count"] == 1
+    assert not isinstance(run["module_outputs"]["people_cluster"], list)
+    assert all("provider" not in str(value).lower() or "not" in str(value).lower() for value in _walk_values(run))
+
+
+def test_contentaggregate_influencecore_echobox_outputs_preserved_in_8P_5() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture())
+
+    assert isinstance(run["module_outputs"]["content_aggregate"], list)
+    assert run["module_outputs"]["content_aggregate"][0]["schema"] == "sentigraph_content_aggregate_weight_v0_1"
+    assert isinstance(run["module_outputs"]["influence_core"], list)
+    assert run["module_outputs"]["influence_core"][0]["schema"] == "sentigraph_influence_core_weight_v0_1"
+    assert isinstance(run["module_outputs"]["echo_box"], list)
+    assert run["module_outputs"]["echo_box"][0]["schema"] == "sentigraph_echobox_weight_v0_1"
+    assert isinstance(run["module_outputs"]["people_cluster"], list)
+
+
+def test_no_response_strategy_scores_in_8P_5() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_keys = {"strategy_score", "recommendation_level", "benefit_score", "cost_score"}
+
+    assert run["module_outputs"]["response_strategy"] == "not_calculated_in_8P_5"
+    assert not (forbidden_keys & keys)
+    assert run["runtime_side_effects"]["auto_execute"] is False
+
+
+def test_no_pull_or_stance_effect_in_8P_5() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_keys = {"pull_ik", "stance_effect_ik", "stance_effect_ik_adjusted", "InfluenceCoreToClusterEffectV01"}
+
+    assert not (forbidden_keys & keys)
+
+
+def test_no_target_user_list_or_real_identity_output() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_keys = {
+        "target_user_list",
+        "raw_author_identifiers",
+        "raw_author_id",
+        "author_id",
+        "author_name",
+        "profile_url",
+        "real_account_id",
+        "cross_platform_identity",
+    }
+
+    assert not (forbidden_keys & keys)
+
+
+def test_no_psychological_profile_or_personality_diagnosis_output() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture())
+    keys = _walk_keys(run)
+
+    assert "psychological_profile" not in keys
+    assert "personality_diagnosis" not in keys
+
+
+def test_no_forbidden_output_fields_after_peoplecluster_scoring() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture())
+    keys = _walk_keys(run)
+
+    forbidden_output_fields = {
+        "truth_score",
+        "official_verified",
+        "causal_chain_confirmed",
+        "prediction_probability",
+        "persuasion_score",
+        "target_user_list",
+        "raw_author_identifiers",
+    }
+
+    assert not (forbidden_output_fields & keys)
+
+
+def test_deterministic_same_fixture_same_output_after_peoplecluster_scoring() -> None:
+    fixture = _peoplecluster_fixture()
+
+    first = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+    second = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert first == second
+
+
+def test_echobox_existing_8p_4_tests_still_pass() -> None:
+    echo = _echo_output(calculator.calculate_opinion_ecosystem_mock_fixture(_echobox_fixture()))
+
+    assert echo["schema"] == "sentigraph_echobox_weight_v0_1"
+    assert echo["model_status"] == "8P_4_echobox_formula"
