@@ -675,6 +675,65 @@ def _peoplecluster_output(run: dict, index: int = 0) -> dict:
     return outputs[index]
 
 
+def _response_strategy_fixture(candidate: dict | None = None) -> dict:
+    fixture = _peoplecluster_fixture()
+    fixture["fixture_metadata"]["fixture_id"] = "fixture_8p6_response_strategy"
+    fixture["fixture_metadata"]["stage_id"] = "T4"
+    fixture["response_strategy_candidates"] = [
+        candidate
+        or {
+            "candidate_id": "strategy_candidate_s4",
+            "strategy_id": "S4",
+            "strategy_type": "FAQ_or_longform_explanation",
+            "stage_id": "T4",
+            "claim_intensity": 0.28,
+            "stage_fit": 0.82,
+            "response_gap_fit": 0.74,
+            "heat_fit": 0.70,
+            "fatigue_fit": 0.62,
+            "strategy_clarity_base": 0.92,
+            "strategy_deescalation_base": 0.70,
+            "strategy_bridge_base": 0.58,
+            "transparency_level": 0.88,
+            "accountability_level": 0.78,
+            "consistency_with_prior_record": 0.76,
+            "resolution_signal": 0.70,
+            "low_amplification_level": 0.66,
+            "constructive_new_info": 0.82,
+            "unresolved_grievance_reduction": 0.62,
+            "low_identity_threat_language": 0.78,
+            "exposure_level": 0.34,
+            "novelty": 0.18,
+            "media_relay_probability": 0.20,
+            "mismatch_with_cluster_concerns": 0.20,
+            "perceived_defensiveness": 0.14,
+            "timing_lag": 0.18,
+            "low_empathy_language": 0.10,
+            "contradiction_with_prior_record": 0.08,
+            "identity_threat_risk": 0.12,
+            "ambiguity": 0.10,
+            "causal_language": 0.0,
+            "full_web_claim": 0.0,
+            "official_verification_claim": 0.0,
+            "prediction_language": 0.0,
+            "uncalibrated_score_without_boundary": 0.0,
+            "requires_new_runtime": 0.0,
+            "requires_real_API_or_LLM": 0.0,
+            "requires_unreviewed_data": 0.0,
+            "requires_external_actor_coordination": 0.0,
+            "requires_legal_review": 0.0,
+            "requires_sensitive_material": 0.0,
+        }
+    ]
+    return fixture
+
+
+def _response_strategy_output(run: dict, index: int = 0) -> dict:
+    outputs = run["module_outputs"]["response_strategy"]
+    assert isinstance(outputs, list)
+    return outputs[index]
+
+
 def test_influencecore_minimal_fixture_calculates_weight_v0_1() -> None:
     run = calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture())
     influence = _influence_output(run)
@@ -1424,7 +1483,7 @@ def test_peoplecluster_minimal_fixture_calculates_state_v0_1() -> None:
     assert isinstance(run["module_outputs"]["content_aggregate"], list)
     assert isinstance(run["module_outputs"]["influence_core"], list)
     assert isinstance(run["module_outputs"]["echo_box"], list)
-    assert run["module_outputs"]["response_strategy"] == "not_calculated_in_8P_5"
+    assert run["module_outputs"]["response_strategy"] == []
 
 
 def test_peoplecluster_output_is_anonymous_aggregate_only() -> None:
@@ -1656,7 +1715,7 @@ def test_no_response_strategy_scores_in_8P_5() -> None:
 
     forbidden_keys = {"strategy_score", "recommendation_level", "benefit_score", "cost_score"}
 
-    assert run["module_outputs"]["response_strategy"] == "not_calculated_in_8P_5"
+    assert run["module_outputs"]["response_strategy"] == []
     assert not (forbidden_keys & keys)
     assert run["runtime_side_effects"]["auto_execute"] is False
 
@@ -1727,3 +1786,417 @@ def test_echobox_existing_8p_4_tests_still_pass() -> None:
 
     assert echo["schema"] == "sentigraph_echobox_weight_v0_1"
     assert echo["model_status"] == "8P_4_echobox_formula"
+
+
+def test_response_strategy_minimal_fixture_calculates_comparison_v0_1() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture())
+    comparison = _response_strategy_output(run)
+
+    assert comparison["schema"] == "sentigraph_response_strategy_comparison_v0_1"
+    assert comparison["model_status"] == "8P_6_response_strategy_comparison"
+    assert comparison["coefficient_source"] == "mock_default"
+    assert comparison["calibration_status"] == "uncalibrated"
+    assert comparison["empirical_validation"] == "not_started"
+    assert comparison["sample_scope"] == "selected_sample_or_local_fixture_only"
+    assert comparison["candidate_id"] == "strategy_candidate_s4"
+    assert comparison["strategy_id"] == "S4"
+    assert comparison["strategy_type"] == "FAQ_or_longform_explanation"
+
+    expected_scores = {
+        "evidence_fit",
+        "timing_fit",
+        "clarity_gain",
+        "confusion_reduction",
+        "emotion_deescalation",
+        "bridge_opening",
+        "trust_repair_potential",
+        "fatigue_relief",
+        "reactivation_risk_reduction",
+        "amplification_risk",
+        "backlash_risk",
+        "privacy_risk",
+        "overclaim_risk",
+        "implementation_risk",
+        "benefit_score",
+        "cost_score",
+        "strategy_score",
+    }
+    assert expected_scores <= set(comparison["scores"])
+    for score in comparison["scores"].values():
+        assert 0 <= score <= 1
+
+    recommendation = comparison["recommendation"]
+    assert recommendation["human_review_required"] is True
+    assert recommendation["not_auto_executed"] is True
+    assert recommendation["execution_authorized"] is False
+    assert recommendation["public_response_generated"] is False
+    assert recommendation["guaranteed_outcome"] is False
+
+
+def test_response_strategy_preserves_all_upstream_outputs() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture())
+
+    assert isinstance(run["module_outputs"]["content_aggregate"], list)
+    assert run["module_outputs"]["content_aggregate"][0]["schema"] == "sentigraph_content_aggregate_weight_v0_1"
+    assert isinstance(run["module_outputs"]["influence_core"], list)
+    assert run["module_outputs"]["influence_core"][0]["schema"] == "sentigraph_influence_core_weight_v0_1"
+    assert isinstance(run["module_outputs"]["echo_box"], list)
+    assert run["module_outputs"]["echo_box"][0]["schema"] == "sentigraph_echobox_weight_v0_1"
+    assert isinstance(run["module_outputs"]["people_cluster"], list)
+    assert run["module_outputs"]["people_cluster"][0]["schema"] == "sentigraph_people_cluster_state_v0_1"
+    assert isinstance(run["module_outputs"]["response_strategy"], list)
+
+
+def test_response_strategy_highest_level_is_human_review_candidate() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture())
+    comparison = _response_strategy_output(run)
+    keys = _walk_keys(comparison)
+    values = {str(value) for value in _walk_values(comparison)}
+
+    assert comparison["recommendation"]["recommendation_level"] == "strong_candidate_for_human_review"
+    assert "approved_for_execution" not in values
+    assert "auto_execute" not in values
+    assert {"publish_now", "send_now", "post_now"} <= keys or not ({"publish_now", "send_now", "post_now"} & keys)
+    assert not ({"publish_now", "send_now", "post_now"} & keys)
+
+
+def test_response_strategy_auto_execute_is_forbidden() -> None:
+    fixture = _response_strategy_fixture({"candidate_id": "bad_auto", "strategy_id": "S3", "execute_now": True})
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+    comparison = _response_strategy_output(run)
+
+    assert comparison["strategy_status"] == "forbidden"
+    assert comparison["recommendation"]["recommendation_level"] == "forbidden"
+    assert comparison["recommendation"]["execution_authorized"] is False
+    assert "execute_now" in {blocker["field"] for blocker in comparison["blockers"]["forbidden_behavior_blockers"]}
+
+
+def test_response_strategy_forbidden_behavior_is_blocked() -> None:
+    fixture = _response_strategy_fixture(
+        {
+            "candidate_id": "bad_seed",
+            "strategy_id": "S9",
+            "risk_flags": ["fake_consensus", "astroturfing", "covert_seeding", "bot", "sockpuppet", "harassment", "suppression"],
+        }
+    )
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert comparison["strategy_status"] == "forbidden"
+    assert comparison["recommendation"]["recommendation_level"] == "forbidden"
+    assert comparison["blockers"]["forbidden_behavior_blockers"]
+
+
+def test_response_strategy_unknown_id_requires_manual_review() -> None:
+    fixture = _response_strategy_fixture({"candidate_id": "unknown_strategy", "strategy_id": "S99"})
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert comparison["strategy_status"] == "blocked"
+    assert comparison["recommendation"]["recommendation_level"] == "blocked_pending_review"
+    assert any("unknown_strategy_id" in blocker["reason"] for blocker in comparison["blockers"]["evidence_blockers"])
+
+
+def test_response_strategy_insufficient_evidence_is_not_strong_candidate() -> None:
+    fixture = _minimal_fixture()
+    fixture["response_strategy_candidates"] = [
+        {"candidate_id": "weak_clarification", "strategy_id": "S3", "strategy_type": "factual_clarification"}
+    ]
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert comparison["recommendation"]["recommendation_level"] in {"prepare_materials_first", "private_review_only"}
+    assert comparison["recommendation"]["recommendation_level"] != "strong_candidate_for_human_review"
+    assert comparison["warnings"]["missing_component_warnings"]
+
+
+def test_t4_long_faq_can_have_clarity_benefit_and_backlash_risk() -> None:
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture()))
+
+    assert comparison["strategy_id"] == "S4"
+    assert comparison["scores"]["clarity_gain"] > 0
+    assert comparison["scores"]["backlash_risk"] > 0 or comparison["scores"]["amplification_risk"] > 0
+    explanation = " ".join(comparison["explanation"]).lower()
+    assert "benefit" in explanation
+    assert "risk" in explanation
+    assert "guarantee" not in explanation
+
+
+def test_no_guaranteed_calming_claim() -> None:
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture()))
+    keys = _walk_keys(comparison)
+    values = {str(value).lower() for value in _walk_values(comparison)}
+
+    assert "guaranteed_calming" not in keys
+    assert "guaranteed_success" not in keys
+    assert comparison["recommendation"]["guaranteed_outcome"] is False
+    assert all("guaranteed calming" not in value for value in values)
+
+
+def test_low_credibility_claim_not_treated_as_fact() -> None:
+    fixture = _response_strategy_fixture(
+        {
+            "candidate_id": "weak_fact_claim",
+            "strategy_id": "S3",
+            "strategy_type": "factual_clarification",
+            "claim_intensity": 0.95,
+            "strategy_clarity_base": 0.80,
+        }
+    )
+    fixture["influence_cores"][0]["core_type"] = "low_trust_claim"
+    fixture["influence_cores"][0]["source_transparency_hint"] = 0.05
+    fixture["influence_cores"][0]["cross_source_consistency_hint"] = 0.05
+    for evidence in fixture["evidence_items_safe"]:
+        evidence["trust_label"] = "low"
+        evidence["provenance_type"] = "manual_text_without_source"
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+    keys = _walk_keys(comparison)
+
+    assert comparison["recommendation"]["recommendation_level"] != "strong_candidate_for_human_review"
+    assert comparison["blockers"]["evidence_blockers"]
+    assert "truth_score" not in keys
+    assert "official_verified" not in keys
+
+
+def test_no_response_is_baseline_not_automatic_recommendation() -> None:
+    fixture = _response_strategy_fixture({"candidate_id": "baseline", "strategy_id": "S0"})
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+    explanation = " ".join(comparison["explanation"]).lower()
+
+    assert comparison["recommendation"]["recommendation_level"] == "monitor_only"
+    assert "baseline" in explanation
+    assert "ignore" not in explanation
+    assert comparison["recommendation"]["execution_authorized"] is False
+
+
+def test_third_party_explanation_requires_disclosure_and_review() -> None:
+    fixture = _response_strategy_fixture(
+        {
+            "candidate_id": "third_party_ok",
+            "strategy_id": "S6",
+            "strategy_type": "third_party_explanation",
+            "third_party_explanation": True,
+            "voluntary": True,
+            "informed_consent": True,
+            "redacted": True,
+            "minor_protected": True,
+            "context_verifiable": True,
+            "no_private_detail_exposure": True,
+            "human_review_approved": True,
+            "disclosed_third_party": True,
+            "fabricated_endorsement": False,
+        }
+    )
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert comparison["strategy_status"] in {"allowed", "allowed_with_review"}
+    assert comparison["recommendation"]["human_review_required"] is True
+    assert not comparison["blockers"]["forbidden_behavior_blockers"]
+
+
+def test_fabricated_third_party_endorsement_is_forbidden() -> None:
+    fixture = _response_strategy_fixture(
+        {
+            "candidate_id": "fake_third_party",
+            "strategy_id": "S6",
+            "strategy_type": "third_party_explanation",
+            "third_party_explanation": True,
+            "fabricated_endorsement": True,
+        }
+    )
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert comparison["strategy_status"] == "forbidden"
+    assert comparison["recommendation"]["recommendation_level"] == "forbidden"
+
+
+def test_minors_or_family_material_without_consent_is_blocked() -> None:
+    fixture = _response_strategy_fixture(
+        {
+            "candidate_id": "minor_sensitive",
+            "strategy_id": "S7",
+            "use_of_personal_story": 1.0,
+            "minor_or_family_sensitivity": 1.0,
+        }
+    )
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+
+    assert comparison["recommendation"]["recommendation_level"] in {"blocked_pending_review", "private_review_only"}
+    assert comparison["blockers"]["privacy_blockers"]
+    assert comparison["recommendation"]["eligible_for_human_review"] is False
+
+
+def test_privacy_blocker_overrides_high_benefit() -> None:
+    candidate = _response_strategy_fixture()["response_strategy_candidates"][0]
+    candidate.update({"candidate_id": "high_benefit_private", "use_of_personal_story": 1.0, "minor_or_family_sensitivity": 1.0})
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture(candidate)))
+
+    assert comparison["scores"]["benefit_score"] > 0.4
+    assert comparison["recommendation"]["recommendation_level"] in {"blocked_pending_review", "private_review_only"}
+    assert comparison["blockers"]["privacy_blockers"] or comparison["blockers"]["consent_blockers"]
+
+
+def test_community_deconstruction_support_not_covert_seeding() -> None:
+    transparent = _response_strategy_fixture(
+        {
+            "candidate_id": "community_transparent",
+            "strategy_id": "S9",
+            "strategy_type": "community_deconstruction_support",
+            "transparency_level": 0.9,
+            "strategy_bridge_base": 0.7,
+        }
+    )
+    covert = _response_strategy_fixture(
+        {
+            "candidate_id": "community_covert",
+            "strategy_id": "S9",
+            "strategy_type": "community_deconstruction_support",
+            "risk_flags": ["covert_seeding", "fake_consensus"],
+        }
+    )
+
+    transparent_output = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(transparent))
+    covert_output = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(covert))
+
+    assert transparent_output["strategy_status"] in {"allowed", "allowed_with_review"}
+    assert covert_output["strategy_status"] == "forbidden"
+
+
+def test_correction_or_apology_requires_applicability_evidence() -> None:
+    fixture = _response_strategy_fixture(
+        {"candidate_id": "apology_without_basis", "strategy_id": "S7", "strategy_type": "correction_or_apology_if_applicable"}
+    )
+    for evidence in fixture["evidence_items_safe"]:
+        evidence["trust_label"] = "low"
+        evidence["source_url_present"] = False
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(fixture))
+    keys = _walk_keys(comparison)
+
+    assert comparison["recommendation"]["recommendation_level"] in {"prepare_materials_first", "private_review_only"}
+    assert "official_verified" not in keys
+
+
+def test_no_generated_response_text_in_8P_6() -> None:
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture()))
+    keys = _walk_keys(comparison)
+
+    assert "response_text" not in keys
+    assert "generated_public_message" not in keys
+    assert "message_draft" not in keys
+
+
+def test_no_peoplecluster_or_echobox_effect_objects_in_8P_6() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture())
+    keys = _walk_keys(run)
+    values = {str(value) for value in _walk_values(run)}
+
+    assert "ResponseToPeopleClusterEffectV01" not in keys
+    assert "ResponseToEchoBoxEffectV01" not in keys
+    assert "GeneratedInfluenceCoreCandidateV01" not in keys
+    assert "ResponseToPeopleClusterEffectV01" not in values
+    assert "ResponseToEchoBoxEffectV01" not in values
+    assert "GeneratedInfluenceCoreCandidateV01" not in values
+
+
+def test_no_pull_or_stance_effect_in_8P_6() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture())
+    keys = _walk_keys(run)
+
+    assert "pull_ik" not in keys
+    assert "stance_effect_ik" not in keys
+    assert "stance_effect_ik_adjusted" not in keys
+    assert "InfluenceCoreToClusterEffectV01" not in keys
+
+
+def test_no_target_user_list_or_persuasion_score() -> None:
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture()))
+    keys = _walk_keys(comparison)
+
+    assert "target_user_list" not in keys
+    assert "persuasion_score" not in keys
+    assert "individual_persuasion_score" not in keys
+    assert "real_identity_matching" not in keys
+
+
+def test_no_forbidden_output_fields_after_response_strategy_scoring() -> None:
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture()))
+    keys = _walk_keys(comparison)
+
+    forbidden_output_fields = {
+        "truth_score",
+        "official_verified",
+        "causal_chain_confirmed",
+        "prediction_probability",
+        "generated_public_message",
+        "target_user_list",
+        "raw_author_identifiers",
+    }
+
+    assert not (forbidden_output_fields & keys)
+
+
+def test_response_strategy_blocker_precedence_over_score() -> None:
+    candidate = _response_strategy_fixture()["response_strategy_candidates"][0]
+    candidate.update({"candidate_id": "score_cannot_override", "risk_flags": ["fake_consensus"], "privacy_risk": 1.0})
+
+    comparison = _response_strategy_output(calculator.calculate_opinion_ecosystem_mock_fixture(_response_strategy_fixture(candidate)))
+
+    assert comparison["scores"]["benefit_score"] > 0.4
+    assert comparison["strategy_status"] == "forbidden"
+    assert comparison["recommendation"]["recommendation_level"] == "forbidden"
+
+
+def test_response_strategy_missing_candidates_yields_safe_empty_or_warning() -> None:
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture())
+
+    assert run["module_outputs"]["response_strategy"] == []
+    assert "strong_candidate_for_human_review" not in {str(value) for value in _walk_values(run["module_outputs"]["response_strategy"])}
+
+
+def test_future_unknown_platform_does_not_calculate_response_strategy() -> None:
+    fixture = _response_strategy_fixture()
+    fixture["evidence_items_safe"][0]["platform"] = "future_forum"
+
+    run = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert run["validation_summary"]["status"] == "manual_review_required"
+    assert not isinstance(run["module_outputs"]["response_strategy"], list)
+    assert all("provider" not in str(value).lower() or "not" in str(value).lower() for value in _walk_values(run))
+
+
+def test_deterministic_same_fixture_same_response_strategy_output() -> None:
+    fixture = _response_strategy_fixture()
+
+    first = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+    second = calculator.calculate_opinion_ecosystem_mock_fixture(fixture)
+
+    assert first == second
+
+
+def test_content_aggregate_existing_8p_2_tests_still_pass() -> None:
+    content = _content_output(calculator.calculate_opinion_ecosystem_mock_fixture(_content_aggregate_fixture()))
+
+    assert content["schema"] == "sentigraph_content_aggregate_weight_v0_1"
+    assert 0 <= content["scores"]["sample_heat_score"] <= 1
+
+
+def test_influencecore_existing_8p_3_tests_still_pass() -> None:
+    influence = _influence_output(calculator.calculate_opinion_ecosystem_mock_fixture(_influencecore_fixture()))
+
+    assert influence["schema"] == "sentigraph_influence_core_weight_v0_1"
+    assert 0 <= influence["scores"]["factual_credibility"] <= 1
+
+
+def test_peoplecluster_existing_8p_5_tests_still_pass() -> None:
+    people = _peoplecluster_output(calculator.calculate_opinion_ecosystem_mock_fixture(_peoplecluster_fixture()))
+
+    assert people["schema"] == "sentigraph_people_cluster_state_v0_1"
+    assert 0 <= people["state"]["attention_level"] <= 1

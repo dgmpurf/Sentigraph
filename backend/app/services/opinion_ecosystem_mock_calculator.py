@@ -239,6 +239,151 @@ RELAY_CORE_TYPES = {
 
 STANCE_BUCKETS = ("support", "neutral", "oppose", "mixed", "unknown")
 
+ALLOWED_RESPONSE_STRATEGY_IDS = {
+    "S0",
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5",
+    "S6",
+    "S7",
+    "S8",
+    "S9",
+    "S10",
+    "S11",
+}
+
+RESPONSE_STRATEGY_TYPES = {
+    "S0": "no_response_baseline",
+    "S1": "observe_and_prepare",
+    "S2": "low_amplification_hold",
+    "S3": "factual_clarification",
+    "S4": "FAQ_or_longform_explanation",
+    "S5": "evidence_supported_context",
+    "S6": "third_party_explanation",
+    "S7": "correction_or_apology_if_applicable",
+    "S8": "progress_update",
+    "S9": "community_deconstruction_support",
+    "S10": "fatigue_period_reputation_repair",
+    "S11": "private_review_before_public_response",
+}
+
+RESPONSE_STRATEGY_BASE_DEFAULTS = {
+    "S0": {
+        "claim_intensity": 0.05,
+        "exposure_level": 0.00,
+        "strategy_clarity_base": 0.05,
+        "strategy_deescalation_base": 0.10,
+        "strategy_bridge_base": 0.05,
+        "low_amplification_level": 0.95,
+    },
+    "S1": {"claim_intensity": 0.10, "exposure_level": 0.05, "strategy_clarity_base": 0.20, "low_amplification_level": 0.90},
+    "S2": {"claim_intensity": 0.12, "exposure_level": 0.08, "strategy_clarity_base": 0.25, "low_amplification_level": 0.95},
+    "S3": {"claim_intensity": 0.45, "strategy_clarity_base": 0.72, "strategy_deescalation_base": 0.45, "strategy_bridge_base": 0.38},
+    "S4": {"claim_intensity": 0.35, "strategy_clarity_base": 0.88, "strategy_deescalation_base": 0.62, "strategy_bridge_base": 0.56},
+    "S5": {"claim_intensity": 0.40, "strategy_clarity_base": 0.78, "strategy_deescalation_base": 0.55, "strategy_bridge_base": 0.52},
+    "S6": {"claim_intensity": 0.32, "strategy_clarity_base": 0.65, "strategy_deescalation_base": 0.58, "strategy_bridge_base": 0.72},
+    "S7": {"claim_intensity": 0.50, "strategy_clarity_base": 0.70, "strategy_deescalation_base": 0.68, "strategy_bridge_base": 0.50},
+    "S8": {"claim_intensity": 0.30, "strategy_clarity_base": 0.62, "strategy_deescalation_base": 0.48, "strategy_bridge_base": 0.40},
+    "S9": {"claim_intensity": 0.22, "strategy_clarity_base": 0.50, "strategy_deescalation_base": 0.58, "strategy_bridge_base": 0.70},
+    "S10": {"claim_intensity": 0.18, "strategy_clarity_base": 0.42, "strategy_deescalation_base": 0.52, "strategy_bridge_base": 0.45},
+    "S11": {"claim_intensity": 0.05, "exposure_level": 0.00, "strategy_clarity_base": 0.12, "low_amplification_level": 1.00},
+}
+
+RESPONSE_STRATEGY_DEFAULT_COMPONENTS = {
+    "stage_fit": 0.50,
+    "response_gap_fit": 0.45,
+    "heat_fit": 0.45,
+    "fatigue_fit": 0.45,
+    "strategy_clarity_base": 0.35,
+    "strategy_deescalation_base": 0.35,
+    "strategy_bridge_base": 0.35,
+    "transparency_level": 0.45,
+    "accountability_level": 0.40,
+    "consistency_with_prior_record": 0.45,
+    "resolution_signal": 0.35,
+    "low_amplification_level": 0.60,
+    "constructive_new_info": 0.35,
+    "unresolved_grievance_reduction": 0.30,
+    "low_identity_threat_language": 0.55,
+    "exposure_level": 0.30,
+    "novelty": 0.20,
+    "media_relay_probability": 0.20,
+    "mismatch_with_cluster_concerns": 0.35,
+    "perceived_defensiveness": 0.25,
+    "timing_lag": 0.25,
+    "low_empathy_language": 0.20,
+    "contradiction_with_prior_record": 0.15,
+    "identity_threat_risk": 0.20,
+    "ambiguity": 0.20,
+    "use_of_personal_story": 0.0,
+    "minor_or_family_sensitivity": 0.0,
+    "raw_identity_exposure": 0.0,
+    "consent_uncertainty": 0.0,
+    "doxxing_or_harassment_risk": 0.0,
+    "causal_language": 0.0,
+    "full_web_claim": 0.0,
+    "official_verification_claim": 0.0,
+    "prediction_language": 0.0,
+    "uncalibrated_score_without_boundary": 0.0,
+    "requires_new_runtime": 0.0,
+    "requires_real_API_or_LLM": 0.0,
+    "requires_unreviewed_data": 0.0,
+    "requires_external_actor_coordination": 0.0,
+    "requires_legal_review": 0.0,
+    "requires_sensitive_material": 0.0,
+}
+
+FORBIDDEN_RESPONSE_STRATEGY_FIELDS = {
+    "auto_execute",
+    "execute_now",
+    "publish_now",
+    "send_now",
+    "post_now",
+    "deploy",
+    "approved_for_execution",
+    "generated_public_message",
+    "response_text",
+    "message_draft",
+}
+
+FORBIDDEN_RESPONSE_STRATEGY_FLAGS = {
+    "fake_consensus",
+    "astroturfing",
+    "covert_seeding",
+    "sockpuppet",
+    "bot",
+    "water_army",
+    "undisclosed_paid_advocacy",
+    "fabricated_third_party_endorsement",
+    "fabricated_endorsement",
+    "manufactured_grassroots",
+    "harassment",
+    "brigading",
+    "coordinated_reporting",
+    "suppression",
+    "suppression_of_criticism",
+    "individual_targeting",
+    "target_user_list",
+    "persuadability_ranking",
+    "exploit_fear",
+    "identity_threat_exploitation",
+    "vulnerability_exploitation",
+    "hide_material_facts",
+    "false_claim",
+    "guaranteed_outcome",
+    "guaranteed_success",
+    "guaranteed_calming",
+    "platform_account_control",
+    "automatic_deletion",
+    "automatic_reply",
+    "automatic_posting",
+    "automatic_reposting",
+    "automatic_messaging",
+    "automatic_moderation",
+}
+
 
 def _iter_fields(value: Any, path: str = "") -> Iterable[tuple[str, str, Any]]:
     if isinstance(value, dict):
@@ -768,13 +913,14 @@ def _module_outputs_with_people_cluster(
     influence_outputs: list[dict[str, Any]],
     echo_outputs: list[dict[str, Any]],
     people_outputs: list[dict[str, Any]],
+    response_outputs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "content_aggregate": content_outputs if content_outputs else "not_calculated_in_8P_5",
         "influence_core": influence_outputs if influence_outputs else "not_calculated_in_8P_5",
         "echo_box": echo_outputs if echo_outputs else "not_calculated_in_8P_5",
         "people_cluster": people_outputs,
-        "response_strategy": "not_calculated_in_8P_5",
+        "response_strategy": response_outputs if response_outputs is not None else "not_calculated_in_8P_5",
     }
 
 
@@ -3663,6 +3809,647 @@ def calculate_all_peoplecluster_states(
     ]
 
 
+def get_response_strategy_candidates(fixture: dict) -> list[dict[str, Any]]:
+    candidates = fixture.get("response_strategy_candidates") if isinstance(fixture, dict) else None
+    if not isinstance(candidates, list):
+        return []
+    return [candidate for candidate in candidates if isinstance(candidate, dict)]
+
+
+def _candidate_bool(candidate: dict[str, Any], key: str) -> bool:
+    value = candidate.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value > 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1", "on", "forbidden", "blocked"}
+    return False
+
+
+def _candidate_risk_flags(candidate: dict[str, Any]) -> set[str]:
+    raw_flags = candidate.get("risk_flags")
+    flags: set[str] = set()
+    if isinstance(raw_flags, list):
+        flags.update(_label(flag).replace("-", "_") for flag in raw_flags)
+    elif isinstance(raw_flags, str):
+        flags.update(part.strip().lower().replace("-", "_") for part in raw_flags.split(",") if part.strip())
+    for key, value in candidate.items():
+        normalized_key = _label(key).replace("-", "_")
+        if normalized_key in FORBIDDEN_RESPONSE_STRATEGY_FLAGS and _candidate_bool(candidate, str(key)):
+            flags.add(normalized_key)
+        if normalized_key == "fabricated_endorsement" and _candidate_bool(candidate, str(key)):
+            flags.add("fabricated_endorsement")
+    return flags
+
+
+def get_strategy_id(candidate: dict[str, Any]) -> str:
+    raw_strategy_id = str(candidate.get("strategy_id", "")).strip()
+    if raw_strategy_id:
+        return raw_strategy_id.split()[0]
+    strategy_type = _label(candidate.get("strategy_type"))
+    for strategy_id, allowed_type in RESPONSE_STRATEGY_TYPES.items():
+        if strategy_type == _label(allowed_type):
+            return strategy_id
+    return ""
+
+
+def get_strategy_base_defaults(strategy_id: str) -> dict[str, Any]:
+    defaults = dict(RESPONSE_STRATEGY_DEFAULT_COMPONENTS)
+    defaults.update(RESPONSE_STRATEGY_BASE_DEFAULTS.get(strategy_id, {}))
+    return defaults
+
+
+def normalize_response_strategy_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    strategy_id = get_strategy_id(candidate)
+    normalized = get_strategy_base_defaults(strategy_id)
+    normalized.update(candidate)
+    normalized["strategy_id"] = strategy_id
+    normalized["strategy_type"] = str(
+        candidate.get("strategy_type") or RESPONSE_STRATEGY_TYPES.get(strategy_id, "unknown_response_strategy")
+    )
+    normalized["candidate_id"] = str(candidate.get("candidate_id") or f"strategy_candidate_{strategy_id or 'unknown'}")
+    for key in RESPONSE_STRATEGY_DEFAULT_COMPONENTS:
+        normalized[key] = clamp01(normalized.get(key))
+    return normalized
+
+
+def validate_response_strategy_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_response_strategy_candidate(candidate)
+    blockers = {
+        "forbidden_behavior_blockers": [],
+        "privacy_blockers": [],
+        "consent_blockers": [],
+        "evidence_blockers": [],
+        "overclaim_blockers": [],
+        "implementation_blockers": [],
+        "legal_review_blockers": [],
+    }
+    for key, value in normalized.items():
+        normalized_key = _label(key).replace("-", "_")
+        value_is_forbidden = isinstance(value, str) and _label(value).replace("-", "_") in FORBIDDEN_RESPONSE_STRATEGY_FLAGS
+        if normalized_key in FORBIDDEN_RESPONSE_STRATEGY_FIELDS and _candidate_bool(normalized, str(key)):
+            blockers["forbidden_behavior_blockers"].append(
+                _blocker(str(key), f"response_strategy_candidates.{key}", "executable_response_strategy_field_forbidden", "response_strategy")
+            )
+        elif value_is_forbidden:
+            blockers["forbidden_behavior_blockers"].append(
+                _blocker(str(key), f"response_strategy_candidates.{key}", "forbidden_response_strategy_value", "response_strategy")
+            )
+
+    flags = _candidate_risk_flags(normalized)
+    for flag in sorted(flags & FORBIDDEN_RESPONSE_STRATEGY_FLAGS):
+        blockers["forbidden_behavior_blockers"].append(
+            _blocker(flag, "response_strategy_candidates.risk_flags", "forbidden_response_strategy_behavior", "response_strategy")
+        )
+
+    strategy_id = normalized["strategy_id"]
+    if strategy_id not in ALLOWED_RESPONSE_STRATEGY_IDS:
+        blockers["evidence_blockers"].append(
+            _blocker("strategy_id", "response_strategy_candidates.strategy_id", "unknown_strategy_id_requires_manual_review", "response_strategy")
+        )
+
+    sensitive_fields = [
+        "use_of_personal_story",
+        "minor_or_family_sensitivity",
+        "requires_sensitive_material",
+        "third_party_explanation",
+        "beneficiary_material",
+        "parent_material",
+        "adult_student_material",
+    ]
+    sensitive = strategy_id == "S6" or any(_candidate_bool(normalized, field) for field in sensitive_fields)
+    if sensitive:
+        required = [
+            "voluntary",
+            "informed_consent",
+            "redacted",
+            "minor_protected",
+            "context_verifiable",
+            "no_private_detail_exposure",
+            "human_review_approved",
+        ]
+        for field in required:
+            if normalized.get(field) is not True:
+                blockers["consent_blockers"].append(
+                    _blocker(field, f"response_strategy_candidates.{field}", "sensitive_material_requires_consent_and_review", "response_strategy")
+                )
+
+    if calculate_strategy_privacy_risk(normalized, {}) >= 0.45:
+        blockers["privacy_blockers"].append(
+            _blocker("privacy_risk", "response_strategy_candidates", "privacy_risk_requires_review", "response_strategy")
+        )
+    if normalized.get("fabricated_endorsement") is True or "fabricated_endorsement" in flags:
+        blockers["forbidden_behavior_blockers"].append(
+            _blocker("fabricated_endorsement", "response_strategy_candidates.fabricated_endorsement", "fabricated_endorsement_forbidden", "response_strategy")
+        )
+    return {"candidate": normalized, "blockers": blockers}
+
+
+def _mean_or_default(values: list[float], default: float, warnings: list[str], warning: str) -> float:
+    if values:
+        return clamp01(sum(values) / len(values))
+    warnings.append(warning)
+    return clamp01(default)
+
+
+def _state_mean(outputs: list[dict[str, Any]], key: str) -> float | None:
+    values: list[float] = []
+    for output in outputs:
+        state = output.get("state") if isinstance(output, dict) else None
+        value = state.get(key) if isinstance(state, dict) else None
+        if _as_float(value) is not None:
+            values.append(clamp01(value))
+    if not values:
+        return None
+    return clamp01(sum(values) / len(values))
+
+
+def _safe_output_ids(outputs: list[dict[str, Any]], key: str) -> list[str]:
+    return [str(output.get(key)) for output in outputs if isinstance(output, dict) and output.get(key)]
+
+
+def get_response_strategy_upstream_context(
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+    echo_box_outputs: list[dict[str, Any]],
+    people_cluster_outputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    warnings: list[str] = []
+    q_values = [
+        clamp01(output.get("scores", {}).get("evidence_confidence_score"))
+        for output in content_aggregate_outputs
+        if isinstance(output, dict) and _as_float(output.get("scores", {}).get("evidence_confidence_score")) is not None
+    ]
+    factual_values = [
+        clamp01(output.get("scores", {}).get("factual_credibility"))
+        for output in influence_core_outputs
+        if isinstance(output, dict) and _as_float(output.get("scores", {}).get("factual_credibility")) is not None
+    ]
+    deescalation_values = [
+        clamp01(output.get("scores", {}).get("deescalation_potential"))
+        for output in influence_core_outputs
+        if isinstance(output, dict) and _as_float(output.get("scores", {}).get("deescalation_potential")) is not None
+    ]
+    bridge_values = [
+        clamp01(output.get("scores", {}).get("bridge_capacity_score"))
+        for output in echo_box_outputs
+        if isinstance(output, dict) and _as_float(output.get("scores", {}).get("bridge_capacity_score")) is not None
+    ]
+    cross_cutting = _component_mean(echo_box_outputs, "cross_cutting_proxy_summary", "cross_cutting_exposure")
+    if cross_cutting is None:
+        cross_cutting = _score_mean(echo_box_outputs, "bridge_capacity_score")
+        if cross_cutting is not None:
+            warnings.append("cross_cutting_exposure_derived_from_bridge_capacity")
+    entropy = _score_mean(echo_box_outputs, "stance_entropy")
+    content_heat = _score_mean(content_aggregate_outputs, "sample_heat_score")
+    influence_amplification = _score_mean(influence_core_outputs, "amplification_score")
+    controversy = _score_mean(content_aggregate_outputs, "sample_controversy_score")
+    echo_risk = _score_mean(echo_box_outputs, "echo_risk_score")
+    fatigue_context = _state_mean(people_cluster_outputs, "fatigue_level")
+    reactivation_context = _state_mean(people_cluster_outputs, "reactivation_potential")
+    exit_context = _state_mean(people_cluster_outputs, "exit_risk")
+
+    return {
+        "Q": _mean_or_default(q_values, 0.25, warnings, "missing_contentaggregate_evidence_confidence"),
+        "factual_credibility_mean": _mean_or_default(factual_values, 0.35, warnings, "missing_influencecore_factual_credibility"),
+        "deescalation_potential_mean": _mean_or_default(deescalation_values, 0.40, warnings, "missing_influencecore_deescalation_potential"),
+        "bridge_capacity": _mean_or_default(bridge_values, 0.35, warnings, "missing_echobox_bridge_capacity"),
+        "cross_cutting_exposure": clamp01(cross_cutting if cross_cutting is not None else 0.35),
+        "narrative_fragmentation": clamp01(entropy if entropy is not None else 0.45),
+        "risk_breakout": clamp01(_score_mean(echo_box_outputs, "risk_breakout_score") or 0.35),
+        "observed_amplification_mean": clamp01(influence_amplification if influence_amplification is not None else (content_heat or 0.30)),
+        "controversy": clamp01(controversy if controversy is not None else (echo_risk or 0.30)),
+        "fatigue_context": clamp01(fatigue_context if fatigue_context is not None else 0.35),
+        "reactivation_context": clamp01(
+            reactivation_context if reactivation_context is not None else (exit_context if exit_context is not None else 0.30)
+        ),
+        "missing_component_warnings": warnings,
+        "has_content_context": bool(content_aggregate_outputs),
+        "has_influence_context": bool(influence_core_outputs),
+        "has_echo_context": bool(echo_box_outputs),
+        "has_people_context": bool(people_cluster_outputs),
+        "associated_aggregate_ids_used": _safe_output_ids(content_aggregate_outputs, "aggregate_id"),
+        "associated_influence_core_ids_used": _safe_output_ids(influence_core_outputs, "core_id"),
+        "associated_echo_box_ids_used": _safe_output_ids(echo_box_outputs, "echo_box_id"),
+        "associated_people_cluster_ids_used": _safe_output_ids(people_cluster_outputs, "cluster_id"),
+    }
+
+
+def calculate_strategy_evidence_fit(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(1 - clamp01(candidate.get("claim_intensity")) * (1 - clamp01(upstream_context.get("Q"))))
+
+
+def calculate_strategy_timing_fit(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        0.35 * clamp01(candidate.get("stage_fit"))
+        + 0.25 * clamp01(candidate.get("response_gap_fit"))
+        + 0.20 * clamp01(candidate.get("heat_fit"))
+        + 0.20 * clamp01(candidate.get("fatigue_fit"))
+    )
+
+
+def calculate_strategy_backlash_risk(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        0.25 * clamp01(candidate.get("mismatch_with_cluster_concerns"))
+        + 0.20 * clamp01(candidate.get("perceived_defensiveness"))
+        + 0.15 * clamp01(candidate.get("timing_lag"))
+        + 0.15 * clamp01(candidate.get("low_empathy_language"))
+        + 0.10 * clamp01(candidate.get("contradiction_with_prior_record"))
+        + 0.10 * clamp01(candidate.get("identity_threat_risk"))
+        + 0.05 * clamp01(candidate.get("ambiguity"))
+    )
+
+
+def calculate_strategy_clarity_gain(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        clamp01(candidate.get("strategy_clarity_base"))
+        * calculate_strategy_evidence_fit(candidate, upstream_context)
+        * (0.60 + 0.40 * clamp01(upstream_context.get("factual_credibility_mean")))
+    )
+
+
+def calculate_strategy_confusion_reduction(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        calculate_strategy_clarity_gain(candidate, upstream_context)
+        * clamp01(upstream_context.get("narrative_fragmentation"))
+        * (0.50 + 0.50 * clamp01(upstream_context.get("bridge_capacity")))
+    )
+
+
+def calculate_strategy_emotion_deescalation(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        clamp01(candidate.get("strategy_deescalation_base"))
+        * (0.50 + 0.50 * clamp01(upstream_context.get("deescalation_potential_mean")))
+        * (1 - calculate_strategy_backlash_risk(candidate, upstream_context))
+    )
+
+
+def calculate_strategy_bridge_opening(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        clamp01(candidate.get("strategy_bridge_base"))
+        * clamp01(upstream_context.get("bridge_capacity"))
+        * (0.50 + 0.50 * clamp01(upstream_context.get("cross_cutting_exposure")))
+        * (1 - clamp01(candidate.get("identity_threat_risk")))
+    )
+
+
+def calculate_strategy_trust_repair_potential(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        0.35 * calculate_strategy_evidence_fit(candidate, upstream_context)
+        + 0.25 * clamp01(candidate.get("transparency_level"))
+        + 0.20 * clamp01(candidate.get("accountability_level"))
+        + 0.20 * clamp01(candidate.get("consistency_with_prior_record"))
+    )
+
+
+def calculate_strategy_fatigue_relief(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        0.30 * clamp01(candidate.get("resolution_signal"))
+        + 0.20 * calculate_strategy_clarity_gain(candidate, upstream_context)
+        + 0.20 * clamp01(candidate.get("low_amplification_level"))
+        + 0.15 * clamp01(candidate.get("constructive_new_info"))
+        + 0.15 * calculate_strategy_bridge_opening(candidate, upstream_context)
+    )
+
+
+def calculate_strategy_reactivation_risk_reduction(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        0.30 * calculate_strategy_trust_repair_potential(candidate, upstream_context)
+        + 0.25 * calculate_strategy_confusion_reduction(candidate, upstream_context)
+        + 0.20 * clamp01(candidate.get("unresolved_grievance_reduction"))
+        + 0.15 * calculate_strategy_fatigue_relief(candidate, upstream_context)
+        + 0.10 * clamp01(candidate.get("low_identity_threat_language"))
+    )
+
+
+def calculate_strategy_amplification_risk(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        0.30 * clamp01(candidate.get("exposure_level"))
+        + 0.20 * clamp01(upstream_context.get("risk_breakout"))
+        + 0.15 * clamp01(upstream_context.get("observed_amplification_mean"))
+        + 0.15 * clamp01(upstream_context.get("controversy"))
+        + 0.10 * clamp01(candidate.get("novelty"))
+        + 0.10 * clamp01(candidate.get("media_relay_probability"))
+    )
+
+
+def calculate_strategy_privacy_risk(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        0.35 * clamp01(candidate.get("use_of_personal_story"))
+        + 0.25 * clamp01(candidate.get("minor_or_family_sensitivity"))
+        + 0.15 * clamp01(candidate.get("raw_identity_exposure"))
+        + 0.15 * clamp01(candidate.get("consent_uncertainty"))
+        + 0.10 * clamp01(candidate.get("doxxing_or_harassment_risk"))
+    )
+
+
+def calculate_strategy_overclaim_risk(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        0.30 * clamp01(candidate.get("causal_language"))
+        + 0.25 * clamp01(candidate.get("full_web_claim"))
+        + 0.20 * clamp01(candidate.get("official_verification_claim"))
+        + 0.15 * clamp01(candidate.get("prediction_language"))
+        + 0.10 * clamp01(candidate.get("uncalibrated_score_without_boundary"))
+    )
+
+
+def calculate_strategy_implementation_risk(candidate: dict[str, Any], upstream_context: dict[str, Any]) -> float:
+    return clamp01(
+        0.25 * clamp01(candidate.get("requires_new_runtime"))
+        + 0.20 * clamp01(candidate.get("requires_real_API_or_LLM"))
+        + 0.20 * clamp01(candidate.get("requires_unreviewed_data"))
+        + 0.15 * clamp01(candidate.get("requires_external_actor_coordination"))
+        + 0.10 * clamp01(candidate.get("requires_legal_review"))
+        + 0.10 * clamp01(candidate.get("requires_sensitive_material"))
+    )
+
+
+def calculate_strategy_benefit(candidate: dict[str, Any], components: dict[str, float]) -> float:
+    return clamp01(
+        0.18 * components["clarity_gain"]
+        + 0.16 * components["confusion_reduction"]
+        + 0.15 * components["emotion_deescalation"]
+        + 0.14 * components["bridge_opening"]
+        + 0.13 * components["trust_repair_potential"]
+        + 0.12 * components["fatigue_relief"]
+        + 0.12 * components["reactivation_risk_reduction"]
+    )
+
+
+def calculate_strategy_cost(candidate: dict[str, Any], components: dict[str, float]) -> float:
+    return clamp01(
+        0.26 * components["amplification_risk"]
+        + 0.24 * components["backlash_risk"]
+        + 0.20 * components["privacy_risk"]
+        + 0.16 * components["overclaim_risk"]
+        + 0.14 * components["implementation_risk"]
+    )
+
+
+def calculate_strategy_score(candidate: dict[str, Any], benefit_score: float, cost_score: float) -> float:
+    return clamp01(0.50 + 0.50 * (benefit_score - cost_score))
+
+
+def determine_strategy_blockers(candidate: dict[str, Any], scores: dict[str, float], upstream_context: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    validation = validate_response_strategy_candidate(candidate)
+    blockers = validation["blockers"]
+    if scores["evidence_fit"] < 0.55:
+        blockers["evidence_blockers"].append(
+            _blocker("evidence_fit", "response_strategy.scores.evidence_fit", "insufficient_evidence_fit", "response_strategy")
+        )
+    if not upstream_context.get("has_content_context"):
+        blockers["evidence_blockers"].append(
+            _blocker("content_aggregate", "module_outputs.content_aggregate", "missing_contentaggregate_context", "response_strategy")
+        )
+    if not upstream_context.get("has_influence_context"):
+        blockers["evidence_blockers"].append(
+            _blocker("influence_core", "module_outputs.influence_core", "missing_influencecore_context", "response_strategy")
+        )
+    strategy_id = candidate.get("strategy_id")
+    if strategy_id in {"S3", "S5", "S7"} and scores["evidence_fit"] < 0.70:
+        blockers["evidence_blockers"].append(
+            _blocker("strategy_id", "response_strategy.strategy_id", "evidence_supported_strategy_requires_higher_evidence_fit", "response_strategy")
+        )
+    if strategy_id == "S7" and (
+        clamp01(upstream_context.get("Q")) < 0.80 or clamp01(upstream_context.get("factual_credibility_mean")) < 0.60
+    ):
+        blockers["evidence_blockers"].append(
+            _blocker("strategy_id", "response_strategy.strategy_id", "correction_or_apology_requires_stronger_evidence_context", "response_strategy")
+        )
+    if scores["overclaim_risk"] >= 0.45:
+        blockers["overclaim_blockers"].append(
+            _blocker("overclaim_risk", "response_strategy.scores.overclaim_risk", "overclaim_risk_requires_downgrade", "response_strategy")
+        )
+    if scores["implementation_risk"] >= 0.45:
+        blockers["implementation_blockers"].append(
+            _blocker("implementation_risk", "response_strategy.scores.implementation_risk", "implementation_risk_requires_review", "response_strategy")
+        )
+    if clamp01(candidate.get("requires_legal_review")) > 0 or clamp01(candidate.get("requires_sensitive_material")) > 0:
+        blockers["legal_review_blockers"].append(
+            _blocker("requires_legal_review", "response_strategy_candidates.requires_legal_review", "legal_or_sensitive_material_requires_review", "response_strategy")
+        )
+    return blockers
+
+
+def determine_strategy_status(candidate: dict[str, Any], scores: dict[str, float], blockers: dict[str, list[dict[str, str]]]) -> str:
+    if blockers["forbidden_behavior_blockers"]:
+        return "forbidden"
+    if blockers["privacy_blockers"] or blockers["consent_blockers"] or blockers["legal_review_blockers"]:
+        return "blocked"
+    if candidate.get("strategy_id") not in ALLOWED_RESPONSE_STRATEGY_IDS:
+        return "blocked"
+    if blockers["evidence_blockers"] or blockers["overclaim_blockers"] or blockers["implementation_blockers"]:
+        return "prepare_only"
+    if candidate.get("strategy_id") in {"S0", "S11"}:
+        return "prepare_only"
+    if scores["strategy_score"] >= 0.58:
+        return "allowed_with_review"
+    return "allowed"
+
+
+def determine_strategy_recommendation_level(
+    candidate: dict[str, Any],
+    scores: dict[str, float],
+    blockers: dict[str, list[dict[str, str]]],
+) -> str:
+    if blockers["forbidden_behavior_blockers"]:
+        return "forbidden"
+    if candidate.get("strategy_id") not in ALLOWED_RESPONSE_STRATEGY_IDS:
+        return "blocked_pending_review"
+    if candidate.get("strategy_id") == "S0":
+        return "monitor_only"
+    if candidate.get("strategy_id") == "S11":
+        return "private_review_only"
+    if blockers["privacy_blockers"] or blockers["consent_blockers"] or blockers["legal_review_blockers"]:
+        return "blocked_pending_review"
+    if blockers["evidence_blockers"]:
+        return "prepare_materials_first"
+    if blockers["overclaim_blockers"] or blockers["implementation_blockers"]:
+        return "prepare_materials_first"
+    if (
+        scores["strategy_score"] >= 0.58
+        and scores["evidence_fit"] >= 0.60
+        and scores["privacy_risk"] < 0.35
+        and scores["overclaim_risk"] < 0.35
+        and scores["implementation_risk"] < 0.35
+    ):
+        return "strong_candidate_for_human_review"
+    if scores["strategy_score"] >= 0.50:
+        return "candidate_for_human_review"
+    return "not_recommended_now"
+
+
+def calculate_response_strategy_comparison(candidate: dict[str, Any], upstream_outputs: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_response_strategy_candidate(candidate)
+    upstream_context = upstream_outputs
+    benefit_components = {
+        "clarity_gain": calculate_strategy_clarity_gain(normalized, upstream_context),
+        "confusion_reduction": calculate_strategy_confusion_reduction(normalized, upstream_context),
+        "emotion_deescalation": calculate_strategy_emotion_deescalation(normalized, upstream_context),
+        "bridge_opening": calculate_strategy_bridge_opening(normalized, upstream_context),
+        "trust_repair_potential": calculate_strategy_trust_repair_potential(normalized, upstream_context),
+        "fatigue_relief": calculate_strategy_fatigue_relief(normalized, upstream_context),
+        "reactivation_risk_reduction": calculate_strategy_reactivation_risk_reduction(normalized, upstream_context),
+    }
+    cost_components = {
+        "amplification_risk": calculate_strategy_amplification_risk(normalized, upstream_context),
+        "backlash_risk": calculate_strategy_backlash_risk(normalized, upstream_context),
+        "privacy_risk": calculate_strategy_privacy_risk(normalized, upstream_context),
+        "overclaim_risk": calculate_strategy_overclaim_risk(normalized, upstream_context),
+        "implementation_risk": calculate_strategy_implementation_risk(normalized, upstream_context),
+    }
+    scores = {
+        "evidence_fit": calculate_strategy_evidence_fit(normalized, upstream_context),
+        "timing_fit": calculate_strategy_timing_fit(normalized, upstream_context),
+        **benefit_components,
+        **cost_components,
+    }
+    scores["benefit_score"] = calculate_strategy_benefit(normalized, benefit_components)
+    scores["cost_score"] = calculate_strategy_cost(normalized, cost_components)
+    scores["strategy_score"] = calculate_strategy_score(normalized, scores["benefit_score"], scores["cost_score"])
+    blockers = determine_strategy_blockers(normalized, scores, upstream_context)
+    strategy_status = determine_strategy_status(normalized, scores, blockers)
+    recommendation_level = determine_strategy_recommendation_level(normalized, scores, blockers)
+    eligible_for_review = recommendation_level in {"strong_candidate_for_human_review", "candidate_for_human_review"}
+    warnings = {
+        "low_confidence_warnings": [],
+        "missing_component_warnings": list(upstream_context.get("missing_component_warnings", [])),
+        "sensitive_material_warnings": [],
+        "timing_warnings": [],
+        "amplification_warnings": [],
+        "backlash_warnings": [],
+        "model_card_warnings": [
+            "selected_sample_only",
+            "uncalibrated",
+            "human_review_only",
+            "not_auto_executed",
+        ],
+    }
+    if upstream_context.get("Q", 0) < 0.45:
+        warnings["low_confidence_warnings"].append("low_evidence_confidence_prevents_strong_strategy_claim")
+    if scores["timing_fit"] < 0.40:
+        warnings["timing_warnings"].append("timing_fit_low_or_missing")
+    if scores["amplification_risk"] > 0.45:
+        warnings["amplification_warnings"].append("amplification_risk_visible_for_human_review")
+    if scores["backlash_risk"] > 0.35:
+        warnings["backlash_warnings"].append("backlash_risk_visible_for_human_review")
+    if blockers["privacy_blockers"] or blockers["consent_blockers"]:
+        warnings["sensitive_material_warnings"].append("sensitive_material_requires_consent_and_review")
+    explanation = [
+        "ResponseStrategyComparisonV01 compares transparent options for human review only.",
+        f"Benefit score {scores['benefit_score']:.3f} and cost score {scores['cost_score']:.3f} are shown separately with risk context.",
+        "This comparison is selected-sample, uncalibrated, non-causal, and not execution.",
+    ]
+    if normalized.get("strategy_id") == "S0":
+        explanation.append("S0 is a baseline for monitoring and comparison, not a directive to leave the issue unattended.")
+    return {
+        "schema": "sentigraph_response_strategy_comparison_v0_1",
+        "comparison_id": f"response_strategy_{normalized['candidate_id']}",
+        "candidate_id": normalized["candidate_id"],
+        "strategy_id": normalized["strategy_id"],
+        "strategy_type": normalized["strategy_type"],
+        "model_status": "8P_6_response_strategy_comparison",
+        "coefficient_source": COEFFICIENT_SOURCE,
+        "calibration_status": CALIBRATION_STATUS,
+        "empirical_validation": EMPIRICAL_VALIDATION,
+        "sample_scope": SCOPE_NOTE,
+        "strategy_status": strategy_status,
+        "scores": scores,
+        "recommendation": {
+            "recommendation_level": recommendation_level,
+            "eligible_for_human_review": eligible_for_review,
+            "human_review_required": True,
+            "not_auto_executed": True,
+            "execution_authorized": False,
+            "public_response_generated": False,
+            "guaranteed_outcome": False,
+        },
+        "components": {
+            "benefit_components": benefit_components,
+            "cost_components": cost_components,
+            "timing_components": {
+                "stage_fit": clamp01(normalized.get("stage_fit")),
+                "response_gap_fit": clamp01(normalized.get("response_gap_fit")),
+                "heat_fit": clamp01(normalized.get("heat_fit")),
+                "fatigue_fit": clamp01(normalized.get("fatigue_fit")),
+            },
+            "evidence_components": {
+                "Q": clamp01(upstream_context.get("Q")),
+                "factual_credibility_mean": clamp01(upstream_context.get("factual_credibility_mean")),
+                "evidence_fit": scores["evidence_fit"],
+            },
+            "privacy_components": {
+                "privacy_risk": scores["privacy_risk"],
+                "use_of_personal_story": clamp01(normalized.get("use_of_personal_story")),
+                "minor_or_family_sensitivity": clamp01(normalized.get("minor_or_family_sensitivity")),
+            },
+            "implementation_components": {
+                "implementation_risk": scores["implementation_risk"],
+                "requires_real_API_or_LLM": clamp01(normalized.get("requires_real_API_or_LLM")),
+            },
+            "upstream_context_components": {
+                "bridge_capacity": clamp01(upstream_context.get("bridge_capacity")),
+                "cross_cutting_exposure": clamp01(upstream_context.get("cross_cutting_exposure")),
+                "narrative_fragmentation": clamp01(upstream_context.get("narrative_fragmentation")),
+                "risk_breakout": clamp01(upstream_context.get("risk_breakout")),
+                "controversy": clamp01(upstream_context.get("controversy")),
+            },
+            "associated_aggregate_ids_used": upstream_context.get("associated_aggregate_ids_used", []),
+            "associated_influence_core_ids_used": upstream_context.get("associated_influence_core_ids_used", []),
+            "associated_echo_box_ids_used": upstream_context.get("associated_echo_box_ids_used", []),
+            "associated_people_cluster_ids_used": upstream_context.get("associated_people_cluster_ids_used", []),
+        },
+        "blockers": blockers,
+        "warnings": warnings,
+        "quality_flags": [
+            "selected_sample_only",
+            "uncalibrated",
+            "mock_default_coefficients",
+            "evidence_not_truth",
+            "human_review_only",
+            "not_auto_executed",
+            "not_public_opinion_control",
+            "not_individual_targeting",
+            "not_guaranteed_outcome",
+        ],
+        "explanation": explanation,
+        "boundary_flags": {
+            "human_review_required": True,
+            "not_auto_executed": True,
+            "not_public_opinion_control": True,
+            "not_individual_targeting": True,
+            "not_target_user_list": True,
+            "not_causal_proof": True,
+            "not_prediction": True,
+            "not_guaranteed_outcome": True,
+            "not_official_verification": True,
+            "evidence_not_truth": True,
+            "selected_sample_only": True,
+            "no_publication_action": True,
+        },
+    }
+
+
+def calculate_all_response_strategy_comparisons(
+    fixture: dict,
+    content_aggregate_outputs: list[dict[str, Any]],
+    influence_core_outputs: list[dict[str, Any]],
+    echo_box_outputs: list[dict[str, Any]],
+    people_cluster_outputs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates = get_response_strategy_candidates(fixture)
+    if not candidates:
+        return []
+    upstream_context = get_response_strategy_upstream_context(
+        content_aggregate_outputs,
+        influence_core_outputs,
+        echo_box_outputs,
+        people_cluster_outputs,
+    )
+    return [calculate_response_strategy_comparison(candidate, upstream_context) for candidate in candidates]
+
+
 def build_mock_calculator_run_metadata(fixture: dict) -> dict[str, Any]:
     validation = validate_mock_fixture_contract(fixture)
     fixture_id = _fixture_value(fixture, "fixture_id", "missing_fixture_id")
@@ -3767,12 +4554,20 @@ def calculate_opinion_ecosystem_mock_fixture(fixture: dict) -> dict[str, Any]:
         influence_outputs = calculate_all_influencecore_weights(fixture)
         echo_outputs = calculate_all_echobox_weights(fixture, content_outputs, influence_outputs)
         people_outputs = calculate_all_peoplecluster_states(fixture, content_outputs, influence_outputs, echo_outputs)
+        response_outputs = calculate_all_response_strategy_comparisons(
+            fixture,
+            content_outputs,
+            influence_outputs,
+            echo_outputs,
+            people_outputs,
+        )
         if people_outputs:
             run["module_outputs"] = _module_outputs_with_people_cluster(
                 content_outputs,
                 influence_outputs,
                 echo_outputs,
                 people_outputs,
+                response_outputs,
             )
         elif echo_outputs:
             run["module_outputs"] = _module_outputs_with_content_influence_and_echo(
@@ -3784,4 +4579,6 @@ def calculate_opinion_ecosystem_mock_fixture(fixture: dict) -> dict[str, Any]:
             run["module_outputs"] = _module_outputs_with_content_and_influence(content_outputs, influence_outputs)
         elif content_outputs:
             run["module_outputs"] = _module_outputs_with_content_aggregate(content_outputs)
+        elif response_outputs:
+            run["module_outputs"]["response_strategy"] = response_outputs
     return run
