@@ -50,10 +50,18 @@ function formatSafeValue(value) {
   if (typeof value === 'boolean') return value ? 'true' : 'false'
   if (typeof value === 'number' || typeof value === 'string') return String(value)
   try {
-    return JSON.stringify(value)
+    return JSON.stringify(
+      value,
+      (key, item) => (FORBIDDEN_RENDER_KEYS.has(String(key)) ? '[blocked safe key]' : item),
+      2,
+    )
   } catch {
     return 'unrenderable safe object'
   }
+}
+
+function isStructuredSafeValue(value) {
+  return Boolean(value) && typeof value === 'object'
 }
 
 function compactRows(value, limit = 8) {
@@ -61,7 +69,11 @@ function compactRows(value, limit = 8) {
   return Object.entries(value)
     .filter(([key]) => !FORBIDDEN_RENDER_KEYS.has(String(key)))
     .slice(0, limit)
-    .map(([key, item]) => ({ key: String(key), value: formatSafeValue(item) }))
+    .map(([key, item]) => ({
+      key: String(key),
+      value: formatSafeValue(item),
+      structured: isStructuredSafeValue(item),
+    }))
 }
 
 function RenderSafeList({ title, items, color = 'default' }) {
@@ -122,7 +134,11 @@ function ModuleOutputCard({ moduleName, outputs }) {
                     <List.Item>
                       <div className="ecosystem-generated-run-field-row">
                         <Text strong>{row.key}</Text>
-                        <Text type="secondary">{row.value}</Text>
+                        {row.structured ? (
+                          <pre className="ecosystem-generated-run-safe-json">{row.value}</pre>
+                        ) : (
+                          <Text type="secondary">{row.value}</Text>
+                        )}
                       </div>
                     </List.Item>
                   )}

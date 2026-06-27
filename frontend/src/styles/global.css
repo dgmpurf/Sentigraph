@@ -2424,6 +2424,21 @@ body {
   align-items: start;
 }
 
+.ecosystem-generated-run-safe-json {
+  max-height: 150px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  color: #b9c4db;
+  background: rgba(2, 6, 23, 0.36);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .public-event-page {
   color: #f4f7fb;
 }
