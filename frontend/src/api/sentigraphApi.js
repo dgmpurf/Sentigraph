@@ -50,6 +50,16 @@ export async function attachSearchDiscoveryCandidates(caseId, payload = {}) {
   return normalizeSearchDiscoveryAttachResult(data)
 }
 
+export async function createOpinionEcosystemGeneratedRunLocalFixture(payload = {}) {
+  const requestPayload = {}
+  if (payload.sample_key) requestPayload.sample_key = String(payload.sample_key)
+  if (payload.case_id) requestPayload.case_id = String(payload.case_id)
+  if (payload.sample_id) requestPayload.sample_id = String(payload.sample_id)
+
+  const { data } = await apiClient.post(`${API_PREFIX}/opinion-ecosystem/generated-runs/local-fixture`, requestPayload)
+  return normalizeOpinionEcosystemGeneratedRun(data)
+}
+
 export async function getAnalysisRequestConfig() {
   const { data } = await apiClient.get(`${API_PREFIX}/analysis-requests/config`)
   return normalizeAnalysisRequestConfig(data)
@@ -3605,6 +3615,94 @@ function normalizeSearchDiscoveryStatus(data) {
     review_flow: Array.isArray(data.review_flow) ? data.review_flow.map((item) => String(item)) : [],
     next_actions: Array.isArray(data.next_actions) ? data.next_actions.map((item) => String(item)) : [],
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object' ? normalizeBooleanMap(data.safe_mode) : {},
+  }
+}
+
+const OPINION_ECOSYSTEM_GENERATED_RUN_FORBIDDEN_KEYS = new Set([
+  'response_text',
+  'generated_public_message',
+  'target_user_list',
+  'persuasion_score',
+  'truth_score',
+  'official_verified',
+  'prediction_probability',
+  'psychological_profile',
+  'personality_diagnosis',
+  'publish_now',
+  'send_now',
+  'post_now',
+  'execute_now',
+  'auto_execute',
+])
+
+function sanitizeOpinionEcosystemGeneratedRunValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeOpinionEcosystemGeneratedRunValue)
+  }
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !OPINION_ECOSYSTEM_GENERATED_RUN_FORBIDDEN_KEYS.has(String(key)))
+      .map(([key, child]) => [String(key), sanitizeOpinionEcosystemGeneratedRunValue(child)]),
+  )
+}
+
+function normalizeOpinionEcosystemGeneratedRun(data) {
+  const safeData = sanitizeOpinionEcosystemGeneratedRunValue(data)
+  if (!safeData || typeof safeData !== 'object' || Array.isArray(safeData)) {
+    return {
+      run_id: '',
+      run_schema: '',
+      run_status: 'blocked',
+      case_id: '',
+      sample_id: '',
+      input_package_id: null,
+      input_source_kind: '',
+      input_scope_note: '',
+      generated_at: null,
+      model_version: '',
+      coefficient_source: '',
+      calibration_status: '',
+      empirical_validation: '',
+      human_review_required: true,
+      boundary_flags: {},
+      warnings: [],
+      blockers: [{ reason: 'invalid_generated_run_response' }],
+      module_outputs: {},
+      runtime_side_effects: {},
+    }
+  }
+  return {
+    ...safeData,
+    run_id: String(safeData.run_id || ''),
+    run_schema: String(safeData.run_schema || ''),
+    run_status: String(safeData.run_status || 'blocked'),
+    case_id: String(safeData.case_id || ''),
+    sample_id: String(safeData.sample_id || ''),
+    input_package_id: safeData.input_package_id ? String(safeData.input_package_id) : null,
+    input_source_kind: String(safeData.input_source_kind || ''),
+    input_scope_note: String(safeData.input_scope_note || ''),
+    generated_at: safeData.generated_at ? String(safeData.generated_at) : null,
+    model_version: String(safeData.model_version || ''),
+    coefficient_source: String(safeData.coefficient_source || ''),
+    calibration_status: String(safeData.calibration_status || ''),
+    empirical_validation: String(safeData.empirical_validation || ''),
+    human_review_required: safeData.human_review_required !== false,
+    boundary_flags: safeData.boundary_flags && typeof safeData.boundary_flags === 'object'
+      ? normalizeBooleanMap(safeData.boundary_flags)
+      : {},
+    warnings: Array.isArray(safeData.warnings) ? safeData.warnings : [],
+    blockers: Array.isArray(safeData.blockers) ? safeData.blockers : [],
+    module_outputs:
+      safeData.module_outputs && typeof safeData.module_outputs === 'object' && !Array.isArray(safeData.module_outputs)
+        ? safeData.module_outputs
+        : {},
+    runtime_side_effects:
+      safeData.runtime_side_effects && typeof safeData.runtime_side_effects === 'object'
+        ? normalizeBooleanMap(safeData.runtime_side_effects)
+        : {},
   }
 }
 

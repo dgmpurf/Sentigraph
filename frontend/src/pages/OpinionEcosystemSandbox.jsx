@@ -3,6 +3,7 @@ import { PauseCircle, PlayCircle, RotateCcw, ScanLine, Sparkles } from 'lucide-r
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { OpinionEcosystemV2Canvas } from '../components/opinion/OpinionEcosystemV2Canvas.jsx'
+import { OpinionEcosystemGeneratedRunPanel } from '../components/opinion/OpinionEcosystemGeneratedRunPanel.jsx'
 import { OpinionEcosystemModelExplanation } from '../components/opinion/OpinionEcosystemModelExplanation.jsx'
 import {
   dongluSunjihaiYouthFootballEvidenceItems,
@@ -76,6 +77,16 @@ function dataSourceModeFromHash(hash = window.location.hash) {
 
 function initialDataSourceModeFromHash() {
   return dataSourceModeFromHash() || 'helldivers_psn_sample'
+}
+
+function generatedRunSampleKeyForMode(mode) {
+  if (mode === 'helldivers_psn_sample') return 'helldivers_psn'
+  if (mode === 'donglu_sunjihai_sample') return 'donglu_sunjihai_youth_football'
+  return null
+}
+
+function dataSourceLabelForMode(mode) {
+  return DATA_SOURCE_OPTIONS.find((option) => option.value === mode)?.label || 'Unsupported local mode'
 }
 
 function phaseIdForMode(mode, scenarioKey) {
@@ -550,6 +561,8 @@ export function OpinionEcosystemSandbox() {
   const recommendedSampleMode = dataSourceMode === 'donglu_sunjihai_sample' ? 'donglu_sunjihai_sample' : 'helldivers_psn_sample'
   const recommendedSampleLabel =
     recommendedSampleMode === 'donglu_sunjihai_sample' ? 'Dong/Sun youth football sample' : 'Helldivers PSN sample'
+  const generatedRunSampleKey = generatedRunSampleKeyForMode(dataSourceMode)
+  const generatedRunSampleLabel = dataSourceLabelForMode(dataSourceMode)
 
   const handleUseRecommendedCombo = useCallback(() => {
     setViewMode('ecology_v2')
@@ -710,6 +723,8 @@ export function OpinionEcosystemSandbox() {
 
       {dataSourceMode === 'helldivers_psn_sample' && <HelldiversSampleStatusCard />}
       {dataSourceMode === 'donglu_sunjihai_sample' && <DongluSunjihaiSampleStatusCard />}
+
+      <OpinionEcosystemGeneratedRunPanel sampleKey={generatedRunSampleKey} sampleLabel={generatedRunSampleLabel} />
 
       <OpinionEcosystemModelExplanation />
 
