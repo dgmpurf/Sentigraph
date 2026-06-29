@@ -10,6 +10,7 @@ from app.api.v1.routes import (
     evidence,
     external_collector,
     health,
+    internal_operator_review_only_staging,
     keywords,
     llm,
     notifications,
@@ -37,6 +38,11 @@ api_router.include_router(simulation.router, prefix="/simulation", tags=["simula
 api_router.include_router(sources.router, prefix="/sources", tags=["sources"])
 api_router.include_router(search_discovery.router, prefix="/search-discovery", tags=["search-discovery"])
 api_router.include_router(external_collector.router, prefix="/external-collector", tags=["external-collector"])
+api_router.include_router(
+    internal_operator_review_only_staging.router,
+    prefix="/internal/staging/review-only",
+    tags=["internal-operator-review-only-staging"],
+)
 api_router.include_router(analysis_requests.router, prefix="/analysis-requests", tags=["analysis-requests"])
 api_router.include_router(
     opinion_ecosystem_generated_runs.router,
