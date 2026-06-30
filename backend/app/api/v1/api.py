@@ -14,6 +14,7 @@ from app.api.v1.routes import (
     keywords,
     llm,
     notifications,
+    opinion_ecosystem_dense_graph,
     opinion_ecosystem_generated_runs,
     platforms,
     propagation,
@@ -48,6 +49,11 @@ api_router.include_router(
     opinion_ecosystem_generated_runs.router,
     prefix="/opinion-ecosystem",
     tags=["opinion-ecosystem"],
+)
+api_router.include_router(
+    opinion_ecosystem_dense_graph.router,
+    prefix="/internal/opinion-ecosystem/dense-graph",
+    tags=["internal-opinion-ecosystem-dense-graph"],
 )
 api_router.include_router(evidence.router, prefix="/evidence", tags=["evidence"])
 api_router.include_router(cases.router, prefix="/cases", tags=["cases"])
