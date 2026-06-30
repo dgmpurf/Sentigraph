@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, NamedTuple
 
 from fastapi import APIRouter
 
@@ -37,6 +37,12 @@ BLOCKED_ACTIONS = [
 ]
 
 
+class _InternalOperatorRouteEnabledMode(NamedTuple):
+    enabled: bool
+    mode: str
+    disabled_reason: str | None
+
+
 @router.get("/candidates")
 def list_review_only_staging_candidates() -> dict[str, Any]:
     if not _route_enabled():
@@ -57,7 +63,24 @@ def get_review_only_staging_candidate(staging_candidate_id: str) -> dict[str, An
 
 
 def _route_enabled() -> bool:
-    return os.environ.get(ENV_FLAG, "").strip().lower() in {"1", "true", "yes"}
+    return _resolve_internal_operator_route_enabled_mode(os.environ.get(ENV_FLAG)).enabled
+
+
+def _resolve_internal_operator_route_enabled_mode(
+    raw_env_value: str | None,
+) -> _InternalOperatorRouteEnabledMode:
+    normalized_value = (raw_env_value or "").strip().lower()
+    if normalized_value in {"1", "true", "yes"}:
+        return _InternalOperatorRouteEnabledMode(
+            enabled=True,
+            mode="synthetic_fixture_only",
+            disabled_reason=None,
+        )
+    return _InternalOperatorRouteEnabledMode(
+        enabled=False,
+        mode="disabled",
+        disabled_reason="route_disabled",
+    )
 
 
 def _safe_error(error_code: str, message: str) -> dict[str, Any]:
