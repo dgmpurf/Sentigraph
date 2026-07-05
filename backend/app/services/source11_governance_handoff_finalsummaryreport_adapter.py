@@ -5,6 +5,7 @@ from typing import Any
 
 
 ADAPTER_SCHEMA = "sentigraph_source11_governance_handoff_finalsummaryreport_adapter_v0_1"
+BOUNDARY_ADAPTER_SCHEMA = "sentigraph_source11_governance_handoff_finalsummaryreport_boundary_adapter_v0_1"
 INPUT_HANDOFF_SCHEMA = "sentigraph_final_report_boundary_source11_governance_handoff_v0_1"
 INPUT_HANDOFF_STATUS = "handoff_ready_for_manual_source11_governance_review"
 INPUT_SOURCE_KIND = "source11_governance_handoff"
@@ -17,8 +18,10 @@ INPUT_DENSE_GRAPH_INTEGRATION_SCHEMA = "sentigraph_generated_run_dense_graph_bri
 GENERATED_RUN_SCHEMA = "sentigraph_opinion_ecosystem_run_v0_1"
 FINAL_SUMMARY_REPORT_SCHEMA = "sentigraph_final_summary_report_v1"
 ADAPTER_MODE = "backend_only_local_finalsummaryreport_runtime_adapter_smoke"
+BOUNDARY_ADAPTER_MODE = "backend_only_local_finalsummaryreport_boundary_adapter_smoke"
 
 READY_STATUS = "adapter_ready_with_local_finalsummaryreport_boundary"
+BOUNDARY_ADAPTER_READY_STATUS = "boundary_adapter_ready_for_manual_finalsummaryreport_review"
 BLOCKED_METADATA_STATUS = "blocked_metadata_contract"
 BLOCKED_PRIVACY_STATUS = "blocked_privacy_issue"
 BLOCKED_SIDE_EFFECT_STATUS = "blocked_requested_side_effect"
@@ -227,6 +230,23 @@ def create_source11_governance_handoff_finalsummaryreport_adapter(
     )
 
 
+def build_source11_governance_handoff_finalsummaryreport_boundary_adapter(
+    source11_governance_handoff: dict[str, Any],
+    *,
+    created_by: str = "sentigraph_internal_operator",
+) -> dict[str, Any]:
+    safe_handoff = source11_governance_handoff if isinstance(source11_governance_handoff, dict) else {}
+    blockers = _collect_boundary_adapter_blockers(safe_handoff)
+    status = _boundary_adapter_status(blockers, safe_handoff)
+    return _boundary_adapter_object(
+        safe_handoff,
+        created_by=created_by,
+        adapter_status=status,
+        adapter_created=not blockers,
+        blockers=blockers,
+    )
+
+
 def build_safe_source11_governance_handoff_finalsummaryreport_adapter_summary(
     adapter: dict[str, Any],
 ) -> dict[str, Any]:
@@ -257,6 +277,75 @@ def build_safe_source11_governance_handoff_finalsummaryreport_adapter_summary(
         "warnings": _safe_string_list(safe_adapter.get("warnings")),
         "blockers": _safe_blockers(safe_adapter.get("blockers")),
     }
+
+
+def _boundary_adapter_object(
+    source11_governance_handoff: dict[str, Any],
+    *,
+    created_by: str,
+    adapter_status: str,
+    adapter_created: bool,
+    blockers: list[dict[str, str]],
+) -> dict[str, Any]:
+    adapter_id = _boundary_adapter_id(_safe_value(source11_governance_handoff, "source11_governance_handoff_id"))
+    output = {
+        "finalsummaryreport_boundary_adapter_id": adapter_id,
+        "finalsummaryreport_boundary_adapter_schema": BOUNDARY_ADAPTER_SCHEMA,
+        "finalsummaryreport_boundary_adapter_status": adapter_status,
+        "finalsummaryreport_boundary_adapter_created": bool(adapter_created),
+        "created_at": _utc_now(),
+        "created_by": _safe_label(created_by) or "sentigraph_internal_operator",
+        "source11_governance_handoff_id": _safe_value(source11_governance_handoff, "source11_governance_handoff_id"),
+        "final_report_boundary_id": _safe_value(source11_governance_handoff, "final_report_boundary_id"),
+        "report_candidate_id": _safe_value(source11_governance_handoff, "report_candidate_id"),
+        "integration_id": _safe_value(source11_governance_handoff, "integration_id"),
+        "execution_id": _safe_value(source11_governance_handoff, "execution_id"),
+        "bridge_id": _safe_value(source11_governance_handoff, "bridge_id"),
+        "staging_candidate_id": _safe_value(source11_governance_handoff, "staging_candidate_id"),
+        "provider_result_id": _safe_value(source11_governance_handoff, "provider_result_id"),
+        "request_id": _safe_value(source11_governance_handoff, "request_id"),
+        "case_id_hint": _safe_value(source11_governance_handoff, "case_id_hint"),
+        "package_name": _safe_package_name(source11_governance_handoff.get("package_name")),
+        "input_source_kind": INPUT_SOURCE_KIND,
+        "adapter_mode": BOUNDARY_ADAPTER_MODE,
+        "source11_governance_handoff_schema": _safe_value(
+            source11_governance_handoff,
+            "source11_governance_handoff_schema",
+        )
+        or INPUT_HANDOFF_SCHEMA,
+        "source11_governance_handoff_status": _safe_value(
+            source11_governance_handoff,
+            "source11_governance_handoff_status",
+        )
+        or BLOCKED_METADATA_STATUS,
+        "final_report_boundary_schema": _safe_value(source11_governance_handoff, "final_report_boundary_schema"),
+        "report_candidate_schema": _safe_value(source11_governance_handoff, "report_candidate_schema"),
+        "dense_graph_integration_schema": _safe_value(source11_governance_handoff, "dense_graph_integration_schema"),
+        "generated_run_schema": _safe_value(source11_governance_handoff, "generated_run_schema"),
+        "selected_sample_scope_note": "selected public sample only; not full-web, not full-platform, not full-thread",
+        "source_and_scope": _source_and_scope(),
+        "adapter_boundary_summary": _boundary_adapter_summary(source11_governance_handoff, adapter_created),
+        "coverage_limitations": _coverage_limitations(),
+        "warnings": _boundary_adapter_warnings(source11_governance_handoff),
+        "blockers": _safe_blockers(blockers),
+        "human_review_status": "required",
+        "human_review_required": True,
+        "no_automatic_trust_upgrade": True,
+        "coefficient_source": "mock_default",
+        "calibration_status": "uncalibrated",
+        "empirical_validation": "not_started",
+        "finalsummaryreport_boundary_adapter": _boundary_adapter_payload(
+            source11_governance_handoff,
+            adapter_id=adapter_id,
+            enabled=adapter_created,
+        ),
+        **_boundary_adapter_false_flags(),
+        "boundary_flags": _boundary_adapter_flags(),
+        "runtime_side_effects": _boundary_adapter_runtime_side_effects(),
+        "audit_refs": _safe_audit_refs(source11_governance_handoff.get("audit_refs")),
+        "downstream_policy": _boundary_adapter_downstream_policy(adapter_created),
+    }
+    return output
 
 
 def _adapter_object(
@@ -334,6 +423,17 @@ def _adapter_object(
         "downstream_policy": _downstream_policy(adapter_created),
     }
     return output
+
+
+def _collect_boundary_adapter_blockers(value: dict[str, Any]) -> list[dict[str, str]]:
+    blockers = list(_collect_blockers(value))
+    if not isinstance(value.get("source11_governance_review_summary"), dict):
+        blockers.append(_blocker("missing_source11_governance_review_summary", "metadata_contract"))
+    if value.get("actual_final_summary_report_created") is True:
+        blockers.append(_blocker("requested_side_effect:actual_final_summary_report_created", "side_effect"))
+    if value.get("final_report_ready") is True:
+        blockers.append(_blocker("readiness_flag_true:final_report_ready", "side_effect"))
+    return _dedupe_blockers(blockers)
 
 
 def _collect_blockers(value: dict[str, Any]) -> list[dict[str, str]]:
@@ -417,6 +517,12 @@ def _collect_blockers(value: dict[str, Any]) -> list[dict[str, str]]:
     return _dedupe_blockers(blockers)
 
 
+def _boundary_adapter_status(blockers: list[dict[str, str]], value: dict[str, Any]) -> str:
+    if not blockers:
+        return BOUNDARY_ADAPTER_READY_STATUS
+    return _adapter_status(blockers, value)
+
+
 def _adapter_status(blockers: list[dict[str, str]], value: dict[str, Any]) -> str:
     if not blockers:
         return READY_STATUS
@@ -433,6 +539,94 @@ def _adapter_status(blockers: list[dict[str, str]], value: dict[str, Any]) -> st
     if _safe_value(value, "source11_governance_handoff_status") == MANUAL_REVIEW_STATUS:
         return MANUAL_REVIEW_STATUS
     return BLOCKED_METADATA_STATUS
+
+
+def _boundary_adapter_summary(source11_governance_handoff: dict[str, Any], adapter_created: bool) -> dict[str, Any]:
+    return {
+        "source11_governance_handoff_id": _safe_value(
+            source11_governance_handoff,
+            "source11_governance_handoff_id",
+        ),
+        "final_report_boundary_id": _safe_value(source11_governance_handoff, "final_report_boundary_id"),
+        "report_candidate_id": _safe_value(source11_governance_handoff, "report_candidate_id"),
+        "request_id": _safe_value(source11_governance_handoff, "request_id"),
+        "package_name": _safe_package_name(source11_governance_handoff.get("package_name")),
+        "adapter_created": bool(adapter_created),
+        "adapter_only": True,
+        "source11_runtime_called": False,
+        "source11_final_summary_report_runtime_used": False,
+        "actual_final_summary_report_created": False,
+        "final_summary_report_created": False,
+        "final_report_ready": False,
+        "human_review_required": True,
+    }
+
+
+def _boundary_adapter_payload(
+    source11_governance_handoff: dict[str, Any],
+    *,
+    adapter_id: str,
+    enabled: bool,
+) -> dict[str, Any] | None:
+    if not enabled:
+        return None
+    return {
+        "finalsummaryreport_boundary_adapter_id": adapter_id,
+        "schema": BOUNDARY_ADAPTER_SCHEMA,
+        "status": BOUNDARY_ADAPTER_READY_STATUS,
+        "local_only": True,
+        "backend_only": True,
+        "adapter_only": True,
+        "human_review_required": True,
+        "source11_governance_handoff_id": _safe_value(
+            source11_governance_handoff,
+            "source11_governance_handoff_id",
+        ),
+        "final_report_boundary_id": _safe_value(source11_governance_handoff, "final_report_boundary_id"),
+        "report_candidate_id": _safe_value(source11_governance_handoff, "report_candidate_id"),
+        "request_id": _safe_value(source11_governance_handoff, "request_id"),
+        "package_name": _safe_package_name(source11_governance_handoff.get("package_name")),
+        "source_and_scope": _source_and_scope(),
+        "boundary_block": _boundary_block(),
+        "coverage_limitations": _coverage_limitations(),
+        "warnings": [
+            "selected_sample_only",
+            "human_review_required",
+            "boundary_adapter_only",
+            "source11_runtime_not_called",
+            "actual_finalsummaryreport_runtime_not_created",
+            "export_download_public_access_not_approved",
+            "b_end_sandbox_public_event_not_approved",
+            "downstream_gates_required",
+        ],
+        "downstream_flags": {
+            "source11_runtime_called": False,
+            "source11_final_summary_report_runtime_used": False,
+            "actual_final_summary_report_created": False,
+            "final_summary_report_created": False,
+            "final_report_ready": False,
+            "export_ready": False,
+            "public_ready": False,
+            "customer_ready": False,
+            "production_ready": False,
+            "b_end_ready": False,
+            "sandbox_ready": False,
+            "public_event_ready": False,
+            "route_ready": False,
+            "frontend_ready": False,
+        },
+        "required_next_gates": {
+            "manual_source11_governance_review_required": True,
+            "finalsummaryreport_runtime_gate_required": True,
+            "export_gate_required": True,
+            "download_package_gate_required": True,
+            "public_access_gate_required": True,
+            "external_delivery_gate_required": True,
+            "b_end_report_gate_required": True,
+            "sandbox_public_event_gate_required": True,
+            "route_frontend_gate_required": True,
+        },
+    }
 
 
 def _local_final_summary_report(
@@ -557,6 +751,31 @@ def _coverage_limitations() -> list[str]:
     ]
 
 
+def _boundary_adapter_warnings(source11_governance_handoff: dict[str, Any]) -> list[str]:
+    warnings = _safe_string_list(source11_governance_handoff.get("warnings"))
+    required = [
+        "selected_sample_only",
+        "not_full_web",
+        "not_full_platform",
+        "not_full_thread",
+        "not_official_verification",
+        "not_causal_proof",
+        "not_prediction",
+        "not_production_score",
+        "human_review_required",
+        "boundary_adapter_only",
+        "source11_runtime_not_called",
+        "actual_finalsummaryreport_runtime_not_created",
+        "export_download_public_access_not_approved",
+        "b_end_sandbox_public_event_not_approved",
+        "downstream_gates_required",
+    ]
+    for item in required:
+        if item not in warnings:
+            warnings.append(item)
+    return warnings
+
+
 def _warnings(source11_governance_handoff: dict[str, Any]) -> list[str]:
     warnings = _safe_string_list(source11_governance_handoff.get("warnings"))
     required = [
@@ -581,6 +800,34 @@ def _warnings(source11_governance_handoff: dict[str, Any]) -> list[str]:
     return warnings
 
 
+def _boundary_adapter_false_flags() -> dict[str, bool]:
+    return {
+        "source11_runtime_called": False,
+        "source11_final_summary_report_runtime_used": False,
+        "actual_final_summary_report_created": False,
+        "final_summary_report_created": False,
+        "final_report_ready": False,
+        "b_end_report_runtime_generated": False,
+        "sandbox_public_event_generated": False,
+        "sandbox_public_event_runtime_generated": False,
+        "evidence_rows_parsed": False,
+        "evidence_layer_write": False,
+        "production_case_created": False,
+        "production_analysis_run_created": False,
+        "production_evidence_item_created": False,
+        "review_queue_runtime_used": False,
+        "generated_response_text": False,
+        "public_route_created": False,
+        "export_download_public_delivery_created": False,
+        "frontend_ready": False,
+        "route_ready": False,
+        "production_ready": False,
+        "customer_ready": False,
+        "export_ready": False,
+        "public_ready": False,
+    }
+
+
 def _output_false_flags() -> dict[str, bool]:
     return {
         "final_report_created": False,
@@ -602,6 +849,34 @@ def _output_false_flags() -> dict[str, bool]:
         "b_end_ready": False,
         "sandbox_ready": False,
         "public_event_ready": False,
+    }
+
+
+def _boundary_adapter_flags() -> dict[str, bool]:
+    return {
+        "selected_sample_only": True,
+        "not_full_web": True,
+        "not_full_platform": True,
+        "not_full_thread": True,
+        "not_official_verification": True,
+        "not_causal_proof": True,
+        "not_prediction": True,
+        "not_production_score": True,
+        "human_review_required": True,
+        "no_auto_execute": True,
+        "no_generated_public_response": True,
+        "boundary_adapter_only": True,
+        "not_actual_finalsummaryreport_runtime": True,
+        "source11_runtime_not_called": True,
+        "source11_runtime_not_used": True,
+        "final_summary_report_not_created": True,
+        "not_export_ready": True,
+        "not_public_ready": True,
+        "not_customer_ready": True,
+        "not_production_ready": True,
+        "not_b_end_ready": True,
+        "not_sandbox_ready": True,
+        "not_public_event_ready": True,
     }
 
 
@@ -630,6 +905,47 @@ def _boundary_flags(local_final_summary_report_created: bool) -> dict[str, bool]
         "not_b_end_ready": True,
         "not_sandbox_ready": True,
         "not_public_event_ready": True,
+    }
+
+
+def _boundary_adapter_runtime_side_effects() -> dict[str, bool]:
+    return {
+        "called_real_api": False,
+        "called_real_llm": False,
+        "ran_collector": False,
+        "accessed_private_collector": False,
+        "read_real_exchange_dir": False,
+        "fetched_url": False,
+        "scraped_page": False,
+        "parsed_evidence_items_file": False,
+        "read_original_package_rows": False,
+        "wrote_evidence_layer": False,
+        "created_production_case": False,
+        "created_production_analysis_run": False,
+        "created_production_evidence_item": False,
+        "used_review_queue_runtime": False,
+        "used_source11_final_summary_report_runtime": False,
+        "generated_final_summary_report": False,
+        "generated_final_report_artifact": False,
+        "generated_b_end_report_runtime": False,
+        "generated_sandbox_runtime": False,
+        "generated_public_event_runtime": False,
+        "generated_export_artifact": False,
+        "generated_download_package": False,
+        "generated_public_access": False,
+        "performed_external_delivery": False,
+        "generated_response_text": False,
+        "created_public_route": False,
+        "created_file_byte_route": False,
+        "generated_public_url": False,
+        "generated_signed_url": False,
+        "uploaded_object_storage": False,
+        "sent_email": False,
+        "published_to_portal": False,
+        "published_or_sent": False,
+        "auto_executed": False,
+        "created_local_final_summary_report_boundary": False,
+        "created_finalsummaryreport_boundary_adapter": False,
     }
 
 
@@ -666,6 +982,39 @@ def _runtime_side_effects(local_final_summary_report_created: bool) -> dict[str,
         "published_or_sent": False,
         "auto_executed": False,
         "created_local_final_summary_report_boundary": bool(local_final_summary_report_created),
+    }
+
+
+def _boundary_adapter_downstream_policy(adapter_created: bool) -> dict[str, Any]:
+    return {
+        "finalsummaryreport_boundary_adapter_created": bool(adapter_created),
+        "source11_runtime_called": False,
+        "source11_runtime_ready": False,
+        "final_summary_report_ready": False,
+        "export_ready": False,
+        "download_ready": False,
+        "public_access_ready": False,
+        "external_delivery_ready": False,
+        "b_end_ready": False,
+        "sandbox_ready": False,
+        "public_event_ready": False,
+        "frontend_ready": False,
+        "route_ready": False,
+        "production_ready": False,
+        "customer_ready": False,
+        "human_review_gate_required": True,
+        "source11_final_summary_report_runtime_requires_separate_decision": True,
+        "actual_finalsummaryreport_runtime_requires_separate_decision": True,
+        "export_download_package_runtime_requires_separate_decision": True,
+        "public_access_external_delivery_requires_separate_decision": True,
+        "b_end_report_runtime_requires_separate_decision": True,
+        "sandbox_public_event_runtime_requires_separate_decision": True,
+        "frontend_api_route_integration_requires_separate_decision": True,
+        "evidence_layer_write_allowed": False,
+        "production_case_creation_allowed": False,
+        "production_analysis_run_creation_allowed": False,
+        "generated_response_text_allowed": False,
+        "platform_action_allowed": False,
     }
 
 
@@ -902,6 +1251,10 @@ def _dedupe_blockers(blockers: list[dict[str, str]]) -> list[dict[str, str]]:
 
 def _adapter_id(source11_governance_handoff_id: str | None) -> str:
     return f"source11_handoff_finalsummaryreport_adapter_{_safe_identifier(source11_governance_handoff_id)}"
+
+
+def _boundary_adapter_id(source11_governance_handoff_id: str | None) -> str:
+    return f"source11_handoff_finalsummaryreport_boundary_adapter_{_safe_identifier(source11_governance_handoff_id)}"
 
 
 def _final_summary_report_id(adapter_id: str) -> str:
