@@ -23,7 +23,7 @@ from app.services.real_exported_package_metadata_smoke import (
 SCHEMA = "sentigraph_controlled_row_preview_v0_1"
 SUMMARY_SCHEMA = "sentigraph_controlled_row_preview_summary_v0_1"
 PHASE = "8W-7"
-APPROVAL_PHRASE = "批准 8W-7 Controlled Row Preview Implementation"
+APPROVAL_PHRASE = "APPROVE_8W_7_CONTROLLED_ROW_PREVIEW_IMPLEMENTATION"
 APPROVED_ROW_SOURCE = "evidence_items.jsonl"
 APPROVED_ROW_FILE = APPROVED_TARGET_DIR / APPROVED_ROW_SOURCE
 READY_STATUS = "row_preview_ready_for_manual_review"

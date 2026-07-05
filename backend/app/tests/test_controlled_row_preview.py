@@ -21,7 +21,8 @@ from app.services.controlled_row_preview import (
 )
 
 
-EXPECTED_APPROVAL_PHRASE = "批准 8W-7 Controlled Row Preview Implementation"
+EXPECTED_APPROVAL_PHRASE = "APPROVE_8W_7_CONTROLLED_ROW_PREVIEW_IMPLEMENTATION"
+OLD_CHINESE_APPROVAL_PHRASE = "批准 8W-7 Controlled Row Preview Implementation"
 MOJIBAKE_APPROVAL_PHRASE = "\u93b5\u7470\u566f 8W-7 Controlled Row Preview Implementation"
 
 FORBIDDEN_SENTINELS = (
@@ -149,8 +150,9 @@ def _assert_blocked(preview: dict[str, object], expected_reason: str) -> None:
     _assert_safe_output(preview)
 
 
-def test_exact_approval_phrase_is_correct_chinese_text() -> None:
+def test_exact_approval_phrase_is_canonical_ascii_text() -> None:
     assert APPROVAL_PHRASE == EXPECTED_APPROVAL_PHRASE
+    assert APPROVAL_PHRASE.isascii()
 
     preview = build_controlled_row_preview(
         _safe_8w4_boundary(),
@@ -235,7 +237,10 @@ def test_ready_warn_path_from_safe_8w4_boundary() -> None:
     _assert_safe_output(preview)
 
 
-@pytest.mark.parametrize("approval_phrase", [None, "", "wrong approval", MOJIBAKE_APPROVAL_PHRASE])
+@pytest.mark.parametrize(
+    "approval_phrase",
+    [None, "", "wrong approval", OLD_CHINESE_APPROVAL_PHRASE, MOJIBAKE_APPROVAL_PHRASE],
+)
 def test_exact_approval_required_before_opening_rows(
     approval_phrase: str | None,
     monkeypatch: pytest.MonkeyPatch,
@@ -244,11 +249,13 @@ def test_exact_approval_required_before_opening_rows(
         raise AssertionError("row source must not open without exact approval")
 
     monkeypatch.setattr(Path, "open", blocked_open)
+    monkeypatch.setattr(Path, "read_text", blocked_open)
 
     preview = build_controlled_row_preview(_safe_8w4_boundary(), approval_phrase=approval_phrase)
 
     _assert_blocked(preview, "blocked_missing_exact_approval")
     assert preview["runtime_side_effects"]["parsed_evidence_items_jsonl"] is False
+    assert preview["runtime_side_effects"]["opened_approved_evidence_items_jsonl"] is False
 
 
 @pytest.mark.parametrize(

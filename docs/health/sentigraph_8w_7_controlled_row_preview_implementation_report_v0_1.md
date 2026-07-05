@@ -124,9 +124,15 @@ docs_project_sources_created = no
 
 ## B. Exact Approval and Approved Row Source
 
-Exact approval phrase used:
+Historical exact approval phrase recorded by 8W-7 and superseded by 8Y-3A:
 
 `批准 8W-7 Controlled Row Preview Implementation`
+
+8Y-3A supersedes that phrase with:
+
+`APPROVE_8W_7_CONTROLLED_ROW_PREVIEW_IMPLEMENTATION`
+
+The old Chinese phrase and any mojibake variant must be rejected before any row source opens after 8Y-3A. This historical report remains as implementation history and should be read together with the 8Y-3A repair report.
 
 Approved package identity:
 
