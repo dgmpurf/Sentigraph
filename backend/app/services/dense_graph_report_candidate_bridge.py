@@ -28,6 +28,10 @@ READINESS_FALSE_FIELDS = {
     "production_ready",
 }
 
+OPTIONAL_FALSE_FIELDS = {
+    "customer_ready",
+}
+
 REQUIRED_FALSE_FIELDS = {
     "frontend_integration_approved",
     "route_changed",
@@ -263,6 +267,7 @@ def _candidate_object(
         "route_ready": False,
         "frontend_ready": False,
         "production_ready": False,
+        "customer_ready": False,
         "boundary_flags": _boundary_flags(),
         "runtime_side_effects": _runtime_side_effects(),
         "warnings": _safe_string_list(integration.get("warnings")),
@@ -292,9 +297,15 @@ def _collect_blockers(value: dict[str, Any]) -> list[dict[str, str]]:
         for field in sorted(READINESS_FALSE_FIELDS):
             if dense_graph_summary.get(field) is not False:
                 blockers.append(_blocker(f"dense_graph_summary_not_false:{field}", "side_effect"))
+        for field in sorted(OPTIONAL_FALSE_FIELDS):
+            if field in dense_graph_summary and dense_graph_summary.get(field) is not False:
+                blockers.append(_blocker(f"dense_graph_summary_not_false:{field}", "side_effect"))
 
     for field in sorted(REQUIRED_FALSE_FIELDS):
         if value.get(field) is not False:
+            blockers.append(_blocker(f"integration_flag_not_false:{field}", "side_effect"))
+    for field in sorted(OPTIONAL_FALSE_FIELDS):
+        if field in value and value.get(field) is not False:
             blockers.append(_blocker(f"integration_flag_not_false:{field}", "side_effect"))
 
     boundary_flags = value.get("boundary_flags")
