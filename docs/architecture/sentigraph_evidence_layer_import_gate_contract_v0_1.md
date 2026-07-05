@@ -1,310 +1,272 @@
 # Sentigraph Evidence Layer Import Gate Contract v0.1
 
-## A. Contract Purpose
+## Purpose
 
-This contract defines the 8W-15 docs-only boundary for considering a future Evidence Layer Import Candidate helper.
+This contract records the 8Y-5 Evidence Layer Import Gate boundary for Route C.
 
-It does not implement helper logic, create Evidence Layer Import Candidates, create EvidenceItems, write Evidence Layer, create production cases, create production `analysis_run` records, create Review Queue Items, create production review queue items, add route/API/frontend behavior, generate reports, generate Sandbox/public event outputs, or parse additional row files.
+It decides whether the 8Y-4 controlled redacted review-only row preview output may later be considered as input for a controlled Evidence Layer import candidate smoke.
 
-The contract exists to prevent local review-queue-candidate-shaped boundary objects from being misread as production evidence.
+This contract is docs-only and gate-only. It does not implement import, create import candidates, create EvidenceItem-shaped candidates, write Evidence Layer, create production EvidenceItems, create production cases, create production `analysis_run` records, create Review Queue runtime, add route/API/frontend behavior, call Source 11 runtime, create actual FinalSummaryReport runtime output, generate B-end/Sandbox/export/public-delivery runtime, call real APIs/LLMs, run provider/collector jobs, fetch URLs, scrape pages, inspect private collector source, or read arbitrary exchange/package directories.
 
-## B. Source Object Allowed from 8W-13 / 8W-14
+## Status Fields
 
-The only allowed source for a future Evidence Layer Import Candidate helper discussion is the 8W-13 local review queue candidate set already accepted by 8W-14:
+- phase: 8Y-5
+- decision: blocked
+- privacy_issue_stop: no
+- docs_only: yes
+- gate_only: yes
+- backend_code_changed: no
+- tests_changed: no
+- route_changed: no
+- frontend_changed: no
+- runtime_changed: no
+- import_implemented: no
+- import_candidate_created: no
+- evidence_item_shaped_candidate_created: no
+- evidence_layer_write: no
+- production_evidence_item_created: no
+- production_case_created: no
+- production_analysis_run_created: no
+- production_analysis_result_creation_authorized: no
+- review_queue_runtime_used: no
+- source11_runtime_called: no
+- actual_final_summary_report_created: no
+- b_end_report_runtime_generated: no
+- sandbox_public_event_runtime_generated: no
+- export_download_public_delivery_created: no
+- source_files_created: no
+- docs_project_sources_created: no
+- selected_next_boundary_option: pause_or_blocked_before_controlled_evidence_layer_import_candidate_smoke
+- future_8y6_exact_approval_phrase_required: yes, if reopened
+- future_8y6_exact_approval_phrase_active: no
+- source_update_recommended_after_commit: no
+- source11_update_recommended: no
+- recommended_tag: no
 
-`sentigraph_controlled_review_queue_candidate_set_v0_1`
+## Source Object Contract
 
-Required source facts:
+8Y-5 may consider only the 8Y-4 redacted review-only row preview output as a future source candidate for governance discussion.
 
-- 8W-13 decision is `ready`
-- 8W-14 decision is `ready`
-- 8W-14 selected `ready_for_8W_15_evidence_layer_import_gate_decision_docs_only`
-- review queue candidate set status is `review_queue_candidate_set_warn_manual_review_required`
-- review queue candidate item schema is `sentigraph_controlled_review_queue_candidate_v0_1`
-- review queue candidate count is `5`
-- source evidence candidate count is `5`
-- warning count is `1`
-- human review required is `yes`
-- EvidenceItems created is `false`
-- Evidence Layer write is `false`
-- Review Queue Items created is `false`
-- production review queue items created is `false`
-- production cases created is `false`
-- production `analysis_run` records created is `false`
-- route/API/frontend behavior added is `false`
-- additional row parsing performed is `false`
+Required source envelope:
 
-No original row file, collector raw output, exchange directory, Evidence Layer record, production review queue state, frontend state, route state, public URL, signed URL, download package, external delivery, final delivery, or customer-facing output is an approved source for this gate.
+- schema: `sentigraph_controlled_row_preview_v0_1` or existing safe equivalent
+- preview mode: `review_only_redacted_preview` or equivalent
+- approved source: `evidence_items.jsonl` only in approved controlled backend test path
+- row source policy: `single_approved_jsonl_source_only`
+- row limit enforced: true
+- raw rows exposed: false
+- raw comments exposed: false
+- raw identities exposed: false
+- author names or profile URLs exposed: false
+- secrets read: false
+- human review required: true
+- warning/manual-review preserved: true
+- no automatic trust upgrade: true
+- Evidence Layer write: false
+- production EvidenceItem created: false
+- production case created: false
+- production `analysis_run` created: false
+- Review Queue runtime used: false
+- Source 11 runtime called: false
+- actual FinalSummaryReport runtime created: false
 
-## C. Future Local Evidence-layer-import-candidate-shaped Object Definition
+The source object is not an Evidence Layer record, not production evidence, not officially verified status, not production case input, not production `analysis_run` input, not analysis-ready material, not report-ready material, and not public/customer-facing output.
 
-A future Evidence Layer Import Candidate helper, if explicitly approved, may create local evidence-layer-import-candidate-shaped boundary objects with a schema similar to:
+## Existing Surface Classification
 
-`sentigraph_controlled_evidence_layer_import_candidate_set_v0_1`
+8Y-5 classifies relevant existing surfaces as follows:
 
-Candidate set fields should include only safe, minimized metadata:
+| Surface | Kind | Relation to Evidence Layer | Side effects | Contract finding |
+| --- | --- | --- | --- | --- |
+| `controlled_row_preview` helper | backend_helper | no_import | approved controlled row read only | Valid 8Y-4 source preview surface; not import. |
+| 8Y-4 smoke test | test_only | no_import | controlled test path only | Valid proof of redacted preview envelope; not import. |
+| `controlled_evidence_candidate` helper | backend_helper | import_candidate_only | no_persistence | Intermediate candidate helper from row preview; not Evidence Layer import. |
+| `controlled_review_queue_candidate` helper | backend_helper | review_only_candidate | no_persistence | Intermediate review-queue-candidate helper; not Review Queue runtime. |
+| `controlled_evidence_layer_import_candidate` helper | backend_helper | import_candidate_only | no_persistence | Existing import candidate helper expects review queue candidate set, not direct row preview. |
+| `controlled_evidence_layer_write_candidate` helper | backend_helper | evidence_layer_write_possible only as candidate boundary | no_persistence | Later-stage candidate; out of scope. |
+| `controlled_production_evidence_import_candidate` helper | backend_helper | production_write_possible only as candidate boundary | no_persistence | Later-stage candidate; out of scope. |
+| `controlled_evidenceitem_evidence_layer_write_runtime` helper | backend_helper/runtime_helper | Evidence Layer write possible in controlled path | local controlled test path only | Too far downstream; hard blocker for 8Y-6. |
+| `evidence.py` schema | backend_schema | production EvidenceItem schema | unknown unless called | Must not be used for production object creation in 8Y-6. |
+| `evidence_import.py` service | backend_service | import/runtime possible | unknown unless called | Must not be called by 8Y-6. |
+| `evidence_ingestion.py` service | backend_service | ingestion/runtime possible | unknown unless called | Must not be called by 8Y-6. |
+| existing Evidence Layer import docs | docs_only | governance contract | no_persistence | Useful background only; does not approve runtime. |
 
-- candidate set schema
-- candidate set id
-- source review queue candidate set schema
-- source review queue candidate set status
-- evidence layer import candidate count
-- source review queue candidate count
-- warning count
-- human review required
-- selected sample boundary
-- import blocker list
-- safety flags
-- production side-effect flags
-- candidate item summaries
+## Gate Interpretation
 
-Candidate item fields should be derived only from safe review-queue-candidate fields:
+8Y-5 is an Evidence Layer import gate, not import execution.
 
-- candidate schema
-- candidate id
-- source review queue candidate id
-- source evidence candidate id
-- preview hash
-- source URL presence flag or already-safe source URL field if present in the source candidate
-- title or label preview if already redacted and safe
-- redacted text snippet if already present in the source candidate
-- redaction status
-- warning labels
-- human review required flag
-- trust boundary label
-- import readiness blocker list
-- no-production-side-effect flags
+The gate finding is blocked because the audited safe helper chain does not provide a direct, already-governed transformation from 8Y-4 row preview to Evidence Layer import candidate.
 
-The helper must not inspect or reconstruct raw comments, raw identities, private collector rows, real exchange directory content, original package rows, `evidence_items.jsonl`, `evidence_items.csv`, `source_manifest.jsonl`, or `collection_log.jsonl`.
+The historical chain is:
 
-## D. Evidence Layer Import Candidate is not EvidenceItem
+`row preview -> evidence candidate -> review queue candidate -> Evidence Layer import candidate`
 
-An Evidence Layer Import Candidate is not an EvidenceItem.
+8Y-5 does not decide whether future Route C should reuse that multi-step chain or define a new direct redacted-row-preview-to-import-candidate adapter. That choice requires another docs-only source-path decision before implementation.
 
-It must not:
+## Future 8Y-6 Source Requirements If Reopened
 
-- use the production EvidenceItem schema as if imported
-- create EvidenceItems
-- create production EvidenceItems
-- obtain EvidenceItem ids
-- imply source verification
-- imply trust upgrade
-- imply Evidence Layer readiness
-- imply analysis readiness
+Future 8Y-6 may only use:
 
-Any EvidenceItem creation requires a later separate gate and explicit implementation approval.
+- the 8Y-4 redacted review-only row preview output, or
+- an equivalent safe summary that preserves the same redaction, row bound, warning/manual-review, and no-side-effect flags.
 
-## E. Evidence Layer Import Candidate is not Evidence Layer Write
+Future 8Y-6 must not use:
 
-Evidence Layer Import Candidate creation, if ever approved, is still not Evidence Layer write.
+- arbitrary package directory
+- arbitrary real exchange directory
+- private collector source
+- private collector raw output
+- source manifest rows
+- collection log rows
+- CSV rows
+- original package rows
+- raw comments
+- raw identities
+- actual author names
+- actual profile URLs
+- route/API request objects
+- frontend state
+- Evidence Layer records
+- production case objects
+- production `analysis_run` objects
+- Source 11 outputs
+- FinalSummaryReport outputs
 
-It must not:
+## Future 8Y-6 Action Constraints If Reopened
 
-- write Evidence Layer
-- mutate Evidence Layer state
-- persist production evidence
-- set production evidence ids
-- mark evidence as imported
-- mark evidence as analysis-included
-- mark evidence as report-ready
+Future 8Y-6 may be considered only as:
 
-Any Evidence Layer write requires a later separate gate and explicit implementation approval.
-
-## F. Evidence Layer Import Candidate is not Production EvidenceItem
-
-The candidate object must remain local, bounded, and non-production.
-
-It is not a production EvidenceItem, not a production import, not a production review artifact, not a production case artifact, and not production `analysis_run` input.
-
-If a future helper emits ids, those ids must be candidate ids only. They must not be EvidenceItem ids, production review queue item ids, production case ids, production `analysis_run` ids, report ids, Sandbox ids, public event ids, download ids, public access ids, or delivery ids.
-
-## G. Evidence Layer Import Candidate is not Production Case / analysis_run Input
-
-Evidence Layer Import Candidates must not be treated as:
-
-- production case input
-- production `analysis_run` input
-- analysis-ready evidence
-- report-ready evidence
-- B-end report runtime input
-- Sandbox/public event runtime input
-- generated response input
-- customer-facing output
-
-Any future production case, production `analysis_run`, report, Sandbox, public event, export, download, public access, external delivery, or final delivery transition requires a separate gate.
-
-## H. Evidence Layer Import Candidate is not Analysis-ready Evidence
-
-Candidate creation must not produce analysis readiness.
-
-The future helper must preserve:
-
-- `human_review_required = true`
-- warning/manual-review state
-- selected sample limitation
-- no official verification
-- no causal proof
-- no full-web coverage
-- no full-platform coverage
-- no full-thread coverage
+- backend-only
+- test-first
+- controlled smoke only
+- local controlled import candidate object only
+- review-only
+- candidate-only
+- human-review-required
+- warning-preserving
+- selected-sample-only
 - no automatic trust upgrade
-- no automatic inclusion in analysis
-
-## I. Redaction / Minimization Carry-forward
-
-Future candidate objects must carry forward the same minimization posture as 8W-10 and 8W-13.
-
-Allowed safe fields are only those already present in the local review queue candidate object and already redacted or minimized.
-
-Forbidden fields include:
-
-- raw author id
-- raw author name
-- profile URL
-- private message
-- email
-- phone
-- token
-- cookie
-- session
-- password-like value
-- API key
-- raw comment body beyond existing redacted preview
-- original package row content
-- collector raw row content
-
-Any detection of forbidden fields must block candidate creation.
-
-## J. Warning / Manual-review Carry-forward
-
-The source warning state is part of the contract:
-
-- `warning_count = 1`
-- `human_review_required = true`
-- `review_queue_candidate_set_status = review_queue_candidate_set_warn_manual_review_required`
-
-A future helper must preserve this warning state and surface it in the candidate set.
-
-The warning state must not be cleared by transformation and must not be used as evidence verification, trust upgrade, Evidence Layer readiness, production readiness, analysis readiness, report readiness, public readiness, or customer readiness.
-
-## K. Future Blocker Categories
-
-Any future helper must block on:
-
-- missing exact approval phrase
-- wrong exact approval phrase
-- mojibake approval phrase
-- source schema mismatch
-- source status mismatch
-- warning/manual-review state missing
-- human review required flag missing
-- candidate count mismatch
-- forbidden raw identity field
-- forbidden secret-like field
-- source object already marked as EvidenceItem
-- source object already marked as Evidence Layer write
-- source object already marked as production case
-- source object already marked as production `analysis_run`
-- request to parse `evidence_items.jsonl`
-- request to parse `evidence_items.csv`
-- request to parse `source_manifest.jsonl`
-- request to parse `collection_log.jsonl`
-- request to inspect private collector source
-- request to read real exchange directory
-- request to fetch URL or scrape page
-- request to call real API or real LLM
-- request to create route/API/frontend behavior
-- request to generate B-end report, Sandbox/public event, download package, public access, external delivery, or final delivery
-
-## L. Future Test Expectations
-
-If 8W-16 is explicitly approved, tests should prove:
-
-- exact approval phrase is required before candidate creation
-- mojibake approval phrase is rejected
-- missing approval phrase is rejected
-- wrong approval phrase is rejected
-- source schema mismatch blocks
-- source status mismatch blocks
-- warning count must remain `1`
-- human review required must remain true
-- candidate count must match source count
-- forbidden raw identity fields block
-- forbidden secret-like fields block
-- EvidenceItem fields are not produced
-- Evidence Layer write flags remain false
-- production case flags remain false
-- production `analysis_run` flags remain false
-- Review Queue Item flags remain false
-- route/API/frontend flags remain false
-- B-end report, Sandbox/public event, download, public access, external delivery, and final delivery flags remain false
-- no additional row parsing is performed
-- no private collector source is inspected
-- no real exchange directory is read
-- no real API or real LLM is called
-- safe summary excludes redacted snippet bodies unless explicitly allowed by the safe summary contract
-
-## M. Approval Protocol
-
-Future 8W-16, if requested, must require this exact approval phrase:
-
-`批准 8W-16 Controlled Evidence Layer Import Candidate Helper Implementation`
-
-This phrase is not active implementation approval in 8W-15.
-
-8W-15 only defines the future approval phrase and the boundaries a future implementation must preserve.
-
-## N. Evidence Layer / Production Boundary
-
-Evidence Layer Import Candidate creation is still outside Evidence Layer.
 
 It must not:
 
-- create EvidenceItems
-- create production EvidenceItems
 - write Evidence Layer
-- create production cases
-- create production `analysis_run` records
-- create Review Queue Items
-- create production review queue items
-- run review queue runtime
-- run analysis
-- generate report
-- generate Sandbox/public event
-- generate public URL
-- generate signed URL
-- generate download package
-- perform external delivery
-- perform final delivery
+- create production EvidenceItem
+- create production case
+- create production `analysis_run`
+- create Review Queue runtime
+- add route/API/frontend behavior
+- call Source 11 runtime
+- create actual FinalSummaryReport runtime output
+- generate B-end report runtime
+- generate Sandbox/public event runtime
+- generate export/download/public/final-delivery runtime
+- generate response text
+- call real APIs or real LLMs
+- run provider or collector jobs
+- fetch URLs
+- scrape pages
 
-The first future helper may only create local candidate-shaped boundary objects if explicitly approved.
+## Future 8Y-6 Inactive Approval Phrase
 
-## O. Forbidden Interpretations
+Future 8Y-6 exact approval phrase:
 
-This contract must not be interpreted as:
+`APPROVE_8Y_6_CONTROLLED_REDACTED_ROW_PREVIEW_EVIDENCE_LAYER_IMPORT_CANDIDATE_SMOKE`
 
-- approval to implement Evidence Layer Import logic now
-- approval to create Evidence Layer Import Candidates now
-- approval to create EvidenceItems
-- approval to write Evidence Layer
-- approval to create production EvidenceItems
-- approval to create Review Queue Items
-- approval to create production review queue items
-- approval to create production cases
-- approval to create production `analysis_run` records
-- approval to add route/API/frontend behavior
-- approval to integrate frontend
-- approval to run analysis
-- approval to generate B-end reports
-- approval to generate Sandbox/public event runtime
-- approval to generate response text
-- approval to create public URLs or signed URLs
-- approval to generate download packages
-- approval to perform public access, external delivery, or final delivery
-- approval to parse more row files
-- approval to inspect private collector source
-- approval to read real exchange directories
-- approval to call real APIs or real LLMs
-- approval to execute provider or collector jobs
+This phrase is inactive in 8Y-5. It is only a future placeholder.
 
-The only approved next boundary is a future explicitly approved, backend-only, local-only, test-first Evidence Layer Import Candidate helper consideration.
+It does not authorize implementation in 8Y-5, Evidence Layer import, import candidate creation, EvidenceItem-shaped candidate creation, Evidence Layer write, production EvidenceItem creation, production case creation, production `analysis_run` creation, Review Queue runtime, Source 11 runtime, actual FinalSummaryReport runtime output, generated response text, route/API/frontend behavior, B-end/Sandbox/export/public-delivery runtime, real API/LLM calls, provider/collector jobs, URL fetching, or scraping.
+
+## Minimum Future Output Contract If Reopened
+
+Future 8Y-6 output must preserve:
+
+- import_candidate_created may be true only inside controlled backend test path
+- import_candidate_mode = review_only_local_evidence_layer_import_candidate or safe equivalent
+- evidence_item_shaped_candidate_created may be true only as local controlled candidate object
+- evidence_layer_write = false
+- production_evidence_item_created = false
+- production_case_created = false
+- production_analysis_run_created = false
+- review_queue_runtime_used = false
+- source11_runtime_called = false
+- actual_final_summary_report_created = false
+- b_end_report_runtime_generated = false
+- sandbox_public_event_runtime_generated = false
+- export_download_public_delivery_created = false
+- generated_response_text = false
+- route_ready = false
+- frontend_ready = false
+- production_ready = false
+- customer_ready = false
+- public_ready = false
+- raw_rows_exposed = false
+- raw_comments_exposed = false
+- raw_identities_exposed = false
+- author_names_or_profile_urls_exposed = false
+- secrets_read = false
+- human_review_required = true
+- no_automatic_trust_upgrade = true
+
+## Hard Blockers
+
+Future 8Y-6 must stop if any of these are required:
+
+- no safe existing import candidate surface found
+- direct Evidence Layer write
+- production EvidenceItem creation
+- production case creation
+- production `analysis_run` creation
+- Review Queue runtime
+- route/API/frontend
+- Source 11 runtime
+- actual FinalSummaryReport runtime
+- B-end/Sandbox/export/public delivery
+- raw row/comment/identity exposure
+- author names or profile URLs as actual values
+- arbitrary real exchange directory
+- arbitrary package directory
+- private collector source inspection
+- collector job execution
+- real API/LLM/network/fetch/scrape
+- automatic trust upgrade
+- customer/public/production readiness claims
+- implementation path that bypasses the unresolved source-path decision
+
+## Relationship to Later Route C Gates
+
+If later reopened and separately approved, 8Y-6 can only create a local controlled import candidate.
+
+It cannot authorize:
+
+- production case gate
+- production case candidate smoke
+- production `analysis_run` gate
+- production `analysis_run` candidate smoke
+- Source 11 runtime
+- actual FinalSummaryReport runtime
+- report generation
+- Sandbox/public event generation
+- export/download/public/final delivery
+
+Those remain separate future gates.
+
+## Validation Contract
+
+Validation for 8Y-5 is docs-only:
+
+- `git diff --check`
+- whitespace scan for the two 8Y-5 docs
+- open-marker/mojibake scan
+- future approval phrase inactive scan
+- backend/frontend/tests/runtime/Project Source scope scan
+- forbidden positive-claim scan with matches accepted only when they are explicit no/false/boundary language
+
+Do not run pytest, frontend build, browser smoke, collector jobs, real API/LLM/network calls, URL fetching, scraping, row parsing, or exchange-directory reads for 8Y-5.
+
+## Source Sync Contract
+
+Do not update Source 11 for 8Y-5.
+
+Do not create Source files or `docs/project_sources/` files inside the repo.
+
+Source updates are not recommended after this commit unless the user separately wants a ChatGPT-side summary patch.
