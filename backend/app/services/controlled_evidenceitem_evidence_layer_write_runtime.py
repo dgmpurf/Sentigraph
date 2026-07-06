@@ -17,7 +17,7 @@ SOURCE_CANDIDATE_SCHEMA = (
 )
 PHASE = "8W-28"
 SOURCE_PHASE = "8W-25"
-APPROVAL_PHRASE = "批准 8W-28 Controlled EvidenceItem Evidence Layer Write Runtime Implementation"
+APPROVAL_PHRASE = "APPROVE_8W_28_CONTROLLED_EVIDENCEITEM_EVIDENCE_LAYER_WRITE_RUNTIME_IMPLEMENTATION"
 SOURCE_WARN_STATUS = "evidence_layer_write_candidate_set_warn_manual_review_required"
 WARN_STATUS = "evidence_layer_write_runtime_warn_manual_review_required"
 HARD_CANDIDATE_BOUND = 10

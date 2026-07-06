@@ -6,6 +6,11 @@ from pathlib import Path
 
 import pytest
 
+import app.services.analysis_request_store as analysis_request_store
+import app.services.controlled_production_analysis_run_candidate as production_analysis_run_module
+import app.services.controlled_production_case_candidate as production_case_module
+import app.services.evidence_import as evidence_import_module
+import app.services.evidence_ingestion as evidence_ingestion_module
 from app.services.controlled_evidenceitem_evidence_layer_write_runtime import (
     APPROVAL_PHRASE,
     build_controlled_evidenceitem_evidence_layer_write_runtime,
@@ -13,8 +18,9 @@ from app.services.controlled_evidenceitem_evidence_layer_write_runtime import (
 )
 
 
-EXPECTED_APPROVAL_PHRASE = "批准 8W-28 Controlled EvidenceItem Evidence Layer Write Runtime Implementation"
-MOJIBAKE_APPROVAL_PHRASE = "鎵瑰噯 8W-28 Controlled EvidenceItem Evidence Layer Write Runtime Implementation"
+EXPECTED_APPROVAL_PHRASE = "APPROVE_8W_28_CONTROLLED_EVIDENCEITEM_EVIDENCE_LAYER_WRITE_RUNTIME_IMPLEMENTATION"
+OLD_CHINESE_APPROVAL_PHRASE = "\u6279\u51c6 8W-28 Controlled EvidenceItem Evidence Layer Write Runtime Implementation"
+MOJIBAKE_APPROVAL_PHRASE = "\u93b5\u7470\u566f 8W-28 Controlled EvidenceItem Evidence Layer Write Runtime Implementation"
 ALT_MOJIBAKE_APPROVAL_PHRASE = (
     "閹电懓鍣?8W-28 Controlled EvidenceItem Evidence Layer Write Runtime Implementation"
 )
@@ -257,10 +263,36 @@ def _assert_blocked(runtime: dict[str, object], expected_reason: str) -> None:
     _assert_safe_output(runtime)
 
 
+def _fail_if_called(*args, **kwargs):
+    raise AssertionError("8W-28 phrase repair must not call production services or downstream runtime helpers")
+
+
+def _patch_forbidden_production_entrypoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(evidence_import_module, "build_imported_evidence_items", _fail_if_called)
+    monkeypatch.setattr(evidence_import_module, "build_import_commit_result", _fail_if_called)
+    monkeypatch.setattr(evidence_ingestion_module, "build_evidence_items_from_raw_data", _fail_if_called)
+    monkeypatch.setattr(evidence_ingestion_module, "normalize_manual_evidence_batch", _fail_if_called)
+    monkeypatch.setattr(evidence_ingestion_module, "build_evidence_ingestion_result", _fail_if_called)
+    monkeypatch.setattr(
+        production_case_module,
+        "build_controlled_production_case_candidate_set",
+        _fail_if_called,
+    )
+    monkeypatch.setattr(
+        production_analysis_run_module,
+        "build_controlled_production_analysis_run_candidate_set",
+        _fail_if_called,
+    )
+    monkeypatch.setattr(analysis_request_store, "create_final_summary_report", _fail_if_called)
+
+
 def test_ready_path_builds_controlled_evidence_items_and_local_write_result() -> None:
     assert APPROVAL_PHRASE == EXPECTED_APPROVAL_PHRASE
+    assert APPROVAL_PHRASE.isascii()
+    assert APPROVAL_PHRASE.startswith("APPROVE_8W_28_")
+    assert APPROVAL_PHRASE != OLD_CHINESE_APPROVAL_PHRASE
     assert APPROVAL_PHRASE != MOJIBAKE_APPROVAL_PHRASE
-    assert [hex(ord(char)) for char in APPROVAL_PHRASE[:2]] == ["0x6279", "0x51c6"]
+    assert APPROVAL_PHRASE != ALT_MOJIBAKE_APPROVAL_PHRASE
 
     runtime = build_controlled_evidenceitem_evidence_layer_write_runtime(
         _valid_write_candidate_set(),
@@ -378,6 +410,7 @@ def test_ready_path_builds_controlled_evidence_items_and_local_write_result() ->
         (None, "blocked_missing_exact_approval"),
         ("", "blocked_missing_exact_approval"),
         ("wrong approval", "blocked_wrong_exact_approval"),
+        (OLD_CHINESE_APPROVAL_PHRASE, "blocked_wrong_exact_approval"),
         (MOJIBAKE_APPROVAL_PHRASE, "blocked_wrong_exact_approval"),
         (ALT_MOJIBAKE_APPROVAL_PHRASE, "blocked_wrong_exact_approval"),
     ],
@@ -392,6 +425,7 @@ def test_exact_approval_required_before_item_construction_write_result_and_file_
 
     monkeypatch.setattr(builtins, "open", blocked_open)
     monkeypatch.setattr(Path, "open", blocked_open)
+    _patch_forbidden_production_entrypoints(monkeypatch)
 
     runtime = build_controlled_evidenceitem_evidence_layer_write_runtime(
         _valid_write_candidate_set(),
@@ -399,6 +433,27 @@ def test_exact_approval_required_before_item_construction_write_result_and_file_
     )
 
     _assert_blocked(runtime, expected_reason)
+
+
+def test_ready_path_does_not_call_general_production_services_or_downstream_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_forbidden_production_entrypoints(monkeypatch)
+
+    runtime = build_controlled_evidenceitem_evidence_layer_write_runtime(
+        _valid_write_candidate_set(),
+        exact_approval_phrase=EXPECTED_APPROVAL_PHRASE,
+    )
+
+    assert runtime["write_runtime_status"] == "evidence_layer_write_runtime_warn_manual_review_required"
+    assert runtime["controlled_evidence_item_count"] == 5
+    assert runtime["production_case_created"] is False
+    assert runtime["production_analysis_run_created"] is False
+    assert runtime["review_queue_runtime_used"] is False
+    assert runtime["route_ready"] is False
+    assert runtime["frontend_ready"] is False
+    assert runtime["human_review_required"] is True
+    assert runtime["no_automatic_trust_upgrade"] is True
 
 
 @pytest.mark.parametrize(
