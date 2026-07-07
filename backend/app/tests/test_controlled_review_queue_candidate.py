@@ -13,7 +13,8 @@ from app.services.controlled_review_queue_candidate import (
 )
 
 
-EXPECTED_APPROVAL_PHRASE = "批准 8W-13 Controlled Review Queue Candidate Helper Implementation"
+EXPECTED_APPROVAL_PHRASE = "APPROVE_8W_13_CONTROLLED_REVIEW_QUEUE_CANDIDATE_IMPLEMENTATION"
+OLD_CHINESE_APPROVAL_PHRASE = "批准 8W-13 Controlled Review Queue Candidate Helper Implementation"
 MOJIBAKE_APPROVAL_PHRASE = "鎵瑰噯 8W-13 Controlled Review Queue Candidate Helper Implementation"
 ALT_MOJIBAKE_APPROVAL_PHRASE = "閹电懓鍣?8W-13 Controlled Review Queue Candidate Helper Implementation"
 
@@ -259,6 +260,7 @@ def test_ready_path_builds_local_review_queue_candidates_without_production_side
         (None, "blocked_missing_exact_approval"),
         ("", "blocked_missing_exact_approval"),
         ("wrong approval", "blocked_wrong_exact_approval"),
+        (OLD_CHINESE_APPROVAL_PHRASE, "blocked_wrong_exact_approval"),
         (MOJIBAKE_APPROVAL_PHRASE, "blocked_wrong_exact_approval"),
         (ALT_MOJIBAKE_APPROVAL_PHRASE, "blocked_wrong_exact_approval"),
     ],

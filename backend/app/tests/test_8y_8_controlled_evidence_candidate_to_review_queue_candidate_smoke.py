@@ -427,8 +427,7 @@ def test_8y8_builds_local_review_queue_candidate_from_controlled_evidence_candid
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert ROW_PREVIEW_APPROVAL_PHRASE == "APPROVE_8W_7_CONTROLLED_ROW_PREVIEW_IMPLEMENTATION"
-    assert [hex(ord(ch)) for ch in review_queue_module.APPROVAL_PHRASE[:2]] == ["0x6279", "0x51c6"]
-    assert "8W-13 Controlled Review Queue Candidate Helper Implementation" in review_queue_module.APPROVAL_PHRASE
+    assert review_queue_module.APPROVAL_PHRASE == "APPROVE_8W_13_CONTROLLED_REVIEW_QUEUE_CANDIDATE_IMPLEMENTATION"
     _patch_forbidden_entrypoints(monkeypatch)
 
     smoke = _build_8y8_source_path_smoke(approval_phrase=EIGHT_Y8_APPROVAL_PHRASE)

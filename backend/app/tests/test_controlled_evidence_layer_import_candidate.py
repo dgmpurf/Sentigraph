@@ -13,7 +13,8 @@ from app.services.controlled_evidence_layer_import_candidate import (
 )
 
 
-EXPECTED_APPROVAL_PHRASE = "批准 8W-16 Controlled Evidence Layer Import Candidate Helper Implementation"
+EXPECTED_APPROVAL_PHRASE = "APPROVE_8W_16_CONTROLLED_EVIDENCE_LAYER_IMPORT_CANDIDATE_IMPLEMENTATION"
+OLD_CHINESE_APPROVAL_PHRASE = "批准 8W-16 Controlled Evidence Layer Import Candidate Helper Implementation"
 MOJIBAKE_APPROVAL_PHRASE = "鎵瑰噯 8W-16 Controlled Evidence Layer Import Candidate Helper Implementation"
 ALT_MOJIBAKE_APPROVAL_PHRASE = "閹电懓鍣?8W-16 Controlled Evidence Layer Import Candidate Helper Implementation"
 
@@ -301,6 +302,7 @@ def test_ready_path_builds_local_evidence_layer_import_candidates_without_produc
         (None, "blocked_missing_exact_approval"),
         ("", "blocked_missing_exact_approval"),
         ("wrong approval", "blocked_wrong_exact_approval"),
+        (OLD_CHINESE_APPROVAL_PHRASE, "blocked_wrong_exact_approval"),
         (MOJIBAKE_APPROVAL_PHRASE, "blocked_wrong_exact_approval"),
         (ALT_MOJIBAKE_APPROVAL_PHRASE, "blocked_wrong_exact_approval"),
     ],
