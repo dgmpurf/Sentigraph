@@ -537,9 +537,8 @@ def test_8y12_builds_local_write_candidate_from_controlled_import_candidate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert ROW_PREVIEW_APPROVAL_PHRASE == "APPROVE_8W_7_CONTROLLED_ROW_PREVIEW_IMPLEMENTATION"
-    assert [hex(ord(ch)) for ch in write_candidate_module.APPROVAL_PHRASE[:2]] == ["0x6279", "0x51c6"]
-    assert "8W-19 Controlled Evidence Layer Write Candidate Helper Implementation" in (
-        write_candidate_module.APPROVAL_PHRASE
+    assert write_candidate_module.APPROVAL_PHRASE == (
+        "APPROVE_8W_19_CONTROLLED_EVIDENCE_LAYER_WRITE_CANDIDATE_IMPLEMENTATION"
     )
     _patch_forbidden_entrypoints(monkeypatch)
 
