@@ -13,8 +13,11 @@ from app.services.controlled_evidence_candidate import (
 )
 
 
-EXPECTED_APPROVAL_PHRASE = "批准 8W-10 Controlled Evidence Candidate Helper Implementation"
-MOJIBAKE_APPROVAL_PHRASE = "鎵瑰噯 8W-10 Controlled Evidence Candidate Helper Implementation"
+EXPECTED_APPROVAL_PHRASE = "APPROVE_8W_10_CONTROLLED_EVIDENCE_CANDIDATE_IMPLEMENTATION"
+BATCH_APPROVAL_PHRASE = "APPROVE_8Z_10A_11_BATCH_REPAIR_CONTROLLED_EVIDENCE_CANDIDATE_HELPER_PHRASE_REGATE_AND_SMOKE"
+OLD_CHINESE_APPROVAL_PHRASE = "批准 8W-10 Controlled Evidence Candidate Helper Implementation"
+OLD_MOJIBAKE_APPROVAL_PHRASE = "鎵瑰噯 8W-10 Controlled Evidence Candidate Helper Implementation"
+OLD_GARBLED_APPROVAL_PHRASE = "閹电懓鍣?8W-10 Controlled Evidence Candidate Helper Implementation"
 
 FORBIDDEN_SENTINELS = (
     "actual-token-should-never-appear",
@@ -249,7 +252,15 @@ def test_ready_path_builds_local_candidates_without_production_side_effects() ->
 
 @pytest.mark.parametrize(
     "phrase",
-    [None, "", "wrong approval", MOJIBAKE_APPROVAL_PHRASE],
+    [
+        None,
+        "",
+        "wrong approval",
+        BATCH_APPROVAL_PHRASE,
+        OLD_CHINESE_APPROVAL_PHRASE,
+        OLD_MOJIBAKE_APPROVAL_PHRASE,
+        OLD_GARBLED_APPROVAL_PHRASE,
+    ],
 )
 def test_exact_approval_required_before_candidate_creation_and_file_access(
     phrase: str | None,
@@ -260,10 +271,21 @@ def test_exact_approval_required_before_candidate_creation_and_file_access(
 
     monkeypatch.setattr(builtins, "open", blocked_open)
     monkeypatch.setattr(Path, "open", blocked_open)
+    monkeypatch.setattr(Path, "read_text", blocked_open)
+    monkeypatch.setattr(Path, "read_bytes", blocked_open)
 
     candidate_set = build_controlled_evidence_candidate_set(
         _valid_preview(),
         exact_approval_phrase=phrase,
+    )
+
+    _assert_blocked(candidate_set, "blocked_missing_exact_approval")
+
+
+def test_batch_phrase_alone_does_not_authorize_helper() -> None:
+    candidate_set = build_controlled_evidence_candidate_set(
+        _valid_preview(),
+        exact_approval_phrase=BATCH_APPROVAL_PHRASE,
     )
 
     _assert_blocked(candidate_set, "blocked_missing_exact_approval")

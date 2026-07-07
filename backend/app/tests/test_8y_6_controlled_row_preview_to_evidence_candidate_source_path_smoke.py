@@ -28,8 +28,16 @@ EIGHT_Y6_APPROVAL_PHRASE = "APPROVE_8Y_6_CONTROLLED_ROW_PREVIEW_TO_EVIDENCE_CAND
 OLD_DIRECT_IMPORT_APPROVAL_PHRASE = (
     "APPROVE_8Y_6_CONTROLLED_REDACTED_ROW_PREVIEW_EVIDENCE_LAYER_IMPORT_CANDIDATE_SMOKE"
 )
-EVIDENCE_CANDIDATE_APPROVAL_PHRASE = "批准 8W-10 Controlled Evidence Candidate Helper Implementation"
-MOJIBAKE_EVIDENCE_CANDIDATE_APPROVAL_PHRASE = "鎵瑰噯 8W-10 Controlled Evidence Candidate Helper Implementation"
+EVIDENCE_CANDIDATE_APPROVAL_PHRASE = "APPROVE_8W_10_CONTROLLED_EVIDENCE_CANDIDATE_IMPLEMENTATION"
+OLD_CHINESE_EVIDENCE_CANDIDATE_APPROVAL_PHRASE = (
+    "批准 8W-10 Controlled Evidence Candidate Helper Implementation"
+)
+OLD_MOJIBAKE_EVIDENCE_CANDIDATE_APPROVAL_PHRASE = (
+    "鎵瑰噯 8W-10 Controlled Evidence Candidate Helper Implementation"
+)
+OLD_GARBLED_EVIDENCE_CANDIDATE_APPROVAL_PHRASE = (
+    "閹电懓鍣?8W-10 Controlled Evidence Candidate Helper Implementation"
+)
 
 SOURCE_PREVIEW_BLOCKED_TRUE_FLAGS = {
     "raw_rows_exposed",
@@ -369,7 +377,9 @@ def test_8y6_builds_local_evidence_candidate_from_controlled_row_preview(
 ) -> None:
     assert ROW_PREVIEW_APPROVAL_PHRASE == "APPROVE_8W_7_CONTROLLED_ROW_PREVIEW_IMPLEMENTATION"
     assert evidence_candidate_module.APPROVAL_PHRASE == EVIDENCE_CANDIDATE_APPROVAL_PHRASE
-    assert evidence_candidate_module.APPROVAL_PHRASE != MOJIBAKE_EVIDENCE_CANDIDATE_APPROVAL_PHRASE
+    assert evidence_candidate_module.APPROVAL_PHRASE != OLD_CHINESE_EVIDENCE_CANDIDATE_APPROVAL_PHRASE
+    assert evidence_candidate_module.APPROVAL_PHRASE != OLD_MOJIBAKE_EVIDENCE_CANDIDATE_APPROVAL_PHRASE
+    assert evidence_candidate_module.APPROVAL_PHRASE != OLD_GARBLED_EVIDENCE_CANDIDATE_APPROVAL_PHRASE
 
     monkeypatch.setattr(review_queue_module, "build_controlled_review_queue_candidate_set", _fail_if_called)
     monkeypatch.setattr(import_candidate_module, "build_controlled_evidence_layer_import_candidate_set", _fail_if_called)
@@ -426,6 +436,30 @@ def test_8y6_phrase_required_before_row_open_or_candidate_creation(
     assert smoke["blockers"] == ["blocked_missing_exact_8y6_approval"]
     _assert_no_production_side_effects(smoke)
     _assert_no_forbidden_output(smoke)
+
+
+@pytest.mark.parametrize(
+    "helper_phrase",
+    [
+        None,
+        "",
+        "wrong helper approval",
+        OLD_CHINESE_EVIDENCE_CANDIDATE_APPROVAL_PHRASE,
+        OLD_MOJIBAKE_EVIDENCE_CANDIDATE_APPROVAL_PHRASE,
+        OLD_GARBLED_EVIDENCE_CANDIDATE_APPROVAL_PHRASE,
+    ],
+)
+def test_old_or_missing_evidence_candidate_helper_phrase_is_rejected(helper_phrase: str | None) -> None:
+    candidate_set = evidence_candidate_module.build_controlled_evidence_candidate_set(
+        _safe_row_preview(),
+        exact_approval_phrase=helper_phrase,
+    )
+
+    assert candidate_set["candidate_set_status"].startswith("blocked_")
+    assert candidate_set["evidence_candidate_created"] is False
+    assert candidate_set["candidate_count"] == 0
+    assert candidate_set["blockers"] == ["blocked_missing_exact_approval"]
+    _assert_no_forbidden_output(candidate_set)
 
 
 @pytest.mark.parametrize(

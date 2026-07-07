@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import builtins
+import importlib
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -552,13 +554,33 @@ def install_exact_synthetic_file_guard(
 
 def install_no_downstream_import_guard(monkeypatch: pytest.MonkeyPatch) -> None:
     original_import = builtins.__import__
+    original_import_module = importlib.import_module
 
     def guarded_import(name: str, *args: Any, **kwargs: Any):
-        if name.startswith(DISALLOWED_IMPORT_PREFIXES):
+        fromlist = kwargs.get("fromlist")
+        if len(args) >= 4:
+            fromlist = args[3]
+        requested_names = [name]
+        if fromlist:
+            requested_names.extend(f"{name}.{item}" for item in fromlist if isinstance(item, str))
+        if any(_is_disallowed_import(requested_name) for requested_name in requested_names):
             raise AssertionError(f"disallowed downstream import attempted: {name}")
         return original_import(name, *args, **kwargs)
 
+    def guarded_import_module(name: str, package: str | None = None):
+        if _is_disallowed_import(name):
+            raise AssertionError(f"disallowed downstream import_module attempted: {name}")
+        return original_import_module(name, package=package)
+
     monkeypatch.setattr(builtins, "__import__", guarded_import)
+    monkeypatch.setattr(importlib, "import_module", guarded_import_module)
+
+
+def _is_disallowed_import(module_name: str) -> bool:
+    return any(
+        module_name == prefix or module_name.startswith(f"{prefix}.")
+        for prefix in DISALLOWED_IMPORT_PREFIXES
+    )
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -814,12 +836,17 @@ def test_8z9_does_not_import_downstream_route_c_or_collector_helpers(
     opened_reads: list[Path] = []
     install_exact_synthetic_file_guard(monkeypatch, tmp_path / row_preview_module.APPROVED_ROW_SOURCE, opened_reads)
     install_no_downstream_import_guard(monkeypatch)
+    before_modules = set(sys.modules)
 
     result = build_8z9_controlled_route_c_row_preview_smoke(tmp_path=tmp_path, monkeypatch=monkeypatch)
 
     assert result["decision"] == "ready"
-    for module_name in DISALLOWED_IMPORT_PREFIXES:
-        assert module_name not in __import__("sys").modules
+    new_disallowed_modules = sorted(
+        module_name
+        for module_name in set(sys.modules) - before_modules
+        if _is_disallowed_import(module_name)
+    )
+    assert new_disallowed_modules == []
     assert_ready_side_effects_false(result)
 
 
