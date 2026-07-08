@@ -12,13 +12,85 @@ SAFETY_TEST_PLAN_DOC = REPO_ROOT / "docs/architecture/sentigraph_internal_alpha_
 DOC_PATHS = [PLANNING_DOC, CONTRACT_DOC, SAFETY_TEST_PLAN_DOC]
 
 APPROVAL_PHRASE_8Z18 = "APPROVE_8Z_18_INTERNAL_ALPHA_REVIEW_CONSOLE_SAFETY_CONTRACT_TESTS_ONLY"
+APPROVAL_PHRASE_8Z22 = "APPROVE_8Z_22_INTERNAL_ALPHA_REVIEW_CONSOLE_DISABLED_BACKEND_ROUTE_SKELETON_SMOKE"
+
+ALLOWED_8Z22_ROUTE_RELATIVE_PATH = "backend/app/api/v1/routes/internal_alpha_review_console.py"
+ALLOWED_8Z22_ROUTE_PATH = REPO_ROOT / ALLOWED_8Z22_ROUTE_RELATIVE_PATH
 
 FORBIDDEN_IMPLEMENTATION_PATHS = [
-    "backend/app/api/v1/routes/internal_alpha_review_console.py",
     "backend/app/api/v1/routes/review_console.py",
     "frontend/src/pages/InternalAlphaReviewConsole.jsx",
     "frontend/src/pages/ReviewConsole.jsx",
     "frontend/src/components/internalAlphaReviewConsole",
+]
+
+ALLOWED_8Z22_ROUTE_REQUIRED_FRAGMENTS = [
+    'ENV_FLAG = "SENTIGRAPH_INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_ENABLED"',
+    'ROUTE_MODE = "disabled_by_default_internal_safe_projection_route_skeleton"',
+    'ALLOWED_PROJECTION_IDS = {',
+    '@router.get("/projections/{projection_id}")',
+    'build_internal_alpha_review_console_safe_metadata_projection',
+    'exact_approval_phrase=PROJECTION_APPROVAL_PHRASE',
+    'return _safe_error("route_disabled", projection_id=None)',
+    'return _safe_error("unsupported_projection", projection_id="unsupported")',
+    '"safe_metadata_only": True',
+    '"label_only_operator_outcomes": True',
+    '"human_review_required": True',
+    '"no_automatic_trust_upgrade": True',
+    '"route_ready": "skeleton_only"',
+    '"frontend_ready": False',
+    '"runtime_ready": False',
+    '"public_ready": False',
+    '"production_ready": False',
+    '"actual_write_enabled": False',
+    '"production_object_enabled": False',
+    '"review_queue_runtime_enabled": False',
+    '"source11_runtime_enabled": False',
+    '"finalsummaryreport_runtime_enabled": False',
+]
+
+ALLOWED_8Z22_ROUTE_FORBIDDEN_TERMS = [
+    "@router.post",
+    "@router.put",
+    "@router.patch",
+    "@router.delete",
+    "FileResponse",
+    "StreamingResponse",
+    "zipfile",
+    "public_url",
+    "signed_url",
+    "file_bytes",
+    "file bytes",
+    "external_delivery",
+    "send_email",
+    "object_storage",
+    "portal_publication",
+    "evidence_items.jsonl",
+    "evidence_items.csv",
+    "source_manifest",
+    "collection_log",
+    "response_text",
+    "generated_public_message",
+    "target_user_list",
+    "persuasion_score",
+    "truth_score",
+    "official_verified",
+    "prediction_probability",
+    "psychological_profile",
+    "personality_diagnosis",
+    "controlled_row_preview",
+    "controlled_evidence_candidate",
+    "controlled_review_queue_candidate",
+    "controlled_evidence_layer_import_candidate",
+    "controlled_evidence_layer_write_candidate",
+    "controlled_evidenceitem_evidence_layer_write_runtime",
+    "private_collector_package_resolver",
+    "private_collector_provider_result_reader",
+    "local_exchange_reader",
+    "private_collector_review_only_staging",
+    APPROVAL_PHRASE_8Z22,
+    '"approval_phrase"',
+    "approval_phrase: str",
 ]
 
 FORBIDDEN_PUBLIC_ALIASES = [
@@ -131,6 +203,26 @@ def _source_files_for_static_scan() -> list[Path]:
     return files
 
 
+def _source_files_excluding_allowed_8z22_route() -> list[Path]:
+    return [path for path in _source_files_for_static_scan() if path != ALLOWED_8Z22_ROUTE_PATH]
+
+
+def _assert_allowed_8z22_route_skeleton_remains_narrow() -> None:
+    if not ALLOWED_8Z22_ROUTE_PATH.exists():
+        return
+
+    text = _read(ALLOWED_8Z22_ROUTE_PATH)
+    lower_text = _lower(text)
+
+    for fragment in ALLOWED_8Z22_ROUTE_REQUIRED_FRAGMENTS:
+        assert fragment in text, fragment
+
+    for forbidden in ALLOWED_8Z22_ROUTE_FORBIDDEN_TERMS:
+        assert _lower(forbidden) not in lower_text, forbidden
+
+    assert "internal_alpha_review_console_safe_metadata_projection" in text
+
+
 def test_8z17_planning_docs_exist_and_remain_docs_only_contracts() -> None:
     for path in DOC_PATHS:
         assert path.exists(), path
@@ -195,7 +287,9 @@ def test_no_current_review_console_implementation_surface_exists() -> None:
     for relative_path in FORBIDDEN_IMPLEMENTATION_PATHS:
         assert not (REPO_ROOT / relative_path).exists(), relative_path
 
-    active_text = "\n".join(_read(path) for path in _source_files_for_static_scan())
+    _assert_allowed_8z22_route_skeleton_remains_narrow()
+
+    active_text = "\n".join(_read(path) for path in _source_files_excluding_allowed_8z22_route())
     active_lower = active_text.casefold()
     assert "internal-alpha-review-console" not in active_lower
     assert "review-console" not in active_lower
