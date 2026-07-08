@@ -3188,6 +3188,69 @@ body {
   color: #c9d4ea;
 }
 
+.internal-alpha-review-shell-page {
+  color: #f4f7fb;
+}
+
+.internal-alpha-review-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.internal-alpha-review-hero > div,
+.internal-alpha-review-card,
+.internal-alpha-review-status-card {
+  border-color: rgba(66, 245, 215, 0.22);
+  background:
+    radial-gradient(circle at 16% 16%, rgba(66, 245, 215, 0.09), transparent 34%),
+    linear-gradient(140deg, rgba(120, 166, 255, 0.07), transparent 48%),
+    rgba(17, 19, 26, 0.88);
+}
+
+.internal-alpha-review-hero > div {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 28px;
+  border: 1px solid rgba(66, 245, 215, 0.22);
+  border-radius: 8px;
+}
+
+.internal-alpha-review-hero h1 {
+  margin: 14px 0 12px;
+  font-size: 36px;
+  line-height: 1.14;
+  letter-spacing: 0;
+}
+
+.internal-alpha-review-hero p,
+.internal-alpha-review-card p {
+  color: #c9d4ea;
+  line-height: 1.68;
+}
+
+.internal-alpha-review-status-card .ant-card-body {
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.internal-alpha-review-status-card h2 {
+  margin: 0;
+  color: #42f5d7;
+  font-size: 46px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.internal-alpha-review-boundary-alert {
+  border-color: rgba(66, 245, 215, 0.24);
+  background: rgba(66, 245, 215, 0.06);
+}
+
 .external-collector-recommended-card {
   border-color: rgba(66, 245, 215, 0.38);
   box-shadow: 0 0 30px rgba(66, 245, 215, 0.1);

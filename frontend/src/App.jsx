@@ -68,6 +68,7 @@ const FALLBACK_PLATFORM_OPTIONS = [
 const STATIC_PUBLIC_PAGES = [
   'businessReportDongluSunjihaiSample',
   'businessReportSample',
+  'internalAlphaReviewConsole',
   'opinionEcosystem',
   'publicDemoGuide',
   'publicEventPlaza',
@@ -115,6 +116,10 @@ const OpinionEcosystemSandbox = lazyNamed(
   () => import('./pages/OpinionEcosystemSandbox.jsx'),
   'OpinionEcosystemSandbox',
 )
+const InternalAlphaReviewConsole = lazyNamed(
+  () => import('./pages/InternalAlphaReviewConsole.jsx'),
+  'InternalAlphaReviewConsole',
+)
 
 function pageFromHash() {
   const hash = window.location.hash.split('?')[0]
@@ -128,6 +133,7 @@ function pageFromHash() {
   if (hash === '#/opinion-ecosystem') return 'opinionEcosystem'
   if (hash === '#/external-collector') return 'externalCollectorBridge'
   if (hash === '#/analysis-requests') return 'analysisRequests'
+  if (hash === '#/internal-alpha/review-console') return 'internalAlphaReviewConsole'
   return 'dashboard'
 }
 
@@ -714,6 +720,7 @@ function App() {
       opinionEcosystem: '#/opinion-ecosystem',
       externalCollectorBridge: '#/external-collector',
       analysisRequests: '#/analysis-requests',
+      internalAlphaReviewConsole: '#/internal-alpha/review-console',
     }
     if (hashOverride) {
       window.location.hash = hashOverride
@@ -819,6 +826,7 @@ function App() {
     platformIntegrations: <PlatformIntegrationOverview />,
     searchDiscovery: <SearchDiscovery {...pageProps} />,
     analysisRequests: <AnalysisRequests />,
+    internalAlphaReviewConsole: <InternalAlphaReviewConsole />,
     externalCollectorBridge: <ExternalCollectorBridge />,
     publicDemoGuide: <PublicDemoGuide />,
     publicEventPlaza: <PublicEventPlaza guided={isGuidedPublicEventFlow} onNavigate={handleNavigate} />,

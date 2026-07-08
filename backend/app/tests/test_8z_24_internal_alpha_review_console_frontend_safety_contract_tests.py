@@ -34,7 +34,6 @@ APPROVAL_PHRASE_8Z23 = (
 )
 
 FORBIDDEN_FRONTEND_SURFACES = [
-    "frontend/src/pages/InternalAlphaReviewConsole.jsx",
     "frontend/src/pages/ReviewConsole.jsx",
     "frontend/src/pages/InternalAlphaReviewConsole.tsx",
     "frontend/src/pages/ReviewConsole.tsx",
@@ -46,13 +45,26 @@ FORBIDDEN_FRONTEND_SURFACES = [
     "frontend/src/components/ReviewConsole.tsx",
 ]
 
+ALLOWED_8Z26_STATIC_FRONTEND_SHELL_PATHS = {
+    "frontend/src/App.jsx",
+    "frontend/src/data/internalAlphaReviewConsoleStaticFixture.js",
+    "frontend/src/pages/InternalAlphaReviewConsole.jsx",
+}
+
+ALLOWED_8Z26_INTERNAL_ROUTE = "#/internal-alpha/review-console"
+
 FORBIDDEN_FRONTEND_ROUTE_STRINGS = [
     "internal-alpha-review-console",
-    "review-console",
-    "/review-console",
     "/internal-alpha-review-console",
     "/internal/alpha/review-console",
     "/api/v1/internal/alpha/review-console",
+    "#/review-console",
+    "#/public/review-console",
+    "#/public-events/review-console",
+    "#/reports/review-console",
+    "#/customer/review-console",
+    "#/b-end/review-console",
+    "#/c-end/review-console",
     "/public/review-console",
     "/public-events/review-console",
     "/reports/review-console",
@@ -268,6 +280,17 @@ def _review_console_related_frontend_files() -> list[Path]:
     return related
 
 
+def _review_console_static_shell_files() -> list[Path]:
+    return [
+        REPO_ROOT / "frontend/src/data/internalAlphaReviewConsoleStaticFixture.js",
+        REPO_ROOT / "frontend/src/pages/InternalAlphaReviewConsole.jsx",
+    ]
+
+
+def _relative_paths(paths: list[Path]) -> set[str]:
+    return {path.relative_to(REPO_ROOT).as_posix() for path in paths}
+
+
 def test_8z23_docs_exist_and_select_only_inactive_tests_only_future_gate() -> None:
     for path in DOCS_8Z23:
         assert path.exists(), path
@@ -303,15 +326,26 @@ def test_8z24_future_phrase_is_inactive_in_8z23_docs() -> None:
             assert "does not authorize" in context_lower or "does not approve" in context_lower, context
 
 
-def test_no_frontend_review_console_route_page_or_component_exists() -> None:
+def test_only_8z26_static_internal_frontend_shell_files_exist() -> None:
     for relative_path in FORBIDDEN_FRONTEND_SURFACES:
         assert not (REPO_ROOT / relative_path).exists(), relative_path
 
-    assert _review_console_related_frontend_files() == []
+    related_paths = _relative_paths(_review_console_related_frontend_files())
+    assert related_paths == ALLOWED_8Z26_STATIC_FRONTEND_SHELL_PATHS
+
+    shell_text = _joined_text(_review_console_static_shell_files())
+    assert "static internal frontend shell" in shell_text
+    assert "route_backend_connection = static_shell_only_not_connected" in shell_text
+    assert "frontend API consumption" not in shell_text
+    assert "sentigraphApi" not in shell_text
+    assert "fetch(" not in shell_text
+    assert "axios" not in shell_text
+    assert "/api/v1/internal/alpha/review-console" not in shell_text
 
 
-def test_no_frontend_route_registration_for_review_console_exists() -> None:
+def test_only_internal_static_frontend_route_registration_exists() -> None:
     route_text = _casefold(_joined_text(_frontend_route_files()))
+    assert _casefold(ALLOWED_8Z26_INTERNAL_ROUTE) in route_text
     for forbidden in FORBIDDEN_FRONTEND_ROUTE_STRINGS:
         assert _casefold(forbidden) not in route_text, forbidden
 
@@ -329,10 +363,32 @@ def test_no_public_customer_c_end_or_b_end_frontend_alias_exists() -> None:
 
 
 def test_no_forbidden_cta_or_action_in_review_console_frontend_surface() -> None:
-    related_files = _review_console_related_frontend_files()
-    related_text = _casefold(_joined_text(related_files))
-    for forbidden in FORBIDDEN_CTA_TERMS:
-        assert _casefold(forbidden) not in related_text, forbidden
+    related_files = _review_console_static_shell_files()
+    related_text = _joined_text(related_files)
+    related_lower = _casefold(related_text)
+
+    active_action_terms = [
+        "<button",
+        "onclick",
+        "href=",
+        "window.location",
+        "approvewrite",
+        "writenow",
+        "publishnow",
+        "sendnow",
+        "postnow",
+        "executenow",
+        "createproduction",
+        "runcollector",
+        "runprovider",
+        "callsource11",
+        "createfinalsummaryreport",
+    ]
+    for forbidden in active_action_terms:
+        assert forbidden not in related_lower, forbidden
+
+    assert "allowed actions labels only" in related_lower
+    assert "blocked actions labels only" in related_lower
 
 
 def test_no_forbidden_display_fields_in_review_console_frontend_surface() -> None:
