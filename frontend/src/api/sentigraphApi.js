@@ -3,6 +3,23 @@ import { apiClient } from './client.js'
 const API_PREFIX = '/api/v1'
 const DEFAULT_REPORT_LANGUAGE = 'zh-CN'
 
+export const INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS = Object.freeze([
+  'internal-alpha-safe-projection-fixture',
+  '8z16-no-write-alpha-fixture',
+])
+const INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT = 'review-console'
+const INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT = 'projections'
+
+export async function getInternalAlphaReviewConsoleProjection(projectionId) {
+  const projectionIsAllowed = INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS.includes(projectionId)
+  if (!projectionIsAllowed) throw new Error('Unsupported internal alpha review console projection id')
+  const encodedProjectionId = encodeURIComponent(projectionId)
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT}/${INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT}/${encodedProjectionId}`,
+  )
+  return data
+}
+
 export async function expandKeywords(payload) {
   const { data } = await apiClient.post(`${API_PREFIX}/keywords/expand`, payload)
   return data

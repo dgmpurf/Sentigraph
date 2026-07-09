@@ -47,6 +47,7 @@ FORBIDDEN_FRONTEND_SURFACES = [
 
 ALLOWED_8Z26_STATIC_FRONTEND_SHELL_PATHS = {
     "frontend/src/App.jsx",
+    "frontend/src/api/sentigraphApi.js",
     "frontend/src/data/internalAlphaReviewConsoleStaticFixture.js",
     "frontend/src/pages/InternalAlphaReviewConsole.jsx",
 }
@@ -259,6 +260,16 @@ def _joined_text(files: list[Path]) -> str:
     return "\n".join(_read(path) for path in files)
 
 
+def _read_only_8z30_helper_body() -> str:
+    api_text = _read(FRONTEND_API / "sentigraphApi.js")
+    marker = "export async function getInternalAlphaReviewConsoleProjection(projectionId)"
+    assert marker in api_text
+    start = api_text.index(marker)
+    tail = api_text[start:]
+    end = tail.index("\n}")
+    return tail[: end + 2]
+
+
 def _without_quoted_catalog_entries(text: str, entries: list[str]) -> str:
     sanitized = text
     for entry in entries:
@@ -335,9 +346,10 @@ def test_only_8z26_static_internal_frontend_shell_files_exist() -> None:
 
     shell_text = _joined_text(_review_console_static_shell_files())
     assert "static internal frontend shell" in shell_text
-    assert "route_backend_connection = static_shell_only_not_connected" in shell_text
-    assert "frontend API consumption" not in shell_text
-    assert "sentigraphApi" not in shell_text
+    assert "route_backend_connection =" in shell_text
+    assert "static fallback active" in shell_text
+    assert "getInternalAlphaReviewConsoleProjection" in shell_text
+    assert "INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS[0]" in shell_text
     assert "fetch(" not in shell_text
     assert "axios" not in shell_text
     assert "/api/v1/internal/alpha/review-console" not in shell_text
@@ -351,9 +363,17 @@ def test_only_internal_static_frontend_route_registration_exists() -> None:
 
 
 def test_no_frontend_api_client_hook_consumes_review_console_route() -> None:
-    api_text = _casefold(_joined_text(_frontend_api_files()))
-    for forbidden in FORBIDDEN_API_HOOK_TERMS:
-        assert _casefold(forbidden) not in api_text, forbidden
+    helper_body = _read_only_8z30_helper_body()
+    helper_lower = _casefold(helper_body)
+
+    assert "getinternalalphareviewconsoleprojection" in _casefold(_read(FRONTEND_API / "sentigraphApi.js"))
+    assert "/internal/alpha/" in helper_body
+    assert "internal_alpha_review_console_route_segment" in helper_lower
+    assert "internal_alpha_review_console_projections_segment" in helper_lower
+    assert "apiclient.get(" in helper_lower
+    assert "encodeuricomponent(projectionid)" in helper_lower
+    for forbidden in [".post(", ".put(", ".patch(", ".delete(", "fetch(", "xmlhttprequest"]:
+        assert forbidden not in helper_lower, forbidden
 
 
 def test_no_public_customer_c_end_or_b_end_frontend_alias_exists() -> None:
@@ -392,15 +412,13 @@ def test_no_forbidden_cta_or_action_in_review_console_frontend_surface() -> None
 
 
 def test_no_forbidden_display_fields_in_review_console_frontend_surface() -> None:
-    related_files = _review_console_related_frontend_files()
-    related_text = _casefold(_joined_text(related_files))
+    related_text = _casefold("\n".join([_joined_text(_review_console_static_shell_files()), _read_only_8z30_helper_body()]))
     for forbidden in FORBIDDEN_DISPLAY_FIELDS:
         assert _casefold(forbidden) not in related_text, forbidden
 
 
 def test_no_readiness_overclaim_in_review_console_frontend_surface() -> None:
-    related_files = _review_console_related_frontend_files()
-    related_text = _casefold(_joined_text(related_files))
+    related_text = _casefold("\n".join([_joined_text(_review_console_static_shell_files()), _read_only_8z30_helper_body()]))
     for forbidden in FORBIDDEN_READINESS_OVERCLAIMS:
         assert _casefold(forbidden) not in related_text, forbidden
 

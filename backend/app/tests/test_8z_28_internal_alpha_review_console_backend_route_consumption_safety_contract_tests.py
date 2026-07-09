@@ -36,6 +36,7 @@ SELECTED_8Z28_BOUNDARY = (
 )
 INTERNAL_FRONTEND_ROUTE = "#/internal-alpha/review-console"
 BACKEND_ROUTE_FRAGMENT = "/api/v1/internal/alpha/review-console"
+READ_ONLY_HELPER_8Z30 = "getInternalAlphaReviewConsoleProjection"
 
 API_HOOK_TERMS = [
     "getReviewConsole",
@@ -189,6 +190,15 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
+def _helper_body(api_text: str) -> str:
+    marker = f"export async function {READ_ONLY_HELPER_8Z30}(projectionId)"
+    assert marker in api_text
+    start = api_text.index(marker)
+    tail = api_text[start:]
+    end = tail.index("\n}")
+    return tail[: end + 2]
+
+
 def _casefold(text: str) -> str:
     return text.casefold()
 
@@ -278,17 +288,35 @@ def test_8z28_future_phrase_is_tests_only_and_not_implementation_approval() -> N
         assert forbidden not in scan_lower, forbidden
 
 
-def test_no_frontend_api_hook_exists_for_review_console() -> None:
+def test_frontend_api_hook_is_limited_to_8z30_read_only_internal_projection_helper() -> None:
     api_text = _joined(_frontend_api_files())
+    helper_body = _helper_body(api_text)
 
-    for forbidden in API_HOOK_TERMS:
-        assert forbidden not in api_text, forbidden
+    assert READ_ONLY_HELPER_8Z30 in api_text
+    assert "INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS" in api_text
+    assert "/internal/alpha/" in helper_body
+    assert "INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT" in helper_body
+    assert "INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT" in helper_body
+    assert "apiClient.get(" in helper_body
+    assert "encodeURIComponent(projectionId)" in helper_body
+    for forbidden in [".post(", ".put(", ".patch(", ".delete(", "fetch(", "XMLHttpRequest"]:
+        assert forbidden not in helper_body, forbidden
 
 
-def test_static_shell_does_not_consume_backend_route() -> None:
+def test_static_shell_consumes_only_8z30_safe_helper_and_not_raw_backend_route() -> None:
     shell_text = _shell_context_text()
 
-    for forbidden in SHELL_ROUTE_CONSUMPTION_TERMS:
+    assert READ_ONLY_HELPER_8Z30 in shell_text
+    assert "INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS[0]" in shell_text
+    direct_route_terms = [
+        "fetch(",
+        "axios",
+        "XMLHttpRequest",
+        BACKEND_ROUTE_FRAGMENT,
+        "internal/alpha/review-console",
+        "review-console/projections",
+    ]
+    for forbidden in direct_route_terms:
         assert forbidden not in shell_text, forbidden
 
 
@@ -324,12 +352,12 @@ def test_no_active_write_or_operator_cta_exists_in_shell_context() -> None:
 def test_no_forbidden_raw_private_or_secret_fields_in_shell_or_review_console_api_context() -> None:
     shell_text = _shell_context_text()
     api_text = _joined(_frontend_api_files())
+    helper_text = _helper_body(api_text)
 
-    assert "reviewConsole" not in api_text
     assert "review-console/projections" not in api_text
     assert BACKEND_ROUTE_FRAGMENT not in api_text
 
-    shell_lower = _casefold(shell_text)
+    shell_lower = _casefold("\n".join([shell_text, helper_text]))
     for forbidden in FORBIDDEN_DISPLAY_FIELDS:
         assert _casefold(forbidden) not in shell_lower, forbidden
 

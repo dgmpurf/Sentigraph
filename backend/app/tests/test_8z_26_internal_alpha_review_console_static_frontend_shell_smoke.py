@@ -21,7 +21,9 @@ BACKEND_ROUTE_FRAGMENT = "/api/v1/internal/alpha/review-console"
 REQUIRED_VISIBLE_BOUNDARIES = [
     "Internal Alpha Review Console static preview",
     "source_chain_boundary = evidence_layer_write_candidate_boundary",
-    "route_backend_connection = static_shell_only_not_connected",
+    "route_backend_connection =",
+    "static_shell_only_not_connected",
+    "static fallback active",
     "human_review_required = true",
     "no_automatic_trust_upgrade = true",
     "no actual write",
@@ -70,13 +72,11 @@ FORBIDDEN_PUBLIC_ALIASES = [
 ]
 
 FORBIDDEN_API_CONSUMPTION_TERMS = [
-    "sentigraphApi",
     "fetch(",
     "axios",
     BACKEND_ROUTE_FRAGMENT,
-    "getInternalAlphaReviewConsole",
     "getReviewConsole",
-    "reviewConsoleProjection",
+    "review-console/projections",
 ]
 
 FORBIDDEN_ACTIVE_ACTION_TERMS = [
@@ -170,9 +170,11 @@ def test_internal_only_route_is_registered_without_public_aliases() -> None:
         assert forbidden not in frontend_text, forbidden
 
 
-def test_shell_is_static_and_does_not_consume_api_or_backend_route() -> None:
+def test_shell_consumes_only_8z30_read_only_helper_without_direct_backend_route() -> None:
     shell_text = _combined_shell_text()
 
+    assert "getInternalAlphaReviewConsoleProjection" in shell_text
+    assert "INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS[0]" in shell_text
     for forbidden in FORBIDDEN_API_CONSUMPTION_TERMS:
         assert forbidden not in shell_text, forbidden
 
