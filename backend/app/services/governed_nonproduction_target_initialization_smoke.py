@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import configparser
 import hashlib
 import json
 import os
@@ -23,12 +24,14 @@ from app.services.protected_value_boundary_scanner import (
 )
 
 
+SYNTHETIC_EXECUTION_PROFILE: Final = "synthetic_temporary_repository"
+FORMAL_EXECUTION_PROFILE: Final = "formal_exact_sentigraph_repository"
 RESULT_SCHEMA: Final = (
-    "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_1"
+    "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_2"
 )
-RESULT_VERSION: Final = "0.1"
+RESULT_VERSION: Final = "0.2"
 EXECUTION_MODE: Final = (
-    "backend_only_local_synthetic_temporary_repository_schema_initialization_smoke"
+    "backend_only_local_profiled_repository_schema_initialization_smoke"
 )
 TARGET_KIND: Final = "dedicated_local_sqlite_nonproduction_store"
 LOCKED_TARGET_LOGICAL_LABEL: Final = LOGICAL_RUNTIME_TARGET_LABEL
@@ -43,6 +46,61 @@ LOCKED_RECEIPT_LOGICAL_LABEL: Final = (
     "target-initialization-receipt-"
     f"{LOCKED_TARGET_IDENTITY_SAFE_HASH}.json"
 )
+FORMAL_REPOSITORY_IDENTITY_SCHEMA: Final = (
+    "sentigraph_formal_repository_identity_v0_1"
+)
+FORMAL_REPOSITORY_IDENTITY_VERSION: Final = "0.1"
+FORMAL_REPOSITORY_IDENTITY_PROJECTION: Final = MappingProxyType(
+    {
+        "repository_identity_schema": FORMAL_REPOSITORY_IDENTITY_SCHEMA,
+        "repository_identity_version": FORMAL_REPOSITORY_IDENTITY_VERSION,
+        "project_id": "Sentigraph",
+        "repository_identity": "dgmpurf/Sentigraph",
+        "expected_origin_transport": "github_https",
+        "expected_origin_repository": "dgmpurf/Sentigraph",
+        "git_marker_kind": "ordinary_directory",
+        "git_config_kind": "ordinary_file",
+        "formal_target_logical_label": LOCKED_TARGET_LOGICAL_LABEL,
+        "formal_receipt_logical_label": LOCKED_RECEIPT_LOGICAL_LABEL,
+        "production_target": False,
+        "generic_repository_allowed": False,
+        "target_substitution_allowed": False,
+    }
+)
+FORMAL_REPOSITORY_IDENTITY_SAFE_HASH: Final = (
+    "66ae70377a33d036ab68729e7b9a6f509c7218cbbc6d40739e1ca5a755a2d82b"
+)
+FORMAL_EXECUTION_PROFILE_CONTRACT_SCHEMA: Final = (
+    "sentigraph_formal_execution_profile_contract_v0_1"
+)
+FORMAL_EXECUTION_PROFILE_CONTRACT_VERSION: Final = "0.1"
+FORMAL_EXECUTION_PROFILE_CONTRACT_PROJECTION: Final = MappingProxyType(
+    {
+        "contract_schema": FORMAL_EXECUTION_PROFILE_CONTRACT_SCHEMA,
+        "contract_version": FORMAL_EXECUTION_PROFILE_CONTRACT_VERSION,
+        "execution_profile": FORMAL_EXECUTION_PROFILE,
+        "repository_identity_safe_hash": FORMAL_REPOSITORY_IDENTITY_SAFE_HASH,
+        "target_identity_safe_hash": LOCKED_TARGET_IDENTITY_SAFE_HASH,
+        "target_authorization_contract_safe_hash": (
+            LOCKED_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH
+        ),
+        "locked_target_logical_label": LOCKED_TARGET_LOGICAL_LABEL,
+        "locked_receipt_logical_label": LOCKED_RECEIPT_LOGICAL_LABEL,
+        "sqlite_session_maximum": 1,
+        "automatic_retry": False,
+        "second_attempt": False,
+        "candidate_DML_allowed": False,
+        "reservation_DML_allowed": False,
+        "runtime_enumeration_allowed": False,
+        "target_substitution_allowed": False,
+        "separate_exact_human_approval_required": True,
+        "formal_execution_disabled_by_default": True,
+        "production_action_allowed": False,
+    }
+)
+FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH: Final = (
+    "5225ff83fd2de19cb32e26b831da410f51a162c32afc40be97d522f87d2137bf"
+)
 ATTEMPT_DDL_SAFE_HASH: Final = (
     "2881c0efdb35d79f4cda59f4919c4a159ade57a9d24e521ec8758e2bcf68b266"
 )
@@ -53,11 +111,19 @@ RECEIPT_SCHEMA: Final = (
     "sentigraph_governed_nonproduction_target_initialization_receipt_v0_1"
 )
 RECEIPT_VERSION: Final = "0.1"
+_EXPECTED_FORMAL_ORIGIN: Final = (
+    "https://github.com/"
+    f"{FORMAL_REPOSITORY_IDENTITY_PROJECTION['repository_identity']}.git"
+)
+_FORMAL_ORIGIN_SECTION: Final = 'remote "origin"'
+_MAX_GIT_CONFIG_BYTES: Final = 64 * 1024
 
 PHASES: Final = (
     "validate_inputs",
+    "verify_execution_profile",
     "verify_locked_governance",
     "verify_committed_DDL",
+    "verify_formal_repository_identity",
     "derive_exact_paths",
     "verify_path_components",
     "verify_exact_collisions",
@@ -89,6 +155,13 @@ SAFE_ERROR_CODES: Final = frozenset(
         "none",
         "runner_disabled",
         "invalid_input",
+        "invalid_execution_profile",
+        "formal_execution_disabled",
+        "formal_repository_identity_hash_mismatch",
+        "formal_profile_contract_hash_mismatch",
+        "formal_git_marker_invalid",
+        "formal_git_config_invalid",
+        "formal_origin_remote_invalid",
         "governance_identity_hash_mismatch",
         "governance_contract_hash_mismatch",
         "DDL_hash_mismatch",
@@ -217,6 +290,33 @@ def _base_result() -> dict[str, Any]:
         "decision": "blocked",
         "privacy_issue_stop": False,
         "execution_mode": EXECUTION_MODE,
+        "execution_profile_requested": "not_validated",
+        "execution_profile_effective": "not_selected",
+        "synthetic_profile_selected": False,
+        "formal_profile_selected": False,
+        "formal_execution_enabled": False,
+        "formal_execution_guard_verified": False,
+        "repository_identity_schema": FORMAL_REPOSITORY_IDENTITY_SCHEMA,
+        "repository_identity_safe_hash_expected": (
+            FORMAL_REPOSITORY_IDENTITY_SAFE_HASH
+        ),
+        "repository_identity_safe_hash_verified": False,
+        "formal_profile_contract_safe_hash_expected": (
+            FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH
+        ),
+        "formal_profile_contract_safe_hash_verified": False,
+        "git_marker_check_started": False,
+        "git_marker_verified": False,
+        "git_config_check_started": False,
+        "git_config_verified": False,
+        "origin_remote_check_started": False,
+        "origin_remote_verified": False,
+        "formal_repository_identity_check_completed": False,
+        "formal_repository_identity_check_passed": False,
+        "generic_git_repository_accepted": False,
+        "raw_origin_remote_exposed": False,
+        "formal_target_path_derivation_authorized": False,
+        "formal_target_path_derivation_started": False,
         "execution_phase": "validate_inputs",
         "terminal_phase": "not_completed",
         "safe_error_code": "none",
@@ -364,11 +464,24 @@ def run_governed_nonproduction_target_initialization_smoke(
     expected_target_authorization_contract_safe_hash: str,
     allow_same_run_empty_target_cleanup: bool,
     enabled: bool = False,
+    execution_profile: str = SYNTHETIC_EXECUTION_PROFILE,
+    expected_repository_identity_safe_hash: str | None = None,
+    expected_formal_execution_profile_contract_safe_hash: str | None = None,
+    formal_execution_enabled: bool = False,
     _failure_injection_phase: str | None = None,
 ) -> dict[str, Any]:
-    """Run one bounded schema-only smoke against an explicitly synthetic root."""
+    """Run one bounded schema-only smoke under an explicit repository profile."""
 
     result = _base_result()
+    known_profiles = {SYNTHETIC_EXECUTION_PROFILE, FORMAL_EXECUTION_PROFILE}
+    result["execution_profile_requested"] = (
+        execution_profile
+        if isinstance(execution_profile, str) and execution_profile in known_profiles
+        else "invalid"
+    )
+    result["formal_execution_enabled"] = (
+        formal_execution_enabled if isinstance(formal_execution_enabled, bool) else False
+    )
     result["cleanup_allowed_by_caller"] = (
         allow_same_run_empty_target_cleanup
         if isinstance(allow_same_run_empty_target_cleanup, bool)
@@ -398,9 +511,40 @@ def run_governed_nonproduction_target_initialization_smoke(
             raise _SmokeFailure("invalid_input")
         if not isinstance(enabled, bool):
             raise _SmokeFailure("invalid_input")
+        if not isinstance(formal_execution_enabled, bool):
+            raise _SmokeFailure("invalid_input")
+        if not isinstance(execution_profile, str) or execution_profile not in known_profiles:
+            raise _SmokeFailure("invalid_execution_profile")
+        result["execution_profile_effective"] = execution_profile
+        result["synthetic_profile_selected"] = (
+            execution_profile == SYNTHETIC_EXECUTION_PROFILE
+        )
+        result["formal_profile_selected"] = (
+            execution_profile == FORMAL_EXECUTION_PROFILE
+        )
         if not enabled:
             raise _SmokeFailure("runner_disabled")
         _inject("validate_inputs", _failure_injection_phase)
+
+        enter("verify_execution_profile")
+        if execution_profile == FORMAL_EXECUTION_PROFILE:
+            if not formal_execution_enabled:
+                raise _SmokeFailure("formal_execution_disabled")
+            if (
+                not _is_hash(expected_repository_identity_safe_hash)
+                or expected_repository_identity_safe_hash
+                != FORMAL_REPOSITORY_IDENTITY_SAFE_HASH
+            ):
+                raise _SmokeFailure("formal_repository_identity_hash_mismatch")
+            result["repository_identity_safe_hash_verified"] = True
+            if (
+                not _is_hash(expected_formal_execution_profile_contract_safe_hash)
+                or expected_formal_execution_profile_contract_safe_hash
+                != FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH
+            ):
+                raise _SmokeFailure("formal_profile_contract_hash_mismatch")
+            result["formal_profile_contract_safe_hash_verified"] = True
+            result["formal_execution_guard_verified"] = True
 
         enter("verify_locked_governance")
         if not _is_hash(expected_target_identity_safe_hash):
@@ -428,13 +572,20 @@ def run_governed_nonproduction_target_initialization_smoke(
         result["DDL_hashes_verified"] = True
         _inject("verify_committed_DDL", _failure_injection_phase)
 
+        if execution_profile == FORMAL_EXECUTION_PROFILE:
+            enter("verify_formal_repository_identity")
+            _verify_formal_repository_identity(repository_root, result)
+            result["formal_target_path_derivation_authorized"] = True
+
         enter("derive_exact_paths")
+        if execution_profile == FORMAL_EXECUTION_PROFILE:
+            result["formal_target_path_derivation_started"] = True
         _inject("derive_exact_paths", _failure_injection_phase)
         paths = _derive_exact_paths(repository_root)
         result["path_derivation_completed"] = True
 
         enter("verify_path_components")
-        _verify_path_components(paths, result)
+        _verify_path_components(paths, result, execution_profile)
         _inject("verify_path_components", _failure_injection_phase)
 
         enter("verify_exact_collisions")
@@ -680,8 +831,12 @@ def run_governed_nonproduction_target_initialization_smoke(
         result["decision"] = "ready"
         result["terminal_phase"] = "completed"
         result["safe_error_code"] = "none"
-        result["synthetic_temporary_repository_only"] = True
-        result["synthetic_temporary_SQLite_only"] = True
+        result["synthetic_temporary_repository_only"] = (
+            execution_profile == SYNTHETIC_EXECUTION_PROFILE
+        )
+        result["synthetic_temporary_SQLite_only"] = (
+            execution_profile == SYNTHETIC_EXECUTION_PROFILE
+        )
         return result
     except _SmokeFailure as exc:
         result["safe_error_code"] = exc.safe_error_code
@@ -712,13 +867,100 @@ def run_governed_nonproduction_target_initialization_smoke(
             result["decision"] = "needs_fix"
     result["terminal_phase"] = "terminal_failure"
     result["synthetic_temporary_repository_only"] = (
-        result["repository_root_verified_safe"] is True
+        execution_profile == SYNTHETIC_EXECUTION_PROFILE
+        and result["repository_root_verified_safe"] is True
     )
     result["synthetic_temporary_SQLite_only"] = (
-        result["SQLite_connection_open_count"] <= 1
+        execution_profile == SYNTHETIC_EXECUTION_PROFILE
+        and result["SQLite_connection_open_count"] <= 1
         and result["actual_Git_root_passed_to_runner"] is False
     )
     return result
+
+
+def _verify_formal_repository_identity(
+    repository_root: Path,
+    result: dict[str, Any],
+) -> None:
+    result["git_marker_check_started"] = True
+    try:
+        if _path_state(repository_root) != "directory":
+            raise _SmokeFailure("formal_git_marker_invalid")
+        try:
+            root_status = repository_root.lstat()
+        except OSError as exc:
+            raise _SmokeFailure("formal_git_marker_invalid") from exc
+        if _is_reparse(root_status):
+            raise _SmokeFailure("formal_git_marker_invalid")
+
+        git_marker = repository_root / ".git"
+        if _path_state(git_marker) != "directory":
+            raise _SmokeFailure("formal_git_marker_invalid")
+        try:
+            git_status = git_marker.lstat()
+        except OSError as exc:
+            raise _SmokeFailure("formal_git_marker_invalid") from exc
+        if _is_reparse(git_status):
+            raise _SmokeFailure("formal_git_marker_invalid")
+        if git_status.st_dev != root_status.st_dev:
+            raise _SmokeFailure("mount_device_boundary")
+        result["git_marker_verified"] = True
+
+        result["git_config_check_started"] = True
+        git_config = git_marker / "config"
+        if _path_state(git_config) != "file":
+            raise _SmokeFailure("formal_git_config_invalid")
+        try:
+            config_status = git_config.lstat()
+        except OSError as exc:
+            raise _SmokeFailure("formal_git_config_invalid") from exc
+        if _is_reparse(config_status):
+            raise _SmokeFailure("formal_git_config_invalid")
+        if config_status.st_dev != root_status.st_dev:
+            raise _SmokeFailure("mount_device_boundary")
+        if config_status.st_size > _MAX_GIT_CONFIG_BYTES:
+            raise _SmokeFailure("formal_git_config_invalid")
+        try:
+            config_text = git_config.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise _SmokeFailure("formal_git_config_invalid") from exc
+
+        parser = configparser.RawConfigParser(interpolation=None, strict=True)
+        parser.optionxform = str
+        try:
+            parser.read_string(config_text, source="bounded_git_config")
+        except configparser.Error as exc:
+            raise _SmokeFailure("formal_git_config_invalid") from exc
+        result["git_config_verified"] = True
+
+        result["origin_remote_check_started"] = True
+        origin_like_sections = [
+            section
+            for section in parser.sections()
+            if section.casefold() == _FORMAL_ORIGIN_SECTION.casefold()
+        ]
+        if origin_like_sections != [_FORMAL_ORIGIN_SECTION]:
+            raise _SmokeFailure("formal_origin_remote_invalid")
+        if any(
+            key.casefold() in {"url", "pushurl"}
+            for key in parser.defaults()
+        ):
+            raise _SmokeFailure("formal_origin_remote_invalid")
+        origin_items = parser.items(_FORMAL_ORIGIN_SECTION, raw=True)
+        origin_url_items = [
+            (key, value)
+            for key, value in origin_items
+            if key.casefold() in {"url", "pushurl"}
+        ]
+        if len(origin_url_items) != 1 or origin_url_items[0][0] != "url":
+            raise _SmokeFailure("formal_origin_remote_invalid")
+        if origin_url_items[0][1] != _EXPECTED_FORMAL_ORIGIN:
+            raise _SmokeFailure("formal_origin_remote_invalid")
+
+        result["origin_remote_verified"] = True
+        result["formal_repository_identity_check_passed"] = True
+    finally:
+        result["formal_repository_identity_check_completed"] = True
 
 
 def _derive_exact_paths(repository_root: Path) -> dict[str, Path]:
@@ -742,14 +984,21 @@ def _derive_exact_paths(repository_root: Path) -> dict[str, Path]:
     }
 
 
-def _verify_path_components(paths: dict[str, Path], result: dict[str, Any]) -> None:
+def _verify_path_components(
+    paths: dict[str, Path],
+    result: dict[str, Any],
+    execution_profile: str,
+) -> None:
     root = paths["root"]
     root_state = _path_state(root)
     if root_state != "directory":
         raise _SmokeFailure("unsafe_repository_root")
-    if _path_state(root / ".git") != "absent":
-        result["actual_Git_root_passed_to_runner"] = True
-        raise _SmokeFailure("unsafe_repository_root")
+    if execution_profile == SYNTHETIC_EXECUTION_PROFILE:
+        if _path_state(root / ".git") != "absent":
+            result["actual_Git_root_passed_to_runner"] = True
+            raise _SmokeFailure("unsafe_repository_root")
+    elif not result["formal_repository_identity_check_passed"]:
+        raise _SmokeFailure("formal_git_marker_invalid")
     root_status = root.lstat()
     if _is_reparse(root_status):
         raise _SmokeFailure("symlink_or_reparse_point")

@@ -16,6 +16,12 @@ import app.services.governed_nonproduction_target_initialization_smoke as runner
 from app.services.governed_nonproduction_target_initialization_smoke import (
     ATTEMPT_DDL_SAFE_HASH,
     FAILURE_INJECTION_PHASES,
+    FORMAL_EXECUTION_PROFILE,
+    FORMAL_EXECUTION_PROFILE_CONTRACT_PROJECTION,
+    FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH,
+    FORMAL_REPOSITORY_IDENTITY_PROJECTION,
+    FORMAL_REPOSITORY_IDENTITY_SAFE_HASH,
+    FORMAL_REPOSITORY_IDENTITY_SCHEMA,
     LOCKED_RECEIPT_LOGICAL_LABEL,
     LOCKED_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH,
     LOCKED_TARGET_IDENTITY_SAFE_HASH,
@@ -24,12 +30,14 @@ from app.services.governed_nonproduction_target_initialization_smoke import (
     RESULT_FIELDS,
     RESULT_SCHEMA,
     SAFE_ERROR_CODES,
+    SYNTHETIC_EXECUTION_PROFILE,
     run_governed_nonproduction_target_initialization_smoke,
 )
 
 
 EXPECTED_F06_HASH = "4f455eaeef1253f795da3b13b3cb960e5c55349e1858d866178047179b65c214"
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+EXPECTED_FORMAL_ORIGIN = "https://github.com/dgmpurf/Sentigraph.git"
 
 
 def _run(repository_root: Path, **overrides: Any) -> dict[str, Any]:
@@ -52,6 +60,35 @@ def _target(root: Path) -> Path:
 
 def _receipt(root: Path) -> Path:
     return root / Path(LOCKED_RECEIPT_LOGICAL_LABEL)
+
+
+def _write_formal_git_config(root: Path, content: str | None = None) -> Path:
+    git_dir = root / ".git"
+    git_dir.mkdir()
+    config = git_dir / "config"
+    config.write_text(
+        content
+        if content is not None
+        else '[remote "origin"]\n'
+        f"\turl = {EXPECTED_FORMAL_ORIGIN}\n",
+        encoding="utf-8",
+    )
+    return config
+
+
+def _formal_run(repository_root: Path, **overrides: Any) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "execution_profile": FORMAL_EXECUTION_PROFILE,
+        "expected_repository_identity_safe_hash": (
+            FORMAL_REPOSITORY_IDENTITY_SAFE_HASH
+        ),
+        "expected_formal_execution_profile_contract_safe_hash": (
+            FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH
+        ),
+        "formal_execution_enabled": True,
+    }
+    values.update(overrides)
+    return _run(repository_root, **values)
 
 
 def _canonical(value: Any) -> bytes:
@@ -193,6 +230,10 @@ def test_public_contract_and_locked_constants() -> None:
         "expected_target_authorization_contract_safe_hash",
         "allow_same_run_empty_target_cleanup",
         "enabled",
+        "execution_profile",
+        "expected_repository_identity_safe_hash",
+        "expected_formal_execution_profile_contract_safe_hash",
+        "formal_execution_enabled",
         "_failure_injection_phase",
     }
     assert all(
@@ -200,8 +241,19 @@ def test_public_contract_and_locked_constants() -> None:
         for parameter in signature.parameters.values()
     )
     assert signature.parameters["enabled"].default is False
+    assert signature.parameters["execution_profile"].default == (
+        SYNTHETIC_EXECUTION_PROFILE
+    )
+    assert signature.parameters["formal_execution_enabled"].default is False
+    assert signature.parameters["expected_repository_identity_safe_hash"].default is None
+    assert (
+        signature.parameters[
+            "expected_formal_execution_profile_contract_safe_hash"
+        ].default
+        is None
+    )
     assert RESULT_SCHEMA == (
-        "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_1"
+        "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_2"
     )
     assert LOCKED_TARGET_LOGICAL_LABEL == (
         "runtime/governed_nonproduction_evidence_persistence/"
@@ -224,6 +276,28 @@ def test_public_contract_and_locked_constants() -> None:
     assert PRIMARY_DDL_SAFE_HASH == (
         "d44a6c46000b8c156b1367aae348be799e9a814d1328b686b2efc9e57cab7e26"
     )
+    assert FORMAL_REPOSITORY_IDENTITY_SCHEMA == (
+        "sentigraph_formal_repository_identity_v0_1"
+    )
+    assert FORMAL_REPOSITORY_IDENTITY_SAFE_HASH == (
+        "66ae70377a33d036ab68729e7b9a6f509c7218cbbc6d40739e1ca5a755a2d82b"
+    )
+    assert FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH == (
+        "5225ff83fd2de19cb32e26b831da410f51a162c32afc40be97d522f87d2137bf"
+    )
+    assert _sha256_bytes(_canonical(dict(FORMAL_REPOSITORY_IDENTITY_PROJECTION))) == (
+        FORMAL_REPOSITORY_IDENTITY_SAFE_HASH
+    )
+    assert _sha256_bytes(
+        _canonical(dict(FORMAL_EXECUTION_PROFILE_CONTRACT_PROJECTION))
+    ) == FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH
+    assert "url" not in FORMAL_REPOSITORY_IDENTITY_PROJECTION
+    with pytest.raises(TypeError):
+        FORMAL_REPOSITORY_IDENTITY_PROJECTION["project_id"] = "other"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        FORMAL_EXECUTION_PROFILE_CONTRACT_PROJECTION["execution_profile"] = (  # type: ignore[index]
+            SYNTHETIC_EXECUTION_PROFILE
+        )
 
 
 def test_disabled_default_blocks_before_filesystem_access(
@@ -455,6 +529,576 @@ def test_repository_root_with_git_marker_is_rejected(tmp_path: Path) -> None:
     assert result["SQLite_connection_open_count"] == 0
 
 
+def test_synthetic_profile_remains_default_and_environment_cannot_upgrade_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "SENTIGRAPH_INITIALIZATION_EXECUTION_PROFILE",
+        FORMAL_EXECUTION_PROFILE,
+    )
+
+    result = _run(tmp_path)
+
+    assert result["passed"] is True
+    assert result["execution_profile_requested"] == SYNTHETIC_EXECUTION_PROFILE
+    assert result["execution_profile_effective"] == SYNTHETIC_EXECUTION_PROFILE
+    assert result["synthetic_profile_selected"] is True
+    assert result["formal_profile_selected"] is False
+    assert result["formal_execution_enabled"] is False
+    assert result["environment_target_override_used"] is False
+
+
+@pytest.mark.parametrize("invalid_profile", ["formal", "", None, 7])
+def test_unknown_or_invalid_profile_blocks_before_path_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_profile: Any,
+) -> None:
+    monkeypatch.setattr(
+        runner_module,
+        "_derive_exact_paths",
+        lambda *_args, **_kwargs: pytest.fail("path access reached"),
+    )
+
+    result = _run(tmp_path, execution_profile=invalid_profile)
+
+    assert result["safe_error_code"] == "invalid_execution_profile"
+    assert result["execution_profile_requested"] == "invalid"
+    assert result["path_derivation_completed"] is False
+    assert result["SQLite_connection_open_count"] == 0
+
+
+def test_formal_profile_disabled_blocks_before_git_config_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    monkeypatch.setattr(
+        Path,
+        "read_text",
+        lambda *_args, **_kwargs: pytest.fail("git config read reached"),
+    )
+
+    result = _formal_run(tmp_path, formal_execution_enabled=False)
+
+    assert result["safe_error_code"] == "formal_execution_disabled"
+    assert result["git_config_check_started"] is False
+    assert result["formal_target_path_derivation_started"] is False
+    assert result["SQLite_connection_open_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_code"),
+    [
+        (
+            "expected_repository_identity_safe_hash",
+            None,
+            "formal_repository_identity_hash_mismatch",
+        ),
+        (
+            "expected_repository_identity_safe_hash",
+            "0" * 64,
+            "formal_repository_identity_hash_mismatch",
+        ),
+        (
+            "expected_formal_execution_profile_contract_safe_hash",
+            None,
+            "formal_profile_contract_hash_mismatch",
+        ),
+        (
+            "expected_formal_execution_profile_contract_safe_hash",
+            "1" * 64,
+            "formal_profile_contract_hash_mismatch",
+        ),
+    ],
+)
+def test_formal_profile_binding_mismatch_blocks_before_config_and_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: Any,
+    error_code: str,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    monkeypatch.setattr(
+        Path,
+        "read_text",
+        lambda *_args, **_kwargs: pytest.fail("git config read reached"),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "_derive_exact_paths",
+        lambda *_args, **_kwargs: pytest.fail("target derivation reached"),
+    )
+
+    result = _formal_run(tmp_path, **{field: value})
+
+    assert result["safe_error_code"] == error_code
+    assert result["formal_execution_guard_verified"] is False
+    assert result["git_marker_check_started"] is False
+    assert result["path_derivation_completed"] is False
+    assert result["SQLite_connection_open_count"] == 0
+
+
+def test_profile_inputs_are_not_mutated(tmp_path: Path) -> None:
+    _write_formal_git_config(tmp_path)
+    inputs: dict[str, Any] = {
+        "execution_profile": FORMAL_EXECUTION_PROFILE,
+        "expected_repository_identity_safe_hash": (
+            FORMAL_REPOSITORY_IDENTITY_SAFE_HASH
+        ),
+        "expected_formal_execution_profile_contract_safe_hash": (
+            FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH
+        ),
+        "formal_execution_enabled": True,
+    }
+    before = dict(inputs)
+
+    result = _run(tmp_path, **inputs)
+
+    assert result["passed"] is True
+    assert inputs == before
+
+
+def test_formal_profile_missing_git_marker_blocks(tmp_path: Path) -> None:
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "formal_git_marker_invalid"
+    assert result["formal_repository_identity_check_completed"] is True
+    assert result["formal_repository_identity_check_passed"] is False
+    assert result["path_derivation_completed"] is False
+
+
+def test_formal_profile_git_marker_file_or_gitdir_pointer_blocks(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").write_text(
+        "gitdir: synthetic-external-git-dir",
+        encoding="utf-8",
+    )
+
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "formal_git_marker_invalid"
+    assert result["git_marker_verified"] is False
+    assert result["SQLite_connection_open_count"] == 0
+
+
+def test_formal_profile_git_marker_symlink_blocks(tmp_path: Path) -> None:
+    external = tmp_path / "synthetic-git-directory"
+    external.mkdir()
+    try:
+        (tmp_path / ".git").symlink_to(external, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "formal_git_marker_invalid"
+    assert result["path_derivation_completed"] is False
+
+
+def test_formal_profile_git_marker_reparse_classification_blocks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    original_path_state = runner_module._path_state
+
+    def classify_git_as_reparse(path: Path) -> str:
+        if path == tmp_path / ".git":
+            return "reparse"
+        return original_path_state(path)
+
+    monkeypatch.setattr(runner_module, "_path_state", classify_git_as_reparse)
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "formal_git_marker_invalid"
+    assert result["git_config_check_started"] is False
+
+
+def test_formal_profile_missing_git_config_blocks(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "formal_git_config_invalid"
+    assert result["git_marker_verified"] is True
+    assert result["git_config_verified"] is False
+
+
+def test_formal_profile_git_config_directory_blocks(tmp_path: Path) -> None:
+    (tmp_path / ".git" / "config").mkdir(parents=True)
+
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "formal_git_config_invalid"
+    assert result["origin_remote_check_started"] is False
+
+
+def test_formal_profile_git_config_symlink_blocks(tmp_path: Path) -> None:
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    external = tmp_path / "synthetic-config"
+    external.write_text(
+        f'[remote "origin"]\n\turl = {EXPECTED_FORMAL_ORIGIN}\n',
+        encoding="utf-8",
+    )
+    try:
+        (git_dir / "config").symlink_to(external)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "formal_git_config_invalid"
+    assert result["git_config_verified"] is False
+
+
+def test_formal_profile_git_config_reparse_classification_blocks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _write_formal_git_config(tmp_path)
+    original_path_state = runner_module._path_state
+
+    def classify_config_as_reparse(path: Path) -> str:
+        if path == config:
+            return "reparse"
+        return original_path_state(path)
+
+    monkeypatch.setattr(runner_module, "_path_state", classify_config_as_reparse)
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "formal_git_config_invalid"
+    assert result["origin_remote_check_started"] is False
+
+
+@pytest.mark.parametrize(
+    ("config_text", "error_code"),
+    [
+        ("[core]\n\trepositoryformatversion = 0\n", "formal_origin_remote_invalid"),
+        (
+            f'[remote "origin"]\n\turl = {EXPECTED_FORMAL_ORIGIN}\n'
+            f'[remote "origin"]\n\turl = {EXPECTED_FORMAL_ORIGIN}\n',
+            "formal_git_config_invalid",
+        ),
+        (
+            f'[remote "origin"]\n\turl = {EXPECTED_FORMAL_ORIGIN}\n'
+            f"\turl = {EXPECTED_FORMAL_ORIGIN}\n",
+            "formal_git_config_invalid",
+        ),
+        (
+            '[remote "origin"]\n'
+            "\turl = https://github.com/synthetic-owner/Sentigraph.git\n",
+            "formal_origin_remote_invalid",
+        ),
+        (
+            '[remote "origin"]\n'
+            "\turl = https://github.com/dgmpurf/Synthetic.git\n",
+            "formal_origin_remote_invalid",
+        ),
+        (
+            '[remote "origin"]\n'
+            "\turl = https://github.com/dgmpurf/sentigraph.git\n",
+            "formal_origin_remote_invalid",
+        ),
+        (
+            '[remote "origin"]\n'
+            "\turl = git@github.com:dgmpurf/Sentigraph.git\n",
+            "formal_origin_remote_invalid",
+        ),
+        (
+            '[remote "origin"]\n\turl = C:/synthetic/Sentigraph.git\n',
+            "formal_origin_remote_invalid",
+        ),
+        (
+            '[remote "origin"]\n\turl = file:///synthetic/Sentigraph.git\n',
+            "formal_origin_remote_invalid",
+        ),
+        (
+            '[remote "origin"]\n'
+            "\turl = https://synthetic-user:synthetic-secret@github.com/"
+            "dgmpurf/Sentigraph.git\n",
+            "formal_origin_remote_invalid",
+        ),
+        (
+            f'[remote "origin"]\n\turl = {EXPECTED_FORMAL_ORIGIN}?synthetic=1\n',
+            "formal_origin_remote_invalid",
+        ),
+        (
+            f'[remote "origin"]\n\turl = {EXPECTED_FORMAL_ORIGIN}#synthetic\n',
+            "formal_origin_remote_invalid",
+        ),
+        (
+            f'[remote "origin"]\n\turl = {EXPECTED_FORMAL_ORIGIN}\n'
+            "\tpushurl = https://github.com/dgmpurf/Sentigraph.git\n",
+            "formal_origin_remote_invalid",
+        ),
+        (
+            f'[remote "Origin"]\n\turl = {EXPECTED_FORMAL_ORIGIN}\n',
+            "formal_origin_remote_invalid",
+        ),
+    ],
+)
+def test_formal_profile_rejects_nonexact_or_ambiguous_origin_identity(
+    tmp_path: Path,
+    config_text: str,
+    error_code: str,
+) -> None:
+    _write_formal_git_config(tmp_path, config_text)
+
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == error_code
+    assert result["formal_repository_identity_check_completed"] is True
+    assert result["formal_repository_identity_check_passed"] is False
+    assert result["generic_git_repository_accepted"] is False
+    assert result["raw_origin_remote_exposed"] is False
+    assert result["formal_target_path_derivation_started"] is False
+    assert result["SQLite_connection_open_count"] == 0
+    rendered = json.dumps(result, ensure_ascii=True, sort_keys=True)
+    assert config_text not in rendered
+    assert "synthetic-secret" not in rendered
+
+
+def test_exact_temporary_formal_fixture_initializes_absent_target_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    original_connect = sqlite3.connect
+    calls: list[tuple[Any, ...]] = []
+
+    def counted_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        calls.append(args)
+        return original_connect(*args, **kwargs)
+
+    monkeypatch.setattr(runner_module.sqlite3, "connect", counted_connect)
+    result = _formal_run(tmp_path)
+
+    assert result["passed"] is True
+    assert result["execution_profile_requested"] == FORMAL_EXECUTION_PROFILE
+    assert result["execution_profile_effective"] == FORMAL_EXECUTION_PROFILE
+    assert result["formal_profile_selected"] is True
+    assert result["synthetic_profile_selected"] is False
+    assert result["formal_execution_enabled"] is True
+    assert result["formal_execution_guard_verified"] is True
+    assert result["repository_identity_safe_hash_verified"] is True
+    assert result["formal_profile_contract_safe_hash_verified"] is True
+    assert result["git_marker_verified"] is True
+    assert result["git_config_verified"] is True
+    assert result["origin_remote_verified"] is True
+    assert result["formal_repository_identity_check_completed"] is True
+    assert result["formal_repository_identity_check_passed"] is True
+    assert result["formal_target_path_derivation_authorized"] is True
+    assert result["formal_target_path_derivation_started"] is True
+    assert result["target_initialization_outcome"] == "initialized_exact_empty_target"
+    assert result["SQLite_connection_open_count"] == 1
+    assert result["SQLite_connection_reopen_count"] == 0
+    assert len(calls) == 1
+    assert result["candidate_table_DML_statement_count"] == 0
+    assert result["attempt_table_DML_statement_count"] == 0
+    assert result["other_user_DML_statement_count"] == 0
+    assert result["receipt_privacy_scan_passed"] is True
+    assert result["generic_git_repository_accepted"] is False
+    assert result["raw_origin_remote_exposed"] is False
+    assert _target(tmp_path).is_file()
+    assert _receipt(tmp_path).is_file()
+    rendered = json.dumps(result, ensure_ascii=True, sort_keys=True)
+    assert EXPECTED_FORMAL_ORIGIN not in rendered
+
+
+def test_exact_temporary_formal_fixture_verifies_existing_target_read_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    target = _create_exact_empty_target(tmp_path)
+    before = _sha256_bytes(target.read_bytes())
+    original_connect = sqlite3.connect
+    calls: list[tuple[Any, ...]] = []
+
+    def counted_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        calls.append(args)
+        return original_connect(*args, **kwargs)
+
+    monkeypatch.setattr(runner_module.sqlite3, "connect", counted_connect)
+    result = _formal_run(tmp_path)
+    after = _sha256_bytes(target.read_bytes())
+
+    assert result["passed"] is True
+    assert result["target_initialization_outcome"] == (
+        "verified_existing_exact_empty_target_read_only"
+    )
+    assert result["existing_target_read_only"] is True
+    assert result["existing_target_bytes_unchanged"] is True
+    assert result["SQLite_connection_open_count"] == 1
+    assert result["SQLite_connection_reopen_count"] == 0
+    assert len(calls) == 1
+    assert before == after
+    assert result["candidate_table_DML_statement_count"] == 0
+    assert result["attempt_table_DML_statement_count"] == 0
+    assert result["other_user_DML_statement_count"] == 0
+
+
+def test_formal_failure_diagnostics_are_complete_and_value_free(tmp_path: Path) -> None:
+    unsafe_origin = (
+        '[remote "origin"]\n'
+        "\turl = https://synthetic-user:synthetic-secret@github.com/"
+        "dgmpurf/Sentigraph.git\n"
+    )
+    _write_formal_git_config(tmp_path, unsafe_origin)
+
+    result = _formal_run(tmp_path)
+
+    _assert_complete_safe_failure(result, tmp_path)
+    assert result["safe_error_code"] == "formal_origin_remote_invalid"
+    rendered = json.dumps(result, ensure_ascii=True, sort_keys=True)
+    assert "synthetic-user" not in rendered
+    assert "synthetic-secret" not in rendered
+    assert EXPECTED_FORMAL_ORIGIN not in rendered
+
+
+def test_formal_identity_completes_before_target_derivation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    events: list[str] = []
+    original_identity = runner_module._verify_formal_repository_identity
+    original_derive = runner_module._derive_exact_paths
+
+    def verified_identity(root: Path, result: dict[str, Any]) -> None:
+        original_identity(root, result)
+        events.append("identity")
+
+    def derived_paths(root: Path) -> dict[str, Path]:
+        assert events == ["identity"]
+        events.append("derive")
+        return original_derive(root)
+
+    monkeypatch.setattr(
+        runner_module,
+        "_verify_formal_repository_identity",
+        verified_identity,
+    )
+    monkeypatch.setattr(runner_module, "_derive_exact_paths", derived_paths)
+    result = _formal_run(tmp_path)
+
+    assert result["passed"] is True
+    assert events == ["identity", "derive"]
+
+
+def test_wrong_origin_blocks_before_target_derivation_and_SQLite(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(
+        tmp_path,
+        '[remote "origin"]\n'
+        "\turl = https://github.com/synthetic-owner/Sentigraph.git\n",
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "_derive_exact_paths",
+        lambda *_args, **_kwargs: pytest.fail("target derivation reached"),
+    )
+    monkeypatch.setattr(
+        runner_module.sqlite3,
+        "connect",
+        lambda *_args, **_kwargs: pytest.fail("SQLite reached"),
+    )
+
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "formal_origin_remote_invalid"
+    assert result["formal_target_path_derivation_started"] is False
+    assert result["path_derivation_completed"] is False
+    assert result["SQLite_connection_open_count"] == 0
+
+
+def test_formal_contract_mismatch_blocks_before_git_config_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    monkeypatch.setattr(
+        Path,
+        "read_text",
+        lambda *_args, **_kwargs: pytest.fail("git config read reached"),
+    )
+
+    result = _formal_run(
+        tmp_path,
+        expected_formal_execution_profile_contract_safe_hash="2" * 64,
+    )
+
+    assert result["safe_error_code"] == "formal_profile_contract_hash_mismatch"
+    assert result["git_marker_check_started"] is False
+    assert result["formal_target_path_derivation_started"] is False
+
+
+def test_collision_checks_begin_only_after_formal_identity_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    original_collisions = runner_module._verify_exact_collisions
+    observations: list[bool] = []
+
+    def checked_collisions(
+        paths: dict[str, Path],
+        result: dict[str, Any],
+    ) -> tuple[str, str, dict[str, str]]:
+        observations.append(result["formal_repository_identity_check_passed"])
+        return original_collisions(paths, result)
+
+    monkeypatch.setattr(
+        runner_module,
+        "_verify_exact_collisions",
+        checked_collisions,
+    )
+    result = _formal_run(tmp_path)
+
+    assert result["passed"] is True
+    assert observations == [True]
+
+
+def test_formal_fixture_all_path_and_config_access_stays_under_tmp_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _write_formal_git_config(tmp_path)
+    original_path_state = runner_module._path_state
+    original_read_text = Path.read_text
+    observed_paths: list[Path] = []
+    observed_reads: list[Path] = []
+
+    def bounded_path_state(path: Path) -> str:
+        observed_paths.append(path)
+        assert path == tmp_path or tmp_path in path.parents
+        return original_path_state(path)
+
+    def bounded_read_text(path: Path, *args: Any, **kwargs: Any) -> str:
+        observed_reads.append(path)
+        assert path == config
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(runner_module, "_path_state", bounded_path_state)
+    monkeypatch.setattr(Path, "read_text", bounded_read_text)
+    result = _formal_run(tmp_path)
+
+    assert result["passed"] is True
+    assert observed_paths
+    assert observed_reads == [config]
+    assert result["actual_Git_root_passed_to_runner"] is False
+    assert result["actual_runtime_enumerated"] is False
+    assert result["formal_logical_target_accessed"] is False
+    assert result["formal_initialization_receipt_accessed"] is False
+
+
 @pytest.mark.parametrize(
     "mutation",
     ["missing_table", "extra_table", "extra_index", "extra_trigger", "extra_view"],
@@ -607,6 +1251,42 @@ def test_invalid_failure_injection_label_blocks_before_path_access(tmp_path: Pat
     assert result["path_derivation_completed"] is False
 
 
+def test_required_formal_result_fields_exist_on_early_failure(tmp_path: Path) -> None:
+    result = _formal_run(tmp_path, formal_execution_enabled=False)
+    required_fields = {
+        "execution_profile_requested",
+        "execution_profile_effective",
+        "synthetic_profile_selected",
+        "formal_profile_selected",
+        "formal_execution_enabled",
+        "formal_execution_guard_verified",
+        "repository_identity_schema",
+        "repository_identity_safe_hash_expected",
+        "repository_identity_safe_hash_verified",
+        "formal_profile_contract_safe_hash_expected",
+        "formal_profile_contract_safe_hash_verified",
+        "git_marker_check_started",
+        "git_marker_verified",
+        "git_config_check_started",
+        "git_config_verified",
+        "origin_remote_check_started",
+        "origin_remote_verified",
+        "formal_repository_identity_check_completed",
+        "formal_repository_identity_check_passed",
+        "generic_git_repository_accepted",
+        "raw_origin_remote_exposed",
+        "formal_target_path_derivation_authorized",
+        "formal_target_path_derivation_started",
+    }
+
+    assert set(result) == RESULT_FIELDS
+    assert required_fields <= set(result)
+    assert result["execution_profile_requested"] == FORMAL_EXECUTION_PROFILE
+    assert result["execution_profile_effective"] == FORMAL_EXECUTION_PROFILE
+    assert result["formal_profile_selected"] is True
+    assert result["formal_execution_guard_verified"] is False
+
+
 def test_static_import_and_API_boundary_has_no_overreach() -> None:
     source = inspect.getsource(runner_module)
     tree = ast.parse(source)
@@ -646,8 +1326,14 @@ def test_static_import_and_API_boundary_has_no_overreach() -> None:
         "MongoDbCaseStore",
         "target_path=",
         "receipt_path=",
+        "remote_url=",
+        "origin_url=",
     }
     assert not any(fragment in source for fragment in forbidden_source_fragments)
+    assert "Quantitative Trading" not in source
+    assert "e33443cf5fd2410eaf1444f9455262a3814f4516" not in source
+    assert "subprocess.run" not in source
+    assert "subprocess.Popen" not in source
 
 
 def test_historical_F06_report_remains_byte_exact() -> None:
