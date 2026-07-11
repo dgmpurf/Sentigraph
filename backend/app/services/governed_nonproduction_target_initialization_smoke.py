@@ -27,9 +27,9 @@ from app.services.protected_value_boundary_scanner import (
 SYNTHETIC_EXECUTION_PROFILE: Final = "synthetic_temporary_repository"
 FORMAL_EXECUTION_PROFILE: Final = "formal_exact_sentigraph_repository"
 RESULT_SCHEMA: Final = (
-    "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_2"
+    "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_3"
 )
-RESULT_VERSION: Final = "0.2"
+RESULT_VERSION: Final = "0.3"
 EXECUTION_MODE: Final = (
     "backend_only_local_profiled_repository_schema_initialization_smoke"
 )
@@ -108,9 +108,9 @@ PRIMARY_DDL_SAFE_HASH: Final = (
     "d44a6c46000b8c156b1367aae348be799e9a814d1328b686b2efc9e57cab7e26"
 )
 RECEIPT_SCHEMA: Final = (
-    "sentigraph_governed_nonproduction_target_initialization_receipt_v0_1"
+    "sentigraph_governed_nonproduction_target_initialization_receipt_v0_2"
 )
-RECEIPT_VERSION: Final = "0.1"
+RECEIPT_VERSION: Final = "0.2"
 _EXPECTED_FORMAL_ORIGIN: Final = (
     "https://github.com/"
     f"{FORMAL_REPOSITORY_IDENTITY_PROJECTION['repository_identity']}.git"
@@ -317,6 +317,24 @@ def _base_result() -> dict[str, Any]:
         "raw_origin_remote_exposed": False,
         "formal_target_path_derivation_authorized": False,
         "formal_target_path_derivation_started": False,
+        "git_repository_root_passed_to_runner": False,
+        "formal_repository_identity_verified": False,
+        "runner_can_distinguish_actual_root_from_exact_fixture": False,
+        "formal_target_path_derived": False,
+        "formal_target_metadata_access_started": False,
+        "formal_target_SQLite_open_attempted": False,
+        "formal_target_SQLite_opened": False,
+        "formal_receipt_path_derived": False,
+        "formal_receipt_metadata_access_started": False,
+        "formal_receipt_write_attempted": False,
+        "formal_receipt_write_completed": False,
+        "formal_receipt_readback_started": False,
+        "formal_receipt_readback_completed": False,
+        "formal_target_or_receipt_access_occurred": False,
+        "external_human_authorization_evaluated_by_runner": False,
+        "runner_grants_authorization": False,
+        "runner_receipt_grants_authorization": False,
+        "separate_exact_human_approval_required": True,
         "execution_phase": "validate_inputs",
         "terminal_phase": "not_completed",
         "safe_error_code": "none",
@@ -583,8 +601,17 @@ def run_governed_nonproduction_target_initialization_smoke(
         _inject("derive_exact_paths", _failure_injection_phase)
         paths = _derive_exact_paths(repository_root)
         result["path_derivation_completed"] = True
+        if execution_profile == FORMAL_EXECUTION_PROFILE:
+            result["formal_target_path_derived"] = True
+            result["formal_receipt_path_derived"] = True
 
         enter("verify_path_components")
+        if execution_profile == FORMAL_EXECUTION_PROFILE:
+            result["formal_target_metadata_access_started"] = True
+            result["formal_receipt_metadata_access_started"] = True
+            result["formal_target_or_receipt_access_occurred"] = True
+            result["formal_logical_target_accessed"] = True
+            result["formal_initialization_receipt_accessed"] = True
         _verify_path_components(paths, result, execution_profile)
         _inject("verify_path_components", _failure_injection_phase)
 
@@ -625,8 +652,12 @@ def run_governed_nonproduction_target_initialization_smoke(
             enter("open_SQLite_session")
             _inject("open_SQLite_session", _failure_injection_phase_for_SQL)
             result["initialization_attempt_count"] = 1
+            if execution_profile == FORMAL_EXECUTION_PROFILE:
+                result["formal_target_SQLite_open_attempted"] = True
             connection = _open_one_connection(paths["target"], target_was_absent)
             result["SQLite_connection_open_count"] = 1
+            if execution_profile == FORMAL_EXECUTION_PROFILE:
+                result["formal_target_SQLite_opened"] = True
             if target_was_absent:
                 result["SQLite_create_count"] = 1
                 result["target_created_by_this_run"] = True
@@ -781,9 +812,11 @@ def run_governed_nonproduction_target_initialization_smoke(
             raise _SmokeFailure("receipt_privacy_scan_failure")
 
         enter("write_receipt")
-        _inject("write_receipt", _failure_injection_phase)
         receipt_bytes = _canonical_json_bytes(receipt)
         result["receipt_exclusive_write_attempt_count"] = 1
+        if execution_profile == FORMAL_EXECUTION_PROFILE:
+            result["formal_receipt_write_attempted"] = True
+        _inject("write_receipt", _failure_injection_phase)
         try:
             with paths["receipt"].open("xb") as handle:
                 result["receipt_exclusive_write_performed"] = True
@@ -793,6 +826,8 @@ def run_governed_nonproduction_target_initialization_smoke(
                 os.fsync(handle.fileno())
                 result["receipt_fsync_performed"] = True
                 result["receipt_write_completed"] = True
+                if execution_profile == FORMAL_EXECUTION_PROFILE:
+                    result["formal_receipt_write_completed"] = True
         except FileExistsError as exc:
             raise _SmokeFailure("receipt_preexistence") from exc
         except _SmokeFailure:
@@ -801,6 +836,8 @@ def run_governed_nonproduction_target_initialization_smoke(
             raise _SmokeFailure("receipt_exclusive_write_failure") from exc
 
         enter("readback_receipt")
+        if execution_profile == FORMAL_EXECUTION_PROFILE:
+            result["formal_receipt_readback_started"] = True
         _inject("readback_receipt", _failure_injection_phase)
         try:
             readback_bytes = paths["receipt"].read_bytes()
@@ -811,6 +848,8 @@ def run_governed_nonproduction_target_initialization_smoke(
         if readback != receipt:
             raise _SmokeFailure("receipt_readback_failure")
         result["receipt_readback_verified"] = True
+        if execution_profile == FORMAL_EXECUTION_PROFILE:
+            result["formal_receipt_readback_completed"] = True
 
         _inject("verify_receipt_hash", _failure_injection_phase)
         readback_without_hash = dict(readback)
@@ -905,6 +944,8 @@ def _verify_formal_repository_identity(
         if git_status.st_dev != root_status.st_dev:
             raise _SmokeFailure("mount_device_boundary")
         result["git_marker_verified"] = True
+        result["git_repository_root_passed_to_runner"] = True
+        result["actual_Git_root_passed_to_runner"] = True
 
         result["git_config_check_started"] = True
         git_config = git_marker / "config"
@@ -959,6 +1000,7 @@ def _verify_formal_repository_identity(
 
         result["origin_remote_verified"] = True
         result["formal_repository_identity_check_passed"] = True
+        result["formal_repository_identity_verified"] = True
     finally:
         result["formal_repository_identity_check_completed"] = True
 
@@ -1223,10 +1265,45 @@ def _verify_integrity(connection: sqlite3.Connection, result: dict[str, Any]) ->
 
 
 def _build_receipt(result: dict[str, Any]) -> dict[str, Any]:
+    formal_receipt_completion_claim = bool(
+        result["formal_profile_selected"]
+        and result["formal_execution_guard_verified"]
+        and result["formal_repository_identity_verified"]
+        and result["formal_target_SQLite_opened"]
+        and result["formal_receipt_metadata_access_started"]
+    )
+    # These assertions are valid only after the exact bytes pass fsync and readback.
     receipt = {
         "receipt_schema": RECEIPT_SCHEMA,
         "receipt_version": RECEIPT_VERSION,
         "result_schema": RESULT_SCHEMA,
+        "execution_profile": result["execution_profile_effective"],
+        "formal_execution_guard_verified": result[
+            "formal_execution_guard_verified"
+        ],
+        "repository_identity_safe_hash": (
+            FORMAL_REPOSITORY_IDENTITY_SAFE_HASH
+            if result["formal_repository_identity_verified"]
+            else "not_applicable"
+        ),
+        "formal_execution_profile_contract_safe_hash": (
+            FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH
+            if result["formal_execution_guard_verified"]
+            else "not_applicable"
+        ),
+        "git_repository_root_passed_to_runner": result[
+            "git_repository_root_passed_to_runner"
+        ],
+        "formal_target_metadata_access_started": result[
+            "formal_target_metadata_access_started"
+        ],
+        "formal_target_SQLite_opened": result["formal_target_SQLite_opened"],
+        "formal_receipt_write_completed": formal_receipt_completion_claim,
+        "formal_receipt_readback_completed": formal_receipt_completion_claim,
+        "separate_exact_human_approval_required": True,
+        "external_human_authorization_evaluated_by_runner": False,
+        "runner_grants_authorization": False,
+        "receipt_grants_authorization": False,
         "target_kind": TARGET_KIND,
         "target_identity_safe_hash": LOCKED_TARGET_IDENTITY_SAFE_HASH,
         "target_authorization_contract_safe_hash": (
@@ -1280,7 +1357,6 @@ def _build_receipt(result: dict[str, Any]) -> dict[str, Any]:
         "target_substitution_used": False,
         "fallback_used": False,
         "human_review_required": True,
-        "formal_F06_recheck_authorized": False,
         "MVP_F07_eligible": False,
     }
     receipt["receipt_safe_hash"] = _sha256_bytes(_canonical_json_bytes(receipt))

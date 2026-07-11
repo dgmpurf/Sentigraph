@@ -27,8 +27,11 @@ from app.services.governed_nonproduction_target_initialization_smoke import (
     LOCKED_TARGET_IDENTITY_SAFE_HASH,
     LOCKED_TARGET_LOGICAL_LABEL,
     PRIMARY_DDL_SAFE_HASH,
+    RECEIPT_SCHEMA,
+    RECEIPT_VERSION,
     RESULT_FIELDS,
     RESULT_SCHEMA,
+    RESULT_VERSION,
     SAFE_ERROR_CODES,
     SYNTHETIC_EXECUTION_PROFILE,
     run_governed_nonproduction_target_initialization_smoke,
@@ -36,8 +39,47 @@ from app.services.governed_nonproduction_target_initialization_smoke import (
 
 
 EXPECTED_F06_HASH = "4f455eaeef1253f795da3b13b3cb960e5c55349e1858d866178047179b65c214"
+EXPECTED_R1_HASH = "9bb758aeabb004bd3bdca3a2f5b86887c13602b33e66eb36424f8fb3288b1b84"
+EXPECTED_P1_HASH = "5a8c925996149d93cbacf96562501320def39a64ce7951a5e86cdac5febdba5b"
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 EXPECTED_FORMAL_ORIGIN = "https://github.com/dgmpurf/Sentigraph.git"
+TRUTHFUL_ACCESS_RESULT_FIELDS = frozenset(
+    {
+        "git_repository_root_passed_to_runner",
+        "formal_repository_identity_verified",
+        "runner_can_distinguish_actual_root_from_exact_fixture",
+        "formal_target_path_derived",
+        "formal_target_metadata_access_started",
+        "formal_target_SQLite_open_attempted",
+        "formal_target_SQLite_opened",
+        "formal_receipt_path_derived",
+        "formal_receipt_metadata_access_started",
+        "formal_receipt_write_attempted",
+        "formal_receipt_write_completed",
+        "formal_receipt_readback_started",
+        "formal_receipt_readback_completed",
+        "formal_target_or_receipt_access_occurred",
+        "external_human_authorization_evaluated_by_runner",
+        "runner_grants_authorization",
+        "runner_receipt_grants_authorization",
+        "separate_exact_human_approval_required",
+    }
+)
+FORMAL_TARGET_RECEIPT_ACCESS_FIELDS = frozenset(
+    {
+        "formal_target_path_derived",
+        "formal_target_metadata_access_started",
+        "formal_target_SQLite_open_attempted",
+        "formal_target_SQLite_opened",
+        "formal_receipt_path_derived",
+        "formal_receipt_metadata_access_started",
+        "formal_receipt_write_attempted",
+        "formal_receipt_write_completed",
+        "formal_receipt_readback_started",
+        "formal_receipt_readback_completed",
+        "formal_target_or_receipt_access_occurred",
+    }
+)
 
 
 def _run(repository_root: Path, **overrides: Any) -> dict[str, Any]:
@@ -220,6 +262,12 @@ def _assert_complete_safe_failure(result: dict[str, Any], root: Path) -> None:
     assert re.search(r"[A-Za-z]:[\\/]", rendered) is None
 
 
+def _assert_no_formal_target_or_receipt_access(result: dict[str, Any]) -> None:
+    assert all(result[field] is False for field in FORMAL_TARGET_RECEIPT_ACCESS_FIELDS)
+    assert result["formal_logical_target_accessed"] is False
+    assert result["formal_initialization_receipt_accessed"] is False
+
+
 def test_public_contract_and_locked_constants() -> None:
     signature = inspect.signature(
         run_governed_nonproduction_target_initialization_smoke
@@ -253,8 +301,13 @@ def test_public_contract_and_locked_constants() -> None:
         is None
     )
     assert RESULT_SCHEMA == (
-        "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_2"
+        "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_3"
     )
+    assert RESULT_VERSION == "0.3"
+    assert RECEIPT_SCHEMA == (
+        "sentigraph_governed_nonproduction_target_initialization_receipt_v0_2"
+    )
+    assert RECEIPT_VERSION == "0.2"
     assert LOCKED_TARGET_LOGICAL_LABEL == (
         "runtime/governed_nonproduction_evidence_persistence/"
         "evidence_records_v0_1.sqlite3"
@@ -444,6 +497,44 @@ def test_absent_target_initializes_exact_empty_schema_and_safe_receipt(
     safe_hash = receipt_object.pop("receipt_safe_hash")
     assert safe_hash == _sha256_bytes(_canonical(receipt_object))
     assert result["receipt_byte_sha256"] == _sha256_bytes(receipt.read_bytes())
+
+
+def test_synthetic_result_and_receipt_keep_formal_access_not_applicable(
+    tmp_path: Path,
+) -> None:
+    result = _run(tmp_path)
+    receipt = json.loads(_receipt(tmp_path).read_text(encoding="utf-8"))
+
+    assert result["passed"] is True
+    assert TRUTHFUL_ACCESS_RESULT_FIELDS <= set(result)
+    assert result["git_repository_root_passed_to_runner"] is False
+    assert result["formal_repository_identity_verified"] is False
+    assert result["runner_can_distinguish_actual_root_from_exact_fixture"] is False
+    _assert_no_formal_target_or_receipt_access(result)
+    assert result["external_human_authorization_evaluated_by_runner"] is False
+    assert result["runner_grants_authorization"] is False
+    assert result["runner_receipt_grants_authorization"] is False
+    assert result["separate_exact_human_approval_required"] is True
+
+    assert receipt["receipt_schema"] == RECEIPT_SCHEMA
+    assert receipt["receipt_version"] == RECEIPT_VERSION
+    assert receipt["execution_profile"] == SYNTHETIC_EXECUTION_PROFILE
+    assert receipt["formal_execution_guard_verified"] is False
+    assert receipt["repository_identity_safe_hash"] == "not_applicable"
+    assert receipt["formal_execution_profile_contract_safe_hash"] == (
+        "not_applicable"
+    )
+    assert receipt["git_repository_root_passed_to_runner"] is False
+    assert receipt["formal_target_metadata_access_started"] is False
+    assert receipt["formal_target_SQLite_opened"] is False
+    assert receipt["formal_receipt_write_completed"] is False
+    assert receipt["formal_receipt_readback_completed"] is False
+    assert receipt["separate_exact_human_approval_required"] is True
+    assert receipt["external_human_authorization_evaluated_by_runner"] is False
+    assert receipt["runner_grants_authorization"] is False
+    assert receipt["receipt_grants_authorization"] is False
+    assert "formal_F06_recheck_authorized" not in receipt
+    assert receipt["MVP_F07_eligible"] is False
 
 
 def test_existing_exact_empty_target_is_read_only_and_byte_stable(
@@ -667,6 +758,9 @@ def test_formal_profile_missing_git_marker_blocks(tmp_path: Path) -> None:
     assert result["safe_error_code"] == "formal_git_marker_invalid"
     assert result["formal_repository_identity_check_completed"] is True
     assert result["formal_repository_identity_check_passed"] is False
+    assert result["git_repository_root_passed_to_runner"] is False
+    assert result["formal_repository_identity_verified"] is False
+    _assert_no_formal_target_or_receipt_access(result)
     assert result["path_derivation_completed"] is False
 
 
@@ -910,6 +1004,221 @@ def test_exact_temporary_formal_fixture_initializes_absent_target_once(
     assert EXPECTED_FORMAL_ORIGIN not in rendered
 
 
+def test_tdd_red_formal_success_truthfully_records_existing_access_fields(
+    tmp_path: Path,
+) -> None:
+    _write_formal_git_config(tmp_path)
+
+    result = _formal_run(tmp_path)
+
+    assert result["passed"] is True
+    assert TRUTHFUL_ACCESS_RESULT_FIELDS <= set(result)
+    assert result["actual_Git_root_passed_to_runner"] is True
+    assert result["git_repository_root_passed_to_runner"] is True
+    assert result["formal_repository_identity_verified"] is True
+    assert result["runner_can_distinguish_actual_root_from_exact_fixture"] is False
+    assert result["formal_target_path_derived"] is True
+    assert result["formal_target_metadata_access_started"] is True
+    assert result["formal_target_SQLite_open_attempted"] is True
+    assert result["formal_target_SQLite_opened"] is True
+    assert result["formal_receipt_path_derived"] is True
+    assert result["formal_receipt_metadata_access_started"] is True
+    assert result["formal_receipt_write_attempted"] is True
+    assert result["formal_receipt_write_completed"] is True
+    assert result["formal_receipt_readback_started"] is True
+    assert result["formal_receipt_readback_completed"] is True
+    assert result["formal_target_or_receipt_access_occurred"] is True
+    assert result["formal_logical_target_accessed"] is True
+    assert result["formal_initialization_receipt_accessed"] is True
+    assert result["external_human_authorization_evaluated_by_runner"] is False
+    assert result["runner_grants_authorization"] is False
+    assert result["runner_receipt_grants_authorization"] is False
+    assert result["separate_exact_human_approval_required"] is True
+
+
+def test_tdd_red_receipt_does_not_emit_external_authorization_verdict(
+    tmp_path: Path,
+) -> None:
+    _write_formal_git_config(tmp_path)
+
+    result = _formal_run(tmp_path)
+    receipt = json.loads(_receipt(tmp_path).read_text(encoding="utf-8"))
+
+    assert result["passed"] is True
+    assert "formal_F06_recheck_authorized" not in receipt
+    assert receipt["receipt_schema"] == RECEIPT_SCHEMA
+    assert receipt["receipt_version"] == RECEIPT_VERSION
+    assert receipt["execution_profile"] == FORMAL_EXECUTION_PROFILE
+    assert receipt["formal_execution_guard_verified"] is True
+    assert receipt["repository_identity_safe_hash"] == (
+        FORMAL_REPOSITORY_IDENTITY_SAFE_HASH
+    )
+    assert receipt["formal_execution_profile_contract_safe_hash"] == (
+        FORMAL_EXECUTION_PROFILE_CONTRACT_SAFE_HASH
+    )
+    assert receipt["git_repository_root_passed_to_runner"] is True
+    assert receipt["formal_target_metadata_access_started"] is True
+    assert receipt["formal_target_SQLite_opened"] is True
+    assert receipt["formal_receipt_write_completed"] is True
+    assert receipt["formal_receipt_readback_completed"] is True
+    assert receipt["separate_exact_human_approval_required"] is True
+    assert receipt["external_human_authorization_evaluated_by_runner"] is False
+    assert receipt["runner_grants_authorization"] is False
+    assert receipt["receipt_grants_authorization"] is False
+    assert receipt["MVP_F07_eligible"] is False
+    rendered = json.dumps(receipt, ensure_ascii=True, sort_keys=True)
+    assert EXPECTED_FORMAL_ORIGIN not in rendered
+    assert str(tmp_path) not in rendered
+
+    receipt_without_hash = dict(receipt)
+    receipt_safe_hash = receipt_without_hash.pop("receipt_safe_hash")
+    assert receipt_safe_hash == _sha256_bytes(_canonical(receipt_without_hash))
+    assert result["receipt_byte_sha256"] == _sha256_bytes(
+        _receipt(tmp_path).read_bytes()
+    )
+    assert result["receipt_privacy_scan_passed"] is True
+
+
+@pytest.mark.parametrize(
+    ("collision_kind", "error_code"),
+    [
+        ("target_directory", "unsafe_target_collision"),
+        ("receipt_file", "receipt_preexistence"),
+    ],
+)
+def test_formal_collision_truthfully_records_metadata_without_SQLite_open(
+    tmp_path: Path,
+    collision_kind: str,
+    error_code: str,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    if collision_kind == "target_directory":
+        _target(tmp_path).mkdir(parents=True)
+    else:
+        receipt = _receipt(tmp_path)
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text("synthetic collision", encoding="utf-8")
+
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == error_code
+    assert result["formal_target_path_derived"] is True
+    assert result["formal_receipt_path_derived"] is True
+    assert result["formal_target_metadata_access_started"] is True
+    assert result["formal_receipt_metadata_access_started"] is True
+    assert result["formal_target_or_receipt_access_occurred"] is True
+    assert result["formal_logical_target_accessed"] is True
+    assert result["formal_initialization_receipt_accessed"] is True
+    assert result["formal_target_SQLite_open_attempted"] is False
+    assert result["formal_target_SQLite_opened"] is False
+    assert result["SQLite_connection_open_count"] == 0
+
+
+def test_formal_SQLite_connect_failure_records_attempt_not_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(tmp_path)
+
+    def fail_connect(*_args: Any, **_kwargs: Any) -> sqlite3.Connection:
+        raise runner_module._SmokeFailure("SQLite_connect_failure")
+
+    monkeypatch.setattr(runner_module, "_open_one_connection", fail_connect)
+    result = _formal_run(tmp_path)
+
+    assert result["safe_error_code"] == "SQLite_connect_failure"
+    assert result["formal_target_metadata_access_started"] is True
+    assert result["formal_target_SQLite_open_attempted"] is True
+    assert result["formal_target_SQLite_opened"] is False
+    assert result["SQLite_connection_open_count"] == 0
+    assert result["formal_receipt_write_attempted"] is False
+
+
+@pytest.mark.parametrize(
+    (
+        "failure_phase",
+        "error_code",
+        "write_attempted",
+        "write_completed",
+        "readback_started",
+        "readback_completed",
+    ),
+    [
+        (
+            "write_receipt",
+            "receipt_exclusive_write_failure",
+            True,
+            False,
+            False,
+            False,
+        ),
+        ("fsync_receipt", "receipt_fsync_failure", True, False, False, False),
+        (
+            "readback_receipt",
+            "receipt_readback_failure",
+            True,
+            True,
+            True,
+            False,
+        ),
+    ],
+)
+def test_formal_receipt_failure_preserves_exact_last_reached_access_state(
+    tmp_path: Path,
+    failure_phase: str,
+    error_code: str,
+    write_attempted: bool,
+    write_completed: bool,
+    readback_started: bool,
+    readback_completed: bool,
+) -> None:
+    _write_formal_git_config(tmp_path)
+
+    result = _formal_run(tmp_path, _failure_injection_phase=failure_phase)
+
+    assert result["safe_error_code"] == error_code
+    assert result["formal_target_SQLite_open_attempted"] is True
+    assert result["formal_target_SQLite_opened"] is True
+    assert result["formal_receipt_metadata_access_started"] is True
+    assert result["formal_receipt_write_attempted"] is write_attempted
+    assert result["formal_receipt_write_completed"] is write_completed
+    assert result["formal_receipt_readback_started"] is readback_started
+    assert result["formal_receipt_readback_completed"] is readback_completed
+
+
+def test_formal_access_order_is_identity_metadata_SQLite_then_schema(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_formal_git_config(tmp_path)
+    original_open = runner_module._open_one_connection
+    original_verify_schema = runner_module._verify_schema
+    events: list[str] = []
+
+    def checked_open(target: Path, create: bool) -> sqlite3.Connection:
+        events.append("SQLite_attempt")
+        return original_open(target, create)
+
+    def checked_schema(
+        connection: sqlite3.Connection,
+        result: dict[str, Any],
+    ) -> None:
+        if "schema" not in events:
+            assert result["formal_repository_identity_verified"] is True
+            assert result["formal_target_metadata_access_started"] is True
+            assert result["formal_target_SQLite_open_attempted"] is True
+            assert result["formal_target_SQLite_opened"] is True
+            events.append("schema")
+        original_verify_schema(connection, result)
+
+    monkeypatch.setattr(runner_module, "_open_one_connection", checked_open)
+    monkeypatch.setattr(runner_module, "_verify_schema", checked_schema)
+    result = _formal_run(tmp_path)
+
+    assert result["passed"] is True
+    assert events[:2] == ["SQLite_attempt", "schema"]
+
+
 def test_exact_temporary_formal_fixture_verifies_existing_target_read_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -934,6 +1243,8 @@ def test_exact_temporary_formal_fixture_verifies_existing_target_read_only(
     )
     assert result["existing_target_read_only"] is True
     assert result["existing_target_bytes_unchanged"] is True
+    assert result["formal_target_SQLite_open_attempted"] is True
+    assert result["formal_target_SQLite_opened"] is True
     assert result["SQLite_connection_open_count"] == 1
     assert result["SQLite_connection_reopen_count"] == 0
     assert len(calls) == 1
@@ -1014,6 +1325,9 @@ def test_wrong_origin_blocks_before_target_derivation_and_SQLite(
     result = _formal_run(tmp_path)
 
     assert result["safe_error_code"] == "formal_origin_remote_invalid"
+    assert result["git_repository_root_passed_to_runner"] is True
+    assert result["formal_repository_identity_verified"] is False
+    _assert_no_formal_target_or_receipt_access(result)
     assert result["formal_target_path_derivation_started"] is False
     assert result["path_derivation_completed"] is False
     assert result["SQLite_connection_open_count"] == 0
@@ -1093,10 +1407,12 @@ def test_formal_fixture_all_path_and_config_access_stays_under_tmp_path(
     assert result["passed"] is True
     assert observed_paths
     assert observed_reads == [config]
-    assert result["actual_Git_root_passed_to_runner"] is False
+    assert result["actual_Git_root_passed_to_runner"] is True
+    assert result["git_repository_root_passed_to_runner"] is True
+    assert result["runner_can_distinguish_actual_root_from_exact_fixture"] is False
     assert result["actual_runtime_enumerated"] is False
-    assert result["formal_logical_target_accessed"] is False
-    assert result["formal_initialization_receipt_accessed"] is False
+    assert result["formal_logical_target_accessed"] is True
+    assert result["formal_initialization_receipt_accessed"] is True
 
 
 @pytest.mark.parametrize(
@@ -1241,6 +1557,9 @@ def test_every_controlled_failure_returns_complete_value_free_state(
     assert result["other_user_DML_statement_count"] == 0
     assert result["candidate_writer_called"] is False
     assert result["reservation_writer_called"] is False
+    assert result["git_repository_root_passed_to_runner"] is False
+    assert result["formal_repository_identity_verified"] is False
+    _assert_no_formal_target_or_receipt_access(result)
     assert result["actual_runtime_enumerated"] is False
     assert result["formal_logical_target_accessed"] is False
 
@@ -1277,7 +1596,7 @@ def test_required_formal_result_fields_exist_on_early_failure(tmp_path: Path) ->
         "raw_origin_remote_exposed",
         "formal_target_path_derivation_authorized",
         "formal_target_path_derivation_started",
-    }
+    } | set(TRUTHFUL_ACCESS_RESULT_FIELDS)
 
     assert set(result) == RESULT_FIELDS
     assert required_fields <= set(result)
@@ -1285,6 +1604,12 @@ def test_required_formal_result_fields_exist_on_early_failure(tmp_path: Path) ->
     assert result["execution_profile_effective"] == FORMAL_EXECUTION_PROFILE
     assert result["formal_profile_selected"] is True
     assert result["formal_execution_guard_verified"] is False
+    assert result["runner_can_distinguish_actual_root_from_exact_fixture"] is False
+    _assert_no_formal_target_or_receipt_access(result)
+    assert result["external_human_authorization_evaluated_by_runner"] is False
+    assert result["runner_grants_authorization"] is False
+    assert result["runner_receipt_grants_authorization"] is False
+    assert result["separate_exact_human_approval_required"] is True
 
 
 def test_static_import_and_API_boundary_has_no_overreach() -> None:
@@ -1328,6 +1653,7 @@ def test_static_import_and_API_boundary_has_no_overreach() -> None:
         "receipt_path=",
         "remote_url=",
         "origin_url=",
+        '"formal_F06_recheck_authorized"',
     }
     assert not any(fragment in source for fragment in forbidden_source_fragments)
     assert "Quantitative Trading" not in source
@@ -1337,11 +1663,21 @@ def test_static_import_and_API_boundary_has_no_overreach() -> None:
 
 
 def test_historical_F06_report_remains_byte_exact() -> None:
-    report = (
-        Path(__file__).resolve().parents[3]
-        / "docs"
-        / "health"
-        / "sentigraph_mvp_f06_exact_logical_target_initialization_smoke_report_v1_0.md"
-    )
-    assert report.is_file()
-    assert _sha256_bytes(report.read_bytes()) == EXPECTED_F06_HASH
+    health = Path(__file__).resolve().parents[3] / "docs" / "health"
+    reports = {
+        (
+            "sentigraph_mvp_f06_exact_logical_target_initialization_smoke_report_v1_0.md"
+        ): EXPECTED_F06_HASH,
+        (
+            "sentigraph_mvp_c03_p1_r1_f06_initialization_runner_synthetic_repair_"
+            "and_acceptance_report_v1_0.md"
+        ): EXPECTED_R1_HASH,
+        (
+            "sentigraph_mvp_chg_003_p1_formal_repository_root_execution_profile_"
+            "and_exact_target_guard_repair_report_v1_0.md"
+        ): EXPECTED_P1_HASH,
+    }
+    for name, expected_hash in reports.items():
+        report = health / name
+        assert report.is_file()
+        assert _sha256_bytes(report.read_bytes()) == expected_hash
