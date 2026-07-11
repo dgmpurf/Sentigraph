@@ -5,7 +5,7 @@ import json
 import re
 import sqlite3
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +19,14 @@ SOURCE_CANDIDATE_SCHEMA = (
     "sentigraph_controlled_evidence_layer_write_candidate_from_production_import_candidate_v0_1"
 )
 IDENTITY_SCHEMA = "sentigraph_one_real_source_locked_candidate_identity_v0_1"
-COMMAND_SCHEMA = "sentigraph_governed_nonproduction_evidence_persistence_command_v0_1"
+COMMAND_SCHEMA = "sentigraph_governed_nonproduction_evidence_persistence_command_v0_2"
+COMMAND_VERSION = "0.2"
 PERSISTED_RECORD_SCHEMA = "sentigraph_governed_nonproduction_evidence_persistence_record_v0_1"
-RECEIPT_SCHEMA = "sentigraph_governed_nonproduction_evidence_persistence_receipt_v0_1"
+ATTEMPT_RESERVATION_SCHEMA = (
+    "sentigraph_governed_nonproduction_evidence_persistence_attempt_reservation_v0_1"
+)
+ATTEMPT_RESERVATION_VERSION = "0.1"
+RECEIPT_SCHEMA = "sentigraph_governed_nonproduction_evidence_persistence_receipt_v0_2"
 REVOCATION_EVENT_SCHEMA = (
     "sentigraph_governed_nonproduction_evidence_persistence_revocation_event_v0_1"
 )
@@ -31,8 +36,15 @@ LOGICAL_RUNTIME_TARGET_LABEL = (
     "runtime/governed_nonproduction_evidence_persistence/evidence_records_v0_1.sqlite3"
 )
 TABLE_NAME = "governed_nonproduction_evidence_records_v0_1"
+ATTEMPT_RESERVATION_TABLE = (
+    "governed_nonproduction_evidence_persistence_attempt_reservations_v0_1"
+)
 ACTIVATION_DECISION_SCOPE = "exact_locked_candidate_and_selected_nonproduction_target_only"
 MAXIMUM_MUTATING_ATTEMPTS = 1
+ATTEMPT_SCOPE_NAMESPACE = "sentigraph_governed_nonproduction_attempt_scope_v0_1"
+ATTEMPT_RESERVATION_ID_NAMESPACE = (
+    "sentigraph_governed_nonproduction_attempt_reservation_id_v0_1"
+)
 
 _IDENTITY_FIELDS = {
     "approved_package_name",
@@ -146,11 +158,22 @@ _COMMAND_FIELDS = {
     "command_schema",
     "command_version",
     "target_logical_label",
+    "mutation_mode",
     "mutation_attempt_number",
+    "input_schema",
+    "input_schema_version",
+    "input_safe_hash",
+    "immutable_candidate_identity",
+    "gate_contract_binding",
+    "activation_decision_binding",
     "candidate_identity_digest",
     "idempotency_key",
     "persisted_record_id",
+    "audit_receipt_reference",
+    "attempt_scope_key",
+    "attempt_reservation_id",
     "record",
+    "reservation",
 }
 
 _RECORD_FIELDS = {
@@ -209,6 +232,28 @@ _BOOLEAN_RECORD_FIELDS = {
     "downstream_runtime_called",
     "package_or_row_read_during_persistence",
     "trust_or_role_reclassified",
+}
+
+_ATTEMPT_RESERVATION_FIELDS = {
+    "attempt_reservation_id",
+    "attempt_reservation_schema",
+    "attempt_reservation_version",
+    "attempt_scope_key",
+    "candidate_identity_digest",
+    "input_safe_hash",
+    "gate_contract_schema",
+    "gate_contract_version",
+    "gate_contract_safe_hash",
+    "activation_decision_id",
+    "activation_decision_safe_hash",
+    "target_logical_label",
+    "mutation_mode",
+    "idempotency_key",
+    "expected_persisted_record_id",
+    "maximum_mutating_attempts",
+    "reserved_attempt_number",
+    "reserved_at",
+    "reservation_canonical_hash",
 }
 
 _FORBIDDEN_KEYS = {
@@ -316,6 +361,28 @@ _COLUMN_ORDER = [
     "record_canonical_hash",
 ]
 
+_ATTEMPT_RESERVATION_COLUMN_ORDER = [
+    "attempt_reservation_id",
+    "attempt_reservation_schema",
+    "attempt_reservation_version",
+    "attempt_scope_key",
+    "candidate_identity_digest",
+    "input_safe_hash",
+    "gate_contract_schema",
+    "gate_contract_version",
+    "gate_contract_safe_hash",
+    "activation_decision_id",
+    "activation_decision_safe_hash",
+    "target_logical_label",
+    "mutation_mode",
+    "idempotency_key",
+    "expected_persisted_record_id",
+    "maximum_mutating_attempts",
+    "reserved_attempt_number",
+    "reserved_at",
+    "reservation_canonical_hash",
+]
+
 
 class GovernedNonproductionPersistenceError(ValueError):
     """Bounded validation or store error without unsafe value echoing."""
@@ -348,6 +415,7 @@ class GovernedNonproductionEvidencePersistenceStore:
             raise GovernedNonproductionPersistenceError("database_parent_missing")
         connection = sqlite3.connect(str(self.database_path))
         try:
+            connection.execute(_CREATE_ATTEMPT_RESERVATION_TABLE_SQL)
             connection.execute(_CREATE_TABLE_SQL)
             connection.commit()
         finally:
@@ -357,7 +425,17 @@ class GovernedNonproductionEvidencePersistenceStore:
         self._require_enabled_configuration()
         connection = self._open_read_only()
         try:
-            return _snapshot_connection(connection)
+            return _snapshot_record_connection(connection)
+        finally:
+            connection.close()
+
+    def safe_attempt_snapshot(self) -> dict[str, Any]:
+        """Return a safe digest snapshot reconstructed from reservation columns."""
+
+        self._require_enabled_configuration()
+        connection = self._open_read_only()
+        try:
+            return _snapshot_attempt_connection(connection)
         finally:
             connection.close()
 
@@ -445,7 +523,7 @@ def build_governed_nonproduction_evidence_persistence_command(
     mutation_attempt_number: int,
     created_at: str,
 ) -> dict[str, Any]:
-    """Build one deterministic create-only command without performing IO."""
+    """Build one deterministic v0.2 inspection command without performing IO."""
 
     validated = validate_exact_locked_candidate_safe_write_payload(
         payload,
@@ -465,6 +543,7 @@ def build_governed_nonproduction_evidence_persistence_command(
     _validate_timestamp(created_at)
 
     idempotency_projection = {
+        "namespace": "sentigraph_governed_nonproduction_idempotency_v0_2",
         "candidate_identity_digest": candidate_identity_digest,
         "input_safe_hash": validated["input_safe_hash"],
         "persisted_record_schema": PERSISTED_RECORD_SCHEMA,
@@ -475,10 +554,30 @@ def build_governed_nonproduction_evidence_persistence_command(
         "activation_decision_safe_hash": activation["activation_decision_safe_hash"],
         "mutation_mode": MUTATION_MODE,
         "target_logical_label": target_logical_label,
+        "command_schema": COMMAND_SCHEMA,
+        "command_version": COMMAND_VERSION,
     }
     idempotency_key = _sha256(idempotency_projection)
     persisted_record_id = f"gnpepr-{idempotency_key[:32]}"
     receipt_reference = f"gnpepr-receipt-{idempotency_key[:32]}"
+    attempt_scope_key = _sha256(
+        {
+            "namespace": ATTEMPT_SCOPE_NAMESPACE,
+            "candidate_identity_digest": candidate_identity_digest,
+            "activation_decision_safe_hash": activation["activation_decision_safe_hash"],
+            "gate_contract_safe_hash": gate["gate_contract_safe_hash"],
+            "target_logical_label": target_logical_label,
+            "mutation_mode": MUTATION_MODE,
+            "command_schema": COMMAND_SCHEMA,
+            "command_version": COMMAND_VERSION,
+        }
+    )
+    attempt_reservation_id = "gnpepr-attempt-" + _sha256(
+        {
+            "namespace": ATTEMPT_RESERVATION_ID_NAMESPACE,
+            "attempt_scope_key": attempt_scope_key,
+        }
+    )[:32]
 
     safe_projection = deepcopy(validated)
     projected_candidate = safe_projection["candidate_projection"]
@@ -527,126 +626,388 @@ def build_governed_nonproduction_evidence_persistence_command(
     }
     record["record_canonical_hash"] = _record_canonical_hash(record)
 
+    reservation: dict[str, Any] = {
+        "attempt_reservation_id": attempt_reservation_id,
+        "attempt_reservation_schema": ATTEMPT_RESERVATION_SCHEMA,
+        "attempt_reservation_version": ATTEMPT_RESERVATION_VERSION,
+        "attempt_scope_key": attempt_scope_key,
+        "candidate_identity_digest": candidate_identity_digest,
+        "input_safe_hash": validated["input_safe_hash"],
+        "gate_contract_schema": gate["gate_contract_schema"],
+        "gate_contract_version": gate["gate_contract_version"],
+        "gate_contract_safe_hash": gate["gate_contract_safe_hash"],
+        "activation_decision_id": activation["activation_decision_id"],
+        "activation_decision_safe_hash": activation["activation_decision_safe_hash"],
+        "target_logical_label": target_logical_label,
+        "mutation_mode": MUTATION_MODE,
+        "idempotency_key": idempotency_key,
+        "expected_persisted_record_id": persisted_record_id,
+        "maximum_mutating_attempts": MAXIMUM_MUTATING_ATTEMPTS,
+        "reserved_attempt_number": mutation_attempt_number,
+        "reserved_at": created_at,
+    }
+    reservation["reservation_canonical_hash"] = _reservation_canonical_hash(reservation)
+
     return {
         "command_schema": COMMAND_SCHEMA,
-        "command_version": "0.1",
+        "command_version": COMMAND_VERSION,
         "target_logical_label": target_logical_label,
+        "mutation_mode": MUTATION_MODE,
         "mutation_attempt_number": mutation_attempt_number,
+        "input_schema": PAYLOAD_SCHEMA,
+        "input_schema_version": PAYLOAD_VERSION,
+        "input_safe_hash": validated["input_safe_hash"],
+        "immutable_candidate_identity": deepcopy(identity),
+        "gate_contract_binding": gate,
+        "activation_decision_binding": activation,
         "candidate_identity_digest": candidate_identity_digest,
         "idempotency_key": idempotency_key,
         "persisted_record_id": persisted_record_id,
+        "audit_receipt_reference": receipt_reference,
+        "attempt_scope_key": attempt_scope_key,
+        "attempt_reservation_id": attempt_reservation_id,
         "record": record,
+        "reservation": reservation,
     }
 
 
 def create_governed_nonproduction_evidence_record(
     store: GovernedNonproductionEvidencePersistenceStore,
+    *,
+    payload: dict[str, Any],
+    expected_identity: dict[str, Any],
+    gate_contract_binding: dict[str, Any],
+    activation_decision_binding: dict[str, Any],
+    target_logical_label: str,
+    mutation_attempt_number: int,
+) -> dict[str, Any]:
+    """Revalidate source inputs and run one isolated synthetic persistence attempt."""
+
+    command = build_governed_nonproduction_evidence_persistence_command(
+        payload,
+        expected_identity=expected_identity,
+        gate_contract_binding=gate_contract_binding,
+        activation_decision_binding=activation_decision_binding,
+        target_logical_label=target_logical_label,
+        mutation_attempt_number=mutation_attempt_number,
+        created_at=_utc_now(),
+    )
+    return _persist_rederived_governed_nonproduction_command(store, command)
+
+
+def _persist_rederived_governed_nonproduction_command(
+    store: GovernedNonproductionEvidencePersistenceStore,
     command: dict[str, Any],
 ) -> dict[str, Any]:
-    """Create at most one isolated record and return an in-memory safe receipt."""
-
     validated_command = _validate_command(command)
     if validated_command["target_logical_label"] != store.target_logical_label:
         raise GovernedNonproductionPersistenceError("target_logical_label_mismatch")
     if validated_command["candidate_identity_digest"] != store.allowed_candidate_identity_digest:
         return _build_receipt(
             validated_command,
-            transaction_started=False,
-            transaction_committed=False,
-            mutation_count=0,
             final_outcome="scope_violation",
         )
 
     store._require_enabled_configuration()
-    connection = store._open_mutating()
-    transaction_started = False
-    before_state: dict[str, Any] | None = None
-    try:
-        connection.execute("BEGIN IMMEDIATE")
-        transaction_started = True
-        before_state = _snapshot_connection(connection)
+    existing = _resolve_existing_state_receipt(store, validated_command)
+    if existing is not None:
+        return existing
 
-        existing_by_idempotency = _find_row_by_idempotency(connection, validated_command["idempotency_key"])
+    reservation_phase = _reserve_mutating_attempt(store, validated_command)
+    if reservation_phase.get("receipt") is not None:
+        return reservation_phase["receipt"]
+
+    _after_attempt_reservation_commit(validated_command)
+    return _create_base_record_after_reservation(
+        store,
+        validated_command,
+        attempt_state_after_reservation=reservation_phase["attempt_state_after"],
+    )
+
+
+def _resolve_existing_state_receipt(
+    store: GovernedNonproductionEvidencePersistenceStore,
+    command: dict[str, Any],
+) -> dict[str, Any] | None:
+    connection = store._open_read_only()
+    try:
+        _snapshot_record_connection(connection)
+        _snapshot_attempt_connection(connection)
+        existing_by_idempotency = _find_row_by_idempotency(connection, command["idempotency_key"])
         if existing_by_idempotency is not None:
-            connection.rollback()
             existing_record = _row_to_record(existing_by_idempotency)
-            same_record = existing_record == validated_command["record"]
-            if not same_record:
+            if not _records_have_same_stable_binding(existing_record, command["record"]):
                 return _build_receipt(
-                    validated_command,
-                    transaction_started=True,
-                    transaction_committed=False,
-                    mutation_count=0,
-                    duplicate_conflict=True,
+                    command,
                     final_outcome="blocked_identity_or_payload_conflict",
+                    duplicate_conflict=True,
                 )
-            verification = verify_governed_nonproduction_evidence_record(
-                store,
-                validated_command,
-                before_state=before_state,
-                expected_mutation_count=0,
+            reservation_row = _find_attempt_row_by_scope(connection, command["attempt_scope_key"])
+            if reservation_row is None:
+                return _build_receipt(
+                    command,
+                    final_outcome="paused_post_write_verification_failed",
+                    exact_record_verified=True,
+                    created_at=existing_record["created_at"],
+                )
+            reservation = _row_to_reservation(reservation_row)
+            reservation_verified = _reservations_have_same_stable_binding(
+                reservation,
+                command["reservation"],
             )
+            if not reservation_verified:
+                raise GovernedNonproductionPersistenceError(
+                    "stored_attempt_reservation_binding_conflict"
+                )
             return _build_receipt(
-                validated_command,
-                transaction_started=True,
-                transaction_committed=False,
-                mutation_count=0,
+                command,
                 already_exists=True,
                 final_outcome="already_exists_same_record",
-                verification=verification,
+                attempt_reservation_committed=True,
+                mutating_attempt_consumed=True,
+                exact_record_verified=True,
+                attempt_reservation_verified=True,
+                no_unrelated_attempt_change_verified=True,
+                no_unrelated_record_change_verified=True,
+                created_at=existing_record["created_at"],
             )
 
         existing_candidate = _find_row_by_candidate_digest(
             connection,
-            validated_command["candidate_identity_digest"],
+            command["candidate_identity_digest"],
         )
         if existing_candidate is not None:
-            connection.rollback()
             return _build_receipt(
-                validated_command,
-                transaction_started=True,
-                transaction_committed=False,
-                mutation_count=0,
+                command,
                 duplicate_conflict=True,
                 final_outcome="blocked_identity_or_payload_conflict",
             )
 
+        reservation_row = _find_attempt_row_by_scope(connection, command["attempt_scope_key"])
+        if reservation_row is None:
+            reservation_row = _find_attempt_row_by_id(
+                connection,
+                command["attempt_reservation_id"],
+            )
+        if reservation_row is not None:
+            reservation = _row_to_reservation(reservation_row)
+            if not _reservations_have_same_stable_binding(
+                reservation,
+                command["reservation"],
+            ):
+                raise GovernedNonproductionPersistenceError(
+                    "stored_attempt_reservation_binding_conflict"
+                )
+            return _build_receipt(
+                command,
+                final_outcome=(
+                    "paused_mutating_attempt_already_consumed_without_verified_record"
+                ),
+                attempt_reservation_committed=True,
+                mutating_attempt_consumed=True,
+                attempt_reservation_verified=True,
+                no_unrelated_attempt_change_verified=True,
+            )
+        return None
+    finally:
+        connection.close()
+
+
+def _reserve_mutating_attempt(
+    store: GovernedNonproductionEvidencePersistenceStore,
+    command: dict[str, Any],
+) -> dict[str, Any]:
+    connection = store._open_mutating()
+    attempt_before: dict[str, Any] | None = None
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        attempt_before = _snapshot_attempt_connection(connection)
+        _snapshot_record_connection(connection)
+        if (
+            _find_attempt_row_by_scope(connection, command["attempt_scope_key"]) is not None
+            or _find_attempt_row_by_id(connection, command["attempt_reservation_id"]) is not None
+            or _find_row_by_idempotency(connection, command["idempotency_key"]) is not None
+            or _find_row_by_candidate_digest(
+                connection,
+                command["candidate_identity_digest"],
+            )
+            is not None
+        ):
+            connection.rollback()
+            return {"receipt": _resolve_existing_state_receipt(store, command)}
         try:
-            _insert_record(connection, validated_command["record"])
+            _insert_attempt_reservation(connection, command["reservation"])
+        except sqlite3.IntegrityError:
+            connection.rollback()
+            return {"receipt": _resolve_existing_state_receipt(store, command)}
+        except Exception:
+            connection.rollback()
+            return {
+                "receipt": _build_receipt(
+                    command,
+                    final_outcome="reservation_rolled_back_before_commit",
+                )
+            }
+        try:
+            _commit_attempt_reservation_connection(connection)
+        except Exception:
+            connection.close()
+            verification = _verify_attempt_reservation_after_commit(
+                store,
+                command,
+                before_state=attempt_before,
+                expected_mutation_count=1,
+            )
+            if verification["attempt_reservation_verified"]:
+                return {
+                    "receipt": _build_receipt(
+                        command,
+                        final_outcome=(
+                            "paused_attempt_reservation_commit_ambiguous_attempt_consumed"
+                        ),
+                        attempt_reservation_committed=True,
+                        mutating_attempt_consumed=True,
+                        attempt_reservation_verified=True,
+                        no_unrelated_attempt_change_verified=verification[
+                            "no_unrelated_attempt_change_verified"
+                        ],
+                    )
+                }
+            return {
+                "receipt": _build_receipt(
+                    command,
+                    final_outcome="paused_attempt_reservation_commit_ambiguous_not_proven",
+                )
+            }
+    finally:
+        try:
+            connection.close()
+        except sqlite3.Error:
+            pass
+
+    assert attempt_before is not None
+    verification = _verify_attempt_reservation_after_commit(
+        store,
+        command,
+        before_state=attempt_before,
+        expected_mutation_count=1,
+    )
+    if not (
+        verification["attempt_reservation_verified"]
+        and verification["no_unrelated_attempt_change_verified"]
+    ):
+        return {
+            "receipt": _build_receipt(
+                command,
+                final_outcome="paused_post_write_verification_failed",
+                attempt_reservation_committed=True,
+                mutating_attempt_consumed=True,
+                attempt_reservation_verified=verification["attempt_reservation_verified"],
+                no_unrelated_attempt_change_verified=verification[
+                    "no_unrelated_attempt_change_verified"
+                ],
+            )
+        }
+    return {
+        "receipt": None,
+        "attempt_state_after": verification["after_state"],
+    }
+
+
+def _create_base_record_after_reservation(
+    store: GovernedNonproductionEvidencePersistenceStore,
+    command: dict[str, Any],
+    *,
+    attempt_state_after_reservation: dict[str, Any],
+) -> dict[str, Any]:
+    connection = store._open_mutating()
+    record_before: dict[str, Any] | None = None
+    attempt_before: dict[str, Any] | None = None
+    insert_issued = False
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        record_before = _snapshot_record_connection(connection)
+        attempt_before = _snapshot_attempt_connection(connection)
+        if attempt_before.get("records") != attempt_state_after_reservation.get("records"):
+            connection.rollback()
+            return _build_receipt(
+                command,
+                final_outcome="paused_post_write_verification_failed",
+                attempt_reservation_committed=True,
+                mutating_attempt_consumed=True,
+                attempt_reservation_verified=True,
+            )
+        reservation_row = _find_attempt_row_by_scope(connection, command["attempt_scope_key"])
+        if reservation_row is None or not _reservations_have_same_stable_binding(
+            _row_to_reservation(reservation_row),
+            command["reservation"],
+        ):
+            connection.rollback()
+            return _build_receipt(
+                command,
+                final_outcome="paused_post_write_verification_failed",
+                attempt_reservation_committed=True,
+                mutating_attempt_consumed=True,
+            )
+        if (
+            _find_row_by_idempotency(connection, command["idempotency_key"]) is not None
+            or _find_row_by_candidate_digest(
+                connection,
+                command["candidate_identity_digest"],
+            )
+            is not None
+        ):
+            connection.rollback()
+            resolved = _resolve_existing_state_receipt(store, command)
+            assert resolved is not None
+            return resolved
+        try:
+            insert_issued = True
+            _insert_record(connection, command["record"])
         except Exception:
             connection.rollback()
             return _build_receipt(
-                validated_command,
-                transaction_started=True,
-                transaction_committed=False,
-                mutation_count=0,
+                command,
                 final_outcome="rolled_back_before_commit",
+                attempt_reservation_committed=True,
+                mutating_attempt_consumed=True,
+                base_record_insert_issued=insert_issued,
+                base_record_transaction_started=True,
+                transaction_rollback_performed=True,
+                attempt_reservation_verified=True,
+                no_unrelated_attempt_change_verified=True,
             )
-
         try:
-            _commit_connection(connection)
+            _commit_record_connection(connection)
         except Exception:
             connection.close()
-            verification = _verify_after_ambiguous_commit(
+            verification = _verify_full_persistence_state(
                 store,
-                validated_command,
-                before_state=before_state,
+                command,
+                attempt_before=attempt_before,
+                record_before=record_before,
+                expected_record_mutation_count=1,
             )
             if verification["post_write_readback_verified"]:
                 return _build_receipt(
-                    validated_command,
-                    transaction_started=True,
-                    transaction_committed=True,
-                    mutation_count=1,
+                    command,
                     final_outcome="created_exactly_one_governed_nonproduction_record",
+                    attempt_reservation_committed=True,
+                    mutating_attempt_consumed=True,
+                    base_record_insert_issued=True,
+                    base_record_transaction_started=True,
+                    base_record_transaction_committed=True,
+                    mutation_count=1,
                     verification=verification,
                 )
             return _build_receipt(
-                validated_command,
-                transaction_started=True,
-                transaction_committed=False,
-                mutation_count=None,
+                command,
                 final_outcome="paused_ambiguous_commit_not_proven",
+                attempt_reservation_committed=True,
+                mutating_attempt_consumed=True,
+                base_record_insert_issued=True,
+                base_record_transaction_started=True,
+                mutation_count=None,
                 verification=verification,
             )
     finally:
@@ -655,24 +1016,28 @@ def create_governed_nonproduction_evidence_record(
         except sqlite3.Error:
             pass
 
-    assert before_state is not None
-    verification = verify_governed_nonproduction_evidence_record(
+    assert record_before is not None and attempt_before is not None
+    verification = _verify_full_persistence_state(
         store,
-        validated_command,
-        before_state=before_state,
-        expected_mutation_count=1,
+        command,
+        attempt_before=attempt_before,
+        record_before=record_before,
+        expected_record_mutation_count=1,
     )
-    outcome = (
-        "created_exactly_one_governed_nonproduction_record"
-        if verification["post_write_readback_verified"]
-        else "paused_post_write_verification_failed"
-    )
+    verified = verification["post_write_readback_verified"]
     return _build_receipt(
-        validated_command,
-        transaction_started=transaction_started,
-        transaction_committed=True,
+        command,
+        final_outcome=(
+            "created_exactly_one_governed_nonproduction_record"
+            if verified
+            else "paused_post_write_verification_failed"
+        ),
+        attempt_reservation_committed=True,
+        mutating_attempt_consumed=True,
+        base_record_insert_issued=True,
+        base_record_transaction_started=True,
+        base_record_transaction_committed=True,
         mutation_count=1,
-        final_outcome=outcome,
         verification=verification,
     )
 
@@ -700,7 +1065,7 @@ def verify_governed_nonproduction_evidence_record(
     before_state: dict[str, Any] | None,
     expected_mutation_count: int,
 ) -> dict[str, Any]:
-    """Read back the intended record and prove exact isolation using safe digests."""
+    """Read back one intended record and recompute integrity from actual columns."""
 
     validated_command = _validate_command(command)
     if expected_mutation_count not in {0, 1}:
@@ -719,11 +1084,14 @@ def verify_governed_nonproduction_evidence_record(
                 ),
             ).fetchone()[0]
         )
-        after_state = _snapshot_connection(connection)
+        after_state = _snapshot_record_connection(connection)
     finally:
         connection.close()
 
-    persisted_record_verified = record == validated_command["record"]
+    persisted_record_verified = bool(
+        record is not None
+        and _records_have_same_stable_binding(record, validated_command["record"])
+    )
     exactly_one_record_verified = matching_count == 1
     unrelated_change = _unrelated_change_detected(
         before_state,
@@ -906,25 +1274,138 @@ def _validate_activation_binding(
 def _validate_command(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != _COMMAND_FIELDS:
         raise GovernedNonproductionPersistenceError("persistence_command_invalid")
-    if value.get("command_schema") != COMMAND_SCHEMA or value.get("command_version") != "0.1":
+    if value.get("command_schema") != COMMAND_SCHEMA or value.get("command_version") != COMMAND_VERSION:
         raise GovernedNonproductionPersistenceError("persistence_command_schema_invalid")
+    if value.get("mutation_mode") != MUTATION_MODE:
+        raise GovernedNonproductionPersistenceError("persistence_command_mutation_mode_invalid")
+    if value.get("input_schema") != PAYLOAD_SCHEMA or value.get("input_schema_version") != PAYLOAD_VERSION:
+        raise GovernedNonproductionPersistenceError("persistence_command_input_schema_invalid")
     _validate_logical_target_label(value.get("target_logical_label"))
     if value.get("mutation_attempt_number") != MAXIMUM_MUTATING_ATTEMPTS:
         raise GovernedNonproductionPersistenceError("mutation_attempt_invalid")
-    for field in {"candidate_identity_digest", "idempotency_key"}:
+    identity = _validate_identity(value.get("immutable_candidate_identity"))
+    candidate_identity_digest = _sha256(identity)
+    if value.get("candidate_identity_digest") != candidate_identity_digest:
+        raise GovernedNonproductionPersistenceError("persistence_command_identity_digest_mismatch")
+    gate = _validate_gate_binding(value.get("gate_contract_binding"))
+    activation = _validate_activation_binding(
+        value.get("activation_decision_binding"),
+        candidate_identity_digest=candidate_identity_digest,
+        gate_contract_safe_hash=gate["gate_contract_safe_hash"],
+    )
+    for field in {
+        "input_safe_hash",
+        "candidate_identity_digest",
+        "idempotency_key",
+        "attempt_scope_key",
+    }:
         if not _is_hash(value.get(field)):
             raise GovernedNonproductionPersistenceError("persistence_command_hash_invalid")
-    if not _is_opaque_token(value.get("persisted_record_id")):
+    for field in {
+        "persisted_record_id",
+        "audit_receipt_reference",
+        "attempt_reservation_id",
+    }:
+        if not _is_opaque_token(value.get(field)):
+            raise GovernedNonproductionPersistenceError("persistence_command_id_invalid")
+
+    expected_idempotency_key = _sha256(
+        {
+            "namespace": "sentigraph_governed_nonproduction_idempotency_v0_2",
+            "candidate_identity_digest": candidate_identity_digest,
+            "input_safe_hash": value["input_safe_hash"],
+            "persisted_record_schema": PERSISTED_RECORD_SCHEMA,
+            "persisted_record_schema_version": "0.1",
+            "gate_contract_schema": gate["gate_contract_schema"],
+            "gate_contract_version": gate["gate_contract_version"],
+            "gate_contract_safe_hash": gate["gate_contract_safe_hash"],
+            "activation_decision_safe_hash": activation["activation_decision_safe_hash"],
+            "mutation_mode": MUTATION_MODE,
+            "target_logical_label": value["target_logical_label"],
+            "command_schema": COMMAND_SCHEMA,
+            "command_version": COMMAND_VERSION,
+        }
+    )
+    if value["idempotency_key"] != expected_idempotency_key:
+        raise GovernedNonproductionPersistenceError("persistence_command_idempotency_mismatch")
+    expected_record_id = f"gnpepr-{expected_idempotency_key[:32]}"
+    expected_receipt_reference = f"gnpepr-receipt-{expected_idempotency_key[:32]}"
+    if value["persisted_record_id"] != expected_record_id:
         raise GovernedNonproductionPersistenceError("persisted_record_id_invalid")
+    if value["audit_receipt_reference"] != expected_receipt_reference:
+        raise GovernedNonproductionPersistenceError("audit_receipt_reference_invalid")
+
+    expected_attempt_scope_key = _sha256(
+        {
+            "namespace": ATTEMPT_SCOPE_NAMESPACE,
+            "candidate_identity_digest": candidate_identity_digest,
+            "activation_decision_safe_hash": activation["activation_decision_safe_hash"],
+            "gate_contract_safe_hash": gate["gate_contract_safe_hash"],
+            "target_logical_label": value["target_logical_label"],
+            "mutation_mode": MUTATION_MODE,
+            "command_schema": COMMAND_SCHEMA,
+            "command_version": COMMAND_VERSION,
+        }
+    )
+    if value["attempt_scope_key"] != expected_attempt_scope_key:
+        raise GovernedNonproductionPersistenceError("attempt_scope_key_mismatch")
+    expected_reservation_id = "gnpepr-attempt-" + _sha256(
+        {
+            "namespace": ATTEMPT_RESERVATION_ID_NAMESPACE,
+            "attempt_scope_key": expected_attempt_scope_key,
+        }
+    )[:32]
+    if value["attempt_reservation_id"] != expected_reservation_id:
+        raise GovernedNonproductionPersistenceError("attempt_reservation_id_mismatch")
+
     record = _validate_record(value.get("record"))
+    reservation = _validate_reservation(value.get("reservation"))
     if record["candidate_identity_digest"] != value["candidate_identity_digest"]:
         raise GovernedNonproductionPersistenceError("command_record_identity_mismatch")
     if record["idempotency_key"] != value["idempotency_key"]:
         raise GovernedNonproductionPersistenceError("command_record_idempotency_mismatch")
     if record["persisted_record_id"] != value["persisted_record_id"]:
         raise GovernedNonproductionPersistenceError("command_record_id_mismatch")
+    if record["audit_receipt_reference"] != value["audit_receipt_reference"]:
+        raise GovernedNonproductionPersistenceError("command_record_receipt_mismatch")
+    if record["input_safe_hash"] != value["input_safe_hash"]:
+        raise GovernedNonproductionPersistenceError("command_record_input_hash_mismatch")
+    if record["gate_contract_safe_hash"] != gate["gate_contract_safe_hash"]:
+        raise GovernedNonproductionPersistenceError("command_record_gate_mismatch")
+    if record["activation_decision_safe_hash"] != activation["activation_decision_safe_hash"]:
+        raise GovernedNonproductionPersistenceError("command_record_activation_mismatch")
+    expected_record_identity = {
+        "candidate_id": identity["final_candidate_id"],
+        "candidate_safe_hash": identity["final_candidate_safe_hash"],
+        "preview_row_id": identity["selected_preview_row_opaque_id"],
+        "preview_row_safe_hash": identity["selected_preview_row_safe_hash"],
+        "package_name": identity["approved_package_name"],
+        "candidate_role": identity["approved_package_role"],
+        "case_id_hint": identity["approved_case_id_hint"],
+        "row_source": identity["approved_row_source"],
+    }
+    if any(record.get(field) != expected for field, expected in expected_record_identity.items()):
+        raise GovernedNonproductionPersistenceError("command_record_identity_projection_mismatch")
+    if reservation["attempt_reservation_id"] != value["attempt_reservation_id"]:
+        raise GovernedNonproductionPersistenceError("command_reservation_id_mismatch")
+    if reservation["attempt_scope_key"] != value["attempt_scope_key"]:
+        raise GovernedNonproductionPersistenceError("command_reservation_scope_mismatch")
+    if reservation["candidate_identity_digest"] != value["candidate_identity_digest"]:
+        raise GovernedNonproductionPersistenceError("command_reservation_identity_mismatch")
+    if reservation["idempotency_key"] != value["idempotency_key"]:
+        raise GovernedNonproductionPersistenceError("command_reservation_idempotency_mismatch")
+    if reservation["expected_persisted_record_id"] != value["persisted_record_id"]:
+        raise GovernedNonproductionPersistenceError("command_reservation_record_mismatch")
+    if reservation["input_safe_hash"] != value["input_safe_hash"]:
+        raise GovernedNonproductionPersistenceError("command_reservation_input_hash_mismatch")
+    if record["created_at"] != reservation["reserved_at"]:
+        raise GovernedNonproductionPersistenceError("command_timestamp_binding_mismatch")
     validated = deepcopy(value)
+    validated["immutable_candidate_identity"] = identity
+    validated["gate_contract_binding"] = gate
+    validated["activation_decision_binding"] = activation
     validated["record"] = record
+    validated["reservation"] = reservation
     return validated
 
 
@@ -984,6 +1465,46 @@ def _validate_record(value: Any) -> dict[str, Any]:
             raise GovernedNonproductionPersistenceError("persisted_record_json_invalid")
     if _record_canonical_hash(value) != value.get("record_canonical_hash"):
         raise GovernedNonproductionPersistenceError("persisted_record_canonical_hash_mismatch")
+    return deepcopy(value)
+
+
+def _validate_reservation(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != _ATTEMPT_RESERVATION_FIELDS:
+        raise GovernedNonproductionPersistenceError("attempt_reservation_fields_invalid")
+    required_values = {
+        "attempt_reservation_schema": ATTEMPT_RESERVATION_SCHEMA,
+        "attempt_reservation_version": ATTEMPT_RESERVATION_VERSION,
+        "mutation_mode": MUTATION_MODE,
+        "maximum_mutating_attempts": MAXIMUM_MUTATING_ATTEMPTS,
+        "reserved_attempt_number": MAXIMUM_MUTATING_ATTEMPTS,
+    }
+    if any(value.get(key) != expected for key, expected in required_values.items()):
+        raise GovernedNonproductionPersistenceError("attempt_reservation_contract_invalid")
+    for field in {
+        "attempt_scope_key",
+        "candidate_identity_digest",
+        "input_safe_hash",
+        "gate_contract_safe_hash",
+        "activation_decision_safe_hash",
+        "idempotency_key",
+        "reservation_canonical_hash",
+    }:
+        if not _is_hash(value.get(field)):
+            raise GovernedNonproductionPersistenceError("attempt_reservation_hash_invalid")
+    for field in {
+        "attempt_reservation_id",
+        "gate_contract_schema",
+        "gate_contract_version",
+        "activation_decision_id",
+        "target_logical_label",
+        "expected_persisted_record_id",
+    }:
+        if not _is_opaque_token(value.get(field)):
+            raise GovernedNonproductionPersistenceError("attempt_reservation_value_invalid")
+    _validate_logical_target_label(value.get("target_logical_label"))
+    _validate_timestamp(value.get("reserved_at"))
+    if _reservation_canonical_hash(value) != value.get("reservation_canonical_hash"):
+        raise GovernedNonproductionPersistenceError("attempt_reservation_canonical_hash_mismatch")
     return deepcopy(value)
 
 
@@ -1077,8 +1598,22 @@ def _sha256(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
 def _record_canonical_hash(record: dict[str, Any]) -> str:
     return _sha256({key: value for key, value in record.items() if key != "record_canonical_hash"})
+
+
+def _reservation_canonical_hash(reservation: dict[str, Any]) -> str:
+    return _sha256(
+        {
+            key: value
+            for key, value in reservation.items()
+            if key != "reservation_canonical_hash"
+        }
+    )
 
 
 def _insert_record(connection: sqlite3.Connection, record: dict[str, Any]) -> None:
@@ -1098,7 +1633,24 @@ def _insert_record(connection: sqlite3.Connection, record: dict[str, Any]) -> No
     )
 
 
-def _commit_connection(connection: sqlite3.Connection) -> None:
+def _insert_attempt_reservation(
+    connection: sqlite3.Connection,
+    reservation: dict[str, Any],
+) -> None:
+    values = [reservation[field] for field in _ATTEMPT_RESERVATION_COLUMN_ORDER]
+    columns = ", ".join(_ATTEMPT_RESERVATION_COLUMN_ORDER)
+    parameter_markers = ", ".join("?" for _ in _ATTEMPT_RESERVATION_COLUMN_ORDER)
+    connection.execute(
+        f"INSERT INTO {ATTEMPT_RESERVATION_TABLE} ({columns}) VALUES ({parameter_markers})",
+        values,
+    )
+
+
+def _commit_attempt_reservation_connection(connection: sqlite3.Connection) -> None:
+    connection.commit()
+
+
+def _commit_record_connection(connection: sqlite3.Connection) -> None:
     connection.commit()
 
 
@@ -1122,21 +1674,77 @@ def _find_row_by_candidate_digest(
     ).fetchone()
 
 
+def _find_attempt_row_by_scope(
+    connection: sqlite3.Connection,
+    attempt_scope_key: str,
+) -> sqlite3.Row | None:
+    return connection.execute(
+        f"SELECT * FROM {ATTEMPT_RESERVATION_TABLE} WHERE attempt_scope_key = ?",
+        (attempt_scope_key,),
+    ).fetchone()
+
+
+def _find_attempt_row_by_id(
+    connection: sqlite3.Connection,
+    attempt_reservation_id: str,
+) -> sqlite3.Row | None:
+    return connection.execute(
+        f"SELECT * FROM {ATTEMPT_RESERVATION_TABLE} WHERE attempt_reservation_id = ?",
+        (attempt_reservation_id,),
+    ).fetchone()
+
+
 def _row_to_record(row: sqlite3.Row) -> dict[str, Any]:
-    record = dict(row)
-    for field in _JSON_RECORD_FIELDS:
-        record[field] = json.loads(record[field])
-    for field in _BOOLEAN_RECORD_FIELDS:
-        record[field] = bool(record[field])
-    return record
+    try:
+        record = dict(row)
+        if set(record) != set(_COLUMN_ORDER):
+            raise ValueError("record columns")
+        for field in _JSON_RECORD_FIELDS:
+            if not isinstance(record[field], str):
+                raise ValueError("record json type")
+            record[field] = json.loads(record[field])
+        for field in _BOOLEAN_RECORD_FIELDS:
+            if record[field] not in {0, 1}:
+                raise ValueError("record boolean")
+            record[field] = bool(record[field])
+        return _validate_record(record)
+    except (GovernedNonproductionPersistenceError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise GovernedNonproductionPersistenceError("stored_record_integrity_failure") from exc
 
 
-def _snapshot_connection(connection: sqlite3.Connection) -> dict[str, Any]:
+def _row_to_reservation(row: sqlite3.Row) -> dict[str, Any]:
+    try:
+        reservation = dict(row)
+        if set(reservation) != set(_ATTEMPT_RESERVATION_COLUMN_ORDER):
+            raise ValueError("reservation columns")
+        return _validate_reservation(reservation)
+    except (GovernedNonproductionPersistenceError, TypeError, ValueError) as exc:
+        raise GovernedNonproductionPersistenceError(
+            "stored_attempt_reservation_integrity_failure"
+        ) from exc
+
+
+def _snapshot_record_connection(connection: sqlite3.Connection) -> dict[str, Any]:
+    rows = connection.execute(f"SELECT * FROM {TABLE_NAME} ORDER BY persisted_record_id").fetchall()
+    records: dict[str, str] = {}
+    for row in rows:
+        record = _row_to_record(row)
+        records[record["persisted_record_id"]] = _record_canonical_hash(record)
+    return {
+        "count": len(records),
+        "digest": _sha256(records),
+        "records": records,
+    }
+
+
+def _snapshot_attempt_connection(connection: sqlite3.Connection) -> dict[str, Any]:
     rows = connection.execute(
-        f"SELECT persisted_record_id, record_canonical_hash FROM {TABLE_NAME} "
-        "ORDER BY persisted_record_id"
+        f"SELECT * FROM {ATTEMPT_RESERVATION_TABLE} ORDER BY attempt_reservation_id"
     ).fetchall()
-    records = {str(row[0]): str(row[1]) for row in rows}
+    records: dict[str, str] = {}
+    for row in rows:
+        reservation = _row_to_reservation(row)
+        records[reservation["attempt_reservation_id"]] = _reservation_canonical_hash(reservation)
     return {
         "count": len(records),
         "digest": _sha256(records),
@@ -1151,34 +1759,184 @@ def _unrelated_change_detected(
     *,
     expected_mutation_count: int,
 ) -> bool:
+    return not _snapshot_change_matches(
+        before_state,
+        after_state,
+        intended_id=intended_record["persisted_record_id"],
+        intended_hash=_record_canonical_hash(intended_record),
+        expected_mutation_count=expected_mutation_count,
+    )
+
+
+def _snapshot_change_matches(
+    before_state: dict[str, Any] | None,
+    after_state: dict[str, Any],
+    *,
+    intended_id: str,
+    intended_hash: str,
+    expected_mutation_count: int,
+) -> bool:
+    if expected_mutation_count not in {0, 1}:
+        return False
     if not isinstance(before_state, dict) or not isinstance(before_state.get("records"), dict):
-        return True
+        return False
+    if not isinstance(after_state, dict) or not isinstance(after_state.get("records"), dict):
+        return False
     expected_records = dict(before_state["records"])
     if expected_mutation_count == 1:
-        if intended_record["persisted_record_id"] in expected_records:
-            return True
-        expected_records[intended_record["persisted_record_id"]] = intended_record["record_canonical_hash"]
-    return expected_records != after_state.get("records")
+        if intended_id in expected_records:
+            return False
+        expected_records[intended_id] = intended_hash
+    return expected_records == after_state["records"]
 
 
-def _verify_after_ambiguous_commit(
+def _records_have_same_stable_binding(
+    stored: dict[str, Any],
+    expected: dict[str, Any],
+) -> bool:
+    candidate = deepcopy(expected)
+    candidate["created_at"] = stored.get("created_at")
+    candidate["record_canonical_hash"] = _record_canonical_hash(candidate)
+    return stored == candidate
+
+
+def _reservations_have_same_stable_binding(
+    stored: dict[str, Any],
+    expected: dict[str, Any],
+) -> bool:
+    candidate = deepcopy(expected)
+    candidate["reserved_at"] = stored.get("reserved_at")
+    candidate["reservation_canonical_hash"] = _reservation_canonical_hash(candidate)
+    return stored == candidate
+
+
+def _verify_attempt_reservation_after_commit(
     store: GovernedNonproductionEvidencePersistenceStore,
     command: dict[str, Any],
     *,
     before_state: dict[str, Any] | None,
+    expected_mutation_count: int,
 ) -> dict[str, Any]:
     try:
-        return verify_governed_nonproduction_evidence_record(
-            store,
-            command,
-            before_state=before_state,
-            expected_mutation_count=1,
+        connection = store._open_read_only()
+        try:
+            row = _find_attempt_row_by_scope(connection, command["attempt_scope_key"])
+            reservation = _row_to_reservation(row) if row is not None else None
+            after_state = _snapshot_attempt_connection(connection)
+        finally:
+            connection.close()
+        verified = bool(
+            reservation is not None
+            and _reservations_have_same_stable_binding(
+                reservation,
+                command["reservation"],
+            )
         )
+        no_unrelated = _snapshot_change_matches(
+            before_state,
+            after_state,
+            intended_id=command["attempt_reservation_id"],
+            intended_hash=_reservation_canonical_hash(command["reservation"]),
+            expected_mutation_count=expected_mutation_count,
+        )
+        return {
+            "attempt_reservation_verified": verified,
+            "no_unrelated_attempt_change_verified": no_unrelated,
+            "after_state": after_state,
+        }
+    except (GovernedNonproductionPersistenceError, sqlite3.Error):
+        return {
+            "attempt_reservation_verified": False,
+            "no_unrelated_attempt_change_verified": False,
+            "after_state": {},
+        }
+
+
+def _verify_full_persistence_state(
+    store: GovernedNonproductionEvidencePersistenceStore,
+    command: dict[str, Any],
+    *,
+    attempt_before: dict[str, Any] | None,
+    record_before: dict[str, Any] | None,
+    expected_record_mutation_count: int,
+) -> dict[str, Any]:
+    try:
+        connection = store._open_read_only()
+        try:
+            record_row = _find_row_by_idempotency(connection, command["idempotency_key"])
+            reservation_row = _find_attempt_row_by_scope(connection, command["attempt_scope_key"])
+            record = _row_to_record(record_row) if record_row is not None else None
+            reservation = (
+                _row_to_reservation(reservation_row) if reservation_row is not None else None
+            )
+            matching_count = int(
+                connection.execute(
+                    f"SELECT COUNT(*) FROM {TABLE_NAME} "
+                    "WHERE persisted_record_id = ? AND candidate_identity_digest = ?",
+                    (
+                        command["persisted_record_id"],
+                        command["candidate_identity_digest"],
+                    ),
+                ).fetchone()[0]
+            )
+            attempt_after = _snapshot_attempt_connection(connection)
+            record_after = _snapshot_record_connection(connection)
+        finally:
+            connection.close()
+
+        exact_record = bool(
+            record is not None and _records_have_same_stable_binding(record, command["record"])
+        )
+        exact_reservation = bool(
+            reservation is not None
+            and _reservations_have_same_stable_binding(
+                reservation,
+                command["reservation"],
+            )
+        )
+        no_unrelated_attempt = _snapshot_change_matches(
+            attempt_before,
+            attempt_after,
+            intended_id=command["attempt_reservation_id"],
+            intended_hash=_reservation_canonical_hash(command["reservation"]),
+            expected_mutation_count=0,
+        )
+        no_unrelated_record = _snapshot_change_matches(
+            record_before,
+            record_after,
+            intended_id=command["persisted_record_id"],
+            intended_hash=_record_canonical_hash(command["record"]),
+            expected_mutation_count=expected_record_mutation_count,
+        )
+        verified = (
+            exact_record
+            and matching_count == 1
+            and exact_reservation
+            and no_unrelated_attempt
+            and no_unrelated_record
+        )
+        return {
+            "persisted_record_verified": exact_record,
+            "exact_record_verified": exact_record,
+            "exactly_one_record_verified": matching_count == 1,
+            "attempt_reservation_verified": exact_reservation,
+            "no_unrelated_attempt_change_verified": no_unrelated_attempt,
+            "no_unrelated_record_change_verified": no_unrelated_record,
+            "unrelated_record_change_detected": not no_unrelated_record,
+            "post_write_readback_verified": verified,
+            "production_evidenceitem_created": False,
+            "production_case_changed": False,
+            "downstream_runtime_called": False,
+        }
     except (GovernedNonproductionPersistenceError, sqlite3.Error):
         return {
             "persisted_record_verified": False,
+            "exact_record_verified": False,
             "exactly_one_record_verified": False,
-            "unrelated_record_change_detected": False,
+            "attempt_reservation_verified": False,
+            "no_unrelated_attempt_change_verified": False,
+            "no_unrelated_record_change_verified": False,
+            "unrelated_record_change_detected": True,
             "post_write_readback_verified": False,
             "production_evidenceitem_created": False,
             "production_case_changed": False,
@@ -1186,19 +1944,49 @@ def _verify_after_ambiguous_commit(
         }
 
 
+def _after_attempt_reservation_commit(_command: dict[str, Any]) -> None:
+    """Private deterministic test seam after durable attempt consumption."""
+
+
 def _build_receipt(
     command: dict[str, Any],
     *,
-    transaction_started: bool,
-    transaction_committed: bool,
-    mutation_count: int | None,
     final_outcome: str,
+    attempt_reservation_committed: bool = False,
+    mutating_attempt_consumed: bool = False,
+    base_record_insert_issued: bool = False,
+    base_record_transaction_started: bool = False,
+    base_record_transaction_committed: bool = False,
+    mutation_count: int | None = 0,
+    transaction_rollback_performed: bool = False,
+    exact_record_verified: bool = False,
+    attempt_reservation_verified: bool = False,
+    no_unrelated_attempt_change_verified: bool = False,
+    no_unrelated_record_change_verified: bool = False,
     already_exists: bool = False,
     duplicate_conflict: bool = False,
     verification: dict[str, Any] | None = None,
+    created_at: str | None = None,
 ) -> dict[str, Any]:
     proof = verification or {}
     record = command["record"]
+    exact_record = proof.get("exact_record_verified", exact_record_verified)
+    exact_reservation = proof.get(
+        "attempt_reservation_verified",
+        attempt_reservation_verified,
+    )
+    no_attempt_change = proof.get(
+        "no_unrelated_attempt_change_verified",
+        no_unrelated_attempt_change_verified,
+    )
+    no_record_change = proof.get(
+        "no_unrelated_record_change_verified",
+        no_unrelated_record_change_verified,
+    )
+    post_write_verified = proof.get(
+        "post_write_readback_verified",
+        exact_record and exact_reservation and no_attempt_change and no_record_change,
+    )
     return {
         "receipt_id": record["audit_receipt_reference"],
         "receipt_schema": RECEIPT_SCHEMA,
@@ -1210,22 +1998,71 @@ def _build_receipt(
         "mutation_mode": MUTATION_MODE,
         "mutation_attempt_limit": MAXIMUM_MUTATING_ATTEMPTS,
         "mutation_attempt_number": command["mutation_attempt_number"],
-        "transaction_started": transaction_started,
-        "transaction_committed": transaction_committed,
+        "attempt_reservation_id": command["attempt_reservation_id"],
+        "attempt_scope_key": command["attempt_scope_key"],
+        "attempt_reservation_committed": attempt_reservation_committed,
+        "mutating_attempt_consumed": mutating_attempt_consumed,
+        "base_record_insert_issued": base_record_insert_issued,
+        "base_record_transaction_started": base_record_transaction_started,
+        "base_record_transaction_committed": base_record_transaction_committed,
         "mutation_count": mutation_count,
+        "transaction_rollback_performed": transaction_rollback_performed,
+        "transaction_rollback_available_before_commit": base_record_transaction_started,
+        "transaction_rollback_available_after_commit": False,
+        "post_commit_revocation_implemented": False,
+        "post_commit_revocation_available": False,
         "already_exists": already_exists,
         "duplicate_conflict": duplicate_conflict,
-        "persisted_record_verified": proof.get("persisted_record_verified", False),
-        "exactly_one_record_verified": proof.get("exactly_one_record_verified", False),
-        "unrelated_record_change_detected": proof.get("unrelated_record_change_detected", False),
-        "post_write_readback_verified": proof.get("post_write_readback_verified", False),
-        "rollback_or_revocation_available": True,
+        "persisted_record_verified": proof.get("persisted_record_verified", exact_record),
+        "exact_record_verified": exact_record,
+        "exactly_one_record_verified": proof.get("exactly_one_record_verified", exact_record),
+        "attempt_reservation_verified": exact_reservation,
+        "no_unrelated_attempt_change_verified": no_attempt_change,
+        "no_unrelated_record_change_verified": no_record_change,
+        "unrelated_record_change_detected": proof.get(
+            "unrelated_record_change_detected",
+            False,
+        ),
+        "post_write_readback_verified": post_write_verified,
         "production_evidenceitem_created": False,
         "production_case_changed": False,
         "downstream_runtime_called": False,
         "final_outcome": final_outcome,
-        "created_at": record["created_at"],
+        "created_at": created_at or record["created_at"],
     }
+
+
+_CREATE_ATTEMPT_RESERVATION_TABLE_SQL = f"""
+CREATE TABLE IF NOT EXISTS {ATTEMPT_RESERVATION_TABLE} (
+    attempt_reservation_id TEXT PRIMARY KEY,
+    attempt_reservation_schema TEXT NOT NULL CHECK (
+        attempt_reservation_schema = '{ATTEMPT_RESERVATION_SCHEMA}'
+    ),
+    attempt_reservation_version TEXT NOT NULL CHECK (
+        attempt_reservation_version = '{ATTEMPT_RESERVATION_VERSION}'
+    ),
+    attempt_scope_key TEXT NOT NULL UNIQUE,
+    candidate_identity_digest TEXT NOT NULL,
+    input_safe_hash TEXT NOT NULL,
+    gate_contract_schema TEXT NOT NULL,
+    gate_contract_version TEXT NOT NULL,
+    gate_contract_safe_hash TEXT NOT NULL,
+    activation_decision_id TEXT NOT NULL,
+    activation_decision_safe_hash TEXT NOT NULL,
+    target_logical_label TEXT NOT NULL,
+    mutation_mode TEXT NOT NULL CHECK (mutation_mode = '{MUTATION_MODE}'),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    expected_persisted_record_id TEXT NOT NULL,
+    maximum_mutating_attempts INTEGER NOT NULL CHECK (
+        maximum_mutating_attempts = {MAXIMUM_MUTATING_ATTEMPTS}
+    ),
+    reserved_attempt_number INTEGER NOT NULL CHECK (
+        reserved_attempt_number = {MAXIMUM_MUTATING_ATTEMPTS}
+    ),
+    reserved_at TEXT NOT NULL,
+    reservation_canonical_hash TEXT NOT NULL
+)
+"""
 
 
 _CREATE_TABLE_SQL = f"""

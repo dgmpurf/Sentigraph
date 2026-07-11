@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import inspect
 import json
 import sqlite3
+import threading
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -13,7 +15,11 @@ import pytest
 import app.services.governed_nonproduction_evidence_persistence as persistence_module
 from app.services.governed_nonproduction_evidence_persistence import (
     ACTIVATION_DECISION_SCOPE,
+    ATTEMPT_RESERVATION_SCHEMA,
+    ATTEMPT_RESERVATION_TABLE,
+    ATTEMPT_RESERVATION_VERSION,
     COMMAND_SCHEMA,
+    COMMAND_VERSION,
     GovernedNonproductionEvidencePersistenceStore,
     GovernedNonproductionPersistenceError,
     IDENTITY_SCHEMA,
@@ -38,6 +44,11 @@ from app.services.governed_nonproduction_evidence_persistence import (
 
 SYNTHETIC_TARGET_LABEL = "synthetic_governed_nonproduction_target_v0_1"
 SYNTHETIC_CREATED_AT = "2026-07-11T00:00:00Z"
+
+
+@pytest.fixture(autouse=True)
+def _fixed_private_utc_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(persistence_module, "_utc_now", lambda: SYNTHETIC_CREATED_AT)
 
 
 def _canonical_json(value: Any) -> str:
@@ -229,9 +240,43 @@ def _initialized_store(
     return store
 
 
+def _writer_inputs_from_command(command: dict[str, Any]) -> dict[str, Any]:
+    payload = deepcopy(command["record"]["safe_payload_projection"])
+    candidate = payload["candidate_projection"]
+    if "coarse_created_at" in candidate:
+        candidate["created_at_date"] = candidate.pop("coarse_created_at")
+    return {
+        "payload": payload,
+        "expected_identity": deepcopy(command["immutable_candidate_identity"]),
+        "gate_contract_binding": deepcopy(command["gate_contract_binding"]),
+        "activation_decision_binding": deepcopy(command["activation_decision_binding"]),
+        "target_logical_label": command["target_logical_label"],
+        "mutation_attempt_number": command["mutation_attempt_number"],
+    }
+
+
+def _write(
+    store: GovernedNonproductionEvidencePersistenceStore,
+    command: dict[str, Any],
+) -> dict[str, Any]:
+    return create_governed_nonproduction_evidence_record(
+        store,
+        **_writer_inputs_from_command(command),
+    )
+
+
 def _row_count(database_path: Path) -> int:
     with sqlite3.connect(database_path) as connection:
         return int(connection.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}").fetchone()[0])
+
+
+def _reservation_count(database_path: Path) -> int:
+    with sqlite3.connect(database_path) as connection:
+        return int(
+            connection.execute(
+                f"SELECT COUNT(*) FROM {ATTEMPT_RESERVATION_TABLE}"
+            ).fetchone()[0]
+        )
 
 
 def _assert_error(code: str, callback: Any) -> None:
@@ -250,9 +295,14 @@ def test_public_symbol_and_schema_contract() -> None:
     }
     assert all(hasattr(persistence_module, name) for name in expected_symbols)
     assert PAYLOAD_SCHEMA == "sentigraph_exact_locked_candidate_safe_write_payload_v0_1"
-    assert COMMAND_SCHEMA == "sentigraph_governed_nonproduction_evidence_persistence_command_v0_1"
+    assert COMMAND_SCHEMA == "sentigraph_governed_nonproduction_evidence_persistence_command_v0_2"
+    assert COMMAND_VERSION == "0.2"
     assert PERSISTED_RECORD_SCHEMA == "sentigraph_governed_nonproduction_evidence_persistence_record_v0_1"
-    assert RECEIPT_SCHEMA == "sentigraph_governed_nonproduction_evidence_persistence_receipt_v0_1"
+    assert ATTEMPT_RESERVATION_SCHEMA == (
+        "sentigraph_governed_nonproduction_evidence_persistence_attempt_reservation_v0_1"
+    )
+    assert ATTEMPT_RESERVATION_VERSION == "0.1"
+    assert RECEIPT_SCHEMA == "sentigraph_governed_nonproduction_evidence_persistence_receipt_v0_2"
     assert MUTATION_MODE == "transactional_create_only"
     assert INITIAL_STATUS == "governed_nonproduction_pending_human_review"
     assert LOGICAL_RUNTIME_TARGET_LABEL == (
@@ -305,7 +355,7 @@ def test_enabled_store_requires_existing_parent_and_explicit_targets(tmp_path: P
     assert not missing_database.exists()
 
 
-def test_synthetic_initialization_creates_only_expected_table(tmp_path: Path) -> None:
+def test_synthetic_initialization_creates_only_expected_tables(tmp_path: Path) -> None:
     command = _command()
     store = _initialized_store(tmp_path, command)
     with sqlite3.connect(store.database_path) as connection:
@@ -315,8 +365,9 @@ def test_synthetic_initialization_creates_only_expected_table(tmp_path: Path) ->
                 "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
             ).fetchall()
         }
-    assert tables == {TABLE_NAME}
+    assert tables == {ATTEMPT_RESERVATION_TABLE, TABLE_NAME}
     assert _row_count(store.database_path) == 0
+    assert _reservation_count(store.database_path) == 0
 
 
 def test_valid_payload_and_hash_validate() -> None:
@@ -533,6 +584,42 @@ def test_command_hashes_and_ids_are_deterministic() -> None:
     assert "created_at_date" not in first["record"]["safe_payload_projection"]["candidate_projection"]
 
 
+def test_stable_ids_and_replay_bindings_do_not_depend_on_timestamps() -> None:
+    identity = _identity()
+    payload = _payload(identity)
+    gate = _gate_binding()
+    activation = _activation_binding(identity, gate)
+    common = {
+        "expected_identity": identity,
+        "gate_contract_binding": gate,
+        "activation_decision_binding": activation,
+        "target_logical_label": SYNTHETIC_TARGET_LABEL,
+        "mutation_attempt_number": 1,
+    }
+    first = build_governed_nonproduction_evidence_persistence_command(
+        payload,
+        created_at="2026-07-11T00:00:00Z",
+        **common,
+    )
+    second = build_governed_nonproduction_evidence_persistence_command(
+        payload,
+        created_at="2026-07-12T00:00:00Z",
+        **common,
+    )
+
+    stable_fields = {
+        "candidate_identity_digest",
+        "idempotency_key",
+        "persisted_record_id",
+        "audit_receipt_reference",
+        "attempt_scope_key",
+        "attempt_reservation_id",
+    }
+    assert all(first[field] == second[field] for field in stable_fields)
+    assert first["record"]["created_at"] != second["record"]["created_at"]
+    assert first["reservation"]["reserved_at"] != second["reservation"]["reserved_at"]
+
+
 def test_gate_and_activation_bindings_are_strict() -> None:
     identity = _identity()
     payload = _payload(identity)
@@ -572,11 +659,13 @@ def test_mutation_attempt_must_be_exactly_one(attempt: int) -> None:
 def test_valid_single_create_and_receipt_verification(tmp_path: Path) -> None:
     command = _command()
     store = _initialized_store(tmp_path, command)
-    receipt = create_governed_nonproduction_evidence_record(store, command)
+    receipt = _write(store, command)
     assert receipt["receipt_schema"] == RECEIPT_SCHEMA
     assert receipt["mutation_count"] == 1
-    assert receipt["transaction_started"] is True
-    assert receipt["transaction_committed"] is True
+    assert receipt["attempt_reservation_committed"] is True
+    assert receipt["mutating_attempt_consumed"] is True
+    assert receipt["base_record_transaction_started"] is True
+    assert receipt["base_record_transaction_committed"] is True
     assert receipt["already_exists"] is False
     assert receipt["duplicate_conflict"] is False
     assert receipt["persisted_record_verified"] is True
@@ -605,13 +694,34 @@ def test_valid_single_create_and_receipt_verification(tmp_path: Path) -> None:
 def test_same_request_is_idempotent_with_zero_second_mutation(tmp_path: Path) -> None:
     command = _command()
     store = _initialized_store(tmp_path, command)
-    first = create_governed_nonproduction_evidence_record(store, command)
-    second = create_governed_nonproduction_evidence_record(store, command)
+    first = _write(store, command)
+    second = _write(store, command)
     assert first["mutation_count"] == 1
     assert second["mutation_count"] == 0
     assert second["already_exists"] is True
     assert second["final_outcome"] == "already_exists_same_record"
     assert second["persisted_record_verified"] is True
+    assert _row_count(store.database_path) == 1
+
+
+def test_exact_replay_with_later_clock_returns_original_creation_time(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    first = _write(store, command)
+    monkeypatch.setattr(
+        persistence_module,
+        "_utc_now",
+        lambda: "2026-07-12T00:00:00Z",
+    )
+    second = _write(store, command)
+
+    assert second["final_outcome"] == "already_exists_same_record"
+    assert second["mutation_count"] == 0
+    assert second["created_at"] == first["created_at"] == SYNTHETIC_CREATED_AT
+    assert _reservation_count(store.database_path) == 1
     assert _row_count(store.database_path) == 1
 
 
@@ -621,11 +731,12 @@ def test_conflicting_payload_for_same_candidate_blocks_without_mutation(tmp_path
     second_payload = _payload(identity, text="[redacted synthetic alternate]")
     second_command = _command(second_payload, expected_identity=identity)
     store = _initialized_store(tmp_path, first_command)
-    create_governed_nonproduction_evidence_record(store, first_command)
-    receipt = create_governed_nonproduction_evidence_record(store, second_command)
+    _write(store, first_command)
+    receipt = _write(store, second_command)
     assert receipt["mutation_count"] == 0
     assert receipt["duplicate_conflict"] is True
     assert receipt["final_outcome"] == "blocked_identity_or_payload_conflict"
+    assert _reservation_count(store.database_path) == 1
     assert _row_count(store.database_path) == 1
 
 
@@ -646,11 +757,12 @@ def test_conflicting_activation_for_same_candidate_blocks_without_mutation(tmp_p
         activation_binding=alternate_activation,
     )
     store = _initialized_store(tmp_path, first)
-    create_governed_nonproduction_evidence_record(store, first)
-    receipt = create_governed_nonproduction_evidence_record(store, second)
+    _write(store, first)
+    receipt = _write(store, second)
     assert receipt["mutation_count"] == 0
     assert receipt["duplicate_conflict"] is True
     assert receipt["final_outcome"] == "blocked_identity_or_payload_conflict"
+    assert _reservation_count(store.database_path) == 1
     assert _row_count(store.database_path) == 1
 
 
@@ -672,9 +784,9 @@ def test_different_candidate_is_scope_violation_before_connection(
         raise AssertionError("scope violation opened SQLite")
 
     monkeypatch.setattr(sqlite3, "connect", fail_connect)
-    receipt = create_governed_nonproduction_evidence_record(store, other)
+    receipt = _write(store, other)
     assert receipt["mutation_count"] == 0
-    assert receipt["transaction_started"] is False
+    assert receipt["base_record_transaction_started"] is False
     assert receipt["final_outcome"] == "scope_violation"
     assert not store.database_path.exists()
 
@@ -697,18 +809,24 @@ def test_target_binding_mismatch_blocks_before_connection(
     monkeypatch.setattr(sqlite3, "connect", fail_connect)
     _assert_error(
         "target_logical_label_mismatch",
-        lambda: create_governed_nonproduction_evidence_record(store, command),
+        lambda: _write(store, command),
     )
 
 
 def test_sqlite_uniqueness_constraints_are_enforced(tmp_path: Path) -> None:
     command = _command()
     store = _initialized_store(tmp_path, command)
-    create_governed_nonproduction_evidence_record(store, command)
+    _write(store, command)
     with sqlite3.connect(store.database_path) as connection:
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(f"INSERT INTO {TABLE_NAME} SELECT * FROM {TABLE_NAME}")
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                f"INSERT INTO {ATTEMPT_RESERVATION_TABLE} "
+                f"SELECT * FROM {ATTEMPT_RESERVATION_TABLE}"
+            )
     assert _row_count(store.database_path) == 1
+    assert _reservation_count(store.database_path) == 1
 
 
 def test_known_insert_failure_rolls_back_without_record(
@@ -722,9 +840,11 @@ def test_known_insert_failure_rolls_back_without_record(
         raise RuntimeError("synthetic insert failure")
 
     monkeypatch.setattr(persistence_module, "_insert_record", fail_insert)
-    receipt = create_governed_nonproduction_evidence_record(store, command)
-    assert receipt["transaction_started"] is True
-    assert receipt["transaction_committed"] is False
+    receipt = _write(store, command)
+    assert receipt["attempt_reservation_committed"] is True
+    assert receipt["mutating_attempt_consumed"] is True
+    assert receipt["base_record_transaction_started"] is True
+    assert receipt["base_record_transaction_committed"] is False
     assert receipt["mutation_count"] == 0
     assert receipt["final_outcome"] == "rolled_back_before_commit"
     assert _row_count(store.database_path) == 0
@@ -749,11 +869,11 @@ def test_commit_after_success_ambiguity_uses_read_only_lookup_without_retry(
         raise persistence_module._AmbiguousCommitError("synthetic ambiguous commit")
 
     monkeypatch.setattr(persistence_module, "_insert_record", counting_insert)
-    monkeypatch.setattr(persistence_module, "_commit_connection", commit_then_ambiguous)
-    receipt = create_governed_nonproduction_evidence_record(store, command)
+    monkeypatch.setattr(persistence_module, "_commit_record_connection", commit_then_ambiguous)
+    receipt = _write(store, command)
     assert insert_calls == 1
     assert receipt["mutation_count"] == 1
-    assert receipt["transaction_committed"] is True
+    assert receipt["base_record_transaction_committed"] is True
     assert receipt["post_write_readback_verified"] is True
     assert receipt["final_outcome"] == "created_exactly_one_governed_nonproduction_record"
     assert _row_count(store.database_path) == 1
@@ -778,11 +898,11 @@ def test_unproven_ambiguous_commit_pauses_without_retry(
         raise persistence_module._AmbiguousCommitError("synthetic ambiguous rollback")
 
     monkeypatch.setattr(persistence_module, "_insert_record", counting_insert)
-    monkeypatch.setattr(persistence_module, "_commit_connection", rollback_then_ambiguous)
-    receipt = create_governed_nonproduction_evidence_record(store, command)
+    monkeypatch.setattr(persistence_module, "_commit_record_connection", rollback_then_ambiguous)
+    receipt = _write(store, command)
     assert insert_calls == 1
     assert receipt["mutation_count"] is None
-    assert receipt["transaction_committed"] is False
+    assert receipt["base_record_transaction_committed"] is False
     assert receipt["post_write_readback_verified"] is False
     assert receipt["final_outcome"] == "paused_ambiguous_commit_not_proven"
     assert _row_count(store.database_path) == 0
@@ -792,7 +912,7 @@ def test_verification_detects_unrelated_record_change(tmp_path: Path) -> None:
     first = _command()
     store = _initialized_store(tmp_path, first)
     before = store.safe_snapshot()
-    create_governed_nonproduction_evidence_record(store, first)
+    _write(store, first)
     verification = verify_governed_nonproduction_evidence_record(
         store,
         first,
@@ -824,7 +944,7 @@ def test_verification_detects_unrelated_record_change(tmp_path: Path) -> None:
 def test_record_and_receipt_do_not_expose_physical_path_or_production_objects(tmp_path: Path) -> None:
     command = _command()
     store = _initialized_store(tmp_path, command)
-    receipt = create_governed_nonproduction_evidence_record(store, command)
+    receipt = _write(store, command)
     record = find_governed_nonproduction_record_by_idempotency_key(store, command["idempotency_key"])
     rendered = _canonical_json({"receipt": receipt, "record": record})
     assert str(store.database_path) not in rendered
@@ -842,7 +962,7 @@ def test_record_and_receipt_do_not_expose_physical_path_or_production_objects(tm
 def test_receipt_is_not_persisted_and_revocation_is_not_implemented(tmp_path: Path) -> None:
     command = _command()
     store = _initialized_store(tmp_path, command)
-    create_governed_nonproduction_evidence_record(store, command)
+    _write(store, command)
     with sqlite3.connect(store.database_path) as connection:
         tables = {
             row[0]
@@ -854,11 +974,518 @@ def test_receipt_is_not_persisted_and_revocation_is_not_implemented(tmp_path: Pa
             row[1]
             for row in connection.execute(f"PRAGMA table_info({TABLE_NAME})").fetchall()
         }
-    assert tables == {TABLE_NAME}
+    assert tables == {ATTEMPT_RESERVATION_TABLE, TABLE_NAME}
     assert "receipt_schema" not in columns
     assert "revoked_at" in columns
     assert "revocation_reason" in columns
     assert not hasattr(store, "revoke")
+
+
+def test_public_writer_rederives_from_source_inputs_and_rejects_command_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = _identity()
+    payload = _payload(identity)
+    gate = _gate_binding()
+    activation = _activation_binding(identity, gate)
+    command = _command(
+        payload,
+        expected_identity=identity,
+        gate_binding=gate,
+        activation_binding=activation,
+    )
+    store = _initialized_store(tmp_path, command)
+    monkeypatch.setattr(
+        persistence_module,
+        "_utc_now",
+        lambda: SYNTHETIC_CREATED_AT,
+        raising=False,
+    )
+
+    receipt = create_governed_nonproduction_evidence_record(
+        store,
+        payload=payload,
+        expected_identity=identity,
+        gate_contract_binding=gate,
+        activation_decision_binding=activation,
+        target_logical_label=SYNTHETIC_TARGET_LABEL,
+        mutation_attempt_number=1,
+    )
+
+    assert receipt["final_outcome"] == "created_exactly_one_governed_nonproduction_record"
+    with pytest.raises(TypeError):
+        create_governed_nonproduction_evidence_record(store, command)
+
+
+def test_public_writer_has_keyword_only_source_contract_and_all_forged_commands_block_before_io(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signature = inspect.signature(create_governed_nonproduction_evidence_record)
+    assert "command" not in signature.parameters
+    assert signature.parameters["payload"].kind is inspect.Parameter.KEYWORD_ONLY
+
+    base = _command()
+    forged_commands: list[dict[str, Any]] = []
+
+    redacted = deepcopy(base)
+    redacted["record"]["safe_payload_projection"]["candidate_projection"][
+        "text_snippet_redacted"
+    ] = "[redacted caller-forged alternate]"
+    redacted["record"]["record_canonical_hash"] = persistence_module._record_canonical_hash(
+        redacted["record"]
+    )
+    forged_commands.append(redacted)
+
+    for field in (
+        "candidate_identity_digest",
+        "idempotency_key",
+        "persisted_record_id",
+        "audit_receipt_reference",
+        "attempt_scope_key",
+        "attempt_reservation_id",
+    ):
+        forged = deepcopy(base)
+        forged[field] = _hex(f"synthetic-forged-{field}")
+        forged_commands.append(forged)
+
+    forged_gate = deepcopy(base)
+    forged_gate["gate_contract_binding"]["gate_contract_safe_hash"] = _hex(
+        "synthetic-forged-gate"
+    )
+    forged_commands.append(forged_gate)
+
+    forged_activation = deepcopy(base)
+    forged_activation["activation_decision_binding"]["activation_decision_safe_hash"] = _hex(
+        "synthetic-forged-activation"
+    )
+    forged_commands.append(forged_activation)
+
+    database_path = tmp_path / "must-not-open.sqlite3"
+    store = GovernedNonproductionEvidencePersistenceStore(
+        database_path=database_path,
+        target_logical_label=SYNTHETIC_TARGET_LABEL,
+        allowed_candidate_identity_digest=base["candidate_identity_digest"],
+        enabled=True,
+    )
+
+    def fail_connect(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("forged command reached SQLite")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_connect)
+    for forged in forged_commands:
+        with pytest.raises(TypeError):
+            create_governed_nonproduction_evidence_record(store, forged)
+        with pytest.raises(TypeError):
+            create_governed_nonproduction_evidence_record(store, command=forged)
+    assert not database_path.exists()
+
+
+def test_consumed_attempt_blocks_second_call_after_record_rollback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    insert_calls = 0
+
+    def fail_insert(*_args: Any, **_kwargs: Any) -> Any:
+        nonlocal insert_calls
+        insert_calls += 1
+        raise RuntimeError("synthetic base-record insert failure")
+
+    monkeypatch.setattr(persistence_module, "_insert_record", fail_insert)
+    first = _write(store, command)
+    second = _write(store, command)
+
+    assert first["mutating_attempt_consumed"] is True
+    assert second["final_outcome"] == (
+        "paused_mutating_attempt_already_consumed_without_verified_record"
+    )
+    assert second["base_record_insert_issued"] is False
+    assert insert_calls == 1
+    assert _reservation_count(store.database_path) == 1
+    assert _row_count(store.database_path) == 0
+
+
+def test_exact_replay_performs_zero_reservation_and_record_mutations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    first = _write(store, command)
+
+    def fail_mutation(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("exact replay attempted mutation")
+
+    monkeypatch.setattr(persistence_module, "_insert_attempt_reservation", fail_mutation)
+    monkeypatch.setattr(persistence_module, "_insert_record", fail_mutation)
+    second = _write(store, command)
+
+    assert first["mutation_count"] == 1
+    assert second["final_outcome"] == "already_exists_same_record"
+    assert second["mutation_count"] == 0
+    assert second["base_record_insert_issued"] is False
+    assert _reservation_count(store.database_path) == 1
+    assert _row_count(store.database_path) == 1
+
+
+def test_ambiguous_base_record_rollback_consumes_attempt_and_later_call_never_inserts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    original_insert = persistence_module._insert_record
+    insert_calls = 0
+
+    def counting_insert(*args: Any, **kwargs: Any) -> Any:
+        nonlocal insert_calls
+        insert_calls += 1
+        return original_insert(*args, **kwargs)
+
+    def rollback_then_ambiguous(connection: sqlite3.Connection) -> None:
+        connection.rollback()
+        raise persistence_module._AmbiguousCommitError("synthetic ambiguous rollback")
+
+    monkeypatch.setattr(persistence_module, "_insert_record", counting_insert)
+    monkeypatch.setattr(
+        persistence_module,
+        "_commit_record_connection",
+        rollback_then_ambiguous,
+    )
+    first = _write(store, command)
+    monkeypatch.setattr(
+        persistence_module,
+        "_commit_record_connection",
+        lambda connection: connection.commit(),
+    )
+    second = _write(store, command)
+
+    assert first["final_outcome"] == "paused_ambiguous_commit_not_proven"
+    assert second["final_outcome"] == (
+        "paused_mutating_attempt_already_consumed_without_verified_record"
+    )
+    assert second["base_record_insert_issued"] is False
+    assert insert_calls == 1
+    assert _reservation_count(store.database_path) == 1
+    assert _row_count(store.database_path) == 0
+
+
+def test_controlled_stop_after_reservation_commit_leaves_attempt_consumed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+
+    def controlled_stop(_command_value: dict[str, Any]) -> None:
+        raise RuntimeError("synthetic controlled stop")
+
+    monkeypatch.setattr(
+        persistence_module,
+        "_after_attempt_reservation_commit",
+        controlled_stop,
+    )
+    with pytest.raises(RuntimeError, match="synthetic controlled stop"):
+        _write(store, command)
+    assert _reservation_count(store.database_path) == 1
+    assert _row_count(store.database_path) == 0
+
+    monkeypatch.setattr(
+        persistence_module,
+        "_after_attempt_reservation_commit",
+        lambda _command_value: None,
+    )
+    second = _write(store, command)
+    assert second["final_outcome"] == (
+        "paused_mutating_attempt_already_consumed_without_verified_record"
+    )
+    assert second["base_record_insert_issued"] is False
+
+
+def test_reservation_commit_ambiguity_never_reaches_base_record_insert(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    base_insert_calls = 0
+
+    def commit_then_ambiguous(connection: sqlite3.Connection) -> None:
+        connection.commit()
+        raise persistence_module._AmbiguousCommitError("synthetic reservation ambiguity")
+
+    def count_base_insert(*_args: Any, **_kwargs: Any) -> None:
+        nonlocal base_insert_calls
+        base_insert_calls += 1
+
+    monkeypatch.setattr(
+        persistence_module,
+        "_commit_attempt_reservation_connection",
+        commit_then_ambiguous,
+    )
+    monkeypatch.setattr(persistence_module, "_insert_record", count_base_insert)
+    first = _write(store, command)
+    second = _write(store, command)
+
+    assert first["final_outcome"] == (
+        "paused_attempt_reservation_commit_ambiguous_attempt_consumed"
+    )
+    assert second["final_outcome"] == (
+        "paused_mutating_attempt_already_consumed_without_verified_record"
+    )
+    assert first["base_record_insert_issued"] is False
+    assert second["base_record_insert_issued"] is False
+    assert base_insert_calls == 0
+    assert _reservation_count(store.database_path) == 1
+    assert _row_count(store.database_path) == 0
+
+
+def test_unproven_reservation_commit_ambiguity_pauses_without_base_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+
+    def rollback_then_ambiguous(connection: sqlite3.Connection) -> None:
+        connection.rollback()
+        raise persistence_module._AmbiguousCommitError("synthetic unproven reservation")
+
+    def fail_base_insert(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("unproven reservation reached base INSERT")
+
+    monkeypatch.setattr(
+        persistence_module,
+        "_commit_attempt_reservation_connection",
+        rollback_then_ambiguous,
+    )
+    monkeypatch.setattr(persistence_module, "_insert_record", fail_base_insert)
+    receipt = _write(store, command)
+
+    assert receipt["final_outcome"] == "paused_attempt_reservation_commit_ambiguous_not_proven"
+    assert receipt["base_record_insert_issued"] is False
+    assert _reservation_count(store.database_path) == 0
+    assert _row_count(store.database_path) == 0
+
+
+def test_known_reservation_failure_rolls_back_without_consuming_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+
+    def fail_reservation(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("synthetic reservation insert failure")
+
+    monkeypatch.setattr(persistence_module, "_insert_attempt_reservation", fail_reservation)
+    receipt = _write(store, command)
+
+    assert receipt["final_outcome"] == "reservation_rolled_back_before_commit"
+    assert receipt["attempt_reservation_committed"] is False
+    assert receipt["mutating_attempt_consumed"] is False
+    assert receipt["base_record_insert_issued"] is False
+    assert _reservation_count(store.database_path) == 0
+    assert _row_count(store.database_path) == 0
+
+
+def test_concurrent_identical_calls_allow_at_most_one_base_record_insert(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    reservation_committed = threading.Event()
+    release_winner = threading.Event()
+    original_insert = persistence_module._insert_record
+    insert_calls = 0
+    insert_lock = threading.Lock()
+    winner_results: list[dict[str, Any]] = []
+    winner_errors: list[BaseException] = []
+
+    def hold_after_reservation(_command_value: dict[str, Any]) -> None:
+        reservation_committed.set()
+        if not release_winner.wait(timeout=5):
+            raise AssertionError("synthetic concurrency release timeout")
+
+    def counting_insert(*args: Any, **kwargs: Any) -> Any:
+        nonlocal insert_calls
+        with insert_lock:
+            insert_calls += 1
+        return original_insert(*args, **kwargs)
+
+    def run_winner() -> None:
+        try:
+            winner_results.append(_write(store, command))
+        except BaseException as exc:  # pragma: no cover - surfaced by assertions below
+            winner_errors.append(exc)
+
+    monkeypatch.setattr(
+        persistence_module,
+        "_after_attempt_reservation_commit",
+        hold_after_reservation,
+    )
+    monkeypatch.setattr(persistence_module, "_insert_record", counting_insert)
+    thread = threading.Thread(target=run_winner, name="synthetic-persistence-winner")
+    thread.start()
+    assert reservation_committed.wait(timeout=5)
+    competing = _write(store, command)
+    release_winner.set()
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert winner_errors == []
+    assert len(winner_results) == 1
+    assert winner_results[0]["final_outcome"] == (
+        "created_exactly_one_governed_nonproduction_record"
+    )
+    assert competing["final_outcome"] == (
+        "paused_mutating_attempt_already_consumed_without_verified_record"
+    )
+    assert competing["base_record_insert_issued"] is False
+    assert insert_calls == 1
+    assert _reservation_count(store.database_path) == 1
+    assert _row_count(store.database_path) == 1
+
+
+def test_snapshot_recomputes_hash_from_actual_record_columns(tmp_path: Path) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    _write(store, command)
+
+    with sqlite3.connect(store.database_path) as connection:
+        connection.execute(
+            f"UPDATE {TABLE_NAME} SET candidate_role = ? WHERE persisted_record_id = ?",
+            ("synthetic_tampered_role", command["persisted_record_id"]),
+        )
+        connection.commit()
+
+    with pytest.raises(
+        GovernedNonproductionPersistenceError,
+        match="stored_record_integrity_failure",
+    ):
+        store.safe_snapshot()
+
+
+def test_snapshot_detects_stale_hash_after_canonical_json_column_change(tmp_path: Path) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    _write(store, command)
+
+    with sqlite3.connect(store.database_path) as connection:
+        raw = connection.execute(
+            f"SELECT safe_payload_projection FROM {TABLE_NAME} WHERE persisted_record_id = ?",
+            (command["persisted_record_id"],),
+        ).fetchone()[0]
+        projection = json.loads(raw)
+        projection["candidate_projection"]["trust_label"] = "synthetic_tampered_trust"
+        connection.execute(
+            f"UPDATE {TABLE_NAME} SET safe_payload_projection = ? WHERE persisted_record_id = ?",
+            (_canonical_json(projection), command["persisted_record_id"]),
+        )
+        connection.commit()
+
+    with pytest.raises(
+        GovernedNonproductionPersistenceError,
+        match="stored_record_integrity_failure",
+    ):
+        store.safe_snapshot()
+
+
+def test_snapshot_rejects_malformed_stored_record_json(tmp_path: Path) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    _write(store, command)
+
+    with sqlite3.connect(store.database_path) as connection:
+        connection.execute(
+            f"UPDATE {TABLE_NAME} SET lineage_projection = ? WHERE persisted_record_id = ?",
+            ("{synthetic-malformed-json", command["persisted_record_id"]),
+        )
+        connection.commit()
+
+    with pytest.raises(
+        GovernedNonproductionPersistenceError,
+        match="stored_record_integrity_failure",
+    ):
+        store.safe_snapshot()
+
+
+def test_attempt_snapshot_detects_stale_reservation_hash(tmp_path: Path) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    _write(store, command)
+
+    with sqlite3.connect(store.database_path) as connection:
+        connection.execute(
+            f"UPDATE {ATTEMPT_RESERVATION_TABLE} SET activation_decision_id = ? "
+            "WHERE attempt_reservation_id = ?",
+            ("synthetic-tampered-activation", command["attempt_reservation_id"]),
+        )
+        connection.commit()
+
+    with pytest.raises(
+        GovernedNonproductionPersistenceError,
+        match="stored_attempt_reservation_integrity_failure",
+    ):
+        store.safe_attempt_snapshot()
+
+
+def test_unrelated_concurrent_record_insert_forces_conservative_pause(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command()
+    other_identity = _identity("002")
+    unrelated = _command(
+        _payload(other_identity, seed="002"),
+        expected_identity=other_identity,
+    )
+    store = _initialized_store(tmp_path, command)
+
+    def commit_then_add_unrelated(connection: sqlite3.Connection) -> None:
+        connection.commit()
+        with sqlite3.connect(store.database_path) as unrelated_connection:
+            persistence_module._insert_record(unrelated_connection, unrelated["record"])
+            unrelated_connection.commit()
+
+    monkeypatch.setattr(
+        persistence_module,
+        "_commit_record_connection",
+        commit_then_add_unrelated,
+    )
+    receipt = _write(store, command)
+
+    assert receipt["final_outcome"] == "paused_post_write_verification_failed"
+    assert receipt["exact_record_verified"] is True
+    assert receipt["no_unrelated_record_change_verified"] is False
+    assert receipt["post_write_readback_verified"] is False
+    assert _row_count(store.database_path) == 2
+
+
+def test_receipt_v02_removes_combined_rollback_revocation_claim(tmp_path: Path) -> None:
+    command = _command()
+    store = _initialized_store(tmp_path, command)
+    receipt = _write(store, command)
+
+    assert receipt["receipt_schema"] == (
+        "sentigraph_governed_nonproduction_evidence_persistence_receipt_v0_2"
+    )
+    assert "rollback_or_revocation_available" not in receipt
+    assert receipt["attempt_reservation_committed"] is True
+    assert receipt["mutating_attempt_consumed"] is True
+    assert receipt["base_record_insert_issued"] is True
+    assert receipt["base_record_transaction_committed"] is True
+    assert receipt["transaction_rollback_performed"] is False
+    assert receipt["transaction_rollback_available_after_commit"] is False
+    assert receipt["post_commit_revocation_implemented"] is False
+    assert receipt["post_commit_revocation_available"] is False
+    assert receipt["exact_record_verified"] is True
+    assert receipt["attempt_reservation_verified"] is True
 
 
 def test_new_module_has_no_forbidden_integration_references() -> None:
@@ -908,8 +1535,11 @@ def test_new_module_has_no_forbidden_integration_references() -> None:
         "import subprocess",
         "os.getenv",
         "load_dotenv",
+        "provider",
+        "collector",
     ]
     assert all(value not in source for value in forbidden)
     assert "pickle" not in source
     assert "eval(" not in source
     assert "exec(" not in source
+    assert "rollback_or_revocation_available" not in source
