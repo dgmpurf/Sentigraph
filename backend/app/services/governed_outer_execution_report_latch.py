@@ -19,9 +19,20 @@ LATCH_STATE_END_MARKER: Final = (
     "<!-- SENTIGRAPH_OUTER_EXECUTION_LATCH_STATE_V0_1_END -->"
 )
 ATOMIC_UPDATE_RESULT_SCHEMA: Final = (
-    "sentigraph_outer_execution_report_atomic_update_result_v0_1"
+    "sentigraph_outer_execution_report_atomic_update_result_v0_2"
 )
-ATOMIC_UPDATE_RESULT_VERSION: Final = "0.1"
+ATOMIC_UPDATE_RESULT_VERSION: Final = "0.2"
+RECEIPT_CROSS_BINDING_PROOF_SCHEMA: Final = (
+    "sentigraph_outer_execution_writer_receipt_idempotency_cross_binding_proof_v0_1"
+)
+RECEIPT_CROSS_BINDING_PROOF_VERSION: Final = "0.1"
+EXPECTED_WRITER_RECEIPT_SCHEMA: Final = (
+    "sentigraph_governed_nonproduction_evidence_persistence_receipt_v0_2"
+)
+IDEMPOTENCY_NAMESPACE: Final = (
+    "sentigraph_governed_nonproduction_idempotency_v0_2"
+)
+EXPECTED_MUTATION_ATTEMPT_LIMIT: Final = 1
 
 _STATE_FIELDS: Final = frozenset(
     {
@@ -70,6 +81,7 @@ _TRANSITIONS: Final = frozenset(
         "payload_read_completed_no_reopen",
         "writer_invocation_started_no_retry",
         "writer_returned",
+        "implementation_mutating_attempt_consumed_after_verified_writer_receipt",
         "terminal_before_payload",
         "terminal_after_payload_before_writer",
         "terminal_after_writer",
@@ -77,6 +89,128 @@ _TRANSITIONS: Final = frozenset(
 )
 _LAST_TRANSITIONS: Final = _TRANSITIONS | {"initial_armed"}
 _HASH_RE: Final = re.compile(r"^[a-f0-9]{64}$")
+_OPAQUE_ID_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
+_TOKEN_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+_LOGICAL_LABEL_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$")
+
+_RECEIPT_FIELDS: Final = frozenset(
+    {
+        "receipt_id",
+        "receipt_schema",
+        "persisted_record_id",
+        "idempotency_key",
+        "candidate_identity_digest",
+        "activation_decision_safe_hash",
+        "target_logical_label",
+        "mutation_mode",
+        "mutation_attempt_limit",
+        "mutation_attempt_number",
+        "attempt_reservation_id",
+        "attempt_scope_key",
+        "attempt_reservation_committed",
+        "mutating_attempt_consumed",
+        "base_record_insert_issued",
+        "base_record_transaction_started",
+        "base_record_transaction_committed",
+        "mutation_count",
+        "transaction_rollback_performed",
+        "transaction_rollback_available_before_commit",
+        "transaction_rollback_available_after_commit",
+        "post_commit_revocation_implemented",
+        "post_commit_revocation_available",
+        "already_exists",
+        "duplicate_conflict",
+        "persisted_record_verified",
+        "exact_record_verified",
+        "exactly_one_record_verified",
+        "attempt_reservation_verified",
+        "no_unrelated_attempt_change_verified",
+        "no_unrelated_record_change_verified",
+        "unrelated_record_change_detected",
+        "post_write_readback_verified",
+        "production_evidenceitem_created",
+        "production_case_changed",
+        "downstream_runtime_called",
+        "final_outcome",
+        "created_at",
+    }
+)
+_RECEIPT_BOOLEAN_FIELDS: Final = frozenset(
+    {
+        "attempt_reservation_committed",
+        "mutating_attempt_consumed",
+        "base_record_insert_issued",
+        "base_record_transaction_started",
+        "base_record_transaction_committed",
+        "transaction_rollback_performed",
+        "transaction_rollback_available_before_commit",
+        "transaction_rollback_available_after_commit",
+        "post_commit_revocation_implemented",
+        "post_commit_revocation_available",
+        "already_exists",
+        "duplicate_conflict",
+        "persisted_record_verified",
+        "exact_record_verified",
+        "exactly_one_record_verified",
+        "attempt_reservation_verified",
+        "no_unrelated_attempt_change_verified",
+        "no_unrelated_record_change_verified",
+        "unrelated_record_change_detected",
+        "post_write_readback_verified",
+        "production_evidenceitem_created",
+        "production_case_changed",
+        "downstream_runtime_called",
+    }
+)
+_PROOF_FIELDS: Final = frozenset(
+    {
+        "proof_schema",
+        "proof_version",
+        "writer_receipt_schema",
+        "writer_receipt_safe_hash",
+        "expected_idempotency_key",
+        "receipt_idempotency_key",
+        "idempotency_cross_binding_verified",
+        "expected_persisted_record_id",
+        "receipt_persisted_record_id",
+        "persisted_record_id_verified",
+        "expected_receipt_id",
+        "receipt_receipt_id",
+        "receipt_id_verified",
+        "candidate_identity_digest",
+        "input_safe_hash",
+        "gate_contract_schema",
+        "gate_contract_version",
+        "gate_contract_safe_hash",
+        "activation_decision_safe_hash",
+        "target_logical_label",
+        "mutation_mode",
+        "mutation_attempt_number",
+        "attempt_reservation_committed",
+        "mutating_attempt_consumed",
+        "attempt_reservation_verified",
+        "final_outcome",
+        "proof_canonical_hash",
+    }
+)
+_EXPECTED_BINDING_FIELDS: Final = frozenset(
+    {
+        "candidate_identity_digest",
+        "input_safe_hash",
+        "persisted_record_schema",
+        "persisted_record_schema_version",
+        "gate_contract_schema",
+        "gate_contract_version",
+        "gate_contract_safe_hash",
+        "activation_decision_safe_hash",
+        "mutation_mode",
+        "target_logical_label",
+        "command_schema",
+        "command_version",
+        "mutation_attempt_number",
+    }
+)
+_PROOF_PROVENANCE_TOKEN: Final = object()
 
 
 class OuterExecutionReportLatchError(ValueError):
@@ -85,6 +219,207 @@ class OuterExecutionReportLatchError(ValueError):
 
 class _DuplicateJsonKey(ValueError):
     pass
+
+
+class _ValidatedReceiptCrossBindingProof(dict[str, Any]):
+    pass
+
+
+def parse_synthetic_writer_receipt_fixture_json(receipt_json: str) -> dict[str, Any]:
+    """Parse one strict synthetic receipt fixture without performing IO."""
+
+    if not isinstance(receipt_json, str):
+        raise OuterExecutionReportLatchError("receipt_JSON_invalid")
+    try:
+        value = json.loads(
+            receipt_json,
+            object_pairs_hook=_strict_object_pairs,
+            parse_constant=_reject_json_constant,
+        )
+    except _DuplicateJsonKey as exc:
+        raise OuterExecutionReportLatchError("duplicate_json_key") from exc
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise OuterExecutionReportLatchError("receipt_JSON_invalid") from exc
+    return _validate_writer_receipt(value)
+
+
+def build_writer_receipt_idempotency_cross_binding_proof(
+    writer_receipt: dict[str, Any],
+    *,
+    expected_candidate_identity_digest: str,
+    expected_input_safe_hash: str,
+    expected_persisted_record_schema: str,
+    expected_persisted_record_schema_version: str,
+    expected_gate_contract_schema: str,
+    expected_gate_contract_version: str,
+    expected_gate_contract_safe_hash: str,
+    expected_activation_decision_safe_hash: str,
+    expected_mutation_mode: str,
+    expected_target_logical_label: str,
+    expected_command_schema: str,
+    expected_command_version: str,
+    expected_mutation_attempt_number: int,
+) -> dict[str, Any]:
+    """Build a strict proof from a synthetic receipt and explicit bindings."""
+
+    expected_bindings = {
+        "candidate_identity_digest": expected_candidate_identity_digest,
+        "input_safe_hash": expected_input_safe_hash,
+        "persisted_record_schema": expected_persisted_record_schema,
+        "persisted_record_schema_version": expected_persisted_record_schema_version,
+        "gate_contract_schema": expected_gate_contract_schema,
+        "gate_contract_version": expected_gate_contract_version,
+        "gate_contract_safe_hash": expected_gate_contract_safe_hash,
+        "activation_decision_safe_hash": expected_activation_decision_safe_hash,
+        "mutation_mode": expected_mutation_mode,
+        "target_logical_label": expected_target_logical_label,
+        "command_schema": expected_command_schema,
+        "command_version": expected_command_version,
+        "mutation_attempt_number": expected_mutation_attempt_number,
+    }
+    return _build_receipt_cross_binding_proof(writer_receipt, expected_bindings)
+
+
+def validate_writer_receipt_idempotency_cross_binding_proof(
+    proof: dict[str, Any],
+) -> dict[str, Any]:
+    """Revalidate one builder-origin proof against its sealed receipt inputs."""
+
+    if not isinstance(proof, dict) or set(proof) != _PROOF_FIELDS:
+        raise OuterExecutionReportLatchError("receipt_proof_fields_invalid")
+    _validate_JSON_safe_value(proof)
+    projection = dict(proof)
+    supplied_hash = projection.pop("proof_canonical_hash")
+    if not _is_safe_hash(supplied_hash) or supplied_hash != _sha256_bytes(
+        _canonical_json(projection).encode("utf-8")
+    ):
+        raise OuterExecutionReportLatchError("receipt_proof_hash_mismatch")
+    if (
+        type(proof) is not _ValidatedReceiptCrossBindingProof
+        or getattr(proof, "_provenance_token", None) is not _PROOF_PROVENANCE_TOKEN
+    ):
+        raise OuterExecutionReportLatchError("receipt_proof_provenance_invalid")
+    receipt = getattr(proof, "_sealed_receipt", None)
+    expected = getattr(proof, "_sealed_expected_bindings", None)
+    if not isinstance(receipt, dict) or not isinstance(expected, dict):
+        raise OuterExecutionReportLatchError("receipt_proof_provenance_invalid")
+    rebuilt = _build_receipt_cross_binding_proof(receipt, expected)
+    if dict(proof) != dict(rebuilt):
+        raise OuterExecutionReportLatchError("receipt_proof_revalidation_failed")
+    return dict(rebuilt)
+
+
+def _build_receipt_cross_binding_proof(
+    writer_receipt: dict[str, Any],
+    expected_bindings: dict[str, Any],
+) -> _ValidatedReceiptCrossBindingProof:
+    receipt = _validate_writer_receipt(writer_receipt)
+    expected = _validate_expected_bindings(expected_bindings)
+
+    if receipt["candidate_identity_digest"] != expected["candidate_identity_digest"]:
+        raise OuterExecutionReportLatchError("receipt_candidate_binding_mismatch")
+    if (
+        receipt["activation_decision_safe_hash"]
+        != expected["activation_decision_safe_hash"]
+    ):
+        raise OuterExecutionReportLatchError("receipt_activation_binding_mismatch")
+    if receipt["target_logical_label"] != expected["target_logical_label"]:
+        raise OuterExecutionReportLatchError("receipt_target_binding_mismatch")
+    if receipt["mutation_mode"] != expected["mutation_mode"]:
+        raise OuterExecutionReportLatchError("receipt_mutation_mode_binding_mismatch")
+    if receipt["mutation_attempt_limit"] != EXPECTED_MUTATION_ATTEMPT_LIMIT:
+        raise OuterExecutionReportLatchError("receipt_mutation_attempt_limit_invalid")
+    if (
+        receipt["mutation_attempt_number"]
+        != expected["mutation_attempt_number"]
+    ):
+        raise OuterExecutionReportLatchError("receipt_mutation_attempt_number_invalid")
+
+    idempotency_projection = {
+        "namespace": IDEMPOTENCY_NAMESPACE,
+        "candidate_identity_digest": expected["candidate_identity_digest"],
+        "input_safe_hash": expected["input_safe_hash"],
+        "persisted_record_schema": expected["persisted_record_schema"],
+        "persisted_record_schema_version": expected[
+            "persisted_record_schema_version"
+        ],
+        "gate_contract_schema": expected["gate_contract_schema"],
+        "gate_contract_version": expected["gate_contract_version"],
+        "gate_contract_safe_hash": expected["gate_contract_safe_hash"],
+        "activation_decision_safe_hash": expected["activation_decision_safe_hash"],
+        "mutation_mode": expected["mutation_mode"],
+        "target_logical_label": expected["target_logical_label"],
+        "command_schema": expected["command_schema"],
+        "command_version": expected["command_version"],
+    }
+    expected_idempotency_key = _sha256_bytes(
+        _canonical_json(idempotency_projection).encode("utf-8")
+    )
+    if receipt["idempotency_key"] != expected_idempotency_key:
+        raise OuterExecutionReportLatchError("receipt_idempotency_key_mismatch")
+
+    expected_record_id = f"gnpepr-{expected_idempotency_key[:32]}"
+    if receipt["persisted_record_id"] != expected_record_id:
+        raise OuterExecutionReportLatchError("receipt_record_id_mismatch")
+    expected_receipt_id = f"gnpepr-receipt-{expected_idempotency_key[:32]}"
+    if receipt["receipt_id"] != expected_receipt_id:
+        raise OuterExecutionReportLatchError("receipt_id_mismatch")
+    if receipt["attempt_reservation_committed"] is not True:
+        raise OuterExecutionReportLatchError("receipt_reservation_not_committed")
+    if receipt["mutating_attempt_consumed"] is not True:
+        raise OuterExecutionReportLatchError("receipt_attempt_not_consumed")
+    if receipt["attempt_reservation_verified"] is not True:
+        raise OuterExecutionReportLatchError("receipt_reservation_not_verified")
+    if any(
+        receipt[field] is not False
+        for field in (
+            "production_evidenceitem_created",
+            "production_case_changed",
+            "downstream_runtime_called",
+        )
+    ):
+        raise OuterExecutionReportLatchError("receipt_side_effect_invalid")
+    _validate_receipt_claim_consistency(receipt)
+
+    receipt_safe_hash = _sha256_bytes(
+        _canonical_json(receipt).encode("utf-8")
+    )
+    proof_projection = {
+        "proof_schema": RECEIPT_CROSS_BINDING_PROOF_SCHEMA,
+        "proof_version": RECEIPT_CROSS_BINDING_PROOF_VERSION,
+        "writer_receipt_schema": receipt["receipt_schema"],
+        "writer_receipt_safe_hash": receipt_safe_hash,
+        "expected_idempotency_key": expected_idempotency_key,
+        "receipt_idempotency_key": receipt["idempotency_key"],
+        "idempotency_cross_binding_verified": True,
+        "expected_persisted_record_id": expected_record_id,
+        "receipt_persisted_record_id": receipt["persisted_record_id"],
+        "persisted_record_id_verified": True,
+        "expected_receipt_id": expected_receipt_id,
+        "receipt_receipt_id": receipt["receipt_id"],
+        "receipt_id_verified": True,
+        "candidate_identity_digest": expected["candidate_identity_digest"],
+        "input_safe_hash": expected["input_safe_hash"],
+        "gate_contract_schema": expected["gate_contract_schema"],
+        "gate_contract_version": expected["gate_contract_version"],
+        "gate_contract_safe_hash": expected["gate_contract_safe_hash"],
+        "activation_decision_safe_hash": expected["activation_decision_safe_hash"],
+        "target_logical_label": expected["target_logical_label"],
+        "mutation_mode": expected["mutation_mode"],
+        "mutation_attempt_number": expected["mutation_attempt_number"],
+        "attempt_reservation_committed": True,
+        "mutating_attempt_consumed": True,
+        "attempt_reservation_verified": True,
+        "final_outcome": receipt["final_outcome"],
+    }
+    proof = _ValidatedReceiptCrossBindingProof(proof_projection)
+    proof["proof_canonical_hash"] = _sha256_bytes(
+        _canonical_json(proof_projection).encode("utf-8")
+    )
+    proof._provenance_token = _PROOF_PROVENANCE_TOKEN
+    proof._sealed_receipt = deepcopy(receipt)
+    proof._sealed_expected_bindings = deepcopy(expected)
+    return proof
 
 
 def build_initial_outer_execution_latch_state() -> dict[str, Any]:
@@ -113,12 +448,22 @@ def build_initial_outer_execution_latch_state() -> dict[str, Any]:
 def transition_outer_execution_latch_state(
     state: dict[str, Any],
     transition: str,
+    *,
+    receipt_idempotency_cross_binding_proof: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Apply one allowed monotonic transition to a copied strict state."""
 
     current = _validate_state(state)
     if not isinstance(transition, str) or transition not in _TRANSITIONS:
         raise OuterExecutionReportLatchError("transition_unknown")
+    attempt_consumption_transition = (
+        "implementation_mutating_attempt_consumed_after_verified_writer_receipt"
+    )
+    if (
+        transition != attempt_consumption_transition
+        and receipt_idempotency_cross_binding_proof is not None
+    ):
+        raise OuterExecutionReportLatchError("receipt_proof_irrelevant")
     if current["terminal_classification"] is not None:
         raise OuterExecutionReportLatchError("transition_invalid")
 
@@ -184,6 +529,32 @@ def transition_outer_execution_latch_state(
         next_state.update(
             {
                 "writer_latch_state": transition,
+                "last_transition": transition,
+            }
+        )
+    elif transition == attempt_consumption_transition:
+        if not (
+            current["payload_read_latch_state"]
+            == "payload_read_completed_no_reopen"
+            and current["payload_read_session_consumed"] is True
+            and current["writer_latch_state"] == "writer_returned"
+            and current["actual_public_writer_invocation_count"] == 1
+            and current["writer_retry_count"] == 0
+            and current["mutation_attempt_number"] == 1
+            and current["F07_activation_execution_use_consumed"] is True
+            and current["MVP_F08_execution_approval_consumed"] is True
+            and current["implementation_mutating_attempt_consumed"] is False
+            and current["last_transition"] == "writer_returned"
+        ):
+            raise OuterExecutionReportLatchError("transition_invalid")
+        if receipt_idempotency_cross_binding_proof is None:
+            raise OuterExecutionReportLatchError("receipt_proof_required")
+        validate_writer_receipt_idempotency_cross_binding_proof(
+            receipt_idempotency_cross_binding_proof
+        )
+        next_state.update(
+            {
+                "implementation_mutating_attempt_consumed": True,
                 "last_transition": transition,
             }
         )
@@ -291,6 +662,8 @@ def replace_outer_execution_latch_state_block(
     markdown: str,
     expected_state: dict[str, Any],
     next_state: dict[str, Any],
+    *,
+    receipt_idempotency_cross_binding_proof: dict[str, Any] | None = None,
 ) -> str:
     """Replace only the complete exact state block after strict CAS checks."""
 
@@ -302,7 +675,13 @@ def replace_outer_execution_latch_state_block(
     transition = requested["last_transition"]
     if transition == "initial_armed":
         raise OuterExecutionReportLatchError("transition_invalid")
-    derived = transition_outer_execution_latch_state(expected, transition)
+    derived = transition_outer_execution_latch_state(
+        expected,
+        transition,
+        receipt_idempotency_cross_binding_proof=(
+            receipt_idempotency_cross_binding_proof
+        ),
+    )
     if derived != requested:
         raise OuterExecutionReportLatchError("next_state_transition_mismatch")
 
@@ -320,6 +699,8 @@ def atomic_write_outer_execution_report_state(
     expected_file_sha256: str,
     expected_state: dict[str, Any],
     next_state: dict[str, Any],
+    *,
+    receipt_idempotency_cross_binding_proof: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Atomically apply one strict state transition to one explicit report."""
 
@@ -327,6 +708,31 @@ def atomic_write_outer_execution_report_state(
     temporary_path: Path | None = None
     replaced = False
     try:
+        attempt_consumption_transition = (
+            "implementation_mutating_attempt_consumed_after_verified_writer_receipt"
+        )
+        if result["transition"] == attempt_consumption_transition:
+            if receipt_idempotency_cross_binding_proof is None:
+                raise OuterExecutionReportLatchError("receipt_proof_required")
+            validated_proof = (
+                validate_writer_receipt_idempotency_cross_binding_proof(
+                    receipt_idempotency_cross_binding_proof
+                )
+            )
+            result.update(
+                {
+                    "receipt_idempotency_cross_binding_proof_used": True,
+                    "writer_receipt_safe_hash": validated_proof[
+                        "writer_receipt_safe_hash"
+                    ],
+                    "receipt_cross_binding_proof_safe_hash": validated_proof[
+                        "proof_canonical_hash"
+                    ],
+                    "idempotency_cross_binding_verified": True,
+                }
+            )
+        elif receipt_idempotency_cross_binding_proof is not None:
+            raise OuterExecutionReportLatchError("receipt_proof_irrelevant")
         if not isinstance(expected_file_sha256, str) or not _HASH_RE.fullmatch(
             expected_file_sha256
         ):
@@ -352,6 +758,9 @@ def atomic_write_outer_execution_report_state(
             before_text,
             expected_state,
             next_state,
+            receipt_idempotency_cross_binding_proof=(
+                receipt_idempotency_cross_binding_proof
+            ),
         )
         updated_bytes = updated_text.encode("utf-8")
         result["after_file_sha256"] = _sha256_bytes(updated_bytes)
@@ -440,6 +849,150 @@ def atomic_write_outer_execution_report_state(
                 temporary_path.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+def _validate_writer_receipt(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != _RECEIPT_FIELDS:
+        raise OuterExecutionReportLatchError("receipt_fields_invalid")
+    _validate_JSON_safe_value(value)
+    if value.get("receipt_schema") != EXPECTED_WRITER_RECEIPT_SCHEMA:
+        raise OuterExecutionReportLatchError("receipt_schema_invalid")
+    for field in _RECEIPT_BOOLEAN_FIELDS:
+        if type(value.get(field)) is not bool:
+            raise OuterExecutionReportLatchError("receipt_boolean_type_invalid")
+    for field in (
+        "mutation_attempt_limit",
+        "mutation_attempt_number",
+        "mutation_count",
+    ):
+        if type(value.get(field)) is not int:
+            raise OuterExecutionReportLatchError("receipt_integer_type_invalid")
+    if value["mutation_count"] not in {0, 1}:
+        raise OuterExecutionReportLatchError("receipt_mutation_count_invalid")
+    for field in (
+        "idempotency_key",
+        "candidate_identity_digest",
+        "activation_decision_safe_hash",
+        "attempt_scope_key",
+    ):
+        if not _is_safe_hash(value.get(field)):
+            raise OuterExecutionReportLatchError("receipt_safe_hash_invalid")
+    for field in (
+        "receipt_id",
+        "persisted_record_id",
+        "attempt_reservation_id",
+    ):
+        if not isinstance(value.get(field), str) or not _OPAQUE_ID_RE.fullmatch(
+            value[field]
+        ):
+            raise OuterExecutionReportLatchError("receipt_opaque_id_invalid")
+    for field in ("mutation_mode", "final_outcome"):
+        if not isinstance(value.get(field), str) or not _TOKEN_RE.fullmatch(
+            value[field]
+        ):
+            raise OuterExecutionReportLatchError("receipt_token_invalid")
+    if not _is_safe_logical_label(value.get("target_logical_label")):
+        raise OuterExecutionReportLatchError("receipt_target_logical_label_invalid")
+    created_at = value.get("created_at")
+    if (
+        not isinstance(created_at, str)
+        or not 1 <= len(created_at) <= 80
+        or any(ord(character) < 32 or ord(character) > 126 for character in created_at)
+        or "/" in created_at
+        or "\\" in created_at
+    ):
+        raise OuterExecutionReportLatchError("receipt_created_at_invalid")
+    return deepcopy(value)
+
+
+def _validate_expected_bindings(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != _EXPECTED_BINDING_FIELDS:
+        raise OuterExecutionReportLatchError("expected_binding_fields_invalid")
+    _validate_JSON_safe_value(value)
+    for field in (
+        "candidate_identity_digest",
+        "input_safe_hash",
+        "gate_contract_safe_hash",
+        "activation_decision_safe_hash",
+    ):
+        if not _is_safe_hash(value.get(field)):
+            raise OuterExecutionReportLatchError("expected_binding_safe_hash_invalid")
+    for field in (
+        "persisted_record_schema",
+        "persisted_record_schema_version",
+        "gate_contract_schema",
+        "gate_contract_version",
+        "mutation_mode",
+        "command_schema",
+        "command_version",
+    ):
+        if not isinstance(value.get(field), str) or not _TOKEN_RE.fullmatch(
+            value[field]
+        ):
+            raise OuterExecutionReportLatchError("expected_binding_token_invalid")
+    if not _is_safe_logical_label(value.get("target_logical_label")):
+        raise OuterExecutionReportLatchError("expected_target_logical_label_invalid")
+    if type(value.get("mutation_attempt_number")) is not int:
+        raise OuterExecutionReportLatchError("expected_mutation_attempt_type_invalid")
+    if value["mutation_attempt_number"] != 1:
+        raise OuterExecutionReportLatchError("expected_mutation_attempt_invalid")
+    return deepcopy(value)
+
+
+def _validate_JSON_safe_value(value: Any) -> None:
+    if isinstance(value, float):
+        raise OuterExecutionReportLatchError("receipt_float_invalid")
+    if value is None or type(value) in {bool, int, str}:
+        return
+    if isinstance(value, list):
+        for item in value:
+            _validate_JSON_safe_value(item)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise OuterExecutionReportLatchError("receipt_JSON_value_invalid")
+            _validate_JSON_safe_value(item)
+        return
+    raise OuterExecutionReportLatchError("receipt_JSON_value_invalid")
+
+
+def _validate_receipt_claim_consistency(receipt: dict[str, Any]) -> None:
+    insert_issued = receipt["base_record_insert_issued"]
+    transaction_started = receipt["base_record_transaction_started"]
+    transaction_committed = receipt["base_record_transaction_committed"]
+    mutation_count = receipt["mutation_count"]
+    if transaction_started and not insert_issued:
+        raise OuterExecutionReportLatchError("receipt_claims_contradictory")
+    if transaction_committed and not (insert_issued and transaction_started):
+        raise OuterExecutionReportLatchError("receipt_claims_contradictory")
+    if mutation_count == 1 and not transaction_committed:
+        raise OuterExecutionReportLatchError("receipt_claims_contradictory")
+    if transaction_committed and mutation_count != 1:
+        raise OuterExecutionReportLatchError("receipt_claims_contradictory")
+    if receipt["transaction_rollback_performed"] and transaction_committed:
+        raise OuterExecutionReportLatchError("receipt_claims_contradictory")
+    if receipt["exact_record_verified"] and not receipt["persisted_record_verified"]:
+        raise OuterExecutionReportLatchError("receipt_claims_contradictory")
+    if receipt["exactly_one_record_verified"] and not receipt["exact_record_verified"]:
+        raise OuterExecutionReportLatchError("receipt_claims_contradictory")
+    if (
+        receipt["unrelated_record_change_detected"]
+        and receipt["no_unrelated_record_change_verified"]
+    ):
+        raise OuterExecutionReportLatchError("receipt_claims_contradictory")
+
+
+def _is_safe_hash(value: Any) -> bool:
+    return isinstance(value, str) and _HASH_RE.fullmatch(value) is not None
+
+
+def _is_safe_logical_label(value: Any) -> bool:
+    if not isinstance(value, str) or not _LOGICAL_LABEL_RE.fullmatch(value):
+        return False
+    if value.startswith("/") or "\\" in value or "://" in value:
+        return False
+    return all(segment not in {"", ".", ".."} for segment in value.split("/"))
 
 
 def _validate_state(value: Any) -> dict[str, Any]:
@@ -566,8 +1119,23 @@ def _validate_state(value: Any) -> dict[str, Any]:
                 "writer_invocation_started_no_retry",
             ),
             "writer_returned": ("payload_read_completed_no_reopen", "writer_returned"),
+            "implementation_mutating_attempt_consumed_after_verified_writer_receipt": (
+                "payload_read_completed_no_reopen",
+                "writer_returned",
+            ),
         }
         if expected_pairs.get(last) != (payload_state, writer_state):
+            raise OuterExecutionReportLatchError("state_invariant_invalid")
+        if (
+            last == "writer_returned"
+            and value["implementation_mutating_attempt_consumed"] is not False
+        ):
+            raise OuterExecutionReportLatchError("state_invariant_invalid")
+        if (
+            last
+            == "implementation_mutating_attempt_consumed_after_verified_writer_receipt"
+            and value["implementation_mutating_attempt_consumed"] is not True
+        ):
             raise OuterExecutionReportLatchError("state_invariant_invalid")
     return deepcopy(value)
 
@@ -630,6 +1198,10 @@ def _base_atomic_result(next_state: Any) -> dict[str, Any]:
         "readback_count": 0,
         "next_state_verified": False,
         "outside_block_bytes_unchanged": False,
+        "receipt_idempotency_cross_binding_proof_used": False,
+        "writer_receipt_safe_hash": None,
+        "receipt_cross_binding_proof_safe_hash": None,
+        "idempotency_cross_binding_verified": False,
         "document_content_exposed": False,
         "physical_path_exposed": False,
     }
