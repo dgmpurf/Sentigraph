@@ -27,6 +27,8 @@ from app.services.governed_nonproduction_target_initialization_smoke import (
     LOCKED_TARGET_IDENTITY_SAFE_HASH,
     LOCKED_TARGET_LOGICAL_LABEL,
     PRIMARY_DDL_SAFE_HASH,
+    RECEIPT_CLEANUP_FAILURE_CODES,
+    RECEIPT_FAILURE_ARTIFACT_CLASSIFICATIONS,
     RECEIPT_SCHEMA,
     RECEIPT_VERSION,
     RESULT_FIELDS,
@@ -301,13 +303,13 @@ def test_public_contract_and_locked_constants() -> None:
         is None
     )
     assert RESULT_SCHEMA == (
-        "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_3"
+        "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_4"
     )
-    assert RESULT_VERSION == "0.3"
+    assert RESULT_VERSION == "0.4"
     assert RECEIPT_SCHEMA == (
-        "sentigraph_governed_nonproduction_target_initialization_receipt_v0_2"
+        "sentigraph_governed_nonproduction_target_initialization_receipt_v0_3"
     )
-    assert RECEIPT_VERSION == "0.2"
+    assert RECEIPT_VERSION == "0.3"
     assert LOCKED_TARGET_LOGICAL_LABEL == (
         "runtime/governed_nonproduction_evidence_persistence/"
         "evidence_records_v0_1.sqlite3"
@@ -471,6 +473,16 @@ def test_absent_target_initializes_exact_empty_schema_and_safe_receipt(
     assert result["final_sidecar_count"] == 0
     assert result["receipt_privacy_scan_passed"] is True
     assert result["receipt_readback_verified"] is True
+    assert result["receipt_object_equality_verified"] is True
+    assert result["receipt_safe_hash_verified"] is True
+    assert result["receipt_byte_hash_verified"] is True
+    assert result["receipt_finalization_completed"] is True
+    assert result["receipt_failure_artifact_classification"] == (
+        "accepted_receipt_preserved"
+    )
+    assert result["receipt_cleanup_attempted"] is False
+    assert result["receipt_cleanup_performed"] is False
+    assert result["receipt_cleanup_failure_code"] == "none"
     assert HASH_RE.fullmatch(result["receipt_safe_hash"])
     assert HASH_RE.fullmatch(result["receipt_byte_sha256"])
 
@@ -527,8 +539,8 @@ def test_synthetic_result_and_receipt_keep_formal_access_not_applicable(
     assert receipt["git_repository_root_passed_to_runner"] is False
     assert receipt["formal_target_metadata_access_started"] is False
     assert receipt["formal_target_SQLite_opened"] is False
-    assert receipt["formal_receipt_write_completed"] is False
-    assert receipt["formal_receipt_readback_completed"] is False
+    assert "formal_receipt_write_completed" not in receipt
+    assert "formal_receipt_readback_completed" not in receipt
     assert receipt["separate_exact_human_approval_required"] is True
     assert receipt["external_human_authorization_evaluated_by_runner"] is False
     assert receipt["runner_grants_authorization"] is False
@@ -996,6 +1008,19 @@ def test_exact_temporary_formal_fixture_initializes_absent_target_once(
     assert result["attempt_table_DML_statement_count"] == 0
     assert result["other_user_DML_statement_count"] == 0
     assert result["receipt_privacy_scan_passed"] is True
+    assert result["receipt_created_by_this_run"] is True
+    assert result["receipt_same_run_identity_bound"] is True
+    assert result["receipt_write_completed"] is True
+    assert result["receipt_flush_performed"] is True
+    assert result["receipt_fsync_performed"] is True
+    assert result["receipt_readback_verified"] is True
+    assert result["receipt_object_equality_verified"] is True
+    assert result["receipt_safe_hash_verified"] is True
+    assert result["receipt_byte_hash_verified"] is True
+    assert result["receipt_finalization_completed"] is True
+    assert result["receipt_failure_artifact_classification"] == (
+        "accepted_receipt_preserved"
+    )
     assert result["generic_git_repository_accepted"] is False
     assert result["raw_origin_remote_exposed"] is False
     assert _target(tmp_path).is_file()
@@ -1059,8 +1084,8 @@ def test_tdd_red_receipt_does_not_emit_external_authorization_verdict(
     assert receipt["git_repository_root_passed_to_runner"] is True
     assert receipt["formal_target_metadata_access_started"] is True
     assert receipt["formal_target_SQLite_opened"] is True
-    assert receipt["formal_receipt_write_completed"] is True
-    assert receipt["formal_receipt_readback_completed"] is True
+    assert "formal_receipt_write_completed" not in receipt
+    assert "formal_receipt_readback_completed" not in receipt
     assert receipt["separate_exact_human_approval_required"] is True
     assert receipt["external_human_authorization_evaluated_by_runner"] is False
     assert receipt["runner_grants_authorization"] is False
@@ -1077,6 +1102,270 @@ def test_tdd_red_receipt_does_not_emit_external_authorization_verdict(
         _receipt(tmp_path).read_bytes()
     )
     assert result["receipt_privacy_scan_passed"] is True
+
+
+def test_tdd_red_durable_receipt_has_no_self_finalization_claims(
+    tmp_path: Path,
+) -> None:
+    _write_formal_git_config(tmp_path)
+
+    result = _formal_run(tmp_path)
+    receipt = json.loads(_receipt(tmp_path).read_text(encoding="utf-8"))
+
+    assert result["passed"] is True
+    forbidden_exact_fields = {
+        "formal_receipt_write_completed",
+        "formal_receipt_readback_completed",
+    }
+    assert forbidden_exact_fields.isdisjoint(receipt)
+    forbidden_completion_fragments = {
+        "receipt_write_completed",
+        "receipt_flush_completed",
+        "receipt_fsync_completed",
+        "receipt_readback_started",
+        "receipt_readback_completed",
+        "receipt_object_equality_verified",
+        "receipt_safe_hash_verified",
+        "receipt_byte_hash_verified",
+        "receipt_finalization_completed",
+        "independent_acceptance",
+    }
+    assert not any(
+        fragment in key.lower()
+        for key in receipt
+        for fragment in forbidden_completion_fragments
+    )
+
+
+def test_tdd_red_fsync_failure_removes_exact_same_run_unaccepted_receipt(
+    tmp_path: Path,
+) -> None:
+    result = _run(tmp_path, _failure_injection_phase="fsync_receipt")
+
+    assert result["safe_error_code"] == "receipt_fsync_failure"
+    assert _target(tmp_path).is_file()
+    assert not _receipt(tmp_path).exists()
+    assert result["receipt_created_by_this_run"] is True
+    assert result["receipt_same_run_identity_bound"] is True
+    assert result["receipt_finalization_completed"] is False
+    assert result["receipt_failure_artifact_classification"] == (
+        "removed_exact_same_run_unaccepted_receipt"
+    )
+    assert result["receipt_cleanup_eligible"] is True
+    assert result["receipt_cleanup_identity_verified"] is True
+    assert result["receipt_cleanup_attempted"] is True
+    assert result["receipt_cleanup_performed"] is True
+    assert result["receipt_cleanup_failure_code"] == "none"
+    assert result["target_preserved_after_receipt_failure"] is True
+
+
+def test_failure_before_exclusive_receipt_create_has_no_artifact_or_deletion(
+    tmp_path: Path,
+) -> None:
+    result = _run(tmp_path, _failure_injection_phase="write_receipt")
+
+    assert result["safe_error_code"] == "receipt_exclusive_write_failure"
+    assert result["receipt_created_by_this_run"] is False
+    assert result["receipt_same_run_identity_bound"] is False
+    assert result["receipt_failure_artifact_classification"] == "not_created"
+    assert result["receipt_cleanup_eligible"] is False
+    assert result["receipt_cleanup_attempted"] is False
+    assert result["receipt_cleanup_attempt_count"] == 0
+    assert result["receipt_cleanup_performed"] is False
+    assert not _receipt(tmp_path).exists()
+    assert _target(tmp_path).is_file()
+    assert result["target_preserved_after_receipt_failure"] is True
+
+
+@pytest.mark.parametrize(
+    ("failure_phase", "error_code"),
+    [
+        ("write_receipt_after_create", "receipt_exclusive_write_failure"),
+        ("flush_receipt", "receipt_flush_failure"),
+        ("fsync_receipt", "receipt_fsync_failure"),
+        ("readback_receipt", "receipt_readback_failure"),
+        ("readback_object_mismatch", "receipt_readback_failure"),
+        ("verify_receipt_hash", "receipt_hash_mismatch"),
+        ("verify_receipt_post_write_state", "post_connection_state_failure"),
+    ],
+)
+def test_post_create_receipt_failures_remove_only_exact_same_run_artifact(
+    tmp_path: Path,
+    failure_phase: str,
+    error_code: str,
+) -> None:
+    result = _run(tmp_path, _failure_injection_phase=failure_phase)
+
+    assert result["passed"] is False
+    assert result["decision"] == "needs_fix"
+    assert result["safe_error_code"] == error_code
+    expected_last_reached_state = {
+        "write_receipt_after_create": (False, False, False, 0, False, False, False),
+        "flush_receipt": (True, False, False, 0, False, False, False),
+        "fsync_receipt": (True, True, False, 0, False, False, False),
+        "readback_receipt": (True, True, True, 0, False, False, False),
+        "readback_object_mismatch": (True, True, True, 1, False, False, False),
+        "verify_receipt_hash": (True, True, True, 1, True, False, False),
+        "verify_receipt_post_write_state": (True, True, True, 1, True, True, True),
+    }[failure_phase]
+    assert (
+        result["receipt_write_completed"],
+        result["receipt_flush_performed"],
+        result["receipt_fsync_performed"],
+        result["receipt_readback_count"],
+        result["receipt_object_equality_verified"],
+        result["receipt_safe_hash_verified"],
+        result["receipt_byte_hash_verified"],
+    ) == expected_last_reached_state
+    assert result["receipt_created_by_this_run"] is True
+    assert result["receipt_same_run_identity_bound"] is True
+    assert result["receipt_finalization_completed"] is False
+    assert result["receipt_failure_artifact_classification"] == (
+        "removed_exact_same_run_unaccepted_receipt"
+    )
+    assert result["receipt_cleanup_eligible"] is True
+    assert result["receipt_cleanup_identity_verified"] is True
+    assert result["receipt_cleanup_attempted"] is True
+    assert result["receipt_cleanup_attempt_count"] == 1
+    assert result["receipt_cleanup_performed"] is True
+    assert result["receipt_cleanup_absence_verified"] is True
+    assert result["receipt_cleanup_failure_code"] == "none"
+    assert result["target_preserved_after_receipt_failure"] is True
+    assert _target(tmp_path).is_file()
+    assert not _receipt(tmp_path).exists()
+    assert result["automatic_retry"] is False
+    assert result["second_attempt"] is False
+    assert result["SQLite_connection_open_count"] == 1
+    assert result["SQLite_connection_reopen_count"] == 0
+
+
+def test_receipt_identity_mismatch_prevents_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_identity = runner_module._bounded_file_identity
+    call_count = 0
+
+    def changed_identity(status: Any) -> tuple[int, int] | None:
+        nonlocal call_count
+        call_count += 1
+        identity = original_identity(status)
+        if call_count == 2 and identity is not None:
+            return identity[0], identity[1] + 1
+        return identity
+
+    monkeypatch.setattr(runner_module, "_bounded_file_identity", changed_identity)
+    result = _run(tmp_path, _failure_injection_phase="fsync_receipt")
+
+    assert result["safe_error_code"] == "receipt_fsync_failure"
+    assert result["receipt_failure_artifact_classification"] == (
+        "incomplete_unaccepted_receipt_artifact"
+    )
+    assert result["receipt_cleanup_failure_code"] == "identity_mismatch"
+    assert result["receipt_cleanup_eligible"] is False
+    assert result["receipt_cleanup_attempted"] is False
+    assert result["receipt_cleanup_attempt_count"] == 0
+    assert _receipt(tmp_path).is_file()
+    assert _target(tmp_path).is_file()
+
+
+def test_replaced_same_path_receipt_is_not_deleted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    receipt = _receipt(tmp_path)
+    original_read_bytes = Path.read_bytes
+    replaced = False
+
+    def replace_before_readback(path: Path) -> bytes:
+        nonlocal replaced
+        if path == receipt and not replaced:
+            replaced = True
+            path.unlink()
+            path.write_bytes(b"synthetic replacement artifact")
+            raise OSError("synthetic bounded readback failure")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", replace_before_readback)
+    result = _run(tmp_path)
+
+    assert result["safe_error_code"] == "receipt_readback_failure"
+    assert result["receipt_failure_artifact_classification"] == (
+        "incomplete_unaccepted_receipt_artifact"
+    )
+    assert result["receipt_cleanup_failure_code"] == "identity_mismatch"
+    assert result["receipt_cleanup_attempted"] is False
+    assert receipt.read_bytes() == b"synthetic replacement artifact"
+    assert _target(tmp_path).is_file()
+
+
+def test_receipt_identity_unavailable_pauses_without_deletion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner_module, "_bounded_file_identity", lambda _status: None)
+    result = _run(tmp_path)
+
+    assert result["safe_error_code"] == "receipt_identity_verification_failure"
+    assert result["receipt_created_by_this_run"] is True
+    assert result["receipt_same_run_identity_bound"] is False
+    assert result["receipt_failure_artifact_classification"] == (
+        "incomplete_unaccepted_receipt_artifact"
+    )
+    assert result["receipt_cleanup_failure_code"] == "identity_unavailable"
+    assert result["receipt_cleanup_attempted"] is False
+    assert _receipt(tmp_path).is_file()
+    assert _target(tmp_path).is_file()
+
+
+def test_receipt_cleanup_unlink_failure_is_bounded_and_does_not_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    receipt = _receipt(tmp_path)
+    original_unlink = Path.unlink
+    unlink_count = 0
+
+    def fail_receipt_unlink(path: Path, *args: Any, **kwargs: Any) -> None:
+        nonlocal unlink_count
+        if path == receipt:
+            unlink_count += 1
+            raise OSError("synthetic bounded unlink failure")
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_receipt_unlink)
+    result = _run(tmp_path, _failure_injection_phase="fsync_receipt")
+
+    assert result["safe_error_code"] == "receipt_fsync_failure"
+    assert result["receipt_failure_artifact_classification"] == (
+        "incomplete_unaccepted_receipt_artifact"
+    )
+    assert result["receipt_cleanup_failure_code"] == "unlink_failure"
+    assert result["receipt_cleanup_attempted"] is True
+    assert result["receipt_cleanup_attempt_count"] == 1
+    assert result["receipt_cleanup_performed"] is False
+    assert unlink_count == 1
+    assert receipt.is_file()
+    assert _target(tmp_path).is_file()
+
+
+def test_existing_target_is_byte_stable_after_receipt_finalization_failure(
+    tmp_path: Path,
+) -> None:
+    target = _create_exact_empty_target(tmp_path)
+    before = _sha256_bytes(target.read_bytes())
+
+    result = _run(tmp_path, _failure_injection_phase="verify_receipt_hash")
+
+    assert result["safe_error_code"] == "receipt_hash_mismatch"
+    assert result["existing_target_read_only"] is True
+    assert result["existing_target_bytes_unchanged"] is True
+    assert _sha256_bytes(target.read_bytes()) == before
+    assert result["target_preserved_after_receipt_failure"] is True
+    assert result["receipt_failure_artifact_classification"] == (
+        "removed_exact_same_run_unaccepted_receipt"
+    )
+    assert not _receipt(tmp_path).exists()
 
 
 @pytest.mark.parametrize(
@@ -1112,6 +1401,13 @@ def test_formal_collision_truthfully_records_metadata_without_SQLite_open(
     assert result["formal_target_SQLite_open_attempted"] is False
     assert result["formal_target_SQLite_opened"] is False
     assert result["SQLite_connection_open_count"] == 0
+    if collision_kind == "receipt_file":
+        assert result["receipt_created_by_this_run"] is False
+        assert result["receipt_failure_artifact_classification"] == "not_created"
+        assert result["receipt_cleanup_attempted"] is False
+        assert _receipt(tmp_path).read_text(encoding="utf-8") == (
+            "synthetic collision"
+        )
 
 
 def test_formal_SQLite_connect_failure_records_attempt_not_open(
@@ -1555,6 +1851,11 @@ def test_every_controlled_failure_returns_complete_value_free_state(
     assert result["candidate_table_DML_statement_count"] == 0
     assert result["attempt_table_DML_statement_count"] == 0
     assert result["other_user_DML_statement_count"] == 0
+    assert result["receipt_failure_artifact_classification"] in (
+        RECEIPT_FAILURE_ARTIFACT_CLASSIFICATIONS
+    )
+    assert result["receipt_cleanup_failure_code"] in RECEIPT_CLEANUP_FAILURE_CODES
+    assert result["receipt_cleanup_attempt_count"] <= 1
     assert result["candidate_writer_called"] is False
     assert result["reservation_writer_called"] is False
     assert result["git_repository_root_passed_to_runner"] is False
@@ -1562,6 +1863,10 @@ def test_every_controlled_failure_returns_complete_value_free_state(
     _assert_no_formal_target_or_receipt_access(result)
     assert result["actual_runtime_enumerated"] is False
     assert result["formal_logical_target_accessed"] is False
+    rendered = json.dumps(result, ensure_ascii=True, sort_keys=True)
+    assert "st_dev" not in rendered
+    assert "st_ino" not in rendered
+    assert "file_handle" not in rendered
 
 
 def test_invalid_failure_injection_label_blocks_before_path_access(tmp_path: Path) -> None:

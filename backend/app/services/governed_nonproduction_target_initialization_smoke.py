@@ -27,9 +27,9 @@ from app.services.protected_value_boundary_scanner import (
 SYNTHETIC_EXECUTION_PROFILE: Final = "synthetic_temporary_repository"
 FORMAL_EXECUTION_PROFILE: Final = "formal_exact_sentigraph_repository"
 RESULT_SCHEMA: Final = (
-    "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_3"
+    "sentigraph_governed_nonproduction_target_initialization_smoke_result_v0_4"
 )
-RESULT_VERSION: Final = "0.3"
+RESULT_VERSION: Final = "0.4"
 EXECUTION_MODE: Final = (
     "backend_only_local_profiled_repository_schema_initialization_smoke"
 )
@@ -108,9 +108,9 @@ PRIMARY_DDL_SAFE_HASH: Final = (
     "d44a6c46000b8c156b1367aae348be799e9a814d1328b686b2efc9e57cab7e26"
 )
 RECEIPT_SCHEMA: Final = (
-    "sentigraph_governed_nonproduction_target_initialization_receipt_v0_2"
+    "sentigraph_governed_nonproduction_target_initialization_receipt_v0_3"
 )
-RECEIPT_VERSION: Final = "0.2"
+RECEIPT_VERSION: Final = "0.3"
 _EXPECTED_FORMAL_ORIGIN: Final = (
     "https://github.com/"
     f"{FORMAL_REPOSITORY_IDENTITY_PROJECTION['repository_identity']}.git"
@@ -144,6 +144,9 @@ PHASES: Final = (
     "scan_receipt",
     "write_receipt",
     "readback_receipt",
+    "verify_receipt_hash",
+    "verify_receipt_post_write_state",
+    "dispose_receipt_failure_artifact",
     "evaluate_cleanup",
     "perform_cleanup",
     "completed",
@@ -192,6 +195,8 @@ SAFE_ERROR_CODES: Final = frozenset(
         "receipt_build_failure",
         "receipt_privacy_scan_failure",
         "receipt_exclusive_write_failure",
+        "receipt_identity_verification_failure",
+        "receipt_flush_failure",
         "receipt_fsync_failure",
         "receipt_readback_failure",
         "receipt_hash_mismatch",
@@ -227,9 +232,13 @@ FAILURE_INJECTION_PHASES: Final = frozenset(
         "build_receipt",
         "scan_receipt",
         "write_receipt",
+        "write_receipt_after_create",
+        "flush_receipt",
         "fsync_receipt",
         "readback_receipt",
+        "readback_object_mismatch",
         "verify_receipt_hash",
+        "verify_receipt_post_write_state",
         "evaluate_cleanup",
         "perform_cleanup",
         "unexpected_internal_failure",
@@ -259,9 +268,37 @@ _INJECTION_ERROR_CODES: Final = MappingProxyType(
         "build_receipt": "receipt_build_failure",
         "scan_receipt": "receipt_privacy_scan_failure",
         "write_receipt": "receipt_exclusive_write_failure",
+        "write_receipt_after_create": "receipt_exclusive_write_failure",
+        "flush_receipt": "receipt_flush_failure",
         "fsync_receipt": "receipt_fsync_failure",
         "readback_receipt": "receipt_readback_failure",
+        "readback_object_mismatch": "receipt_readback_failure",
         "verify_receipt_hash": "receipt_hash_mismatch",
+        "verify_receipt_post_write_state": "post_connection_state_failure",
+    }
+)
+
+RECEIPT_FAILURE_ARTIFACT_CLASSIFICATIONS: Final = frozenset(
+    {
+        "not_applicable",
+        "not_created",
+        "accepted_receipt_preserved",
+        "removed_exact_same_run_unaccepted_receipt",
+        "incomplete_unaccepted_receipt_artifact",
+    }
+)
+RECEIPT_CLEANUP_FAILURE_CODES: Final = frozenset(
+    {
+        "not_applicable",
+        "none",
+        "identity_unavailable",
+        "identity_mismatch",
+        "receipt_preexistence_ambiguous",
+        "receipt_missing_before_cleanup",
+        "receipt_not_ordinary_file",
+        "unlink_failure",
+        "absence_verification_failure",
+        "cleanup_internal_failure",
     }
 )
 
@@ -422,11 +459,27 @@ def _base_result() -> dict[str, Any]:
         "receipt_privacy_finding_count": "not_available",
         "receipt_exclusive_write_attempt_count": 0,
         "receipt_exclusive_write_performed": False,
+        "receipt_created_by_this_run": False,
+        "receipt_same_run_identity_bound": False,
         "receipt_write_completed": False,
+        "receipt_flush_performed": False,
         "receipt_fsync_performed": False,
         "receipt_readback_count": 0,
         "receipt_readback_verified": False,
+        "receipt_object_equality_verified": False,
         "receipt_hash_verified": False,
+        "receipt_safe_hash_verified": False,
+        "receipt_byte_hash_verified": False,
+        "receipt_finalization_completed": False,
+        "receipt_failure_artifact_classification": "not_applicable",
+        "receipt_cleanup_eligible": False,
+        "receipt_cleanup_identity_verified": False,
+        "receipt_cleanup_attempted": False,
+        "receipt_cleanup_attempt_count": 0,
+        "receipt_cleanup_performed": False,
+        "receipt_cleanup_absence_verified": False,
+        "receipt_cleanup_failure_code": "not_applicable",
+        "target_preserved_after_receipt_failure": False,
         "receipt_safe_hash": "not_created",
         "receipt_byte_sha256": "not_created",
         "final_target_exists": False,
@@ -513,6 +566,7 @@ def run_governed_nonproduction_target_initialization_smoke(
     connection: sqlite3.Connection | None = None
     operation_error: Exception | None = None
     existing_target_before_hash: str | None = None
+    receipt_created_file_identity: tuple[int, int] | None = None
 
     def enter(phase: str) -> None:
         result["execution_phase"] = phase
@@ -820,12 +874,24 @@ def run_governed_nonproduction_target_initialization_smoke(
         try:
             with paths["receipt"].open("xb") as handle:
                 result["receipt_exclusive_write_performed"] = True
+                result["receipt_created_by_this_run"] = True
+                receipt_created_file_identity = _bounded_file_identity(
+                    os.fstat(handle.fileno())
+                )
+                if receipt_created_file_identity is None:
+                    raise _SmokeFailure("receipt_identity_verification_failure")
+                result["receipt_same_run_identity_bound"] = True
+                if _failure_injection_phase == "write_receipt_after_create":
+                    handle.write(receipt_bytes[: max(1, len(receipt_bytes) // 2)])
+                    raise _SmokeFailure("receipt_exclusive_write_failure")
                 handle.write(receipt_bytes)
+                result["receipt_write_completed"] = True
+                _inject("flush_receipt", _failure_injection_phase)
                 handle.flush()
+                result["receipt_flush_performed"] = True
                 _inject("fsync_receipt", _failure_injection_phase)
                 os.fsync(handle.fileno())
                 result["receipt_fsync_performed"] = True
-                result["receipt_write_completed"] = True
                 if execution_profile == FORMAL_EXECUTION_PROFILE:
                     result["formal_receipt_write_completed"] = True
         except FileExistsError as exc:
@@ -845,12 +911,17 @@ def run_governed_nonproduction_target_initialization_smoke(
             readback = json.loads(readback_bytes.decode("utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise _SmokeFailure("receipt_readback_failure") from exc
+        if _failure_injection_phase == "readback_object_mismatch":
+            readback = dict(readback)
+            readback.pop("receipt_version", None)
         if readback != receipt:
             raise _SmokeFailure("receipt_readback_failure")
         result["receipt_readback_verified"] = True
+        result["receipt_object_equality_verified"] = True
         if execution_profile == FORMAL_EXECUTION_PROFILE:
             result["formal_receipt_readback_completed"] = True
 
+        enter("verify_receipt_hash")
         _inject("verify_receipt_hash", _failure_injection_phase)
         readback_without_hash = dict(readback)
         observed_safe_hash = readback_without_hash.pop("receipt_safe_hash", None)
@@ -858,12 +929,25 @@ def run_governed_nonproduction_target_initialization_smoke(
         if observed_safe_hash != expected_safe_hash:
             raise _SmokeFailure("receipt_hash_mismatch")
         result["receipt_safe_hash"] = expected_safe_hash
-        result["receipt_byte_sha256"] = _sha256_bytes(readback_bytes)
+        result["receipt_safe_hash_verified"] = True
+        expected_byte_hash = _sha256_bytes(receipt_bytes)
+        observed_byte_hash = _sha256_bytes(readback_bytes)
+        if observed_byte_hash != expected_byte_hash:
+            raise _SmokeFailure("receipt_hash_mismatch")
+        result["receipt_byte_sha256"] = observed_byte_hash
+        result["receipt_byte_hash_verified"] = True
         result["receipt_hash_verified"] = True
 
+        enter("verify_receipt_post_write_state")
+        _inject("verify_receipt_post_write_state", _failure_injection_phase)
         _refresh_exact_final_state(paths, result)
         if not result["final_receipt_exists"] or not result["final_receipt_regular_file"]:
             raise _SmokeFailure("post_connection_state_failure")
+        result["receipt_finalization_completed"] = True
+        result["receipt_failure_artifact_classification"] = (
+            "accepted_receipt_preserved"
+        )
+        result["receipt_cleanup_failure_code"] = "none"
 
         enter("completed")
         result["passed"] = True
@@ -884,6 +968,11 @@ def run_governed_nonproduction_target_initialization_smoke(
         result["safe_error_code"] = "unexpected_internal_failure"
         result["decision"] = "needs_fix" if _paths_or_SQL_started(result) else "blocked"
 
+    _dispose_receipt_failure_artifact(
+        paths=paths,
+        result=result,
+        created_file_identity=receipt_created_file_identity,
+    )
     if paths is not None:
         try:
             if (
@@ -902,8 +991,30 @@ def run_governed_nonproduction_target_initialization_smoke(
             )
             _refresh_exact_final_state(paths, result)
         except Exception:
-            result["safe_error_code"] = "cleanup_failure"
+            if result["receipt_created_by_this_run"]:
+                result["receipt_failure_artifact_classification"] = (
+                    "incomplete_unaccepted_receipt_artifact"
+                )
+                if result["receipt_cleanup_failure_code"] in {
+                    "not_applicable",
+                    "none",
+                }:
+                    result["receipt_cleanup_failure_code"] = (
+                        "cleanup_internal_failure"
+                    )
+            else:
+                result["safe_error_code"] = "cleanup_failure"
             result["decision"] = "needs_fix"
+        if (
+            result["receipt_created_by_this_run"]
+            or result["safe_error_code"].startswith("receipt_")
+        ):
+            try:
+                result["target_preserved_after_receipt_failure"] = (
+                    _path_state(paths["target"]) == "file"
+                )
+            except _SmokeFailure:
+                result["target_preserved_after_receipt_failure"] = False
     result["terminal_phase"] = "terminal_failure"
     result["synthetic_temporary_repository_only"] = (
         execution_profile == SYNTHETIC_EXECUTION_PROFILE
@@ -1265,14 +1376,6 @@ def _verify_integrity(connection: sqlite3.Connection, result: dict[str, Any]) ->
 
 
 def _build_receipt(result: dict[str, Any]) -> dict[str, Any]:
-    formal_receipt_completion_claim = bool(
-        result["formal_profile_selected"]
-        and result["formal_execution_guard_verified"]
-        and result["formal_repository_identity_verified"]
-        and result["formal_target_SQLite_opened"]
-        and result["formal_receipt_metadata_access_started"]
-    )
-    # These assertions are valid only after the exact bytes pass fsync and readback.
     receipt = {
         "receipt_schema": RECEIPT_SCHEMA,
         "receipt_version": RECEIPT_VERSION,
@@ -1298,8 +1401,6 @@ def _build_receipt(result: dict[str, Any]) -> dict[str, Any]:
             "formal_target_metadata_access_started"
         ],
         "formal_target_SQLite_opened": result["formal_target_SQLite_opened"],
-        "formal_receipt_write_completed": formal_receipt_completion_claim,
-        "formal_receipt_readback_completed": formal_receipt_completion_claim,
         "separate_exact_human_approval_required": True,
         "external_human_authorization_evaluated_by_runner": False,
         "runner_grants_authorization": False,
@@ -1361,6 +1462,95 @@ def _build_receipt(result: dict[str, Any]) -> dict[str, Any]:
     }
     receipt["receipt_safe_hash"] = _sha256_bytes(_canonical_json_bytes(receipt))
     return receipt
+
+
+def _bounded_file_identity(status: os.stat_result) -> tuple[int, int] | None:
+    if not stat.S_ISREG(status.st_mode) or _is_reparse(status):
+        return None
+    device = getattr(status, "st_dev", None)
+    inode = getattr(status, "st_ino", None)
+    if (
+        isinstance(device, int)
+        and isinstance(inode, int)
+        and device >= 0
+        and inode > 0
+    ):
+        return device, inode
+    return None
+
+
+def _dispose_receipt_failure_artifact(
+    *,
+    paths: dict[str, Path] | None,
+    result: dict[str, Any],
+    created_file_identity: tuple[int, int] | None,
+) -> None:
+    result["execution_phase"] = "dispose_receipt_failure_artifact"
+    if result["receipt_finalization_completed"] is True:
+        result["receipt_failure_artifact_classification"] = (
+            "accepted_receipt_preserved"
+        )
+        result["receipt_cleanup_failure_code"] = "none"
+        return
+    if result["receipt_created_by_this_run"] is not True:
+        result["receipt_failure_artifact_classification"] = "not_created"
+        return
+
+    result["receipt_failure_artifact_classification"] = (
+        "incomplete_unaccepted_receipt_artifact"
+    )
+    if (
+        paths is None
+        or created_file_identity is None
+        or result["receipt_same_run_identity_bound"] is not True
+    ):
+        result["receipt_cleanup_failure_code"] = "identity_unavailable"
+        return
+    if result["receipt_preexisted"] is not False:
+        result["receipt_cleanup_failure_code"] = "receipt_preexistence_ambiguous"
+        return
+
+    receipt_path = paths["receipt"]
+    try:
+        current_status = receipt_path.lstat()
+    except FileNotFoundError:
+        result["receipt_cleanup_failure_code"] = "receipt_missing_before_cleanup"
+        return
+    except OSError:
+        result["receipt_cleanup_failure_code"] = "cleanup_internal_failure"
+        return
+    current_identity = _bounded_file_identity(current_status)
+    if current_identity is None:
+        result["receipt_cleanup_failure_code"] = "receipt_not_ordinary_file"
+        return
+    if current_identity != created_file_identity:
+        result["receipt_cleanup_failure_code"] = "identity_mismatch"
+        return
+
+    result["receipt_cleanup_eligible"] = True
+    result["receipt_cleanup_identity_verified"] = True
+    result["receipt_cleanup_attempted"] = True
+    result["receipt_cleanup_attempt_count"] = 1
+    try:
+        receipt_path.unlink()
+    except OSError:
+        result["receipt_cleanup_failure_code"] = "unlink_failure"
+        return
+
+    try:
+        receipt_path.lstat()
+    except FileNotFoundError:
+        result["receipt_cleanup_absence_verified"] = True
+        result["receipt_cleanup_performed"] = True
+        result["receipt_cleanup_failure_code"] = "none"
+        result["receipt_failure_artifact_classification"] = (
+            "removed_exact_same_run_unaccepted_receipt"
+        )
+        return
+    except OSError:
+        result["receipt_cleanup_failure_code"] = "absence_verification_failure"
+        return
+    result["receipt_cleanup_failure_code"] = "absence_verification_failure"
 
 
 def _evaluate_and_perform_cleanup(
