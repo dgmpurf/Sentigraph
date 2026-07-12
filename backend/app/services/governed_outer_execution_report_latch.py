@@ -863,12 +863,16 @@ def _validate_writer_receipt(value: Any) -> dict[str, Any]:
     for field in (
         "mutation_attempt_limit",
         "mutation_attempt_number",
-        "mutation_count",
     ):
         if type(value.get(field)) is not int:
             raise OuterExecutionReportLatchError("receipt_integer_type_invalid")
-    if value["mutation_count"] not in {0, 1}:
+    mutation_count = value.get("mutation_count")
+    if mutation_count is not None and type(mutation_count) is not int:
+        raise OuterExecutionReportLatchError("receipt_integer_type_invalid")
+    if mutation_count not in {None, 0, 1}:
         raise OuterExecutionReportLatchError("receipt_mutation_count_invalid")
+    if mutation_count is None:
+        _validate_null_mutation_count_shape(value)
     for field in (
         "idempotency_key",
         "candidate_identity_digest",
@@ -962,6 +966,8 @@ def _validate_receipt_claim_consistency(receipt: dict[str, Any]) -> None:
     transaction_started = receipt["base_record_transaction_started"]
     transaction_committed = receipt["base_record_transaction_committed"]
     mutation_count = receipt["mutation_count"]
+    if mutation_count is None:
+        _validate_null_mutation_count_shape(receipt)
     if transaction_started and not insert_issued:
         raise OuterExecutionReportLatchError("receipt_claims_contradictory")
     if transaction_committed and not (insert_issued and transaction_started):
@@ -981,6 +987,35 @@ def _validate_receipt_claim_consistency(receipt: dict[str, Any]) -> None:
         and receipt["no_unrelated_record_change_verified"]
     ):
         raise OuterExecutionReportLatchError("receipt_claims_contradictory")
+
+
+def _validate_null_mutation_count_shape(receipt: dict[str, Any]) -> None:
+    required_true = (
+        "attempt_reservation_committed",
+        "mutating_attempt_consumed",
+        "base_record_insert_issued",
+        "base_record_transaction_started",
+        "transaction_rollback_available_before_commit",
+    )
+    required_false = (
+        "base_record_transaction_committed",
+        "transaction_rollback_performed",
+        "transaction_rollback_available_after_commit",
+        "already_exists",
+        "duplicate_conflict",
+        "post_write_readback_verified",
+        "post_commit_revocation_implemented",
+        "post_commit_revocation_available",
+        "production_evidenceitem_created",
+        "production_case_changed",
+        "downstream_runtime_called",
+    )
+    if (
+        receipt.get("final_outcome") != "paused_ambiguous_commit_not_proven"
+        or any(receipt.get(field) is not True for field in required_true)
+        or any(receipt.get(field) is not False for field in required_false)
+    ):
+        raise OuterExecutionReportLatchError("receipt_null_mutation_shape_invalid")
 
 
 def _is_safe_hash(value: Any) -> bool:

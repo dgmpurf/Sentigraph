@@ -223,6 +223,29 @@ def _synthetic_receipt(**overrides: Any) -> dict[str, Any]:
     return receipt
 
 
+def _ambiguous_commit_receipt(**overrides: Any) -> dict[str, Any]:
+    values = {
+        "final_outcome": "paused_ambiguous_commit_not_proven",
+        "mutation_count": None,
+        "base_record_insert_issued": True,
+        "base_record_transaction_started": True,
+        "base_record_transaction_committed": False,
+        "transaction_rollback_performed": False,
+        "transaction_rollback_available_before_commit": True,
+        "transaction_rollback_available_after_commit": False,
+        "already_exists": False,
+        "duplicate_conflict": False,
+        "post_write_readback_verified": False,
+        "post_commit_revocation_implemented": False,
+        "post_commit_revocation_available": False,
+        "production_evidenceitem_created": False,
+        "production_case_changed": False,
+        "downstream_runtime_called": False,
+    }
+    values.update(overrides)
+    return _synthetic_receipt(**values)
+
+
 def _proof(latch, receipt: dict[str, Any] | None = None, **expected_overrides: Any):
     return latch.build_writer_receipt_idempotency_cross_binding_proof(
         receipt or _synthetic_receipt(),
@@ -1280,3 +1303,266 @@ def test_ordinary_atomic_transition_reports_no_proof_metadata(
     assert result["writer_receipt_safe_hash"] is None
     assert result["receipt_cross_binding_proof_safe_hash"] is None
     assert result["idempotency_cross_binding_verified"] is False
+
+
+def test_red_valid_ambiguous_commit_receipt_with_null_mutation_count_parses(
+    latch,
+) -> None:
+    receipt = _ambiguous_commit_receipt()
+    parsed = latch.parse_synthetic_writer_receipt_fixture_json(
+        _canonical_json(receipt)
+    )
+    assert parsed == receipt
+
+
+def test_red_valid_verified_ambiguous_commit_receipt_builds_proof(latch) -> None:
+    proof = _proof(latch, _ambiguous_commit_receipt())
+    assert proof["attempt_reservation_verified"] is True
+    assert proof["final_outcome"] == "paused_ambiguous_commit_not_proven"
+
+
+def test_red_ambiguous_receipt_proof_completes_atomic_transition(
+    latch, tmp_path: Path
+) -> None:
+    proof = _proof(latch, _ambiguous_commit_receipt())
+    returned = latch.transition_outer_execution_latch_state(
+        _writer_started(latch), "writer_returned"
+    )
+    consumed = latch.transition_outer_execution_latch_state(
+        returned,
+        "implementation_mutating_attempt_consumed_after_verified_writer_receipt",
+        receipt_idempotency_cross_binding_proof=proof,
+    )
+    markdown = _document(latch, returned)
+    path = tmp_path / "synthetic-report.md"
+    path.write_bytes(markdown.encode("utf-8"))
+    result = latch.atomic_write_outer_execution_report_state(
+        path,
+        _sha256(markdown.encode("utf-8")),
+        returned,
+        consumed,
+        receipt_idempotency_cross_binding_proof=proof,
+    )
+    assert result["status"] == "updated_and_verified"
+
+
+def test_ambiguous_receipt_proof_preserves_complete_receipt_hash(latch) -> None:
+    receipt = _ambiguous_commit_receipt()
+    proof = _proof(latch, receipt)
+    validated = latch.validate_writer_receipt_idempotency_cross_binding_proof(
+        proof
+    )
+    expected_hash = _sha256(_canonical_json(receipt).encode("utf-8"))
+    assert proof["writer_receipt_safe_hash"] == expected_hash
+    assert validated["writer_receipt_safe_hash"] == expected_hash
+
+
+def test_ambiguous_receipt_without_verified_reservation_is_structurally_valid_only(
+    latch,
+) -> None:
+    receipt = _ambiguous_commit_receipt(attempt_reservation_verified=False)
+    parsed = latch.parse_synthetic_writer_receipt_fixture_json(
+        _canonical_json(receipt)
+    )
+    assert parsed["attempt_reservation_verified"] is False
+    with pytest.raises(
+        latch.OuterExecutionReportLatchError,
+        match="receipt_reservation_not_verified",
+    ):
+        _proof(latch, receipt)
+
+
+def test_ambiguous_receipt_is_not_persisted_record_success(latch) -> None:
+    parsed = latch.parse_synthetic_writer_receipt_fixture_json(
+        _canonical_json(_ambiguous_commit_receipt())
+    )
+    assert parsed["final_outcome"] == "paused_ambiguous_commit_not_proven"
+    assert parsed["base_record_transaction_committed"] is False
+    assert parsed["mutation_count"] is None
+    assert parsed["persisted_record_verified"] is False
+    assert parsed["exact_record_verified"] is False
+    assert parsed["exactly_one_record_verified"] is False
+    assert parsed["post_write_readback_verified"] is False
+
+
+@pytest.mark.parametrize(
+    "final_outcome",
+    [
+        "created_exactly_one_governed_nonproduction_record",
+        "already_exists_same_record",
+        "rolled_back_before_commit",
+        "reservation_rolled_back_before_commit",
+        "paused_mutating_attempt_already_consumed_without_verified_record",
+        "paused_attempt_reservation_commit_ambiguous_attempt_consumed",
+        "paused_attempt_reservation_commit_ambiguous_not_proven",
+        "paused_post_write_verification_failed",
+        "scope_violation",
+        "blocked_identity_or_payload_conflict",
+        "synthetic_unknown_outcome",
+    ],
+)
+def test_null_mutation_count_is_rejected_for_unrelated_outcome(
+    latch, final_outcome: str
+) -> None:
+    with pytest.raises(
+        latch.OuterExecutionReportLatchError,
+        match="receipt_null_mutation_shape_invalid",
+    ):
+        latch.parse_synthetic_writer_receipt_fixture_json(
+            _canonical_json(
+                _ambiguous_commit_receipt(final_outcome=final_outcome)
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("attempt_reservation_committed", False),
+        ("mutating_attempt_consumed", False),
+        ("base_record_insert_issued", False),
+        ("base_record_transaction_started", False),
+        ("base_record_transaction_committed", True),
+        ("transaction_rollback_performed", True),
+        ("transaction_rollback_available_before_commit", False),
+        ("transaction_rollback_available_after_commit", True),
+        ("already_exists", True),
+        ("duplicate_conflict", True),
+        ("post_write_readback_verified", True),
+        ("post_commit_revocation_implemented", True),
+        ("post_commit_revocation_available", True),
+        ("production_evidenceitem_created", True),
+        ("production_case_changed", True),
+        ("downstream_runtime_called", True),
+    ],
+)
+def test_null_mutation_count_requires_exact_ambiguous_shape(
+    latch, field: str, value: bool
+) -> None:
+    with pytest.raises(
+        latch.OuterExecutionReportLatchError,
+        match="receipt_null_mutation_shape_invalid",
+    ):
+        latch.parse_synthetic_writer_receipt_fixture_json(
+            _canonical_json(_ambiguous_commit_receipt(**{field: value}))
+        )
+
+
+def test_valid_success_receipt_with_one_mutation_remains_accepted(latch) -> None:
+    receipt = _synthetic_receipt(
+        final_outcome="created_exactly_one_governed_nonproduction_record",
+        base_record_insert_issued=True,
+        base_record_transaction_started=True,
+        base_record_transaction_committed=True,
+        mutation_count=1,
+        transaction_rollback_available_before_commit=True,
+        persisted_record_verified=True,
+        exact_record_verified=True,
+        exactly_one_record_verified=True,
+        post_write_readback_verified=True,
+    )
+    parsed = latch.parse_synthetic_writer_receipt_fixture_json(
+        _canonical_json(receipt)
+    )
+    assert parsed["mutation_count"] == 1
+    assert _proof(latch, receipt)["mutating_attempt_consumed"] is True
+
+
+def test_valid_noncommitting_receipt_with_zero_mutations_remains_accepted(
+    latch,
+) -> None:
+    receipt = _synthetic_receipt()
+    parsed = latch.parse_synthetic_writer_receipt_fixture_json(
+        _canonical_json(receipt)
+    )
+    assert parsed["mutation_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("mutation_count", "code"),
+    [
+        (False, "receipt_integer_type_invalid"),
+        (True, "receipt_integer_type_invalid"),
+        (0.5, "receipt_float_invalid"),
+    ],
+)
+def test_boolean_or_float_mutation_count_is_rejected(
+    latch, mutation_count: Any, code: str
+) -> None:
+    with pytest.raises(latch.OuterExecutionReportLatchError, match=code):
+        _proof(
+            latch,
+            _ambiguous_commit_receipt(mutation_count=mutation_count),
+        )
+
+
+def test_whole_block_CAS_accepts_verified_ambiguous_receipt_proof(latch) -> None:
+    proof = _proof(latch, _ambiguous_commit_receipt())
+    returned = latch.transition_outer_execution_latch_state(
+        _writer_started(latch), "writer_returned"
+    )
+    consumed = latch.transition_outer_execution_latch_state(
+        returned,
+        "implementation_mutating_attempt_consumed_after_verified_writer_receipt",
+        receipt_idempotency_cross_binding_proof=proof,
+    )
+    markdown = _document(latch, returned)
+    outside = _outside(latch, markdown)
+    updated = latch.replace_outer_execution_latch_state_block(
+        markdown,
+        returned,
+        consumed,
+        receipt_idempotency_cross_binding_proof=proof,
+    )
+    assert latch.parse_outer_execution_latch_state_block(updated) == consumed
+    assert _outside(latch, updated) == outside
+
+
+def test_atomic_ambiguous_receipt_proof_metadata_remains_exact(
+    latch, tmp_path: Path
+) -> None:
+    proof = _proof(latch, _ambiguous_commit_receipt())
+    returned = latch.transition_outer_execution_latch_state(
+        _writer_started(latch), "writer_returned"
+    )
+    consumed = latch.transition_outer_execution_latch_state(
+        returned,
+        "implementation_mutating_attempt_consumed_after_verified_writer_receipt",
+        receipt_idempotency_cross_binding_proof=proof,
+    )
+    markdown = _document(latch, returned)
+    path = tmp_path / "synthetic-report.md"
+    path.write_bytes(markdown.encode("utf-8"))
+    result = latch.atomic_write_outer_execution_report_state(
+        path,
+        _sha256(markdown.encode("utf-8")),
+        returned,
+        consumed,
+        receipt_idempotency_cross_binding_proof=proof,
+    )
+    assert result["status"] == "updated_and_verified"
+    assert result["receipt_idempotency_cross_binding_proof_used"] is True
+    assert result["writer_receipt_safe_hash"] == proof["writer_receipt_safe_hash"]
+    assert result["receipt_cross_binding_proof_safe_hash"] == proof[
+        "proof_canonical_hash"
+    ]
+    assert result["idempotency_cross_binding_verified"] is True
+
+
+def test_terminal_after_writer_preserves_consumed_after_ambiguous_proof(
+    latch,
+) -> None:
+    returned = latch.transition_outer_execution_latch_state(
+        _writer_started(latch), "writer_returned"
+    )
+    consumed = latch.transition_outer_execution_latch_state(
+        returned,
+        "implementation_mutating_attempt_consumed_after_verified_writer_receipt",
+        receipt_idempotency_cross_binding_proof=_proof(
+            latch, _ambiguous_commit_receipt()
+        ),
+    )
+    terminal = latch.transition_outer_execution_latch_state(
+        consumed, "terminal_after_writer"
+    )
+    assert terminal["implementation_mutating_attempt_consumed"] is True
