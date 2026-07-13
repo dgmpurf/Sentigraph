@@ -656,6 +656,199 @@ def test_mutation_attempt_must_be_exactly_one(attempt: int) -> None:
     _assert_error("mutation_attempt_invalid", lambda: _command(mutation_attempt_number=attempt))
 
 
+def test_mvp13_a02_slash_logical_label_command_parity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_connect(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("pure slash-label command validation reached SQLite")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_connect)
+    command = _command(target_logical_label=LOGICAL_RUNTIME_TARGET_LABEL)
+
+    validated = persistence_module._validate_command(command)
+
+    assert validated == command
+
+
+def test_mvp13_a02_slash_logical_label_writer_succeeds_once(tmp_path: Path) -> None:
+    command = _command(target_logical_label=LOGICAL_RUNTIME_TARGET_LABEL)
+    store = GovernedNonproductionEvidencePersistenceStore(
+        database_path=tmp_path / "mvp13-a02-single-write.sqlite3",
+        target_logical_label=LOGICAL_RUNTIME_TARGET_LABEL,
+        allowed_candidate_identity_digest=command["candidate_identity_digest"],
+        enabled=True,
+    )
+    store.initialize()
+
+    receipt = _write(store, command)
+
+    assert receipt["target_logical_label"] == LOGICAL_RUNTIME_TARGET_LABEL
+    assert receipt["final_outcome"] == "created_exactly_one_governed_nonproduction_record"
+    assert receipt["mutation_count"] == 1
+    assert receipt["attempt_reservation_committed"] is True
+    assert receipt["mutating_attempt_consumed"] is True
+    assert receipt["base_record_transaction_started"] is True
+    assert receipt["base_record_transaction_committed"] is True
+    assert receipt["persisted_record_verified"] is True
+    assert receipt["exactly_one_record_verified"] is True
+    assert receipt["attempt_reservation_verified"] is True
+    assert receipt["post_write_readback_verified"] is True
+    assert receipt["production_evidenceitem_created"] is False
+    assert receipt["production_case_changed"] is False
+    assert receipt["downstream_runtime_called"] is False
+    assert _reservation_count(store.database_path) == 1
+    assert _row_count(store.database_path) == 1
+
+
+def test_mvp13_a02_slash_logical_label_writer_and_replay_are_single_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = _command(target_logical_label=LOGICAL_RUNTIME_TARGET_LABEL)
+    store = GovernedNonproductionEvidencePersistenceStore(
+        database_path=tmp_path / "mvp13-a02-synthetic.sqlite3",
+        target_logical_label=LOGICAL_RUNTIME_TARGET_LABEL,
+        allowed_candidate_identity_digest=command["candidate_identity_digest"],
+        enabled=True,
+    )
+    store.initialize()
+
+    insert_calls = 0
+    original_insert = persistence_module._insert_record
+
+    def counting_insert(*args: Any, **kwargs: Any) -> None:
+        nonlocal insert_calls
+        insert_calls += 1
+        original_insert(*args, **kwargs)
+
+    monkeypatch.setattr(persistence_module, "_insert_record", counting_insert)
+    try:
+        first = _write(store, command)
+    except GovernedNonproductionPersistenceError:
+        assert _reservation_count(store.database_path) == 0
+        assert _row_count(store.database_path) == 0
+        raise
+    second = _write(store, command)
+
+    assert first["target_logical_label"] == LOGICAL_RUNTIME_TARGET_LABEL
+    assert first["mutation_count"] == 1
+    assert first["production_evidenceitem_created"] is False
+    assert first["production_case_changed"] is False
+    assert first["downstream_runtime_called"] is False
+    assert second["mutation_count"] == 0
+    assert second["already_exists"] is True
+    assert second["final_outcome"] == "already_exists_same_record"
+    assert insert_calls == 1
+    assert _reservation_count(store.database_path) == 1
+    assert _row_count(store.database_path) == 1
+    assert str(store.database_path) not in _canonical_json({"first": first, "second": second})
+
+
+@pytest.mark.parametrize(
+    ("target_logical_label", "error_code"),
+    [
+        ("", "target_logical_label_required"),
+        ("/runtime/governed_nonproduction/evidence.sqlite3", "target_logical_label_invalid"),
+        ("C:/runtime/governed_nonproduction/evidence.sqlite3", "target_logical_label_invalid"),
+        (r"runtime\governed_nonproduction\evidence.sqlite3", "target_logical_label_invalid"),
+        ("runtime/../governed_nonproduction/evidence.sqlite3", "target_logical_label_invalid"),
+        ("runtime/governed?nonproduction/evidence.sqlite3", "target_logical_label_invalid"),
+    ],
+)
+def test_mvp13_a02_invalid_logical_labels_block_before_sqlite(
+    target_logical_label: str,
+    error_code: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_connect(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("invalid logical label reached SQLite")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_connect)
+    _assert_error(
+        error_code,
+        lambda: _command(target_logical_label=target_logical_label),
+    )
+
+
+def test_mvp13_a02_other_reservation_opaque_fields_remain_strict() -> None:
+    command = _command(target_logical_label=LOGICAL_RUNTIME_TARGET_LABEL)
+    reservation = command["reservation"]
+
+    validated = persistence_module._validate_reservation(reservation)
+    assert validated["target_logical_label"] == LOGICAL_RUNTIME_TARGET_LABEL
+
+    for field in {
+        "attempt_reservation_id",
+        "gate_contract_schema",
+        "gate_contract_version",
+        "activation_decision_id",
+        "expected_persisted_record_id",
+    }:
+        invalid = deepcopy(reservation)
+        invalid[field] = "unsafe/value"
+        invalid["reservation_canonical_hash"] = persistence_module._reservation_canonical_hash(
+            invalid
+        )
+        _assert_error(
+            "attempt_reservation_value_invalid",
+            lambda invalid=invalid: persistence_module._validate_reservation(invalid),
+        )
+
+
+def test_mvp13_a02_invalid_reservation_label_uses_dedicated_error() -> None:
+    reservation = deepcopy(_command()["reservation"])
+    reservation["target_logical_label"] = "runtime/../synthetic.sqlite3"
+    reservation["reservation_canonical_hash"] = persistence_module._reservation_canonical_hash(
+        reservation
+    )
+
+    _assert_error(
+        "target_logical_label_invalid",
+        lambda: persistence_module._validate_reservation(reservation),
+    )
+
+
+def test_mvp13_a02_reservation_label_has_separate_validation_domain_and_order() -> None:
+    function_source = inspect.getsource(persistence_module._validate_reservation)
+    function_node = ast.parse(function_source).body[0]
+    assert isinstance(function_node, ast.FunctionDef)
+
+    opaque_loop = next(
+        node
+        for node in function_node.body
+        if isinstance(node, ast.For)
+        and any(
+            isinstance(descendant, ast.Constant)
+            and descendant.value == "attempt_reservation_value_invalid"
+            for descendant in ast.walk(node)
+        )
+    )
+    assert isinstance(opaque_loop.iter, ast.Set)
+    opaque_fields = {
+        item.value
+        for item in opaque_loop.iter.elts
+        if isinstance(item, ast.Constant) and isinstance(item.value, str)
+    }
+    assert opaque_fields == {
+        "attempt_reservation_id",
+        "gate_contract_schema",
+        "gate_contract_version",
+        "activation_decision_id",
+        "expected_persisted_record_id",
+    }
+
+    logical_label_call = next(
+        node
+        for node in function_node.body
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "_validate_logical_target_label"
+    )
+    assert opaque_loop.end_lineno is not None
+    assert logical_label_call.lineno > opaque_loop.end_lineno
+
+
 def test_valid_single_create_and_receipt_verification(tmp_path: Path) -> None:
     command = _command()
     store = _initialized_store(tmp_path, command)

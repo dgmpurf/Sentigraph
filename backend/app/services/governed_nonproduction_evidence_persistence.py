@@ -1496,7 +1496,6 @@ def _validate_reservation(value: Any) -> dict[str, Any]:
         "gate_contract_schema",
         "gate_contract_version",
         "activation_decision_id",
-        "target_logical_label",
         "expected_persisted_record_id",
     }:
         if not _is_opaque_token(value.get(field)):
