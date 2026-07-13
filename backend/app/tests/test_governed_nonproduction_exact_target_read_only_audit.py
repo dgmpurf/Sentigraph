@@ -256,6 +256,20 @@ def _seed(
             _seed_record_row_directly(connection, record)
 
 
+def _seed_classifiable_state(context: dict[str, Any], state: str) -> None:
+    records = (
+        [context["command"]["record"]]
+        if state == "reservation_and_record"
+        else []
+    )
+    reservations = (
+        [context["command"]["reservation"]]
+        if state in {"reservation_only", "reservation_and_record"}
+        else []
+    )
+    _seed(context, records=records, reservations=reservations)
+
+
 def _audit(context: dict[str, Any]) -> dict[str, Any]:
     return _module().audit_governed_nonproduction_exact_target_read_only(
         **context["kwargs"]
@@ -280,6 +294,39 @@ def _assert_safe_result(result: dict[str, Any], module: Any) -> None:
     json.dumps(result, ensure_ascii=True, sort_keys=True)
 
 
+def _assert_classifiable_evidence_retained(
+    result: dict[str, Any],
+    state: str,
+) -> None:
+    assert result["record_snapshot_digest"] is not None
+    assert result["reservation_snapshot_digest"] is not None
+    if state == "empty":
+        assert result["record_count_class"] == "exact_0"
+        assert result["reservation_count_class"] == "exact_0"
+        assert result["expected_record_present"] is False
+        assert result["expected_reservation_present"] is False
+    elif state == "reservation_only":
+        assert result["record_count_class"] == "exact_0"
+        assert result["reservation_count_class"] == "exact_1"
+        assert result["expected_record_present"] is False
+        assert result["expected_reservation_present"] is True
+        assert result["reservation_actual_columns_verified"] is True
+        assert result["reservation_canonical_hash_verified"] is True
+        assert result["reservation_exact_binding_verified"] is True
+    else:
+        assert result["record_count_class"] == "exact_1"
+        assert result["reservation_count_class"] == "exact_1"
+        assert result["expected_record_present"] is True
+        assert result["expected_reservation_present"] is True
+        assert result["record_actual_columns_verified"] is True
+        assert result["reservation_actual_columns_verified"] is True
+        assert result["record_canonical_hash_verified"] is True
+        assert result["reservation_canonical_hash_verified"] is True
+        assert result["record_exact_binding_verified"] is True
+        assert result["reservation_exact_binding_verified"] is True
+        assert result["record_reservation_cross_binding_verified"] is True
+
+
 def test_public_module_symbol_and_schema_exist() -> None:
     module = _module()
     assert callable(module.audit_governed_nonproduction_exact_target_read_only)
@@ -287,6 +334,38 @@ def test_public_module_symbol_and_schema_exist() -> None:
         "sentigraph_governed_nonproduction_exact_target_read_only_audit_result_v0_1"
     )
     assert module.RESULT_VERSION == "0.1"
+
+
+def test_derived_state_invalidation_is_pure_and_preserves_other_evidence() -> None:
+    module = _module()
+    result = module._base_result(
+        outcome="exact_expected_reservation_and_record",
+        safe_error_code="none",
+        completed_stage="classification",
+    )
+    result["implementation_mutating_attempt_consumed_actual"] = "yes"
+    result["governed_nonproduction_record_exists"] = "yes"
+    result["record_count_class"] = "exact_1"
+    result["reservation_count_class"] = "exact_1"
+    result["record_snapshot_digest"] = _hex("retained-record-snapshot")
+    result["reservation_snapshot_digest"] = _hex("retained-reservation-snapshot")
+    before = deepcopy(result)
+
+    invalidated = module._invalidate_derived_state_conclusions(result)
+
+    assert invalidated is not result
+    assert result == before
+    assert invalidated["implementation_mutating_attempt_consumed_actual"] == (
+        "unknown_not_safely_classified"
+    )
+    assert invalidated["governed_nonproduction_record_exists"] == (
+        "unknown_not_safely_classified"
+    )
+    for field in set(module.RESULT_FIELDS) - {
+        "implementation_mutating_attempt_consumed_actual",
+        "governed_nonproduction_record_exists",
+    }:
+        assert invalidated[field] == before[field]
 
 
 def test_exact_empty_synthetic_database(tmp_path: Path) -> None:
@@ -513,15 +592,26 @@ def test_exact_sidecar_preflight_blocks_sqlite_open(
     result = _audit(context)
     assert result["target_state_outcome"] == "sidecar_present_read_prohibited"
     assert result["sqlite_opened"] is False
+    assert result["implementation_mutating_attempt_consumed_actual"] == (
+        "unknown_not_safely_classified"
+    )
+    assert result["governed_nonproduction_record_exists"] == (
+        "unknown_not_safely_classified"
+    )
 
 
-def test_sidecar_appearing_after_read_returns_inconsistent(
+@pytest.mark.parametrize(
+    "state",
+    ["empty", "reservation_only", "reservation_and_record"],
+)
+def test_postflight_sidecar_appearance_invalidates_derived_state_conclusions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    state: str,
 ) -> None:
     module = _module()
     context = _context(tmp_path)
-    _seed(context)
+    _seed_classifiable_state(context, state)
     calls = 0
 
     def changing_probe(_database: Path) -> dict[str, bool]:
@@ -532,7 +622,53 @@ def test_sidecar_appearing_after_read_returns_inconsistent(
     monkeypatch.setattr(module, "_probe_sidecars", changing_probe)
     result = _audit(context)
     assert result["target_state_outcome"] == "inconsistent_or_not_safely_classifiable"
+    assert result["safe_error_code"] == "sidecar_state_changed"
+    assert result["completed_stage"] == "sidecar_postflight"
     assert result["sidecar_postflight_passed"] is False
+    assert result["implementation_mutating_attempt_consumed_actual"] == (
+        "unknown_not_safely_classified"
+    )
+    assert result["governed_nonproduction_record_exists"] == (
+        "unknown_not_safely_classified"
+    )
+    _assert_classifiable_evidence_retained(result, state)
+
+
+@pytest.mark.parametrize(
+    "state",
+    ["empty", "reservation_only", "reservation_and_record"],
+)
+def test_postflight_probe_failure_invalidates_derived_state_conclusions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    _seed_classifiable_state(context, state)
+    calls = 0
+
+    def failing_postflight_probe(_database: Path) -> dict[str, bool]:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise OSError("synthetic-postflight-probe-failure")
+        return {"journal": False, "wal": False, "shm": False}
+
+    monkeypatch.setattr(module, "_probe_sidecars", failing_postflight_probe)
+    result = _audit(context)
+    assert result["target_state_outcome"] == "bounded_read_only_failure"
+    assert result["safe_error_code"] == "sidecar_postflight_failed"
+    assert result["completed_stage"] == "sidecar_postflight"
+    assert result["sidecar_postflight_passed"] is False
+    assert result["implementation_mutating_attempt_consumed_actual"] == (
+        "unknown_not_safely_classified"
+    )
+    assert result["governed_nonproduction_record_exists"] == (
+        "unknown_not_safely_classified"
+    )
+    _assert_classifiable_evidence_retained(result, state)
+    assert "synthetic-postflight-probe-failure" not in json.dumps(result)
 
 
 def test_missing_target_is_metadata_blocked(tmp_path: Path) -> None:
@@ -540,6 +676,12 @@ def test_missing_target_is_metadata_blocked(tmp_path: Path) -> None:
     result = _audit(context)
     assert result["target_state_outcome"] == "target_identity_or_metadata_blocked"
     assert result["sqlite_opened"] is False
+    assert result["implementation_mutating_attempt_consumed_actual"] == (
+        "unknown_not_safely_classified"
+    )
+    assert result["governed_nonproduction_record_exists"] == (
+        "unknown_not_safely_classified"
+    )
 
 
 def test_directory_target_is_metadata_blocked(tmp_path: Path) -> None:
@@ -697,6 +839,12 @@ def test_bounded_schema_read_failure_has_no_exception_text(tmp_path: Path) -> No
     assert result["target_state_outcome"] == "bounded_read_only_failure"
     assert result["schema_contract_verified"] is False
     assert result["exception_text_disclosed"] is False
+    assert result["implementation_mutating_attempt_consumed_actual"] == (
+        "unknown_not_safely_classified"
+    )
+    assert result["governed_nonproduction_record_exists"] == (
+        "unknown_not_safely_classified"
+    )
 
 
 def test_result_exact_fields_json_determinism_and_value_safety(tmp_path: Path) -> None:

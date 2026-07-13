@@ -584,6 +584,19 @@ def _cross_binding_matches(
     )
 
 
+def _invalidate_derived_state_conclusions(
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    invalidated = result.copy()
+    invalidated["implementation_mutating_attempt_consumed_actual"] = (
+        "unknown_not_safely_classified"
+    )
+    invalidated["governed_nonproduction_record_exists"] = (
+        "unknown_not_safely_classified"
+    )
+    return invalidated
+
+
 def _postflight(
     result: dict[str, Any],
     database_path: Path,
@@ -592,16 +605,17 @@ def _postflight(
         sidecars = _probe_sidecars(database_path)
     except Exception:
         return _bounded_result(
-            result,
+            _invalidate_derived_state_conclusions(result),
             outcome="bounded_read_only_failure",
             safe_error_code="sidecar_postflight_failed",
             completed_stage="sidecar_postflight",
         )
     if any(sidecars.values()):
-        result["sidecar_postflight_passed"] = False
-        result["runtime_target_classification_performed"] = True
+        invalidated = _invalidate_derived_state_conclusions(result)
+        invalidated["sidecar_postflight_passed"] = False
+        invalidated["runtime_target_classification_performed"] = True
         return _bounded_result(
-            result,
+            invalidated,
             outcome="inconsistent_or_not_safely_classifiable",
             safe_error_code="sidecar_state_changed",
             completed_stage="sidecar_postflight",
