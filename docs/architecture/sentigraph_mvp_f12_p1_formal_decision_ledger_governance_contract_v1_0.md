@@ -320,3 +320,272 @@ P1 creates only this Markdown file. Formal-target access count, SQLite access co
 P1 is ready only when docs/static checks prove that this is the sole repository change; the authority literal occurs once; canonical object input counts, key uniqueness, hashes, receipt field and outcome cardinalities, states, and future allowlists match this contract; Markdown fences and whitespace are valid; and no forbidden physical path, raw query, placeholder, mojibake, runtime claim, or implementation overclaim appears.
 
 Successful P1 completion authorizes only handoff for independent review. It does not advance the state machine and does not grant P2 authority. P2, P3, and P4 each remain unstarted until their preceding acceptance, fresh exact authorization, and new Goal requirements are satisfied.
+
+## 12. RC1 administrative and governance completeness
+
+<!-- RC1_ADMINISTRATIVE_COMPLETENESS_BEGIN -->
+
+### 12.1 Candidate decision and phase status
+
+This section records candidate contract completeness only. It does not self-attest the final RC1 Git commit or the terminal Goal receipt; the external terminal receipt supplies that evidence after ready-only Git finalization.
+
+```text
+decision = ready
+privacy_issue_stop = no
+
+MVP_F12_P1_RC1_status = candidate_completed_pending_chatgpt_acceptance
+effective_MVP_F12_P1_status = candidate_repaired_pending_chatgpt_acceptance
+
+MVP_F12_P2_eligibility_candidate_after_chatgpt_acceptance = yes
+MVP_F12_P2_authorized = no
+MVP_F12_P2_executed = no
+MVP_F12_P3_authorized = no
+MVP_F12_P3_executed = no
+MVP_F12_P4_authorized = no
+MVP_F12_P4_executed = no
+```
+
+P2 remains unauthorized. No later phase is represented as implemented, executed, accepted, or complete.
+
+### 12.2 Exact Goal lifecycle
+
+```text
+original_P1_goal_created = yes
+original_P1_goal_completed = yes
+original_P1_goal_reused_for_RC1 = no
+
+RC1_goal_created = yes
+RC1_goal_activated = yes
+```
+
+The RC1 Goal is separate from the completed original P1 Goal and cannot be replaced or reused by a later phase.
+
+### 12.3 Prompt accounting
+
+```text
+before_RC1:
+consumed_engineering_prompts_since_v1_3 = 17
+consumed_fixed_prompts_since_v1_3 = 9
+consumed_conditional_prompts_since_v1_3 = 6
+consumed_risk_prompts_since_v1_3 = 2
+remaining_fixed_prompts = 5
+remaining_conditional_allowance = 0
+remaining_risk_buffer = 0
+
+after_RC1_goal_activation:
+consumed_engineering_prompts_since_v1_3 = 18
+consumed_fixed_prompts_since_v1_3 = 10
+consumed_conditional_prompts_since_v1_3 = 6
+consumed_risk_prompts_since_v1_3 = 2
+remaining_fixed_prompts = 4
+remaining_conditional_allowance = 0
+remaining_risk_buffer = 0
+```
+
+### 12.4 Inspected static anchors
+
+The RC1 inspection was bounded to the existing contract, its accepted Git anchor, and the retained accepted F11 static findings. It did not inspect a runtime target or row data.
+
+| Inspected anchor | Exact value |
+| --- | --- |
+| Accepted effective F11 commit | `1300e10fba526c0d37f310a004e17a17a9c65420` |
+| F11-P1 contract blob | `29d3806a535680247713ae317c1d1c9097f69d06` |
+| F11-P1 contract SHA-256 | `dc3e6a696facc1d93cfce0b51218820b6eed8bd7dcbf4e1177d460bdc9e8b152` |
+| Decision-ledger service blob | `b9d74ca5d3d593fbe27043dcb7db0a76e25d4056` |
+| Internal route blob | `5dd5033f1de76cac86087a2e50d2a8fda74102ee` |
+| Focused test blob | `02aaa25df98348caeb501e9f23ae593d0a590906` |
+| API registration blob | `d9523f761537af0e7a08ce834d6e3b36c9117a24` |
+| F11-P2-RC1 report blob | `f60a4775cd34d034c739be14e063230262cdf961` |
+| Historical P1 commit | `95cace0b2a5a71a99833af912dfc874c96ac977f` |
+| Current pre-RC1 P1 contract blob | `4fd220fb5a7de1188a9a6be9f52d8b28b78580d9` |
+| Current pre-RC1 P1 contract SHA-256 | `25950130529a6602724bf9439ab73094af7741b3f72fc286060338990d5dd17f` |
+
+### 12.5 Rejected architectures
+
+<!-- RC1_REJECTED_ARCHITECTURES_BEGIN -->
+
+1. `rejected_combine_initialization_and_first_decision_in_P2` — it would destroy the exact-empty initialization boundary and reuse P2 authority for a real write.
+2. `rejected_internal_HTTP_route_as_first_formal_write_surface` — the first formal write requires a one-time nonreusable direct-service binding that the route does not provide.
+3. `rejected_bind_existing_internal_route_factory_to_formal_target` — it would expose formal-target selection to a reusable request surface outside the frozen phase boundary.
+4. `rejected_caller_supplied_physical_SQLite_target` — caller-selected storage permits substitution and breaks the internally owned logical-target identity.
+5. `rejected_target_discovery_globbing_aliases_or_environment_substitution` — discovery and substitution make target resolution ambiguous and non-canonical.
+6. `rejected_generic_case_or_evidence_store` — a shared store would violate the dedicated ledger schema, scope, and isolation contract.
+7. `rejected_commit_one_time_P2_P3_or_P4_runners` — committed runners would remain reusable instead of repository-external and disposable after their receipts.
+8. `rejected_replay_writer_during_P4_idempotency_proof` — a writer replay is a mutation-capable action and cannot constitute an independent read-only audit.
+9. `rejected_frontend_controls_before_independent_P4_audit` — controls would expose a formal decision surface before independent integrity acceptance.
+10. `rejected_self_declared_authority_as_verified_identity` — a role declaration and unvalidated authority basis cannot prove reviewer identity.
+
+<!-- RC1_REJECTED_ARCHITECTURES_END -->
+
+### 12.6 Exact P1 no-side-effect proof
+
+```text
+docs_only = yes
+backend_code_changed = no
+frontend_code_changed = no
+tests_changed = no
+route_executed = no
+service_invoked = no
+formal_target_access_count = 0
+SQLite_access_count = 0
+decision_writer_invocation_count = 0
+decision_capture_count = 0
+F10_runtime_call_count = 0
+production_or_downstream_action_count = 0
+Project_Source_changed = no
+tag_or_release_created = no
+```
+
+### 12.7 Source recommendation and next boundary
+
+Only after independent acceptance of RC1, the Source recommendation is:
+
+```text
+Canonical 00 = replace
+Canonical 03 = replace
+Canonical 09 = replace
+Canonical 08 = no change until P2 runtime status changes
+Canonical 05 = no change
+Source 11 = no change
+```
+
+Project Source remains unchanged during RC1.
+
+```text
+next_boundary = ChatGPT independent acceptance of F12-P1-RC1, Source synchronization, then one fresh exact P2 authorization
+```
+
+P2 remains unauthorized at this boundary.
+
+<!-- RC1_ADMINISTRATIVE_COMPLETENESS_END -->
+
+## 13. Exact P3 receipt and activation binding contract
+
+<!-- P3_ACTIVATION_BINDING_CONTRACT_BEGIN -->
+
+P3 may approach its writer boundary only after independently accepted P2 initialization evidence proves the formal target is in the required exact-empty state. The future P3 authority must bind exactly the following 23 fields in this order:
+
+<!-- P3_ACTIVATION_BINDING_FIELDS_BEGIN -->
+1. `accepted_f11_p1_contract_blob`
+2. `accepted_f11_p1_contract_sha256`
+3. `accepted_effective_f11_commit`
+4. `accepted_decision_ledger_service_blob`
+5. `accepted_request_schema`
+6. `accepted_request_version`
+7. `accepted_decision_schema`
+8. `accepted_decision_version`
+9. `accepted_ledger_scope`
+10. `accepted_decision_status`
+11. `target_identity_safe_hash`
+12. `target_authorization_contract_safe_hash`
+13. `independently_accepted_p2_initialization_receipt_canonical_sha256`
+14. `required_formal_target_state`
+15. `first_real_decision_type`
+16. `reviewer_role_label`
+17. `reviewer_authority_basis_label`
+18. `reviewer_identity_verified`
+19. `p3_activation_binding_safe_hash`
+20. `p3_activation_binding_nonreusable`
+21. `formal_writer_invocation_limit`
+22. `automatic_retry_allowed`
+23. `route_invocation_limit`
+<!-- P3_ACTIVATION_BINDING_FIELDS_END -->
+
+The exact values already frozen by P1 are:
+
+```text
+accepted_f11_p1_contract_blob = 29d3806a535680247713ae317c1d1c9097f69d06
+accepted_f11_p1_contract_sha256 = dc3e6a696facc1d93cfce0b51218820b6eed8bd7dcbf4e1177d460bdc9e8b152
+accepted_effective_f11_commit = 1300e10fba526c0d37f310a004e17a17a9c65420
+accepted_decision_ledger_service_blob = b9d74ca5d3d593fbe27043dcb7db0a76e25d4056
+accepted_request_schema = sentigraph_governed_nonproduction_human_review_decision_request_v0_1
+accepted_request_version = 0.1
+accepted_decision_schema = sentigraph_governed_nonproduction_human_review_decision_record_v0_1
+accepted_decision_version = 0.1
+accepted_ledger_scope = governed_nonproduction_record_human_review_only
+accepted_decision_status = recorded_append_only_nonproduction
+target_identity_safe_hash = 4d2b1ee233433b774d30b82b57c77a58a5aab6427fcf8454a7bf05e5590d7202
+target_authorization_contract_safe_hash = de3cbfe49dfeb836f3bc8b95b5a46d51366892e2277f86402306edbfd543ea4d
+required_formal_target_state = initialized_exact_empty
+first_real_decision_type = keep_pending_human_review
+reviewer_role_label = self_declared_project_owner_role
+reviewer_authority_basis_label = authority_basis_not_independently_validated
+reviewer_identity_verified = false
+p3_activation_binding_nonreusable = true
+formal_writer_invocation_limit = 1
+automatic_retry_allowed = false
+route_invocation_limit = 0
+```
+
+P1 cannot supply the two future evidence values. Their non-fabricated status is recorded as:
+
+```text
+independently_accepted_p2_initialization_receipt_canonical_sha256 = future_required_lowercase_64_hex_not_yet_available
+p3_activation_binding_safe_hash = future_required_lowercase_64_hex_not_yet_available
+```
+
+The future P3 authorization must replace each status with exactly one lowercase 64-hex SHA-256 value and bind both values explicitly. The initialization receipt hash covers the exact independently accepted 25-field canonical receipt object; it never hashes a report, filename, physical path, or terminal summary.
+
+`P3_PRE_WRITER_HASH_GATE`: P3 must stop before writer invocation if either future hash is absent, malformed, not independently accepted, mismatched, substituted, or reused. The activation binding identifies only the first `keep_pending_human_review` decision, binds the exact accepted P2 receipt hash and both formal-target hashes, is nonreusable, and authorizes at most one writer invocation and one INSERT. It authorizes no automatic retry, repair, second decision, route call, or frontend action.
+
+<!-- P3_ACTIVATION_BINDING_CONTRACT_END -->
+
+## 14. Exact P4 direct recomputation contract
+
+<!-- P4_DIRECT_RECOMPUTATION_CONTRACT_BEGIN -->
+
+P4 is an independent repository-external direct SQLite read-only audit. It reads actual stored columns and derives identity and integrity values itself. `P4_UNTRUSTED_STORED_VALUES`: it must not trust the stored decision_canonical_hash, stored idempotency_key, stored decision_id, stored audit_receipt_reference, the P3 service result alone, or a report summary alone.
+
+P4 reconstructs the exact 19-field idempotency object in this order:
+
+<!-- P4_IDEMPOTENCY_FIELDS_BEGIN -->
+1. `request_schema`
+2. `request_version`
+3. `decision_type`
+4. `reviewer_role_label`
+5. `reviewer_authority_basis_label`
+6. `source_projection_schema`
+7. `source_projection_version`
+8. `source_projection_id`
+9. `source_projection_status`
+10. `source_projection_canonical_sha256`
+11. `source_outer_response_canonical_sha256`
+12. `persisted_record_id`
+13. `attempt_reservation_id`
+14. `candidate_identity_digest`
+15. `input_safe_hash`
+16. `gate_contract_safe_hash`
+17. `activation_decision_safe_hash`
+18. `record_snapshot_digest`
+19. `reservation_snapshot_digest`
+<!-- P4_IDEMPOTENCY_FIELDS_END -->
+
+The first two fields use the accepted F11 request constants bound by P3; every row-derived field uses its actual SQLite column. P4 canonicalizes the object with `ensure_ascii = false`, `sort_keys = true`, compact separators, UTF-8 encoding, and SHA-256 lowercase hexadecimal output.
+
+P4 independently derives:
+
+```text
+recomputed_idempotency_key = SHA-256 of the exact 19-field canonical object
+recomputed_decision_id = "ghrd-" + the first 32 lowercase hexadecimal characters of recomputed_idempotency_key
+recomputed_audit_receipt_reference = "ghrd-receipt-" + the first 32 lowercase hexadecimal characters of recomputed_idempotency_key
+```
+
+P4 compares all three recomputed values with the actual stored `idempotency_key`, `decision_id`, and `audit_receipt_reference` columns.
+
+P4 then reconstructs the complete canonical decision object from all actual canonical columns in the frozen 38-field decision schema. It normalizes the eight SQLite Boolean columns to canonical Boolean values and parses the four canonical-JSON columns to their canonical values. It recomputes `decision_canonical_hash` as the SHA-256 lowercase hexadecimal digest of the complete canonical decision object excluding only the decision_canonical_hash field, then compares that result with the actual stored hash column.
+
+The independent audit also verifies:
+
+```text
+decision_type = keep_pending_human_review
+ledger_scope = governed_nonproduction_record_human_review_only
+decision_status = recorded_append_only_nonproduction
+reviewer_identity_verified = false
+exact_row_count = 1
+unrelated_row_count = 0
+unexpected_sidecar_count = 0
+```
+
+Any mismatch is classified `blocked_post_write_integrity_mismatch`. P4 then stops without a route or service call, writer invocation, mutation, retry, repair, deletion, update, or second decision.
+
+<!-- P4_DIRECT_RECOMPUTATION_CONTRACT_END -->
