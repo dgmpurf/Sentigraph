@@ -253,6 +253,10 @@ EXACT_IDENTITY_GOLDEN_VECTORS = {
         "ghrd-receipt-5f9f0459a81b470e4e4cbc1d41bc9683",
     ),
 }
+RC1_ROUTE_MODE = (
+    "internal_disabled_by_default_append_only_nonproduction_"
+    "human_review_decision_ledger"
+)
 
 
 def _service():
@@ -479,6 +483,446 @@ def test_exact_contract_conformance_repair_canonical_golden_vectors(
         identity["decision_id"],
         identity["audit_receipt_reference"],
     ) == expected
+
+
+@pytest.mark.parametrize(
+    "failure_point",
+    (
+        "invalid_request",
+        "server_context_mismatch",
+        "ledger_unavailable",
+        "sqlite_before_observation",
+    ),
+)
+def test_rc1_repair_unobserved_receipt_counts_are_null(
+    failure_point: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    ledger = module.GovernedNonproductionHumanReviewDecisionLedger(
+        database_path=tmp_path / "synthetic-human-review-decisions.sqlite3",
+        enabled=True,
+        clock=CountingClock(),
+    )
+    request = _request()
+    if failure_point == "invalid_request":
+        request = {**request, "note": "not accepted"}
+    elif failure_point == "server_context_mismatch":
+        changed_context = dict(module.SERVER_OWNED_CONTEXT)
+        changed_context["source_projection_status"] = "not-ready"
+        monkeypatch.setattr(module, "SERVER_OWNED_CONTEXT", changed_context)
+    elif failure_point == "ledger_unavailable":
+        ledger.enabled = False
+    else:
+        class FailingConnection:
+            def execute(self, *_args, **_kwargs):
+                raise sqlite3.OperationalError("bounded synthetic failure")
+
+            def close(self) -> None:
+                return None
+
+        monkeypatch.setattr(ledger, "_connect", lambda: FailingConnection())
+
+    decision, receipt = _record(module, ledger, request)
+    assert decision is None
+    assert receipt["decision_row_count_before"] is None
+    assert receipt["decision_row_count_after"] is None
+    assert (receipt["decision_row_count_before"], receipt["decision_row_count_after"]) != (0, 0)
+
+
+def test_rc1_repair_unresolved_ambiguity_counts_are_null(
+    tmp_path: Path,
+) -> None:
+    module = _service()
+    database_path = tmp_path / "synthetic-human-review-decisions.sqlite3"
+
+    def remove_then_ambiguous() -> None:
+        database_path.unlink()
+        raise module.GovernedNonproductionHumanReviewDecisionCommitAmbiguity()
+
+    ledger = _initialized_ledger(
+        module,
+        tmp_path,
+        after_commit_hook=remove_then_ambiguous,
+    )
+    decision, receipt = _record(module, ledger)
+    assert decision is None
+    assert receipt["outcome"] == (
+        "paused_pending_read_only_idempotency_verification"
+    )
+    assert receipt["decision_row_count_before"] is None
+    assert receipt["decision_row_count_after"] is None
+    assert (receipt["decision_row_count_before"], receipt["decision_row_count_after"]) != (0, 0)
+
+
+def test_rc1_repair_create_retains_exact_integer_counts(tmp_path: Path) -> None:
+    module = _service()
+    ledger = _initialized_ledger(module, tmp_path)
+    _, receipt = _record(module, ledger)
+    assert receipt["decision_row_count_before"] == 0
+    assert receipt["decision_row_count_after"] == 1
+    assert type(receipt["decision_row_count_before"]) is int
+    assert type(receipt["decision_row_count_after"]) is int
+
+
+def test_rc1_repair_reuse_retains_exact_equal_integer_counts(
+    tmp_path: Path,
+) -> None:
+    module = _service()
+    ledger = _initialized_ledger(module, tmp_path)
+    _record(module, ledger)
+    _, receipt = _record(module, ledger)
+    assert receipt["decision_row_count_before"] == 1
+    assert receipt["decision_row_count_after"] == 1
+    assert type(receipt["decision_row_count_before"]) is int
+    assert type(receipt["decision_row_count_after"]) is int
+
+
+def test_rc1_repair_observed_conflict_retains_exact_equal_integer_counts(
+    tmp_path: Path,
+) -> None:
+    module = _service()
+    ledger = _initialized_ledger(module, tmp_path)
+    decision, _ = _record(module, ledger)
+    with sqlite3.connect(ledger.database_path) as connection:
+        connection.execute(
+            f'UPDATE "{module.PRIMARY_TABLE}" SET decision_canonical_hash = ? '
+            "WHERE decision_id = ?",
+            ("0" * 64, decision["decision_id"]),
+        )
+        connection.commit()
+    _, receipt = _record(module, ledger)
+    assert receipt["outcome"] == "blocked_idempotency_conflict"
+    assert receipt["decision_row_count_before"] == 1
+    assert receipt["decision_row_count_after"] == 1
+    assert type(receipt["decision_row_count_before"]) is int
+    assert type(receipt["decision_row_count_after"]) is int
+
+
+def test_rc1_repair_verified_ambiguity_retains_exact_integer_counts(
+    tmp_path: Path,
+) -> None:
+    module = _service()
+
+    def ambiguous_after_commit() -> None:
+        raise module.GovernedNonproductionHumanReviewDecisionCommitAmbiguity()
+
+    ledger = _initialized_ledger(
+        module,
+        tmp_path,
+        after_commit_hook=ambiguous_after_commit,
+    )
+    decision, receipt = _record(module, ledger)
+    assert decision is not None
+    assert receipt["outcome"] == "created_exactly_one_human_review_decision"
+    assert receipt["decision_row_count_before"] == 0
+    assert receipt["decision_row_count_after"] == 1
+    assert type(receipt["decision_row_count_before"]) is int
+    assert type(receipt["decision_row_count_after"]) is int
+
+
+def _assert_rc1_route_mode(response, expected_status: int) -> dict[str, Any]:
+    assert response.status_code == expected_status
+    body = response.json()
+    assert body["route_mode"] == RC1_ROUTE_MODE
+    return body
+
+
+def test_rc1_repair_route_mode_constant_is_exact() -> None:
+    route = _route()
+    assert route.ROUTE_MODE == RC1_ROUTE_MODE
+
+
+def test_rc1_repair_post_disabled_route_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route = _route()
+    monkeypatch.delenv(GATE, raising=False)
+    monkeypatch.setattr(
+        route,
+        "_ledger_factory",
+        lambda: pytest.fail("disabled route constructed a ledger"),
+    )
+    from app.main import app
+
+    response = TestClient(app).post(f"{ROUTE_PREFIX}/decisions", json=_request())
+    _assert_rc1_route_mode(response, 404)
+
+
+def test_rc1_repair_post_unavailable_route_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route = _route()
+    monkeypatch.setenv(GATE, "1")
+    from app.main import app
+
+    response = TestClient(app).post(f"{ROUTE_PREFIX}/decisions", json=_request())
+    _assert_rc1_route_mode(response, 503)
+
+
+def test_rc1_repair_post_created_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    ledger = _initialized_ledger(module, tmp_path)
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).post(f"{ROUTE_PREFIX}/decisions", json=_request())
+    _assert_rc1_route_mode(response, 201)
+
+
+def test_rc1_repair_post_reuse_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    ledger = _initialized_ledger(module, tmp_path)
+    _record(module, ledger)
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).post(f"{ROUTE_PREFIX}/decisions", json=_request())
+    _assert_rc1_route_mode(response, 200)
+
+
+def test_rc1_repair_post_unsupported_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    ledger = _initialized_ledger(module, tmp_path)
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).post(
+        f"{ROUTE_PREFIX}/decisions",
+        json=_request("approve_trust"),
+    )
+    _assert_rc1_route_mode(response, 422)
+
+
+def test_rc1_repair_post_binding_mismatch_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    ledger = _initialized_ledger(module, tmp_path)
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).post(
+        f"{ROUTE_PREFIX}/decisions",
+        json={**_request(), "request_schema": "wrong"},
+    )
+    _assert_rc1_route_mode(response, 409)
+
+
+def test_rc1_repair_post_conflict_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    ledger = _initialized_ledger(module, tmp_path)
+    decision, _ = _record(module, ledger)
+    with sqlite3.connect(ledger.database_path) as connection:
+        connection.execute(
+            f'UPDATE "{module.PRIMARY_TABLE}" SET decision_canonical_hash = ? '
+            "WHERE decision_id = ?",
+            ("0" * 64, decision["decision_id"]),
+        )
+        connection.commit()
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).post(f"{ROUTE_PREFIX}/decisions", json=_request())
+    _assert_rc1_route_mode(response, 409)
+
+
+def test_rc1_repair_post_paused_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    database_path = tmp_path / "synthetic-human-review-decisions.sqlite3"
+
+    def remove_then_ambiguous() -> None:
+        database_path.unlink()
+        raise module.GovernedNonproductionHumanReviewDecisionCommitAmbiguity()
+
+    ledger = _initialized_ledger(
+        module,
+        tmp_path,
+        after_commit_hook=remove_then_ambiguous,
+    )
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).post(f"{ROUTE_PREFIX}/decisions", json=_request())
+    _assert_rc1_route_mode(response, 503)
+
+
+def test_rc1_repair_post_bounded_failure_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+
+    def fail_before_commit() -> None:
+        raise RuntimeError("bounded synthetic failure")
+
+    ledger = _initialized_ledger(
+        module,
+        tmp_path,
+        before_commit_hook=fail_before_commit,
+    )
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).post(f"{ROUTE_PREFIX}/decisions", json=_request())
+    _assert_rc1_route_mode(response, 500)
+
+
+def test_rc1_repair_get_malformed_id_route_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route = _route()
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(
+        route,
+        "_ledger_factory",
+        lambda: pytest.fail("malformed ID constructed a ledger"),
+    )
+    from app.main import app
+
+    response = TestClient(app).get(f"{ROUTE_PREFIX}/decisions/not-an-id")
+    _assert_rc1_route_mode(response, 422)
+
+
+def test_rc1_repair_get_disabled_route_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route = _route()
+    monkeypatch.delenv(GATE, raising=False)
+    monkeypatch.setattr(
+        route,
+        "_ledger_factory",
+        lambda: pytest.fail("disabled route constructed a ledger"),
+    )
+    from app.main import app
+
+    response = TestClient(app).get(
+        f"{ROUTE_PREFIX}/decisions/ghrd-{'0' * 32}"
+    )
+    _assert_rc1_route_mode(response, 404)
+
+
+def test_rc1_repair_get_unavailable_route_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(GATE, "1")
+    from app.main import app
+
+    response = TestClient(app).get(
+        f"{ROUTE_PREFIX}/decisions/ghrd-{'0' * 32}"
+    )
+    _assert_rc1_route_mode(response, 503)
+
+
+def test_rc1_repair_get_found_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    ledger = _initialized_ledger(module, tmp_path)
+    decision, _ = _record(module, ledger)
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).get(
+        f"{ROUTE_PREFIX}/decisions/{decision['decision_id']}"
+    )
+    _assert_rc1_route_mode(response, 200)
+
+
+def test_rc1_repair_get_not_found_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    ledger = _initialized_ledger(module, tmp_path)
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).get(
+        f"{ROUTE_PREFIX}/decisions/ghrd-{'0' * 32}"
+    )
+    _assert_rc1_route_mode(response, 404)
+
+
+def test_rc1_repair_get_integrity_blocked_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    ledger = _initialized_ledger(module, tmp_path)
+    decision, _ = _record(module, ledger)
+    with sqlite3.connect(ledger.database_path) as connection:
+        connection.execute(
+            f'UPDATE "{module.PRIMARY_TABLE}" SET decision_canonical_hash = ? '
+            "WHERE decision_id = ?",
+            ("0" * 64, decision["decision_id"]),
+        )
+        connection.commit()
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).get(
+        f"{ROUTE_PREFIX}/decisions/{decision['decision_id']}"
+    )
+    _assert_rc1_route_mode(response, 409)
+
+
+def test_rc1_repair_get_bounded_failure_route_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    route = _route()
+    ledger = module.GovernedNonproductionHumanReviewDecisionLedger(
+        database_path=tmp_path / "missing.sqlite3",
+        enabled=True,
+    )
+    monkeypatch.setenv(GATE, "1")
+    monkeypatch.setattr(route, "_ledger_factory", lambda: ledger)
+    from app.main import app
+
+    response = TestClient(app).get(
+        f"{ROUTE_PREFIX}/decisions/ghrd-{'0' * 32}"
+    )
+    _assert_rc1_route_mode(response, 503)
 
 
 @pytest.mark.parametrize("decision_type", DECISION_TYPES)

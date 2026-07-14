@@ -342,8 +342,8 @@ def _receipt(
     *,
     decision: Mapping[str, Any] | None = None,
     identity: Mapping[str, Any] | None = None,
-    row_count_before: int = 0,
-    row_count_after: int = 0,
+    row_count_before: int | None = None,
+    row_count_after: int | None = None,
 ) -> dict[str, Any]:
     identity = identity or {}
     created, reused, mutation, exact, conflict, append_only = (
@@ -640,8 +640,6 @@ def _resolve_commit_ambiguity(
         return None, _receipt(
             "paused_pending_read_only_idempotency_verification",
             identity=identity,
-            row_count_before=row_count_before,
-            row_count_after=row_count_before,
         )
     if loaded != decision:
         return None, _receipt(

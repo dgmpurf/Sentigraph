@@ -18,6 +18,10 @@ from app.services.governed_nonproduction_human_review_decision_ledger import (
 
 
 GATE = "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_LEDGER_ENABLED"
+ROUTE_MODE = (
+    "internal_disabled_by_default_append_only_nonproduction_"
+    "human_review_decision_ledger"
+)
 POST_RESPONSE_SCHEMA = (
     "sentigraph_internal_alpha_governed_review_decision_post_response_v0_1"
 )
@@ -55,7 +59,6 @@ def _gate_enabled() -> bool:
 
 def _post_response(
     *,
-    route_mode: str,
     decision: dict[str, Any] | None,
     receipt: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -70,7 +73,7 @@ def _post_response(
     )
     return {
         "response_schema": POST_RESPONSE_SCHEMA,
-        "route_mode": route_mode,
+        "route_mode": ROUTE_MODE,
         "decision_id": decision_id,
         "decision": decision,
         "receipt": receipt,
@@ -87,13 +90,12 @@ def _post_response(
 
 def _get_response(
     *,
-    route_mode: str,
     decision_id: str,
     decision: dict[str, Any] | None,
 ) -> dict[str, Any]:
     return {
         "response_schema": GET_RESPONSE_SCHEMA,
-        "route_mode": route_mode,
+        "route_mode": ROUTE_MODE,
         "decision_id": decision_id,
         "decision": decision,
         "human_review_required": True,
@@ -114,7 +116,6 @@ def post_decision(
         return JSONResponse(
             status_code=404,
             content=_post_response(
-                route_mode="disabled_internal_alpha",
                 decision=None,
                 receipt=None,
             ),
@@ -124,7 +125,6 @@ def post_decision(
         return JSONResponse(
             status_code=503,
             content=_post_response(
-                route_mode="unavailable_synthetic_only",
                 decision=None,
                 receipt=None,
             ),
@@ -137,7 +137,6 @@ def post_decision(
     return JSONResponse(
         status_code=OUTCOME_STATUS[outcome],
         content=_post_response(
-            route_mode="synthetic_only_governed_nonproduction",
             decision=decision,
             receipt=receipt,
         ),
@@ -150,7 +149,6 @@ def get_decision(decision_id: str) -> JSONResponse:
         return JSONResponse(
             status_code=422,
             content=_get_response(
-                route_mode="request_rejected",
                 decision_id=decision_id,
                 decision=None,
             ),
@@ -159,7 +157,6 @@ def get_decision(decision_id: str) -> JSONResponse:
         return JSONResponse(
             status_code=404,
             content=_get_response(
-                route_mode="disabled_internal_alpha",
                 decision_id=decision_id,
                 decision=None,
             ),
@@ -169,7 +166,6 @@ def get_decision(decision_id: str) -> JSONResponse:
         return JSONResponse(
             status_code=503,
             content=_get_response(
-                route_mode="unavailable_synthetic_only",
                 decision_id=decision_id,
                 decision=None,
             ),
@@ -183,7 +179,6 @@ def get_decision(decision_id: str) -> JSONResponse:
         return JSONResponse(
             status_code=409,
             content=_get_response(
-                route_mode="integrity_blocked",
                 decision_id=decision_id,
                 decision=None,
             ),
@@ -192,7 +187,6 @@ def get_decision(decision_id: str) -> JSONResponse:
         return JSONResponse(
             status_code=503,
             content=_get_response(
-                route_mode="unavailable_synthetic_only",
                 decision_id=decision_id,
                 decision=None,
             ),
@@ -200,7 +194,6 @@ def get_decision(decision_id: str) -> JSONResponse:
     return JSONResponse(
         status_code=200 if decision is not None else 404,
         content=_get_response(
-            route_mode="synthetic_only_governed_nonproduction",
             decision_id=decision_id,
             decision=decision,
         ),
