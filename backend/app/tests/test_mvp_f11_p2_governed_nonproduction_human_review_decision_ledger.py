@@ -218,6 +218,41 @@ FORMAL_TARGET = Path(
     "runtime/governed_nonproduction_human_review_decisions/"
     "review_decisions_v0_1.sqlite3"
 )
+REPAIRED_LEDGER_SCOPE = "governed_nonproduction_record_human_review_only"
+REPAIRED_DECISION_STATUS = "recorded_append_only_nonproduction"
+EXACT_IDEMPOTENCY_FIELDS = (
+    "request_schema",
+    "request_version",
+    "decision_type",
+    "reviewer_role_label",
+    "reviewer_authority_basis_label",
+    "source_projection_schema",
+    "source_projection_version",
+    "source_projection_id",
+    "source_projection_status",
+    "source_projection_canonical_sha256",
+    "source_outer_response_canonical_sha256",
+    "persisted_record_id",
+    "attempt_reservation_id",
+    "candidate_identity_digest",
+    "input_safe_hash",
+    "gate_contract_safe_hash",
+    "activation_decision_safe_hash",
+    "record_snapshot_digest",
+    "reservation_snapshot_digest",
+)
+EXACT_IDENTITY_GOLDEN_VECTORS = {
+    "keep_pending_human_review": (
+        "b666c0f03a975c94e6b3b248bd05cdc95fdeb596b950abbe6a4a029f0935b3db",
+        "ghrd-b666c0f03a975c94e6b3b248bd05cdc9",
+        "ghrd-receipt-b666c0f03a975c94e6b3b248bd05cdc9",
+    ),
+    "request_more_governance_review": (
+        "5f9f0459a81b470e4e4cbc1d41bc96832d550ee130c86ff791920ff8c92b09cc",
+        "ghrd-5f9f0459a81b470e4e4cbc1d41bc9683",
+        "ghrd-receipt-5f9f0459a81b470e4e4cbc1d41bc9683",
+    ),
+}
 
 
 def _service():
@@ -331,6 +366,119 @@ def test_service_exposes_exact_contract_constants_and_public_surface() -> None:
     assert callable(
         module.validate_governed_nonproduction_human_review_decision_request
     )
+
+
+def test_exact_contract_conformance_repair_ledger_scope(
+    tmp_path: Path,
+) -> None:
+    module = _service()
+    assert module.LEDGER_SCOPE == REPAIRED_LEDGER_SCOPE
+    ledger = _initialized_ledger(module, tmp_path)
+    for decision_type in DECISION_TYPES:
+        decision, _ = _record(module, ledger, _request(decision_type))
+        assert decision["ledger_scope"] == REPAIRED_LEDGER_SCOPE
+
+
+def test_exact_contract_conformance_repair_fixed_decision_status(
+    tmp_path: Path,
+) -> None:
+    module = _service()
+    assert module.DECISION_STATUS == REPAIRED_DECISION_STATUS
+    assert "DECISION_STATUS_BY_TYPE" not in vars(module)
+    ledger = _initialized_ledger(module, tmp_path)
+    for decision_type in DECISION_TYPES:
+        decision, _ = _record(module, ledger, _request(decision_type))
+        assert decision["decision_type"] == decision_type
+        assert decision["decision_status"] == REPAIRED_DECISION_STATUS
+
+
+def test_exact_contract_conformance_repair_idempotency_object_has_exact_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    captured: list[dict[str, Any]] = []
+    canonical_sha256 = module._canonical_sha256
+
+    def capture(value: dict[str, Any]) -> str:
+        captured.append(dict(value))
+        return canonical_sha256(value)
+
+    monkeypatch.setattr(module, "_canonical_sha256", capture)
+    module._identity_for(DECISION_TYPES[0])
+    assert len(captured) == 1
+    assert tuple(captured[0]) == EXACT_IDEMPOTENCY_FIELDS
+    assert len(captured[0]) == len(set(captured[0])) == 19
+
+
+@pytest.mark.parametrize("binding", ("REQUEST_SCHEMA", "REQUEST_VERSION"))
+def test_exact_contract_conformance_repair_request_bindings_participate_in_hash(
+    binding: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    baseline = module._identity_for(DECISION_TYPES[0])["idempotency_key"]
+    monkeypatch.setattr(module, binding, f"changed-{binding.lower()}")
+    changed = module._identity_for(DECISION_TYPES[0])["idempotency_key"]
+    assert changed != baseline
+
+
+@pytest.mark.parametrize(
+    "excluded_binding",
+    ("ledger_scope", "reviewer_identity_verified"),
+)
+def test_exact_contract_conformance_repair_excluded_values_do_not_affect_hash(
+    excluded_binding: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    baseline = module._identity_for(DECISION_TYPES[0])["idempotency_key"]
+    if excluded_binding == "ledger_scope":
+        monkeypatch.setattr(module, "LEDGER_SCOPE", "changed-ledger-scope")
+    else:
+        changed_context = dict(module.SERVER_OWNED_CONTEXT)
+        changed_context["reviewer_identity_verified"] = True
+        monkeypatch.setattr(module, "SERVER_OWNED_CONTEXT", changed_context)
+    changed = module._identity_for(DECISION_TYPES[0])["idempotency_key"]
+    assert changed == baseline
+
+
+def test_exact_contract_conformance_repair_identifiers_use_direct_first_32(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _service()
+    forced_key = "0123456789abcdef" * 4
+    monkeypatch.setattr(module, "_canonical_sha256", lambda _value: forced_key)
+    identity = module._identity_for(DECISION_TYPES[0])
+    assert identity["idempotency_key"] == forced_key
+    assert identity["decision_id"] == f"ghrd-{forced_key[:32]}"
+    assert identity["audit_receipt_reference"] == (
+        f"ghrd-receipt-{forced_key[:32]}"
+    )
+
+
+def test_exact_contract_conformance_repair_second_level_identifier_hashes_absent(
+) -> None:
+    module = _service()
+    source = inspect.getsource(module._identity_for)
+    assert 'f"decision:{idempotency_key}"' not in source
+    assert 'f"receipt:{idempotency_key}"' not in source
+
+
+@pytest.mark.parametrize(
+    ("decision_type", "expected"),
+    tuple(EXACT_IDENTITY_GOLDEN_VECTORS.items()),
+)
+def test_exact_contract_conformance_repair_canonical_golden_vectors(
+    decision_type: str,
+    expected: tuple[str, str, str],
+) -> None:
+    module = _service()
+    identity = module._identity_for(decision_type)
+    assert (
+        identity["idempotency_key"],
+        identity["decision_id"],
+        identity["audit_receipt_reference"],
+    ) == expected
 
 
 @pytest.mark.parametrize("decision_type", DECISION_TYPES)

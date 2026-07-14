@@ -227,17 +227,30 @@ LOGICAL_TARGET_LABEL = (
     "review_decisions_v0_1.sqlite3"
 )
 PRIMARY_TABLE = "governed_nonproduction_human_review_decisions_v0_1"
-LEDGER_SCOPE = "synthetic_only_governed_nonproduction_human_review_decisions"
-DECISION_STATUS_BY_TYPE = {
-    "keep_pending_human_review": "pending_human_review_retained",
-    "request_more_governance_review": "more_governance_review_requested",
-}
+LEDGER_SCOPE = "governed_nonproduction_record_human_review_only"
+DECISION_STATUS = "recorded_append_only_nonproduction"
 
 _FROZEN_SERVER_OWNED_CONTEXT = dict(SERVER_OWNED_CONTEXT)
 _IDEMPOTENCY_FIELDS = (
-    "ledger_scope",
+    "request_schema",
+    "request_version",
     "decision_type",
-    *tuple(SERVER_OWNED_CONTEXT),
+    "reviewer_role_label",
+    "reviewer_authority_basis_label",
+    "source_projection_schema",
+    "source_projection_version",
+    "source_projection_id",
+    "source_projection_status",
+    "source_projection_canonical_sha256",
+    "source_outer_response_canonical_sha256",
+    "persisted_record_id",
+    "attempt_reservation_id",
+    "candidate_identity_digest",
+    "input_safe_hash",
+    "gate_contract_safe_hash",
+    "activation_decision_safe_hash",
+    "record_snapshot_digest",
+    "reservation_snapshot_digest",
 )
 _JSON_FIELDS = (
     "allowed_follow_up_labels",
@@ -375,26 +388,22 @@ def _receipt(
 
 def _identity_for(decision_type: str) -> dict[str, Any]:
     material = {
-        "ledger_scope": LEDGER_SCOPE,
+        "request_schema": REQUEST_SCHEMA,
+        "request_version": REQUEST_VERSION,
         "decision_type": decision_type,
         **SERVER_OWNED_CONTEXT,
     }
     idempotency_key = _canonical_sha256(
         {field: material[field] for field in _IDEMPOTENCY_FIELDS}
     )
-    decision_suffix = hashlib.sha256(
-        f"decision:{idempotency_key}".encode("utf-8")
-    ).hexdigest()[:32]
-    receipt_suffix = hashlib.sha256(
-        f"receipt:{idempotency_key}".encode("utf-8")
-    ).hexdigest()[:32]
+    identifier_suffix = idempotency_key[:32]
     return {
-        "decision_id": f"ghrd-{decision_suffix}",
+        "decision_id": f"ghrd-{identifier_suffix}",
         "idempotency_key": idempotency_key,
-        "audit_receipt_reference": f"ghrd-receipt-{receipt_suffix}",
+        "audit_receipt_reference": f"ghrd-receipt-{identifier_suffix}",
         "ledger_scope": LEDGER_SCOPE,
         "decision_type": decision_type,
-        "decision_status": DECISION_STATUS_BY_TYPE[decision_type],
+        "decision_status": DECISION_STATUS,
         **SERVER_OWNED_CONTEXT,
     }
 
@@ -590,7 +599,9 @@ def _identity_matches(
         "decision_id",
         "idempotency_key",
         "audit_receipt_reference",
-        *_IDEMPOTENCY_FIELDS,
+        "ledger_scope",
+        "decision_type",
+        *tuple(SERVER_OWNED_CONTEXT),
         "decision_status",
     )
     return all(decision[field] == identity[field] for field in fields)
