@@ -10,6 +10,7 @@ from app.api.v1.routes import (
     evidence,
     external_collector,
     health,
+    internal_alpha_governed_review_decisions,
     internal_alpha_review_console,
     internal_operator_review_only_staging,
     keywords,
@@ -49,6 +50,11 @@ api_router.include_router(
     internal_alpha_review_console.router,
     prefix="/internal/alpha/review-console",
     tags=["internal-alpha-review-console"],
+)
+api_router.include_router(
+    internal_alpha_governed_review_decisions.router,
+    prefix="/internal/alpha/governed-review-decisions",
+    tags=["internal-alpha-governed-review-decisions"],
 )
 api_router.include_router(analysis_requests.router, prefix="/analysis-requests", tags=["analysis-requests"])
 api_router.include_router(
