@@ -24,6 +24,7 @@ API_ROUTE_PREFIX_FRAGMENT = "/internal/alpha/"
 READ_ONLY_HELPER = "getInternalAlphaReviewConsoleProjection"
 SAFE_PROJECTION_ID = "internal-alpha-safe-projection-fixture"
 SAFE_ALT_PROJECTION_ID = "8z16-no-write-alpha-fixture"
+GOVERNED_PROJECTION_ID = "governed-nonproduction-record-review-v0-1"
 
 FORBIDDEN_PUBLIC_ALIASES = [
     "#/review-console",
@@ -151,6 +152,7 @@ def test_api_helper_exists_and_is_narrow_get_only() -> None:
     assert "INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS" in api_text
     assert SAFE_PROJECTION_ID in api_text
     assert SAFE_ALT_PROJECTION_ID in api_text
+    assert GOVERNED_PROJECTION_ID in api_text
     assert API_ROUTE_PREFIX_FRAGMENT in helper_body
     assert "INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT" in helper_body
     assert "INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT" in helper_body
@@ -172,6 +174,8 @@ def test_api_helper_rejects_unsupported_projection_id_without_fallback() -> None
     assert "Unsupported internal alpha review console projection id" in helper_body
     assert "internal-alpha-safe-projection-fixture" in api_text
     assert "8z16-no-write-alpha-fixture" in api_text
+    assert "governed-nonproduction-record-review-v0-1" in api_text
+    assert "INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID" in api_text
     assert "unknown-projection-id" not in api_text
     assert "review-console/projections" not in api_text
     assert "SENTIGRAPH_INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_ENABLED" not in api_text
@@ -182,9 +186,14 @@ def test_shell_consumes_only_safe_helper_and_not_raw_route_string() -> None:
     shell = _read(FRONTEND_SHELL)
 
     assert READ_ONLY_HELPER in shell
-    assert "INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS" in shell
-    assert "SAFE_REVIEW_CONSOLE_PROJECTION_ID" in shell
-    assert "INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS[0]" in shell
+    assert "INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID" in shell
+    assert "GOVERNED_REVIEW_CONSOLE_PROJECTION_ID" in shell
+    assert GOVERNED_PROJECTION_ID not in shell
+    assert (
+        "getInternalAlphaReviewConsoleProjection("
+        "GOVERNED_REVIEW_CONSOLE_PROJECTION_ID)"
+    ) in shell
+    assert shell.count("INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS[0]") == 1
     assert "useEffect" in shell
     assert "fetch(" not in shell
     assert "axios" not in shell
@@ -198,6 +207,7 @@ def test_disabled_or_unavailable_route_uses_static_fallback_copy() -> None:
     shell_lower = _casefold(shell)
 
     assert "route_disabled" in shell
+    assert "governed_record_projection_disabled" in shell
     assert "backend route disabled" in shell_lower
     assert "not connected" in shell_lower
     assert "static fallback active" in shell_lower
@@ -207,6 +217,42 @@ def test_disabled_or_unavailable_route_uses_static_fallback_copy() -> None:
     assert "route enablement" not in shell_lower
     assert "projectionidinput" not in shell_lower
     assert "packageidinput" not in shell_lower
+
+
+def test_shell_renders_all_governed_read_only_states_and_safe_metadata() -> None:
+    shell = _read(FRONTEND_SHELL)
+    shell_lower = _casefold(shell)
+
+    for status in [
+        "governed_record_review_ready",
+        "governed_record_absent",
+        "governed_record_missing_after_consumed_attempt",
+        "governed_record_inconsistent",
+        "governed_record_read_blocked_sidecar_present",
+        "governed_record_target_unavailable",
+        "governed_record_read_only_audit_failed",
+    ]:
+        assert status in shell
+
+    for field in [
+        "persisted_record_id",
+        "attempt_reservation_id",
+        "candidate_identity_digest",
+        "input_safe_hash",
+        "gate_contract_safe_hash",
+        "activation_decision_safe_hash",
+        "record_snapshot_digest",
+        "reservation_snapshot_digest",
+    ]:
+        assert field in shell
+
+    assert "governed nonproduction only" in shell_lower
+    assert "pending human review" in shell_lower
+    assert "no automatic trust upgrade" in shell_lower
+    assert "no review queue or operator runtime" in shell_lower
+    assert "no production or public readiness" in shell_lower
+    assert "allowed actions labels only" in shell_lower
+    assert "blocked actions labels only" in shell_lower
 
 
 def test_frontend_route_remains_internal_only_without_public_aliases() -> None:

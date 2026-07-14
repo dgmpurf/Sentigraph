@@ -3,9 +3,12 @@ import { apiClient } from './client.js'
 const API_PREFIX = '/api/v1'
 const DEFAULT_REPORT_LANGUAGE = 'zh-CN'
 
+export const INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID =
+  'governed-nonproduction-record-review-v0-1'
 export const INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS = Object.freeze([
   'internal-alpha-safe-projection-fixture',
   '8z16-no-write-alpha-fixture',
+  INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
 ])
 const INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT = 'review-console'
 const INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT = 'projections'

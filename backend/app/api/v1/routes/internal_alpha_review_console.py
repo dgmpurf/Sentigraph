@@ -9,12 +9,20 @@ from app.services.internal_alpha_review_console_safe_metadata_projection import 
     APPROVAL_PHRASE as PROJECTION_APPROVAL_PHRASE,
     build_internal_alpha_review_console_safe_metadata_projection,
 )
+from app.services.governed_nonproduction_review_console_projection import (
+    PROJECTION_FIELDS as GOVERNED_RECORD_PROJECTION_FIELDS,
+    build_governed_nonproduction_review_console_projection,
+)
 
 
 router = APIRouter()
 
 ENV_FLAG = "SENTIGRAPH_INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_ENABLED"
+GOVERNED_RECORD_ENV_FLAG = (
+    "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_ENABLED"
+)
 ROUTE_MODE = "disabled_by_default_internal_safe_projection_route_skeleton"
+GOVERNED_RECORD_PROJECTION_ID = "governed-nonproduction-record-review-v0-1"
 ALLOWED_PROJECTION_IDS = {
     "internal-alpha-safe-projection-fixture",
     "8z16-no-write-alpha-fixture",
@@ -31,6 +39,15 @@ class _RouteEnabledMode(NamedTuple):
 def get_internal_alpha_review_console_projection(projection_id: str) -> dict[str, Any]:
     if not _route_enabled():
         return _safe_error("route_disabled", projection_id=None)
+
+    if projection_id == GOVERNED_RECORD_PROJECTION_ID:
+        if not _governed_record_projection_enabled():
+            return _safe_error(
+                "governed_record_projection_disabled",
+                projection_id=None,
+            )
+        projection = build_governed_nonproduction_review_console_projection()
+        return _safe_governed_record_response(projection)
 
     if projection_id not in ALLOWED_PROJECTION_IDS:
         return _safe_error("unsupported_projection", projection_id="unsupported")
@@ -70,6 +87,12 @@ def get_internal_alpha_review_console_projection(projection_id: str) -> dict[str
 
 def _route_enabled() -> bool:
     return _resolve_internal_alpha_review_console_route_enabled_mode(os.environ.get(ENV_FLAG)).enabled
+
+
+def _governed_record_projection_enabled() -> bool:
+    return _resolve_internal_alpha_review_console_route_enabled_mode(
+        os.environ.get(GOVERNED_RECORD_ENV_FLAG)
+    ).enabled
 
 
 def _resolve_internal_alpha_review_console_route_enabled_mode(raw_env_value: str | None) -> _RouteEnabledMode:
@@ -112,6 +135,35 @@ def _safe_error(error: str, *, projection_id: str | None) -> dict[str, Any]:
     if projection_id is not None:
         response["projection_id"] = projection_id
     return response
+
+
+def _safe_governed_record_response(projection: dict[str, Any]) -> dict[str, Any]:
+    if tuple(projection) != GOVERNED_RECORD_PROJECTION_FIELDS:
+        return _safe_error(
+            "governed_record_projection_unavailable",
+            projection_id=None,
+        )
+    return {
+        "response_schema": (
+            "sentigraph_internal_alpha_review_console_"
+            "governed_record_route_response_v0_1"
+        ),
+        "route_mode": ROUTE_MODE,
+        "projection_id": GOVERNED_RECORD_PROJECTION_ID,
+        "projection": projection,
+        "projection_schema": projection["projection_schema"],
+        "projection_status": projection["projection_status"],
+        "source_chain_boundary": projection["source_chain_boundary"],
+        "safe_metadata_only": True,
+        "human_review_required": True,
+        "no_automatic_trust_upgrade": True,
+        "actual_write_enabled": False,
+        "production_object_enabled": False,
+        "review_queue_runtime_enabled": False,
+        "operator_runtime_ready": False,
+        "public_ready": False,
+        "production_ready": False,
+    }
 
 
 def _safe_projection_source_fixture(projection_id: str) -> dict[str, Any]:
