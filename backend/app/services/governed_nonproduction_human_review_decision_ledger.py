@@ -784,3 +784,559 @@ def get_governed_nonproduction_human_review_decision(
     if row is None:
         return None
     return _row_to_decision(row)
+
+
+FORMAL_TARGET_KIND = (
+    "dedicated_local_sqlite_nonproduction_human_review_decision_ledger"
+)
+FORMAL_LOGICAL_TARGET_LABEL = LOGICAL_TARGET_LABEL
+FORMAL_PRIMARY_TABLE = PRIMARY_TABLE
+FORMAL_CONTRACT_RELATIVE_PATH = (
+    "docs/architecture/"
+    "sentigraph_mvp_f12_p1_formal_decision_ledger_governance_contract_v1_0.md"
+)
+FORMAL_CONTRACT_SHA256 = (
+    "0d0e4c0c12a534eb5f523fffb4430f223480339d197ec031c5621f6e1312b4b8"
+)
+FORMAL_TARGET_IDENTITY_SAFE_HASH = (
+    "4d2b1ee233433b774d30b82b57c77a58a5aab6427fcf8454a7bf05e5590d7202"
+)
+FORMAL_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH = (
+    "de3cbfe49dfeb836f3bc8b95b5a46d51366892e2277f86402306edbfd543ea4d"
+)
+FORMAL_SCHEMA_VERSION = "0.1"
+INITIALIZATION_RECEIPT_SCHEMA = (
+    "sentigraph_governed_nonproduction_human_review_decision_ledger_"
+    "initialization_receipt_v0_1"
+)
+INITIALIZATION_RECEIPT_VERSION = "0.1"
+INITIALIZATION_RECEIPT_FIELDS = (
+    "receipt_schema",
+    "receipt_version",
+    "outcome",
+    "target_kind",
+    "target_logical_label",
+    "target_identity_safe_hash",
+    "target_authorization_contract_safe_hash",
+    "target_preexistence_classification",
+    "initialization_action",
+    "schema_version",
+    "primary_table",
+    "sqlite_connection_open_count",
+    "sqlite_connection_reopen_count",
+    "schema_ddl_statement_count",
+    "decision_table_dml_statement_count",
+    "decision_row_count",
+    "exact_schema_verified",
+    "exact_empty_verified",
+    "integrity_result",
+    "final_sidecar_count",
+    "human_review_required",
+    "no_automatic_trust_upgrade",
+    "production_ready",
+    "warnings",
+    "blockers",
+)
+INITIALIZATION_RECEIPT_OUTCOMES = (
+    "initialized_exact_empty_formal_decision_ledger",
+    "verified_existing_exact_empty_formal_decision_ledger",
+    "blocked_existing_nonempty_formal_decision_ledger",
+    "blocked_formal_decision_ledger_schema_mismatch",
+    "blocked_formal_decision_ledger_target_identity_mismatch",
+    "paused_formal_decision_ledger_initialization_ambiguous",
+    "bounded_formal_decision_ledger_initialization_failure",
+)
+_FORMAL_UNIQUE_FIELDS = (
+    "decision_id",
+    "idempotency_key",
+    "audit_receipt_reference",
+)
+_FORMAL_COLUMN_DEFINITIONS = tuple(
+    f'"{field}" '
+    f'{"INTEGER" if field in _BOOLEAN_FIELDS else "TEXT"} NOT NULL'
+    f'{" UNIQUE" if field in _FORMAL_UNIQUE_FIELDS else ""}'
+    for field in DECISION_FIELDS
+)
+FORMAL_CREATE_TABLE_STATEMENT = (
+    f'CREATE TABLE "{FORMAL_PRIMARY_TABLE}" '
+    f"({', '.join(_FORMAL_COLUMN_DEFINITIONS)})"
+)
+
+
+def canonical_initialization_receipt_sha256(
+    receipt: Mapping[str, Any],
+) -> str:
+    if not isinstance(receipt, dict) or tuple(receipt) != (
+        INITIALIZATION_RECEIPT_FIELDS
+    ):
+        raise ValueError("invalid_initialization_receipt_shape")
+    return _canonical_sha256(receipt)
+
+
+def _initialization_receipt(
+    outcome: str,
+    *,
+    target_preexistence_classification: str,
+    initialization_action: str,
+    sqlite_connection_open_count: int,
+    schema_ddl_statement_count: int,
+    decision_row_count: int | None = None,
+    exact_schema_verified: bool | None = None,
+    exact_empty_verified: bool | None = None,
+    integrity_result: str = "not_observed",
+    final_sidecar_count: int | None = None,
+    warnings: list[str] | None = None,
+    blockers: list[str] | None = None,
+) -> dict[str, Any]:
+    if outcome not in INITIALIZATION_RECEIPT_OUTCOMES:
+        raise ValueError("invalid_initialization_outcome")
+    values = {
+        "receipt_schema": INITIALIZATION_RECEIPT_SCHEMA,
+        "receipt_version": INITIALIZATION_RECEIPT_VERSION,
+        "outcome": outcome,
+        "target_kind": FORMAL_TARGET_KIND,
+        "target_logical_label": FORMAL_LOGICAL_TARGET_LABEL,
+        "target_identity_safe_hash": FORMAL_TARGET_IDENTITY_SAFE_HASH,
+        "target_authorization_contract_safe_hash": (
+            FORMAL_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH
+        ),
+        "target_preexistence_classification": (
+            target_preexistence_classification
+        ),
+        "initialization_action": initialization_action,
+        "schema_version": FORMAL_SCHEMA_VERSION,
+        "primary_table": FORMAL_PRIMARY_TABLE,
+        "sqlite_connection_open_count": sqlite_connection_open_count,
+        "sqlite_connection_reopen_count": 0,
+        "schema_ddl_statement_count": schema_ddl_statement_count,
+        "decision_table_dml_statement_count": 0,
+        "decision_row_count": decision_row_count,
+        "exact_schema_verified": exact_schema_verified,
+        "exact_empty_verified": exact_empty_verified,
+        "integrity_result": integrity_result,
+        "final_sidecar_count": final_sidecar_count,
+        "human_review_required": True,
+        "no_automatic_trust_upgrade": True,
+        "production_ready": False,
+        "warnings": list(warnings or []),
+        "blockers": list(blockers or []),
+    }
+    return {field: values[field] for field in INITIALIZATION_RECEIPT_FIELDS}
+
+
+def _strict_json_object(value: str) -> dict[str, Any]:
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        keys = [key for key, _ in pairs]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate_json_key")
+        return dict(pairs)
+
+    def reject_constant(_value: str) -> None:
+        raise ValueError("nonstandard_json_constant")
+
+    parsed = json.loads(
+        value,
+        object_pairs_hook=unique_object,
+        parse_constant=reject_constant,
+    )
+    if not isinstance(parsed, dict):
+        raise ValueError("marked_json_not_object")
+    return parsed
+
+
+def _extract_exact_marked_json_object(
+    contract: str,
+    *,
+    begin_marker: str,
+    end_marker: str,
+) -> dict[str, Any]:
+    if contract.count(begin_marker) != 1 or contract.count(end_marker) != 1:
+        raise ValueError("marked_object_count_mismatch")
+    begin = contract.index(begin_marker) + len(begin_marker)
+    end = contract.index(end_marker, begin)
+    marked = contract[begin:end]
+    fence = "```json"
+    if marked.count(fence) != 1:
+        raise ValueError("marked_json_fence_mismatch")
+    json_begin = marked.index(fence) + len(fence)
+    if marked.count("```", json_begin) != 1:
+        raise ValueError("marked_json_closing_fence_mismatch")
+    json_end = marked.index("```", json_begin)
+    return _strict_json_object(marked[json_begin:json_end].strip())
+
+
+def _expected_formal_target_identity() -> dict[str, Any]:
+    return {
+        "target_identity_schema": (
+            "sentigraph_governed_nonproduction_human_review_decision_ledger_"
+            "formal_target_identity_v0_1"
+        ),
+        "target_identity_version": "0.1",
+        "target_kind": FORMAL_TARGET_KIND,
+        "target_logical_label": FORMAL_LOGICAL_TARGET_LABEL,
+        "table_count": 1,
+        "additional_tables_allowed": False,
+        "primary_table": FORMAL_PRIMARY_TABLE,
+        "schema_version": FORMAL_SCHEMA_VERSION,
+        "owner_module": (
+            "backend/app/services/"
+            "governed_nonproduction_human_review_decision_ledger.py"
+        ),
+        "owner_class": "GovernedNonproductionHumanReviewDecisionLedger",
+        "decision_schema": DECISION_SCHEMA,
+        "decision_version": DECISION_VERSION,
+        "decision_fields": list(DECISION_FIELDS),
+        "integer_boolean_columns": list(_BOOLEAN_FIELDS),
+        "canonical_json_columns": list(_JSON_FIELDS),
+        "unique_columns": list(_FORMAL_UNIQUE_FIELDS),
+        "ledger_scope": LEDGER_SCOPE,
+        "decision_status": DECISION_STATUS,
+        "append_only_policy": "plain_insert_only_no_existing_row_mutation",
+    }
+
+
+def _known_path_has_symlink(root: Path, relative_parts: tuple[str, ...]) -> bool:
+    current = root
+    for part in relative_parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _validate_exact_formal_decision_ledger_profile(
+    repository_root: str | Path,
+) -> tuple[Path, Path]:
+    supplied_root = Path(repository_root)
+    if supplied_root.is_symlink() or not supplied_root.is_dir():
+        raise ValueError("repository_root_mismatch")
+    root = supplied_root.resolve(strict=True)
+    if not (root / "backend/app/services").is_dir():
+        raise ValueError("repository_structure_mismatch")
+    contract_parts = tuple(FORMAL_CONTRACT_RELATIVE_PATH.split("/"))
+    if _known_path_has_symlink(root, contract_parts):
+        raise ValueError("contract_path_symlink_mismatch")
+    contract_path = root.joinpath(*contract_parts)
+    if not contract_path.is_file():
+        raise ValueError("contract_file_missing")
+    contract_bytes = contract_path.read_bytes()
+    if hashlib.sha256(contract_bytes).hexdigest() != FORMAL_CONTRACT_SHA256:
+        raise ValueError("contract_file_hash_mismatch")
+    contract = contract_bytes.decode("utf-8")
+    identity = _extract_exact_marked_json_object(
+        contract,
+        begin_marker="<!-- TARGET_IDENTITY_OBJECT_BEGIN -->",
+        end_marker="<!-- TARGET_IDENTITY_OBJECT_END -->",
+    )
+    authorization = _extract_exact_marked_json_object(
+        contract,
+        begin_marker="<!-- TARGET_AUTHORIZATION_OBJECT_BEGIN -->",
+        end_marker="<!-- TARGET_AUTHORIZATION_OBJECT_END -->",
+    )
+    if (
+        _canonical_sha256(identity) != FORMAL_TARGET_IDENTITY_SAFE_HASH
+        or identity != _expected_formal_target_identity()
+    ):
+        raise ValueError("target_identity_mismatch")
+    if _canonical_sha256(authorization) != (
+        FORMAL_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH
+    ):
+        raise ValueError("target_authorization_mismatch")
+    required_authorization = {
+        "target_identity_safe_hash": FORMAL_TARGET_IDENTITY_SAFE_HASH,
+        "authorized_operation": "exact_empty_formal_target_initialization_only",
+        "target_resolution_mode": "internal_exact_logical_label_only",
+        "required_initial_state": "contract_defined_uninitialized",
+        "allowed_success_state": "initialized_exact_empty",
+        "formal_target_access_session_maximum": 1,
+        "sqlite_connection_open_maximum": 1,
+        "sqlite_connection_reopen_maximum": 0,
+        "schema_ddl_statement_count_maximum": 1,
+        "decision_table_dml_statement_count_maximum": 0,
+        "decision_insert_maximum": 0,
+        "decision_writer_invocation_maximum": 0,
+        "route_invocation_maximum": 0,
+        "automatic_retry_allowed": False,
+        "caller_supplied_physical_target_allowed": False,
+        "environment_target_override_allowed": False,
+        "first_real_decision_allowed": False,
+        "initialization_receipt_fields": list(INITIALIZATION_RECEIPT_FIELDS),
+        "initialization_receipt_outcomes": list(
+            INITIALIZATION_RECEIPT_OUTCOMES
+        ),
+    }
+    if any(
+        authorization.get(field) != expected
+        for field, expected in required_authorization.items()
+    ):
+        raise ValueError("target_authorization_contract_mismatch")
+    target_parts = tuple(FORMAL_LOGICAL_TARGET_LABEL.split("/"))
+    if (
+        not target_parts
+        or any(part in {"", ".", ".."} for part in target_parts)
+        or Path(FORMAL_LOGICAL_TARGET_LABEL).is_absolute()
+    ):
+        raise ValueError("target_logical_label_mismatch")
+    target = root.joinpath(*target_parts)
+    try:
+        target.resolve(strict=False).relative_to(root)
+    except ValueError as exc:
+        raise ValueError("target_path_escape") from exc
+    if _known_path_has_symlink(root, target_parts):
+        raise ValueError("target_path_symlink_escape")
+    return root, target
+
+
+def _open_exact_formal_decision_ledger_connection(
+    path: Path,
+    *,
+    read_only: bool,
+) -> sqlite3.Connection:
+    if read_only:
+        return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+    return sqlite3.connect(path)
+
+
+def _exact_formal_schema_verified(connection: sqlite3.Connection) -> bool:
+    objects = connection.execute(
+        "SELECT type, name, sql FROM sqlite_master "
+        "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+    ).fetchall()
+    if objects != [
+        ("table", FORMAL_PRIMARY_TABLE, FORMAL_CREATE_TABLE_STATEMENT)
+    ]:
+        return False
+    columns = connection.execute(
+        f'PRAGMA table_info("{FORMAL_PRIMARY_TABLE}")'
+    ).fetchall()
+    if len(columns) != len(DECISION_FIELDS):
+        return False
+    for position, (column, field) in enumerate(zip(columns, DECISION_FIELDS)):
+        cid, name, data_type, not_null, default, primary_key = column
+        expected_type = "INTEGER" if field in _BOOLEAN_FIELDS else "TEXT"
+        if (
+            cid != position
+            or name != field
+            or data_type.upper() != expected_type
+            or not_null != 1
+            or default is not None
+            or primary_key != 0
+        ):
+            return False
+    indexes = connection.execute(
+        f'PRAGMA index_list("{FORMAL_PRIMARY_TABLE}")'
+    ).fetchall()
+    if len(indexes) != len(_FORMAL_UNIQUE_FIELDS):
+        return False
+    unique_columns = set()
+    for index in indexes:
+        _sequence, name, unique, origin, partial = index[:5]
+        if (
+            unique != 1
+            or origin != "u"
+            or partial != 0
+            or not name.startswith(
+                f"sqlite_autoindex_{FORMAL_PRIMARY_TABLE}_"
+            )
+        ):
+            return False
+        index_columns = connection.execute(
+            f'PRAGMA index_info("{name}")'
+        ).fetchall()
+        if len(index_columns) != 1:
+            return False
+        unique_columns.add(index_columns[0][2])
+    return unique_columns == set(_FORMAL_UNIQUE_FIELDS)
+
+
+def _exact_formal_sidecar_count(target: Path) -> int:
+    return sum(
+        int(Path(f"{target}{suffix}").exists())
+        for suffix in ("-wal", "-shm", "-journal")
+    )
+
+
+def _initialize_exact_formal_decision_ledger_once(
+    target: Path,
+) -> dict[str, Any]:
+    if target.is_symlink():
+        return _initialization_receipt(
+            "blocked_formal_decision_ledger_target_identity_mismatch",
+            target_preexistence_classification="target_identity_mismatch",
+            initialization_action="blocked_before_target_access",
+            sqlite_connection_open_count=0,
+            schema_ddl_statement_count=0,
+            blockers=["blocked_formal_decision_ledger_target_identity_mismatch"],
+        )
+    target_existed = target.exists()
+    if target_existed and not target.is_file():
+        return _initialization_receipt(
+            "blocked_formal_decision_ledger_target_identity_mismatch",
+            target_preexistence_classification="target_identity_mismatch",
+            initialization_action="blocked_before_sqlite_open",
+            sqlite_connection_open_count=0,
+            schema_ddl_statement_count=0,
+            blockers=["blocked_formal_decision_ledger_target_identity_mismatch"],
+        )
+    if not target_existed:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.parent.is_symlink() or target.is_symlink():
+            return _initialization_receipt(
+                "blocked_formal_decision_ledger_target_identity_mismatch",
+                target_preexistence_classification="target_identity_mismatch",
+                initialization_action="blocked_before_sqlite_open",
+                sqlite_connection_open_count=0,
+                schema_ddl_statement_count=0,
+                blockers=[
+                    "blocked_formal_decision_ledger_target_identity_mismatch"
+                ],
+            )
+    preexistence = "existing_unclassified" if target_existed else "absent"
+    try:
+        connection = _open_exact_formal_decision_ledger_connection(
+            target,
+            read_only=target_existed,
+        )
+    except sqlite3.Error:
+        return _initialization_receipt(
+            "bounded_formal_decision_ledger_initialization_failure",
+            target_preexistence_classification=preexistence,
+            initialization_action="connection_open_failed",
+            sqlite_connection_open_count=0,
+            schema_ddl_statement_count=0,
+            blockers=["bounded_formal_decision_ledger_initialization_failure"],
+        )
+    schema_ddl_statement_count = 0
+    outcome = "bounded_formal_decision_ledger_initialization_failure"
+    action = "bounded_verification_failure"
+    classification = preexistence
+    row_count: int | None = None
+    exact_schema: bool | None = None
+    exact_empty: bool | None = None
+    integrity_result = "not_observed"
+    blockers = ["bounded_formal_decision_ledger_initialization_failure"]
+    commit_ambiguous = False
+    try:
+        if not target_existed:
+            schema_ddl_statement_count = 1
+            try:
+                connection.execute(FORMAL_CREATE_TABLE_STATEMENT)
+            except sqlite3.Error:
+                action = "schema_creation_failed"
+            else:
+                try:
+                    connection.commit()
+                except sqlite3.Error:
+                    outcome = (
+                        "paused_formal_decision_ledger_initialization_ambiguous"
+                    )
+                    action = "commit_outcome_ambiguous"
+                    blockers = [outcome]
+                    commit_ambiguous = True
+        if not commit_ambiguous and action != "schema_creation_failed":
+            try:
+                exact_schema = _exact_formal_schema_verified(connection)
+                if not exact_schema:
+                    outcome = (
+                        "blocked_formal_decision_ledger_schema_mismatch"
+                    )
+                    classification = "schema_mismatch_or_unrelated_table"
+                    action = "verification_blocked_schema_mismatch"
+                    exact_empty = None
+                    blockers = [outcome]
+                else:
+                    row_count = connection.execute(
+                        f'SELECT COUNT(*) FROM "{FORMAL_PRIMARY_TABLE}"'
+                    ).fetchone()[0]
+                    exact_empty = row_count == 0
+                    integrity_rows = connection.execute(
+                        "PRAGMA integrity_check"
+                    ).fetchall()
+                    integrity_result = (
+                        "ok" if integrity_rows == [("ok",)] else "failed"
+                    )
+                    if integrity_result != "ok":
+                        action = "integrity_verification_failed"
+                    elif row_count > 0:
+                        outcome = (
+                            "blocked_existing_nonempty_formal_decision_ledger"
+                        )
+                        classification = "existing_nonempty"
+                        action = "verification_blocked_existing_nonempty"
+                        blockers = [outcome]
+                    elif target_existed:
+                        outcome = (
+                            "verified_existing_exact_empty_formal_decision_ledger"
+                        )
+                        classification = "existing_exact_empty"
+                        action = (
+                            "verified_existing_exact_schema_without_mutation"
+                        )
+                        blockers = []
+                    else:
+                        outcome = (
+                            "initialized_exact_empty_formal_decision_ledger"
+                        )
+                        classification = "absent"
+                        action = "created_exact_schema"
+                        blockers = []
+            except (sqlite3.Error, TypeError, IndexError):
+                classification = "malformed_or_unclassifiable"
+                action = "bounded_verification_failure"
+    finally:
+        try:
+            connection.close()
+        except sqlite3.Error:
+            outcome = "bounded_formal_decision_ledger_initialization_failure"
+            action = "connection_close_failure"
+            blockers = [outcome]
+    final_sidecar_count = _exact_formal_sidecar_count(target)
+    if outcome in INITIALIZATION_RECEIPT_OUTCOMES[:2] and (
+        final_sidecar_count != 0
+    ):
+        outcome = "bounded_formal_decision_ledger_initialization_failure"
+        action = "unexpected_final_sidecar"
+        blockers = [outcome]
+    return _initialization_receipt(
+        outcome,
+        target_preexistence_classification=classification,
+        initialization_action=action,
+        sqlite_connection_open_count=1,
+        schema_ddl_statement_count=schema_ddl_statement_count,
+        decision_row_count=row_count,
+        exact_schema_verified=exact_schema,
+        exact_empty_verified=exact_empty,
+        integrity_result=integrity_result,
+        final_sidecar_count=final_sidecar_count,
+        blockers=blockers,
+    )
+
+
+def initialize_exact_formal_governed_nonproduction_human_review_decision_ledger(
+    *,
+    repository_root: str | Path,
+    enabled: bool = False,
+) -> dict[str, Any]:
+    if not enabled:
+        return _initialization_receipt(
+            "bounded_formal_decision_ledger_initialization_failure",
+            target_preexistence_classification="not_observed",
+            initialization_action="disabled_no_target_access",
+            sqlite_connection_open_count=0,
+            schema_ddl_statement_count=0,
+            blockers=["formal_initialization_disabled"],
+        )
+    try:
+        _root, target = _validate_exact_formal_decision_ledger_profile(
+            repository_root
+        )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return _initialization_receipt(
+            "blocked_formal_decision_ledger_target_identity_mismatch",
+            target_preexistence_classification="target_identity_mismatch",
+            initialization_action="blocked_before_target_access",
+            sqlite_connection_open_count=0,
+            schema_ddl_statement_count=0,
+            blockers=["blocked_formal_decision_ledger_target_identity_mismatch"],
+        )
+    return _initialize_exact_formal_decision_ledger_once(target)
