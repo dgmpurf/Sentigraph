@@ -1340,3 +1340,678 @@ def initialize_exact_formal_governed_nonproduction_human_review_decision_ledger(
             blockers=["blocked_formal_decision_ledger_target_identity_mismatch"],
         )
     return _initialize_exact_formal_decision_ledger_once(target)
+
+
+P3_ACTIVATION_SCHEMA = (
+    "sentigraph_mvp_f12_p3_first_exact_formal_human_review_decision_"
+    "activation_v0_1"
+)
+P3_ACTIVATION_VERSION = "0.1"
+P3_ACTIVATION_FIELDS = (
+    "activation_schema",
+    "activation_version",
+    "milestone_id",
+    "repository_identity",
+    "required_branch",
+    "starting_commit",
+    "baseline_v1_4_blob",
+    "accepted_f11_p1_contract_blob",
+    "accepted_f11_p1_contract_sha256",
+    "accepted_effective_f11_commit",
+    "accepted_f11_decision_ledger_service_blob",
+    "accepted_f12_p1_contract_blob",
+    "accepted_f12_p1_contract_sha256",
+    "target_identity_safe_hash",
+    "target_authorization_contract_safe_hash",
+    "accepted_p2_service_blob",
+    "accepted_p2_test_blob",
+    "accepted_p2_report_blob",
+    "accepted_p2_initialization_receipt_canonical_sha256",
+    "required_formal_target_state",
+    "accepted_decision_row_count",
+    "first_real_decision_type",
+    "reviewer_role_label",
+    "reviewer_authority_basis_label",
+    "reviewer_identity_verified",
+    "exact_p3_approval_sha256",
+    "post_implementation_service_sha256",
+    "post_implementation_test_sha256",
+    "pre_execution_report_sha256",
+    "repository_external_runner_sha256",
+    "p3_activation_binding_nonreusable",
+    "formal_target_access_session_limit",
+    "sqlite_connection_open_success_limit",
+    "sqlite_connection_reopen_success_limit",
+    "formal_operation_invocation_limit",
+    "decision_writer_invocation_limit",
+    "decision_insert_limit",
+    "route_invocation_limit",
+    "f10_invocation_limit",
+    "automatic_retry_allowed",
+    "automatic_repair_allowed",
+    "second_decision_allowed",
+    "result_artifact_count_limit",
+    "result_artifact_binary_read_limit",
+    "result_artifact_read_max_bytes",
+    "production_or_downstream_action_limit",
+)
+P3_PRE_WRITER_BINDING_FIELDS = (
+    "accepted_f11_p1_contract_blob",
+    "accepted_f11_p1_contract_sha256",
+    "accepted_effective_f11_commit",
+    "accepted_decision_ledger_service_blob",
+    "accepted_request_schema",
+    "accepted_request_version",
+    "accepted_decision_schema",
+    "accepted_decision_version",
+    "accepted_ledger_scope",
+    "accepted_decision_status",
+    "target_identity_safe_hash",
+    "target_authorization_contract_safe_hash",
+    "independently_accepted_p2_initialization_receipt_canonical_sha256",
+    "required_formal_target_state",
+    "first_real_decision_type",
+    "reviewer_role_label",
+    "reviewer_authority_basis_label",
+    "reviewer_identity_verified",
+    "p3_activation_binding_safe_hash",
+    "p3_activation_binding_nonreusable",
+    "formal_writer_invocation_limit",
+    "automatic_retry_allowed",
+    "route_invocation_limit",
+)
+P3_RESULT_SCHEMA = (
+    "sentigraph_mvp_f12_p3_first_exact_formal_human_review_decision_"
+    "result_v0_1"
+)
+P3_RESULT_VERSION = "0.1"
+P3_RESULT_FIELDS = (
+    "result_schema",
+    "result_version",
+    "outcome",
+    "p3_activation_binding_safe_hash",
+    "p3_pre_writer_binding_canonical_sha256",
+    "formal_state_before",
+    "formal_state_after",
+    "target_identity_safe_hash",
+    "target_authorization_contract_safe_hash",
+    "accepted_p2_initialization_receipt_canonical_sha256",
+    "formal_target_access_session_count",
+    "sqlite_connection_open_count",
+    "sqlite_connection_reopen_count",
+    "formal_writer_invocation_count",
+    "decision_insert_issued_count",
+    "mutation_count",
+    "decision_row_count_before",
+    "decision_row_count_after",
+    "exact_schema_verified",
+    "integrity_result",
+    "final_sidecar_count",
+    "route_invocation_count",
+    "f10_invocation_count",
+    "decision",
+    "receipt",
+    "warnings",
+    "blockers",
+)
+P3_ACCEPTED_P2_INITIALIZATION_RECEIPT_CANONICAL_SHA256 = (
+    "5d65da59110352def9c0160f78f38a94251ff51adb918c8c1ea142a44b0b4874"
+)
+P3_EXACT_APPROVAL_SHA256 = (
+    "4ee5fcb567bbd3a43681cd3b90e95b8147a110df84862f365d749d8a82f78fd7"
+)
+P3_EXPECTED_IDEMPOTENCY_KEY = (
+    "b666c0f03a975c94e6b3b248bd05cdc95fdeb596b950abbe6a4a029f0935b3db"
+)
+P3_SERVICE_RELATIVE_PATH = (
+    "backend/app/services/"
+    "governed_nonproduction_human_review_decision_ledger.py"
+)
+P3_TEST_RELATIVE_PATH = (
+    "backend/app/tests/"
+    "test_mvp_f12_p3_first_formal_human_review_decision.py"
+)
+P3_REPORT_RELATIVE_PATH = (
+    "docs/health/"
+    "sentigraph_mvp_f12_p3_first_formal_human_review_decision_report_v1_0.md"
+)
+
+_P3_FIXED_ACTIVATION_VALUES = {
+    "activation_schema": P3_ACTIVATION_SCHEMA,
+    "activation_version": P3_ACTIVATION_VERSION,
+    "milestone_id": "MVP-F12-P3",
+    "repository_identity": "dgmpurf/Sentigraph",
+    "required_branch": "main",
+    "starting_commit": "6848a5d6c5bb52174b9a336c7ac7c12ac69ae4b6",
+    "baseline_v1_4_blob": "8e280300ff3db283ba7fe2aaf64063b4bf63597e",
+    "accepted_f11_p1_contract_blob": (
+        "29d3806a535680247713ae317c1d1c9097f69d06"
+    ),
+    "accepted_f11_p1_contract_sha256": (
+        "dc3e6a696facc1d93cfce0b51218820b6eed8bd7dcbf4e1177d460bdc9e8b152"
+    ),
+    "accepted_effective_f11_commit": (
+        "1300e10fba526c0d37f310a004e17a17a9c65420"
+    ),
+    "accepted_f11_decision_ledger_service_blob": (
+        "b9d74ca5d3d593fbe27043dcb7db0a76e25d4056"
+    ),
+    "accepted_f12_p1_contract_blob": (
+        "c2b9645ba1ee2724ba4a023fa267d4dfb5059302"
+    ),
+    "accepted_f12_p1_contract_sha256": FORMAL_CONTRACT_SHA256,
+    "target_identity_safe_hash": FORMAL_TARGET_IDENTITY_SAFE_HASH,
+    "target_authorization_contract_safe_hash": (
+        FORMAL_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH
+    ),
+    "accepted_p2_service_blob": (
+        "13ade443cd3186d17e8f10af229f5f7ea82984ed"
+    ),
+    "accepted_p2_test_blob": "5e9dd6c8b60643926c6eea73c1b49345b114eea4",
+    "accepted_p2_report_blob": (
+        "1626b16db8362c3f32a00f89acecb625f50412fd"
+    ),
+    "accepted_p2_initialization_receipt_canonical_sha256": (
+        P3_ACCEPTED_P2_INITIALIZATION_RECEIPT_CANONICAL_SHA256
+    ),
+    "required_formal_target_state": "initialized_exact_empty",
+    "accepted_decision_row_count": 0,
+    "first_real_decision_type": "keep_pending_human_review",
+    "reviewer_role_label": "self_declared_project_owner_role",
+    "reviewer_authority_basis_label": (
+        "authority_basis_not_independently_validated"
+    ),
+    "reviewer_identity_verified": False,
+    "exact_p3_approval_sha256": P3_EXACT_APPROVAL_SHA256,
+    "p3_activation_binding_nonreusable": True,
+    "formal_target_access_session_limit": 1,
+    "sqlite_connection_open_success_limit": 1,
+    "sqlite_connection_reopen_success_limit": 0,
+    "formal_operation_invocation_limit": 1,
+    "decision_writer_invocation_limit": 1,
+    "decision_insert_limit": 1,
+    "route_invocation_limit": 0,
+    "f10_invocation_limit": 0,
+    "automatic_retry_allowed": False,
+    "automatic_repair_allowed": False,
+    "second_decision_allowed": False,
+    "result_artifact_count_limit": 1,
+    "result_artifact_binary_read_limit": 1,
+    "result_artifact_read_max_bytes": 65537,
+    "production_or_downstream_action_limit": 0,
+}
+
+
+def _p3_result(
+    outcome: str,
+    *,
+    activation_hash: str | None = None,
+    pre_writer_hash: str | None = None,
+    formal_state_before: str = "not_observed",
+    formal_state_after: str = "not_changed",
+    formal_target_access_session_count: int = 0,
+    sqlite_connection_open_count: int = 0,
+    formal_writer_invocation_count: int = 0,
+    decision_insert_issued_count: int = 0,
+    mutation_count: int = 0,
+    decision_row_count_before: int | None = None,
+    decision_row_count_after: int | None = None,
+    exact_schema_verified: bool | None = None,
+    integrity_result: str = "not_observed",
+    final_sidecar_count: int | None = None,
+    decision: Mapping[str, Any] | None = None,
+    receipt: Mapping[str, Any] | None = None,
+    blockers: list[str] | None = None,
+) -> dict[str, Any]:
+    values = {
+        "result_schema": P3_RESULT_SCHEMA,
+        "result_version": P3_RESULT_VERSION,
+        "outcome": outcome,
+        "p3_activation_binding_safe_hash": activation_hash,
+        "p3_pre_writer_binding_canonical_sha256": pre_writer_hash,
+        "formal_state_before": formal_state_before,
+        "formal_state_after": formal_state_after,
+        "target_identity_safe_hash": FORMAL_TARGET_IDENTITY_SAFE_HASH,
+        "target_authorization_contract_safe_hash": (
+            FORMAL_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH
+        ),
+        "accepted_p2_initialization_receipt_canonical_sha256": (
+            P3_ACCEPTED_P2_INITIALIZATION_RECEIPT_CANONICAL_SHA256
+        ),
+        "formal_target_access_session_count": (
+            formal_target_access_session_count
+        ),
+        "sqlite_connection_open_count": sqlite_connection_open_count,
+        "sqlite_connection_reopen_count": 0,
+        "formal_writer_invocation_count": formal_writer_invocation_count,
+        "decision_insert_issued_count": decision_insert_issued_count,
+        "mutation_count": mutation_count,
+        "decision_row_count_before": decision_row_count_before,
+        "decision_row_count_after": decision_row_count_after,
+        "exact_schema_verified": exact_schema_verified,
+        "integrity_result": integrity_result,
+        "final_sidecar_count": final_sidecar_count,
+        "route_invocation_count": 0,
+        "f10_invocation_count": 0,
+        "decision": dict(decision) if decision is not None else None,
+        "receipt": dict(receipt) if receipt is not None else None,
+        "warnings": [],
+        "blockers": list(blockers or []),
+    }
+    return {field: values[field] for field in P3_RESULT_FIELDS}
+
+
+def _p3_expected_pre_writer_binding(
+    activation_hash: str,
+) -> dict[str, Any]:
+    values = {
+        "accepted_f11_p1_contract_blob": (
+            _P3_FIXED_ACTIVATION_VALUES["accepted_f11_p1_contract_blob"]
+        ),
+        "accepted_f11_p1_contract_sha256": (
+            _P3_FIXED_ACTIVATION_VALUES["accepted_f11_p1_contract_sha256"]
+        ),
+        "accepted_effective_f11_commit": (
+            _P3_FIXED_ACTIVATION_VALUES["accepted_effective_f11_commit"]
+        ),
+        "accepted_decision_ledger_service_blob": (
+            _P3_FIXED_ACTIVATION_VALUES[
+                "accepted_f11_decision_ledger_service_blob"
+            ]
+        ),
+        "accepted_request_schema": REQUEST_SCHEMA,
+        "accepted_request_version": REQUEST_VERSION,
+        "accepted_decision_schema": DECISION_SCHEMA,
+        "accepted_decision_version": DECISION_VERSION,
+        "accepted_ledger_scope": LEDGER_SCOPE,
+        "accepted_decision_status": DECISION_STATUS,
+        "target_identity_safe_hash": FORMAL_TARGET_IDENTITY_SAFE_HASH,
+        "target_authorization_contract_safe_hash": (
+            FORMAL_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH
+        ),
+        "independently_accepted_p2_initialization_receipt_canonical_sha256": (
+            P3_ACCEPTED_P2_INITIALIZATION_RECEIPT_CANONICAL_SHA256
+        ),
+        "required_formal_target_state": "initialized_exact_empty",
+        "first_real_decision_type": "keep_pending_human_review",
+        "reviewer_role_label": "self_declared_project_owner_role",
+        "reviewer_authority_basis_label": (
+            "authority_basis_not_independently_validated"
+        ),
+        "reviewer_identity_verified": False,
+        "p3_activation_binding_safe_hash": activation_hash,
+        "p3_activation_binding_nonreusable": True,
+        "formal_writer_invocation_limit": 1,
+        "automatic_retry_allowed": False,
+        "route_invocation_limit": 0,
+    }
+    return {
+        field: values[field] for field in P3_PRE_WRITER_BINDING_FIELDS
+    }
+
+
+def _p3_activation_is_exact(
+    activation: Mapping[str, Any],
+    activation_hash: str,
+    runner_sha256: str,
+) -> bool:
+    if not isinstance(activation, dict) or tuple(activation) != (
+        P3_ACTIVATION_FIELDS
+    ):
+        return False
+    if not isinstance(activation_hash, str) or not hmac.compare_digest(
+        _canonical_sha256(activation), activation_hash
+    ):
+        return False
+    if any(
+        field not in activation
+        or type(activation[field]) is not type(expected)
+        or activation[field] != expected
+        for field, expected in _P3_FIXED_ACTIVATION_VALUES.items()
+    ):
+        return False
+    dynamic_hash_fields = (
+        "post_implementation_service_sha256",
+        "post_implementation_test_sha256",
+        "pre_execution_report_sha256",
+        "repository_external_runner_sha256",
+    )
+    if any(
+        not isinstance(activation[field], str)
+        or len(activation[field]) != 64
+        or any(character not in "0123456789abcdef" for character in activation[field])
+        for field in dynamic_hash_fields
+    ):
+        return False
+    return isinstance(runner_sha256, str) and hmac.compare_digest(
+        activation["repository_external_runner_sha256"], runner_sha256
+    )
+
+
+def _p3_repository_file_hashes_are_exact(
+    root: Path,
+    activation: Mapping[str, Any],
+) -> bool:
+    expected = (
+        (P3_SERVICE_RELATIVE_PATH, "post_implementation_service_sha256"),
+        (P3_TEST_RELATIVE_PATH, "post_implementation_test_sha256"),
+        (P3_REPORT_RELATIVE_PATH, "pre_execution_report_sha256"),
+    )
+    try:
+        for relative_path, activation_field in expected:
+            parts = tuple(relative_path.split("/"))
+            if _known_path_has_symlink(root, parts):
+                return False
+            path = root.joinpath(*parts)
+            if not path.is_file() or not hmac.compare_digest(
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+                activation[activation_field],
+            ):
+                return False
+    except (OSError, TypeError):
+        return False
+    return True
+
+
+def record_first_exact_formal_human_review_decision(
+    *,
+    repository_root: str | Path,
+    request: Mapping[str, Any],
+    p3_activation_object: Mapping[str, Any],
+    p3_activation_binding_safe_hash: str,
+    p3_pre_writer_binding: Mapping[str, Any],
+    p3_pre_writer_binding_canonical_sha256: str,
+    runner_sha256: str,
+    enabled: bool = False,
+) -> dict[str, Any]:
+    if not enabled:
+        return _p3_result(
+            "blocked_p3_formal_operation_disabled",
+            blockers=["blocked_p3_formal_operation_disabled"],
+        )
+    if not _p3_activation_is_exact(
+        p3_activation_object,
+        p3_activation_binding_safe_hash,
+        runner_sha256,
+    ):
+        return _p3_result(
+            "blocked_p3_activation_binding_mismatch",
+            activation_hash=p3_activation_binding_safe_hash,
+            blockers=["blocked_p3_activation_binding_mismatch"],
+        )
+    expected_pre_writer = _p3_expected_pre_writer_binding(
+        p3_activation_binding_safe_hash
+    )
+    if (
+        not isinstance(p3_pre_writer_binding, dict)
+        or tuple(p3_pre_writer_binding) != P3_PRE_WRITER_BINDING_FIELDS
+        or p3_pre_writer_binding != expected_pre_writer
+        or any(
+            type(p3_pre_writer_binding[field]) is not type(expected)
+            for field, expected in expected_pre_writer.items()
+        )
+        or not isinstance(p3_pre_writer_binding_canonical_sha256, str)
+        or not hmac.compare_digest(
+            _canonical_sha256(p3_pre_writer_binding),
+            p3_pre_writer_binding_canonical_sha256,
+        )
+    ):
+        return _p3_result(
+            "blocked_p3_pre_writer_binding_mismatch",
+            activation_hash=p3_activation_binding_safe_hash,
+            pre_writer_hash=p3_pre_writer_binding_canonical_sha256,
+            blockers=["blocked_p3_pre_writer_binding_mismatch"],
+        )
+    try:
+        validated_request = (
+            validate_governed_nonproduction_human_review_decision_request(
+                request
+            )
+        )
+    except GovernedNonproductionHumanReviewDecisionValidationError:
+        return _p3_result(
+            "blocked_p3_exact_request_mismatch",
+            activation_hash=p3_activation_binding_safe_hash,
+            pre_writer_hash=p3_pre_writer_binding_canonical_sha256,
+            blockers=["blocked_p3_exact_request_mismatch"],
+        )
+    if validated_request["decision_type"] != "keep_pending_human_review":
+        return _p3_result(
+            "blocked_p3_exact_request_mismatch",
+            activation_hash=p3_activation_binding_safe_hash,
+            pre_writer_hash=p3_pre_writer_binding_canonical_sha256,
+            blockers=["blocked_p3_exact_request_mismatch"],
+        )
+    if dict(SERVER_OWNED_CONTEXT) != _FROZEN_SERVER_OWNED_CONTEXT:
+        return _p3_result(
+            "blocked_p3_binding_or_snapshot_mismatch",
+            activation_hash=p3_activation_binding_safe_hash,
+            pre_writer_hash=p3_pre_writer_binding_canonical_sha256,
+            blockers=["blocked_p3_binding_or_snapshot_mismatch"],
+        )
+    try:
+        root, target = _validate_exact_formal_decision_ledger_profile(
+            repository_root
+        )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return _p3_result(
+            "blocked_p3_formal_target_profile_mismatch",
+            activation_hash=p3_activation_binding_safe_hash,
+            pre_writer_hash=p3_pre_writer_binding_canonical_sha256,
+            blockers=["blocked_p3_formal_target_profile_mismatch"],
+        )
+    if not _p3_repository_file_hashes_are_exact(root, p3_activation_object):
+        return _p3_result(
+            "blocked_p3_frozen_file_hash_mismatch",
+            activation_hash=p3_activation_binding_safe_hash,
+            pre_writer_hash=p3_pre_writer_binding_canonical_sha256,
+            blockers=["blocked_p3_frozen_file_hash_mismatch"],
+        )
+    if target.is_symlink() or not target.is_file():
+        return _p3_result(
+            "blocked_p3_required_formal_state_mismatch",
+            activation_hash=p3_activation_binding_safe_hash,
+            pre_writer_hash=p3_pre_writer_binding_canonical_sha256,
+            blockers=["blocked_p3_required_formal_state_mismatch"],
+        )
+
+    formal_target_access_session_count = 1
+    sqlite_connection_open_count = 0
+    writer_count = 0
+    insert_count = 0
+    mutation_count = 0
+    row_count_before: int | None = None
+    row_count_after: int | None = None
+    exact_schema: bool | None = None
+    integrity_result = "not_observed"
+    decision: dict[str, Any] | None = None
+    receipt: dict[str, Any] | None = None
+    outcome = "bounded_p3_formal_decision_failure"
+    state_before = "not_observed"
+    state_after = "not_changed"
+    blockers = [outcome]
+    try:
+        connection = _open_exact_formal_decision_ledger_connection(
+            target,
+            read_only=False,
+        )
+        sqlite_connection_open_count = 1
+    except sqlite3.Error:
+        return _p3_result(
+            outcome,
+            activation_hash=p3_activation_binding_safe_hash,
+            pre_writer_hash=p3_pre_writer_binding_canonical_sha256,
+            formal_target_access_session_count=(
+                formal_target_access_session_count
+            ),
+            blockers=blockers,
+        )
+    try:
+        exact_schema = _exact_formal_schema_verified(connection)
+        if not exact_schema:
+            outcome = "blocked_p3_formal_schema_mismatch"
+            blockers = [outcome]
+        else:
+            row_count_before = _row_count(connection)
+            integrity_rows = connection.execute(
+                "PRAGMA integrity_check"
+            ).fetchall()
+            integrity_result = (
+                "ok" if integrity_rows == [("ok",)] else "failed"
+            )
+            if row_count_before != 0:
+                outcome = "blocked_p3_required_formal_state_mismatch"
+                blockers = [outcome]
+            elif integrity_result != "ok":
+                outcome = "blocked_p3_formal_integrity_failure"
+                blockers = [outcome]
+            elif _exact_formal_sidecar_count(target) != 0:
+                outcome = "blocked_p3_unexpected_prewrite_sidecar"
+                blockers = [outcome]
+            else:
+                state_before = "initialized_exact_empty"
+                identity = _identity_for(validated_request["decision_type"])
+                expected_decision_id = f"ghrd-{P3_EXPECTED_IDEMPOTENCY_KEY[:32]}"
+                expected_receipt_reference = (
+                    f"ghrd-receipt-{P3_EXPECTED_IDEMPOTENCY_KEY[:32]}"
+                )
+                if (
+                    identity["idempotency_key"]
+                    != P3_EXPECTED_IDEMPOTENCY_KEY
+                    or identity["decision_id"] != expected_decision_id
+                    or identity["audit_receipt_reference"]
+                    != expected_receipt_reference
+                ):
+                    outcome = "blocked_p3_binding_or_snapshot_mismatch"
+                    blockers = [outcome]
+                else:
+                    decision = _build_decision(identity, _utc_clock())
+                    ledger = GovernedNonproductionHumanReviewDecisionLedger(
+                        target,
+                        enabled=True,
+                    )
+                    writer_count = 1
+                    insert_count = 1
+                    try:
+                        ledger._insert_record(connection, decision)
+                    except (sqlite3.Error, TypeError, ValueError):
+                        connection.rollback()
+                        row_count_after = row_count_before
+                        outcome = "bounded_p3_formal_writer_failure"
+                        blockers = [outcome]
+                    else:
+                        try:
+                            connection.commit()
+                        except sqlite3.Error:
+                            if connection.in_transaction:
+                                row_count_after = row_count_before
+                            else:
+                                try:
+                                    connection.execute(
+                                        "PRAGMA query_only = ON"
+                                    )
+                                    row_count_after = _row_count(connection)
+                                    row = _select_by_identity(
+                                        connection,
+                                        identity,
+                                    )
+                                    loaded = (
+                                        _row_to_decision(row)
+                                        if row is not None
+                                        else None
+                                    )
+                                except (
+                                    GovernedNonproductionHumanReviewDecisionIntegrityError,
+                                    sqlite3.Error,
+                                    TypeError,
+                                    ValueError,
+                                ):
+                                    loaded = None
+                                if row_count_after == 1 and loaded == decision:
+                                    mutation_count = 1
+                                else:
+                                    row_count_after = row_count_before
+                            outcome = "paused_p3_commit_outcome_ambiguous"
+                            blockers = [outcome]
+                        else:
+                            row_count_after = _row_count(connection)
+                            row = _select_by_identity(connection, identity)
+                            loaded = (
+                                _row_to_decision(row)
+                                if row is not None
+                                else None
+                            )
+                            exact_schema = _exact_formal_schema_verified(
+                                connection
+                            )
+                            integrity_rows = connection.execute(
+                                "PRAGMA integrity_check"
+                            ).fetchall()
+                            integrity_result = (
+                                "ok"
+                                if integrity_rows == [("ok",)]
+                                else "failed"
+                            )
+                            if (
+                                row_count_after == 1
+                                and loaded == decision
+                                and exact_schema
+                                and integrity_result == "ok"
+                            ):
+                                mutation_count = 1
+                                state_after = "first_exact_decision_recorded"
+                                receipt = _receipt(
+                                    "created_exactly_one_human_review_decision",
+                                    decision=decision,
+                                    row_count_before=0,
+                                    row_count_after=1,
+                                )
+                                outcome = (
+                                    "created_exactly_one_human_review_decision"
+                                )
+                                blockers = []
+                            else:
+                                outcome = (
+                                    "blocked_p3_postwrite_verification_failure"
+                                )
+                                blockers = [outcome]
+    except (
+        GovernedNonproductionHumanReviewDecisionIntegrityError,
+        sqlite3.Error,
+        TypeError,
+        ValueError,
+    ):
+        outcome = "bounded_p3_formal_decision_failure"
+        blockers = [outcome]
+    finally:
+        try:
+            connection.close()
+        except sqlite3.Error:
+            outcome = "bounded_p3_formal_decision_failure"
+            blockers = [outcome]
+    final_sidecar_count = _exact_formal_sidecar_count(target)
+    if outcome == "created_exactly_one_human_review_decision" and (
+        final_sidecar_count != 0
+    ):
+        outcome = "blocked_p3_unexpected_final_sidecar"
+        blockers = [outcome]
+    return _p3_result(
+        outcome,
+        activation_hash=p3_activation_binding_safe_hash,
+        pre_writer_hash=p3_pre_writer_binding_canonical_sha256,
+        formal_state_before=state_before,
+        formal_state_after=state_after,
+        formal_target_access_session_count=formal_target_access_session_count,
+        sqlite_connection_open_count=sqlite_connection_open_count,
+        formal_writer_invocation_count=writer_count,
+        decision_insert_issued_count=insert_count,
+        mutation_count=mutation_count,
+        decision_row_count_before=row_count_before,
+        decision_row_count_after=row_count_after,
+        exact_schema_verified=exact_schema,
+        integrity_result=integrity_result,
+        final_sidecar_count=final_sidecar_count,
+        decision=decision if mutation_count == 1 else None,
+        receipt=receipt,
+        blockers=blockers,
+    )
