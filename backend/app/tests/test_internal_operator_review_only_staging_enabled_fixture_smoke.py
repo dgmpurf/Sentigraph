@@ -14,10 +14,13 @@ from app.main import app
 client = TestClient(app)
 
 ENV_FLAG = "SENTIGRAPH_INTERNAL_OPERATOR_STAGING_ROUTE_ENABLED"
+BRIDGE_ENV_FLAG = "SENTIGRAPH_INTERNAL_OPERATOR_STAGING_LOCAL_EXCHANGE_ENABLED"
 SYNTHETIC_CANDIDATE_ID = "synthetic_review_staging_candidate"
 LIST_ROUTE = "/api/v1/internal/staging/review-only/candidates"
 DETAIL_ROUTE = f"{LIST_ROUTE}/{SYNTHETIC_CANDIDATE_ID}"
 UNKNOWN_ROUTE = f"{LIST_ROUTE}/unknown_candidate"
+BRIDGE_ROUTE = "/api/v1/internal/staging/review-only/local-exchange/candidates/provider_result.json"
+BRIDGE_ROUTE_TEMPLATE = "/api/v1/internal/staging/review-only/local-exchange/candidates/{result_file_name}"
 
 ENABLED_VALUES = ["1", "true", "yes"]
 
@@ -252,11 +255,15 @@ def test_allowed_actions_are_review_labels_only_and_do_not_create_state_changing
     route_methods = {
         route.path: route.methods
         for route in app.routes
-        if "staging/review-only/candidates" in getattr(route, "path", "")
+        if "staging/review-only" in getattr(route, "path", "")
     }
 
     assert set(payload["allowed_actions"]) == ALLOWED_ACTIONS
-    assert set(route_methods) == {LIST_ROUTE, f"{LIST_ROUTE}/{{staging_candidate_id}}"}
+    assert set(route_methods) == {
+        LIST_ROUTE,
+        f"{LIST_ROUTE}/{{staging_candidate_id}}",
+        BRIDGE_ROUTE_TEMPLATE,
+    }
     for path, methods in route_methods.items():
         assert path.startswith("/api/v1/internal/")
         assert "GET" in methods
@@ -312,6 +319,22 @@ def test_enabled_synthetic_routes_do_not_open_evidence_item_files(
     assert client.get(DETAIL_ROUTE).json()["schema"] == "internal_operator_review_only_staging_response_v0_1"
 
 
+def test_bridge_remains_independently_disabled_while_synthetic_fixture_routes_are_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv(ENV_FLAG, "true")
+    monkeypatch.delenv(BRIDGE_ENV_FLAG, raising=False)
+
+    payload = client.get(BRIDGE_ROUTE).json()
+
+    assert payload["schema"] == "internal_operator_review_only_staging_local_exchange_response_v0_1"
+    assert payload["error_code"] == "local_exchange_route_disabled"
+    assert payload["reader_status"] == "not_called"
+    assert payload["candidate_count"] == 0
+    _assert_no_forbidden_payload_content(payload, tmp_path)
+
+
 def test_enabled_synthetic_routes_do_not_probe_real_package_or_private_collector_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -350,7 +373,7 @@ def test_no_public_c_end_or_b_end_alias_routes_exist_for_enabled_fixture_family(
     aliases = [
         route.path
         for route in app.routes
-        if "staging/review-only/candidates" in getattr(route, "path", "")
+        if "staging/review-only" in getattr(route, "path", "")
         and not getattr(route, "path", "").startswith("/api/v1/internal/")
     ]
 
@@ -373,6 +396,7 @@ def test_enabled_synthetic_smoke_creates_no_storage_or_side_effect_files(
 
     client.get(LIST_ROUTE)
     client.get(DETAIL_ROUTE)
+    client.get(BRIDGE_ROUTE)
 
     assert not list(tmp_path.rglob("review_only_staging*.json"))
     assert not list(tmp_path.rglob("staging_candidate*.json"))

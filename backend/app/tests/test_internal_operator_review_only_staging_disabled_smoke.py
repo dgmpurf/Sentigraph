@@ -13,8 +13,11 @@ from app.main import app
 client = TestClient(app)
 
 ENV_FLAG = "SENTIGRAPH_INTERNAL_OPERATOR_STAGING_ROUTE_ENABLED"
+BRIDGE_ENV_FLAG = "SENTIGRAPH_INTERNAL_OPERATOR_STAGING_LOCAL_EXCHANGE_ENABLED"
 LIST_ROUTE = "/api/v1/internal/staging/review-only/candidates"
 DETAIL_ROUTE = "/api/v1/internal/staging/review-only/candidates/synthetic_review_staging_candidate"
+BRIDGE_ROUTE = "/api/v1/internal/staging/review-only/local-exchange/candidates/provider_result.json"
+BRIDGE_ROUTE_TEMPLATE = "/api/v1/internal/staging/review-only/local-exchange/candidates/{result_file_name}"
 
 DISABLED_VALUES = [None, "", "false", "0", "random", "TRUE-ish", "enabled"]
 
@@ -117,6 +120,23 @@ def test_disabled_response_has_no_paths_raw_metadata_or_secret_markers(
         assert forbidden not in text
 
 
+def test_primary_disabled_gate_blocks_local_exchange_bridge_before_file_access(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv(ENV_FLAG, raising=False)
+    monkeypatch.setenv(BRIDGE_ENV_FLAG, "true")
+
+    payload = client.get(BRIDGE_ROUTE).json()
+    text = _payload_text(payload)
+
+    assert payload["schema"] == "internal_operator_review_only_staging_local_exchange_response_v0_1"
+    assert payload["error_code"] == "route_disabled"
+    assert payload["reader_status"] == "not_called"
+    assert payload["candidate_count"] == 0
+    assert str(tmp_path).lower() not in text
+
+
 def test_disabled_routes_do_not_open_evidence_item_files_with_path_or_builtin_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -145,10 +165,14 @@ def test_route_family_is_get_only_and_internal_only() -> None:
     route_methods = {
         route.path: route.methods
         for route in app.routes
-        if "staging/review-only/candidates" in getattr(route, "path", "")
+        if "staging/review-only" in getattr(route, "path", "")
     }
 
-    assert set(route_methods) == {LIST_ROUTE, DETAIL_ROUTE.replace("synthetic_review_staging_candidate", "{staging_candidate_id}")}
+    assert set(route_methods) == {
+        LIST_ROUTE,
+        DETAIL_ROUTE.replace("synthetic_review_staging_candidate", "{staging_candidate_id}"),
+        BRIDGE_ROUTE_TEMPLATE,
+    }
     for path, methods in route_methods.items():
         assert path.startswith("/api/v1/internal/")
         assert "GET" in methods
@@ -162,7 +186,7 @@ def test_no_public_c_end_or_b_end_alias_routes_exist_for_staging_family() -> Non
     aliases = [
         route.path
         for route in app.routes
-        if "staging/review-only/candidates" in getattr(route, "path", "")
+        if "staging/review-only" in getattr(route, "path", "")
         and not getattr(route, "path", "").startswith("/api/v1/internal/")
     ]
 
@@ -182,6 +206,7 @@ def test_disabled_smoke_creates_no_runtime_or_staging_files(monkeypatch: pytest.
 
     client.get(LIST_ROUTE)
     client.get(DETAIL_ROUTE)
+    client.get(BRIDGE_ROUTE)
 
     assert not list(tmp_path.rglob("review_only_staging*.json"))
     assert not list(tmp_path.rglob("staging_candidate*.json"))

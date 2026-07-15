@@ -5,10 +5,20 @@ from typing import Any, NamedTuple
 
 from fastapi import APIRouter
 
+from app.services.local_exchange_review_only_staging_bridge import (
+    LocalExchangeReviewOnlyStagingBridgeConfig,
+    build_disabled_local_exchange_response,
+    build_local_exchange_review_only_staging_response,
+)
+
 
 router = APIRouter()
 
 ENV_FLAG = "SENTIGRAPH_INTERNAL_OPERATOR_STAGING_ROUTE_ENABLED"
+LOCAL_EXCHANGE_ENV_FLAG = "SENTIGRAPH_INTERNAL_OPERATOR_STAGING_LOCAL_EXCHANGE_ENABLED"
+LOCAL_EXCHANGE_RESULTS_DIR_ENV = "SENTIGRAPH_LOCAL_EXCHANGE_RESULTS_DIR"
+PRIVATE_COLLECTOR_EXPORT_ROOT_ENV = "SENTIGRAPH_PRIVATE_COLLECTOR_EXPORT_ROOT"
+LOCAL_EXCHANGE_ADAPTER_ID_ENV = "SENTIGRAPH_LOCAL_EXCHANGE_ADAPTER_ID"
 SYNTHETIC_CANDIDATE_ID = "synthetic_review_staging_candidate"
 
 ALLOWED_ACTIONS = [
@@ -62,8 +72,26 @@ def get_review_only_staging_candidate(staging_candidate_id: str) -> dict[str, An
     return _safe_candidate_response()
 
 
+@router.get("/local-exchange/candidates/{result_file_name}")
+def get_local_exchange_review_only_staging_candidate(result_file_name: str) -> dict[str, Any]:
+    if not _route_enabled():
+        return build_disabled_local_exchange_response("route_disabled")
+    if not _local_exchange_route_enabled():
+        return build_disabled_local_exchange_response("local_exchange_route_disabled")
+    config = LocalExchangeReviewOnlyStagingBridgeConfig(
+        results_dir=os.environ.get(LOCAL_EXCHANGE_RESULTS_DIR_ENV, ""),
+        export_root=os.environ.get(PRIVATE_COLLECTOR_EXPORT_ROOT_ENV, ""),
+        adapter_id=os.environ.get(LOCAL_EXCHANGE_ADAPTER_ID_ENV, ""),
+    )
+    return build_local_exchange_review_only_staging_response(result_file_name, config)
+
+
 def _route_enabled() -> bool:
     return _resolve_internal_operator_route_enabled_mode(os.environ.get(ENV_FLAG)).enabled
+
+
+def _local_exchange_route_enabled() -> bool:
+    return _resolve_internal_operator_route_enabled_mode(os.environ.get(LOCAL_EXCHANGE_ENV_FLAG)).enabled
 
 
 def _resolve_internal_operator_route_enabled_mode(
