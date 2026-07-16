@@ -7,18 +7,19 @@ decision = ready
 privacy_issue_stop = no
 docs_only = yes
 baseline_version = 1.6
-baseline_status = candidate_effective_pending_chatgpt_acceptance
+baseline_status = candidate_effective_pending_independent_ChatGPT_RC1_acceptance
 ```
 
 Baseline v1.6 is a governance-only rebaseline after the exhaustion of Baseline v1.5 and the blocked MVP-B04-R2 attempt. It historically closes Baseline v1.5 for future Prompt accounting while preserving every v1.5 execution, accepted result, and blocked outcome exactly as recorded. It does not reset, transfer, erase, merge, or reclassify any historical consumption or outcome.
 
-This baseline does not reclassify MVP-B04 as completed. It selects MVP-B04-D1 Application-import External-process Side-effect Read-only Diagnosis as the next fixed milestone, but does not authorize or begin that milestone. This document performs no runtime, artifact, package, application-import, endpoint, provider, collector, browser, network, LLM, persistence, or external-process operation.
+This baseline does not reclassify MVP-B04 as completed. RC1 forward-corrects the current selected next fixed milestone to MVP-B04-R3 Instrumentation-order Corrected Final One-real Metadata-only Governed Read-only Projection Smoke, but does not authorize or begin that milestone. This document performs no runtime, artifact, package, application-import, endpoint, provider, collector, browser, network, LLM, persistence, or external-process operation.
 
 ## 2. Baseline identity and approval
 
 ```text
 baseline_name = sentigraph_internal_alpha_mvp_master_completion_baseline_v1_6
-baseline_scope = post_exhausted_Baseline_v1_5_and_blocked_MVP_B04_R2_pre_MVP_B04_D1_import_side_effect_diagnosis
+initial_baseline_scope = post_exhausted_Baseline_v1_5_and_blocked_MVP_B04_R2_pre_MVP_B04_D1_import_side_effect_diagnosis
+baseline_scope = post_exhausted_Baseline_v1_5_and_blocked_MVP_B04_R2_pre_MVP_B04_R3_instrumentation_order_corrected_final_projection_smoke
 baseline_project_state_anchor = 7b1aed203dbee798e85e63e63d12ad416f321328
 exact rebaseline approval received = yes
 exact approval match = yes
@@ -33,6 +34,19 @@ APPROVE_SENTIGRAPH_INTERNAL_ALPHA_MVP_MASTER_COMPLETION_BASELINE_V1_6_DOCS_ONLY_
 ```
 
 No future commit SHA is asserted by this document.
+
+### RC1 governance status
+
+```text
+Baseline_v1_6_initial_commit = 2982e0e4bda0070718eebaefed6ac118bbaeada0
+initial_commit_classification = historical_valid_docs_only_but_not_independently_accepted_for_current_route
+initial_route_selection = MVP-B04-D1 Application-import External-process Side-effect Read-only Diagnosis
+initial_route_selection_status = superseded_before_engineering_execution
+RC1_classification = governance_only_not_engineering_prompt
+RC1_approval_SHA-256 = 67882682c25f2020d6f453454f367d0534b5b8dec7b3a50e0cc40a833a3e1fe0
+```
+
+The initial Baseline v1.6 commit remains valid historical docs-only evidence. Its D1 route selection was stale and was not independently accepted as the current route. The later Codex stop explanation established that the observed subprocess attempt resulted from premature runner instrumentation installed before the FastAPI application import, while the approved execution order required application import before request-path instrumentation. This supports a runner-order classification; it does not conclusively prove that product code is defect-free, and it does not conclusively prove a Sentigraph application-import side effect.
 
 ## 3. Accepted stable engineering checkpoint
 
@@ -178,7 +192,19 @@ report / commit / push = no / no / no
 environment restored exactly = yes
 ```
 
-The artifact is not missing, and its identity is not the current blocker. The blocker is an external-process attempt reached during application import. The attempt was blocked before launch. The exact initiating module, API, prepared command category or callable, and purpose remain unproven. No blanket external-process permission may be inferred. MVP-B04 remains incomplete and unaccepted.
+The artifact is not missing, and its identity is not the current blocker. The terminal receipt authoritatively records one intercepted external-process attempt and zero launches before application import completed. The subsequent Codex stop explanation identifies premature runner instrumentation, installed before application import, as the supported cause of that interception. The exact initiating product module, API, prepared command category or callable, and purpose remain unproven. No blanket external-process permission may be inferred, and the event is not conclusive evidence of a product runtime defect. MVP-B04 remains incomplete and unaccepted.
+
+### Dual-evidence blocker review
+
+```text
+blocked_review_evidence = terminal_receipt_plus_optional_codex_stop_explanation
+```
+
+1. The terminal receipt remains the authoritative counter and side-effect record.
+2. A subsequent Codex explanation may provide diagnostic context for why the stop occurred.
+3. The explanation must not overwrite verified counters or create authority.
+4. ChatGPT independently reconciles both sources before choosing recovery scope.
+5. A blocker must not automatically be treated as a product defect merely because its first receipt is terse.
 
 ## 6. Current MVP-B04 state
 
@@ -196,6 +222,7 @@ B01_bridge_call_count = 0
 B03_projection_builder_call_count = 0
 
 B04 approvals and Goals through R2 = consumed_and_nonreusable
+R2 current classification = blocked_runner_instrumentation_order_error_after_artifact_identity_read_before_projection_GET
 ```
 
 No historical B04 approval authorizes further artifact access or endpoint execution.
@@ -236,6 +263,10 @@ The following rule is frozen:
 - A new business scope, new approval, or replacement Goal is a new Prompt and requires its own category.
 - A failed or blocked Prompt remains consumed after verified Goal activation.
 - Historical Baseline v1.5 accounting is preserved and is not recalculated under this new rule.
+- RC1 is governance-only and consumes no engineering category.
+- R3, when separately approved and its Goal activated, consumes exactly one fixed Prompt.
+- Artifact identity read, GET, report validation, and ready-only Git operations inside that same R3 Prompt are sub-actions and are not separately charged.
+- A separately approved later D1 or repair is a distinct Prompt whose category must be selected through fresh governance.
 
 ## 9. Pre-protected Mechanical Recovery Autonomy
 
@@ -260,13 +291,37 @@ This autonomy ends immediately when any of the following occurs:
 - discovery, fallback, or latest selection would be required;
 - product code, repository configuration, or external authority must change.
 
+### Runner and blocker triage
+
+#### Class A — Pre-protected mechanical error
+
+Conditions include artifact or protected opens = 0, endpoint/writer/persistence attempts = 0, and an unambiguous protected-action state. Examples include UTF-8 or BOM handling, quoting, stdin encoding, path normalization, environment serialization, runner syntax, safe-output formatting, and instrumentation setup.
+
+Disposition: same-Goal bounded autonomous repair, with a maximum of two pre-protected attempts, no additional category consumption, and no new approval unless scope changes.
+
+#### Class B — Post-protected runner or instrumentation-order error
+
+Conditions include one approved protected read, no endpoint or writer attempt, supplementary evidence identifying a runner construction or ordering defect, and no evidence yet proving a product runtime defect.
+
+Disposition: the old approval and Goal remain consumed; no automatic rerun is permitted; a new narrow recovery authorization is required; architecture diagnosis is not automatic.
+
+```text
+R2_current_classification = blocked_runner_instrumentation_order_error_after_artifact_identity_read_before_projection_GET
+```
+
+#### Class C — Product or runtime side-effect evidence
+
+Conditions include a proven correct runner and instrumentation order where product import, app factory, or lifespan still attempts a process-like action, or other evidence identifies a product-code trigger.
+
+Disposition: stop before launch, do not silently suppress the behavior, and prepare a separately approved read-only diagnosis such as MVP-B04-D1 with a fresh Goal.
+
 ## 10. Application-import external-process stop boundary
 
 ```text
 application_import_external_process_attempt = stop_and_diagnose_boundary
 ```
 
-An application import, app factory, or lifespan path that attempts any of the following must be blocked before launch unless it has first been separately diagnosed and authorized:
+An application import, app factory, or lifespan path that attempts any of the following under a correctly ordered runner must be blocked before launch unless it has first been separately diagnosed and authorized:
 
 - a subprocess or shell process;
 - a multiprocessing child;
@@ -276,45 +331,68 @@ An application import, app factory, or lifespan path that attempts any of the fo
 - an external command or service launcher;
 - an unknown process-like runtime.
 
-Codex must not automatically allow the process, silently suppress it and continue a real smoke, infer that it is unrelated, replace the app-import path without evidence, or repeat artifact access while diagnosing it. MVP-B04-D1 must first establish the exact cause.
+Codex must not automatically allow the process, silently suppress it and continue a real smoke, infer that it is unrelated, replace the app-import path without evidence, or repeat artifact access while diagnosing it.
+
+The historical R2 event did not conclusively prove a Sentigraph application-import side effect because the runner installed its subprocess guard before application import, contrary to the intended instrumentation order.
+
+```text
+historical_R2_external_process_attempts / launches = 1 / 0
+historical_R2_root_cause_current_classification = runner_instrumentation_order_error_supported_by_terminal_receipt_and_subsequent_Codex_stop_explanation
+product_application_import_side_effect_proven = no
+MVP-B04-D1 required now = no
+MVP-B04-D1 conditional trigger = only_if_a_correctly_ordered_R3_runner_proves_an_import_app_construction_or_lifespan_process_like_side_effect_attributable_to_product_runtime_behavior
+```
 
 ## 11. Selected next fixed milestone
 
 The selected next fixed milestone is:
 
 ```text
-MVP-B04-D1 Application-import External-process Side-effect Read-only Diagnosis
+MVP-B04-R3 Instrumentation-order Corrected Final One-real Metadata-only Governed Read-only Projection Smoke
 
 prompt_classification = planned_fixed_milestone
 status = selected_not_started
-eligible_after_Baseline_v1_6_acceptance = yes
+eligible_after_Baseline_v1_6_RC1_acceptance = yes
 authorized = no
 Goal_authorized = no
 executed = no
 ```
 
-D1 is intended to answer:
+The required future R3 runner order is frozen as follows:
 
-- Which exact module and source location attempted process creation?
-- Which process API was invoked?
-- Did the trigger occur at import time, app construction, or lifespan?
-- What safe command category or callable was prepared?
-- Is the side effect required by the B03 route?
-- Does a narrower existing app factory or configuration path exist?
-- Is a code repair necessary?
-- Does a safe, no-behavior-change execution isolation route exist?
+1. Complete strict UTF-8 configuration recovery and all pre-protected checks.
+2. Import or build the existing FastAPI application before installing request-path and external-process instrumentation.
+3. After application import completes, install request-path instrumentation.
+4. Perform one protected artifact identity read and one projection GET in the exact order separately defined by the future R3 approval.
+5. Permit no retry after the protected read begins.
+6. Call no candidate endpoint.
+7. Issue no second GET.
 
-D1 remains separately gated. Baseline v1.6 does not authorize D1 to open the real artifact, access the collector package, call either B01 or B03 endpoint, launch an external process, modify code, or suppress unknown behavior and continue the smoke.
+This Baseline does not authorize the artifact read, application import, instrumentation, GET, or report creation.
+
+### Conditional future D1 diagnosis
+
+```text
+MVP-B04-D1 selected = no
+MVP-B04-D1 authorized = no
+MVP-B04-D1 Goal authorized = no
+MVP-B04-D1 executed = no
+classification = conditional_future_read_only_diagnosis
+trigger = only_if_correctly_ordered_R3_proves_or_strongly_supports_a_product_application_import_app_factory_or_lifespan_process_side_effect
+```
+
+D1 must not consume a fixed Prompt merely because the historical R2 runner was misordered. If triggered later, its category must be selected through fresh governance. D1 remains separately gated and cannot open the real artifact, access the collector package, call either B01 or B03 endpoint, launch an external process, modify code, or suppress unknown behavior and continue a smoke without its own approval.
 
 ## 12. Second fixed milestone reserve
 
-The second fixed Prompt is reserved for:
+Baseline v1.6 retains its fixed budget of 2. The known current assignment is:
 
 ```text
-Final one-real metadata-only governed read-only projection smoke
+fixed Prompt 1 = MVP-B04-R3 final one-real governed read-only projection smoke
+fixed Prompt 2 = unassigned reserve
 ```
 
-It becomes eligible only after D1 completion and independent ChatGPT acceptance, completion and independent acceptance of any required conditional repair, a fresh exact smoke approval, and a new Goal. No completion status or execution authorization is assigned now.
+The second fixed Prompt grants no present authority. D1 is not assigned to the fixed reserve by this RC1. R3 becomes eligible only after independent ChatGPT RC1 acceptance, Project Source synchronization, a fresh exact R3 approval, and a new Goal. No completion status or execution authorization is assigned now.
 
 ## 13. Conditional and risk use
 
@@ -326,6 +404,8 @@ Conditional allowance may cover narrowly proven needs such as:
 - directly coupled existing regression tests under the canonical bounded-test autonomy rule.
 
 Risk allowance may cover a later explicitly approved protected-artifact or one-time runtime recovery. These are budget categories only and are not present authorization.
+
+MVP-B04-D1 is a conditional future diagnosis only if a correctly ordered R3 run proves or strongly supports product import, app-factory, or lifespan process-like behavior. RC1 does not assign D1 to a fixed Prompt.
 
 ## 14. Validation and no-side-effect boundary
 
@@ -355,15 +435,19 @@ Project Source changed = no
 ## 15. Current next boundary
 
 ```text
-Baseline_v1_6_status = candidate_effective_pending_independent_ChatGPT_acceptance
+Baseline_v1_6_status = candidate_effective_pending_independent_ChatGPT_RC1_acceptance
 
-next_engineering_milestone = MVP-B04-D1 Application-import External-process Side-effect Read-only Diagnosis
+next_engineering_milestone = MVP-B04-R3 Instrumentation-order Corrected Final One-real Metadata-only Governed Read-only Projection Smoke
 next_milestone_selected = yes
+next_milestone_eligible = yes
 next_milestone_authorized = no
 next_Goal_authorized = no
 next_milestone_executed = no
 
-next action after Baseline v1.6 acceptance = Project Source synchronization of Canonical 00 / 05 / 09, then preparation of a fresh exact MVP-B04-D1 approval
+MVP-B04-D1 selected = no
+MVP-B04-D1 authorized = no
+
+next action after RC1 acceptance = Project Source synchronization of Canonical 00 / 05 / 09, then preparation of a fresh exact MVP-B04-R3 approval
 ```
 
 No automatic progression is allowed.
