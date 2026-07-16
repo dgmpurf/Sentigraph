@@ -21,6 +21,7 @@ DETAIL_ROUTE = f"{LIST_ROUTE}/{SYNTHETIC_CANDIDATE_ID}"
 UNKNOWN_ROUTE = f"{LIST_ROUTE}/unknown_candidate"
 BRIDGE_ROUTE = "/api/v1/internal/staging/review-only/local-exchange/candidates/provider_result.json"
 BRIDGE_ROUTE_TEMPLATE = "/api/v1/internal/staging/review-only/local-exchange/candidates/{result_file_name}"
+PROJECTION_ROUTE_TEMPLATE = "/api/v1/internal/staging/review-only/local-exchange/projections/{result_file_name}"
 
 ENABLED_VALUES = ["1", "true", "yes"]
 
@@ -263,6 +264,7 @@ def test_allowed_actions_are_review_labels_only_and_do_not_create_state_changing
         LIST_ROUTE,
         f"{LIST_ROUTE}/{{staging_candidate_id}}",
         BRIDGE_ROUTE_TEMPLATE,
+        PROJECTION_ROUTE_TEMPLATE,
     }
     for path, methods in route_methods.items():
         assert path.startswith("/api/v1/internal/")

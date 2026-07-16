@@ -18,6 +18,7 @@ LIST_ROUTE = "/api/v1/internal/staging/review-only/candidates"
 DETAIL_ROUTE = "/api/v1/internal/staging/review-only/candidates/synthetic_review_staging_candidate"
 BRIDGE_ROUTE = "/api/v1/internal/staging/review-only/local-exchange/candidates/provider_result.json"
 BRIDGE_ROUTE_TEMPLATE = "/api/v1/internal/staging/review-only/local-exchange/candidates/{result_file_name}"
+PROJECTION_ROUTE_TEMPLATE = "/api/v1/internal/staging/review-only/local-exchange/projections/{result_file_name}"
 
 DISABLED_VALUES = [None, "", "false", "0", "random", "TRUE-ish", "enabled"]
 
@@ -172,6 +173,7 @@ def test_route_family_is_get_only_and_internal_only() -> None:
         LIST_ROUTE,
         DETAIL_ROUTE.replace("synthetic_review_staging_candidate", "{staging_candidate_id}"),
         BRIDGE_ROUTE_TEMPLATE,
+        PROJECTION_ROUTE_TEMPLATE,
     }
     for path, methods in route_methods.items():
         assert path.startswith("/api/v1/internal/")

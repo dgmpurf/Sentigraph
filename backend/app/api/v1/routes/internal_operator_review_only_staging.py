@@ -5,6 +5,10 @@ from typing import Any, NamedTuple
 
 from fastapi import APIRouter
 
+from app.services.local_exchange_review_only_projection_bridge import (
+    build_disabled_local_exchange_review_only_projection,
+    build_local_exchange_review_only_projection,
+)
 from app.services.local_exchange_review_only_staging_bridge import (
     LocalExchangeReviewOnlyStagingBridgeConfig,
     build_disabled_local_exchange_response,
@@ -16,6 +20,9 @@ router = APIRouter()
 
 ENV_FLAG = "SENTIGRAPH_INTERNAL_OPERATOR_STAGING_ROUTE_ENABLED"
 LOCAL_EXCHANGE_ENV_FLAG = "SENTIGRAPH_INTERNAL_OPERATOR_STAGING_LOCAL_EXCHANGE_ENABLED"
+LOCAL_EXCHANGE_REVIEW_PROJECTION_ENV_FLAG = (
+    "SENTIGRAPH_INTERNAL_OPERATOR_STAGING_LOCAL_EXCHANGE_REVIEW_PROJECTION_ENABLED"
+)
 LOCAL_EXCHANGE_RESULTS_DIR_ENV = "SENTIGRAPH_LOCAL_EXCHANGE_RESULTS_DIR"
 PRIVATE_COLLECTOR_EXPORT_ROOT_ENV = "SENTIGRAPH_PRIVATE_COLLECTOR_EXPORT_ROOT"
 LOCAL_EXCHANGE_ADAPTER_ID_ENV = "SENTIGRAPH_LOCAL_EXCHANGE_ADAPTER_ID"
@@ -78,12 +85,26 @@ def get_local_exchange_review_only_staging_candidate(result_file_name: str) -> d
         return build_disabled_local_exchange_response("route_disabled")
     if not _local_exchange_route_enabled():
         return build_disabled_local_exchange_response("local_exchange_route_disabled")
-    config = LocalExchangeReviewOnlyStagingBridgeConfig(
-        results_dir=os.environ.get(LOCAL_EXCHANGE_RESULTS_DIR_ENV, ""),
-        export_root=os.environ.get(PRIVATE_COLLECTOR_EXPORT_ROOT_ENV, ""),
-        adapter_id=os.environ.get(LOCAL_EXCHANGE_ADAPTER_ID_ENV, ""),
-    )
+    config = _build_local_exchange_bridge_config()
     return build_local_exchange_review_only_staging_response(result_file_name, config)
+
+
+@router.get("/local-exchange/projections/{result_file_name}")
+def get_local_exchange_review_only_projection(result_file_name: str) -> dict[str, Any]:
+    if not _route_enabled():
+        return build_disabled_local_exchange_review_only_projection("route_disabled", result_file_name)
+    if not _local_exchange_route_enabled():
+        return build_disabled_local_exchange_review_only_projection(
+            "local_exchange_route_disabled", result_file_name
+        )
+    if not _local_exchange_review_projection_route_enabled():
+        return build_disabled_local_exchange_review_only_projection(
+            "review_projection_route_disabled", result_file_name
+        )
+
+    config = _build_local_exchange_bridge_config()
+    upstream_response = build_local_exchange_review_only_staging_response(result_file_name, config)
+    return build_local_exchange_review_only_projection(result_file_name, upstream_response)
 
 
 def _route_enabled() -> bool:
@@ -92,6 +113,20 @@ def _route_enabled() -> bool:
 
 def _local_exchange_route_enabled() -> bool:
     return _resolve_internal_operator_route_enabled_mode(os.environ.get(LOCAL_EXCHANGE_ENV_FLAG)).enabled
+
+
+def _local_exchange_review_projection_route_enabled() -> bool:
+    return _resolve_internal_operator_route_enabled_mode(
+        os.environ.get(LOCAL_EXCHANGE_REVIEW_PROJECTION_ENV_FLAG)
+    ).enabled
+
+
+def _build_local_exchange_bridge_config() -> LocalExchangeReviewOnlyStagingBridgeConfig:
+    return LocalExchangeReviewOnlyStagingBridgeConfig(
+        results_dir=os.environ.get(LOCAL_EXCHANGE_RESULTS_DIR_ENV, ""),
+        export_root=os.environ.get(PRIVATE_COLLECTOR_EXPORT_ROOT_ENV, ""),
+        adapter_id=os.environ.get(LOCAL_EXCHANGE_ADAPTER_ID_ENV, ""),
+    )
 
 
 def _resolve_internal_operator_route_enabled_mode(
