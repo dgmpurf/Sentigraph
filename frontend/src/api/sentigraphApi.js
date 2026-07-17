@@ -12,6 +12,101 @@ export const INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS = Object.freeze([
 ])
 const INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT = 'review-console'
 const INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT = 'projections'
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT = 'local-exchange-projections'
+
+export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES = Object.freeze([
+  'helldivers2-psn-demo',
+])
+export const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS = Object.freeze([
+  'projection_schema',
+  'projection_version',
+  'projection_mode',
+  'projection_status',
+  'projection_error_code',
+  'source_chain_boundary',
+  'result_file_name',
+  'upstream_schema',
+  'upstream_status',
+  'reader_status',
+  'adapter_status',
+  'provider_result_status',
+  'package_resolution_status',
+  'candidate_count',
+  'staging_candidate_id',
+  'gate_result_id',
+  'analysis_request_id',
+  'provider_result_id',
+  'package_name',
+  'case_id_hint',
+  'case_title_hint',
+  'validation_summary',
+  'coverage_summary',
+  'review_status',
+  'promotion_status',
+  'staging_status',
+  'gate_summary',
+  'warnings',
+  'blockers',
+  'allowed_actions',
+  'blocked_actions',
+  'metadata_only',
+  'review_only',
+  'human_review_required',
+  'no_automatic_trust_upgrade',
+  'candidate_persistence',
+  'persistent_staging_write',
+  'review_decision_write',
+  'evidence_layer_write',
+  'production_evidenceitem_created',
+  'production_case_created',
+  'analysis_run_created',
+  'analysis_result_created',
+  'frontend_action_enabled',
+  'public_output_enabled',
+  'export_delivery_enabled',
+  'path_exposed',
+  'raw_metadata_exposed',
+  'trust_approved',
+  'production_ready',
+  'promotion_completed',
+  'mutable_authority_granted',
+])
+
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_MAX_LENGTH = 64
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_PATTERN =
+  /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_RESULT_BASENAME_PATTERN =
+  /^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_STATUSES = Object.freeze([
+  'manual_review_required',
+  'blocked_upstream',
+  'projection_unavailable',
+  'ready_for_human_review',
+])
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_TRUE_FLAGS = Object.freeze([
+  'metadata_only',
+  'review_only',
+  'human_review_required',
+  'no_automatic_trust_upgrade',
+])
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_FALSE_FLAGS = Object.freeze([
+  'persistent_staging_write',
+  'review_decision_write',
+  'evidence_layer_write',
+  'production_evidenceitem_created',
+  'production_case_created',
+  'analysis_run_created',
+  'analysis_result_created',
+  'frontend_action_enabled',
+  'public_output_enabled',
+  'export_delivery_enabled',
+  'path_exposed',
+  'raw_metadata_exposed',
+  'trust_approved',
+  'production_ready',
+  'promotion_completed',
+  'mutable_authority_granted',
+])
 
 export async function getInternalAlphaReviewConsoleProjection(projectionId) {
   const projectionIsAllowed = INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS.includes(projectionId)
@@ -21,6 +116,115 @@ export async function getInternalAlphaReviewConsoleProjection(projectionId) {
     `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT}/${INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT}/${encodedProjectionId}`,
   )
   return data
+}
+
+export function normalizeInternalAlphaLocalExchangeProjection(data) {
+  const contractError = () => {
+    throw new Error('frontend_projection_contract_mismatch')
+  }
+  if (!isPlainInternalAlphaProjectionObject(data)) contractError()
+
+  const keys = Object.keys(data)
+  if (
+    keys.length !== INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS.length ||
+    keys.some((field, index) => field !== INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS[index])
+  ) {
+    contractError()
+  }
+  if (
+    data.projection_schema !== 'sentigraph_local_exchange_review_only_candidate_projection_v0_1' ||
+    data.projection_version !== '0.1' ||
+    !INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_STATUSES.includes(data.projection_status) ||
+    data.candidate_persistence !== 'in_memory_only'
+  ) {
+    contractError()
+  }
+  if (INTERNAL_ALPHA_LOCAL_EXCHANGE_TRUE_FLAGS.some((field) => data[field] !== true)) {
+    contractError()
+  }
+  if (INTERNAL_ALPHA_LOCAL_EXCHANGE_FALSE_FLAGS.some((field) => data[field] !== false)) {
+    contractError()
+  }
+  if (!Number.isInteger(data.candidate_count) || data.candidate_count < 0) contractError()
+  if (
+    data.result_file_name !== null &&
+    (typeof data.result_file_name !== 'string' ||
+      data.result_file_name.length > 160 ||
+      !INTERNAL_ALPHA_LOCAL_EXCHANGE_RESULT_BASENAME_PATTERN.test(data.result_file_name))
+  ) {
+    contractError()
+  }
+  for (const field of INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS) {
+    if (!isBoundedInternalAlphaProjectionValue(data[field])) contractError()
+  }
+
+  const normalized = Object.fromEntries(
+    INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS.map((field) => [
+      field,
+      freezeInternalAlphaProjectionValue(data[field]),
+    ]),
+  )
+  return Object.freeze(normalized)
+}
+
+export async function getInternalAlphaLocalExchangeProjection(sampleHandle) {
+  const handleIsAllowed =
+    typeof sampleHandle === 'string' &&
+    sampleHandle.length <= INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_MAX_LENGTH &&
+    INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_PATTERN.test(sampleHandle) &&
+    INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES.includes(sampleHandle)
+  if (!handleIsAllowed) throw new Error('Unsupported internal alpha local exchange sample handle')
+
+  const encodedSampleHandle = encodeURIComponent(sampleHandle)
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT}/${INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT}/${encodedSampleHandle}`,
+  )
+  return normalizeInternalAlphaLocalExchangeProjection(data)
+}
+
+function isPlainInternalAlphaProjectionObject(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function isBoundedInternalAlphaProjectionValue(value, depth = 0) {
+  if (value === null || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (typeof value === 'string') return value.length <= 2000
+  if (depth >= 2) return false
+  if (Array.isArray(value)) {
+    return (
+      value.length <= 16 &&
+      value.every((item) => isBoundedInternalAlphaProjectionValue(item, depth + 1))
+    )
+  }
+  if (!isPlainInternalAlphaProjectionObject(value)) return false
+  const entries = Object.entries(value)
+  return (
+    entries.length <= 16 &&
+    entries.every(
+      ([key, item]) =>
+        key.length <= 80 && isBoundedInternalAlphaProjectionValue(item, depth + 1),
+    )
+  )
+}
+
+function freezeInternalAlphaProjectionValue(value) {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map((item) => freezeInternalAlphaProjectionValue(item)))
+  }
+  if (isPlainInternalAlphaProjectionObject(value)) {
+    return Object.freeze(
+      Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [
+          key,
+          freezeInternalAlphaProjectionValue(item),
+        ]),
+      ),
+    )
+  }
+  return value
 }
 
 export async function expandKeywords(payload) {

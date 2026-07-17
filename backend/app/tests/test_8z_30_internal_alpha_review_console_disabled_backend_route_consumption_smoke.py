@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -10,6 +11,7 @@ FRONTEND_API_CLIENT = FRONTEND_SRC / "api/sentigraphApi.js"
 FRONTEND_APP = FRONTEND_SRC / "App.jsx"
 FRONTEND_SHELL = FRONTEND_SRC / "pages/InternalAlphaReviewConsole.jsx"
 FRONTEND_FIXTURE = FRONTEND_SRC / "data/internalAlphaReviewConsoleStaticFixture.js"
+BACKEND_ROUTE = REPO_ROOT / "backend/app/api/v1/routes/internal_alpha_review_console.py"
 BACKEND_ROUTE_TEST = (
     REPO_ROOT
     / "backend/app/tests/test_8z_22_internal_alpha_review_console_disabled_backend_route_skeleton_smoke.py"
@@ -22,6 +24,12 @@ INTERNAL_FRONTEND_ROUTE = "#/internal-alpha/review-console"
 BACKEND_ROUTE_FRAGMENT = "/api/v1/internal/alpha/review-console/projections/"
 API_ROUTE_PREFIX_FRAGMENT = "/internal/alpha/"
 READ_ONLY_HELPER = "getInternalAlphaReviewConsoleProjection"
+B05_READ_ONLY_HELPER = "getInternalAlphaLocalExchangeProjection"
+B05_NORMALIZER = "normalizeInternalAlphaLocalExchangeProjection"
+B05_ROUTE_DECORATOR = '@router.get("/local-exchange-projections/{sample_handle}")'
+B05_VIEW_ID = "internalAlphaLocalExchangeProjectionReview"
+B05_STATE_ID = "localExchangeProjectionState"
+B05_SAFE_HANDLE = "helldivers2-psn-demo"
 SAFE_PROJECTION_ID = "internal-alpha-safe-projection-fixture"
 SAFE_ALT_PROJECTION_ID = "8z16-no-write-alpha-fixture"
 GOVERNED_PROJECTION_ID = "governed-nonproduction-record-review-v0-1"
@@ -121,13 +129,13 @@ def _casefold(text: str) -> str:
     return text.casefold()
 
 
-def _helper_body(api_text: str) -> str:
+def _helper_body(api_text: str, helper_name: str = READ_ONLY_HELPER) -> str:
     pattern = re.compile(
-        rf"export async function {READ_ONLY_HELPER}\([^)]*\) \{{(?P<body>.*?)\n\}}",
+        rf"export async function {helper_name}\([^)]*\) \{{(?P<body>.*?)\n\}}",
         re.DOTALL,
     )
     match = pattern.search(api_text)
-    assert match is not None, f"{READ_ONLY_HELPER} helper is missing"
+    assert match is not None, f"{helper_name} helper is missing"
     return match.group("body")
 
 
@@ -311,3 +319,94 @@ def test_backend_route_tests_still_define_existing_disabled_internal_get_route()
     assert "GET" in route_test_text
     assert "route_disabled" in route_test_text
     assert "unsupported_projection" in route_test_text
+
+
+def test_b05_api_helper_is_separate_normalized_and_exactly_one_get() -> None:
+    api_text = _read(FRONTEND_API_CLIENT)
+    helper_body = _helper_body(api_text, B05_READ_ONLY_HELPER)
+
+    assert f"export async function {B05_READ_ONLY_HELPER}(sampleHandle)" in api_text
+    assert f"export function {B05_NORMALIZER}(data)" in api_text
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES" in api_text
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS" in api_text
+    assert B05_SAFE_HANDLE in api_text
+    assert (
+        "const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT = "
+        "'local-exchange-projections'"
+    ) in api_text
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT" in helper_body
+    assert "encodeURIComponent(sampleHandle)" in helper_body
+    assert "normalizeInternalAlphaLocalExchangeProjection(data)" in helper_body
+    assert helper_body.count("apiClient.get(") == 1
+    assert "projectionId" not in helper_body
+    assert "params:" not in helper_body
+
+    for forbidden in FORBIDDEN_ROUTE_METHODS:
+        assert forbidden not in helper_body, forbidden
+
+
+def test_b05_backend_route_inventory_is_exact_get_only_and_separate_from_f10_gate() -> None:
+    route_text = _read(BACKEND_ROUTE)
+    route_tree = ast.parse(route_text)
+    functions = {
+        node.name: ast.get_source_segment(route_text, node) or ""
+        for node in ast.walk(route_tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    b05_function = functions["get_internal_alpha_local_exchange_review_projection"]
+
+    assert '@router.get("/projections/{projection_id}")' in route_text
+    assert route_text.count(B05_ROUTE_DECORATOR) == 1
+    assert "sample_handle: str" in b05_function
+    assert "build_internal_alpha_local_exchange_review_projection(sample_handle)" in b05_function
+    assert "GOVERNED_RECORD_ENV_FLAG" not in b05_function
+    assert "build_governed_nonproduction_review_console_projection" not in b05_function
+
+    for method in ("post", "put", "patch", "delete"):
+        assert f'@router.{method}("/local-exchange-projections/' not in route_text
+
+
+def test_b05_frontend_state_view_copy_and_no_mutation_controls_are_distinct() -> None:
+    shell = _read(FRONTEND_SHELL)
+
+    assert B05_VIEW_ID in shell
+    assert B05_STATE_ID in shell
+    assert B05_READ_ONLY_HELPER in shell
+    assert "GOVERNED_RECORD_REVIEW_VIEW" in shell
+    assert "useState(GOVERNED_RECORD_REVIEW_VIEW)" in shell
+    assert "requestedLocalExchangeHandles" in shell
+    assert "result_file_name" not in shell
+    for phase in ("idle", "loading", "loaded", "unavailable", "bounded_error"):
+        assert phase in shell
+    for phase in (
+        "manual_review_required",
+        "blocked_upstream",
+        "projection_unavailable",
+        "ready_for_human_review",
+    ):
+        assert phase in shell
+    for copy_line in (
+        "Real metadata compatibility demonstrated for one approved sample.",
+        "Read-only and human-review-only.",
+        "Not a persisted governed record.",
+        "Not trust approval.",
+        "Not production readiness.",
+        "Not full-web or full-platform coverage.",
+    ):
+        assert copy_line in shell
+
+    for forbidden in (
+        "filenameInput",
+        "pathInput",
+        "rootInput",
+        "adapterInput",
+        "configInput",
+        "approveWrite",
+        "rejectProjection",
+        "persistProjection",
+        "promoteProjection",
+        "publishProjection",
+        "exportProjection",
+        "decision-ledger",
+    ):
+        assert forbidden not in shell

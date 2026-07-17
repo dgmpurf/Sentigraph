@@ -9,6 +9,9 @@ from app.services.internal_alpha_review_console_safe_metadata_projection import 
     APPROVAL_PHRASE as PROJECTION_APPROVAL_PHRASE,
     build_internal_alpha_review_console_safe_metadata_projection,
 )
+from app.services.internal_alpha_local_exchange_review_projection import (
+    build_internal_alpha_local_exchange_review_projection,
+)
 from app.services.governed_nonproduction_review_console_projection import (
     PROJECTION_FIELDS as GOVERNED_RECORD_PROJECTION_FIELDS,
     build_governed_nonproduction_review_console_projection,
@@ -27,6 +30,13 @@ ALLOWED_PROJECTION_IDS = {
     "internal-alpha-safe-projection-fixture",
     "8z16-no-write-alpha-fixture",
 }
+
+
+@router.get("/local-exchange-projections/{sample_handle}")
+def get_internal_alpha_local_exchange_review_projection(
+    sample_handle: str,
+) -> dict[str, Any]:
+    return build_internal_alpha_local_exchange_review_projection(sample_handle)
 
 
 class _RouteEnabledMode(NamedTuple):
