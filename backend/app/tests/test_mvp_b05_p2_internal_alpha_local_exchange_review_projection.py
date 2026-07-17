@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
-import sys
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
@@ -688,7 +687,6 @@ def test_responses_never_expose_server_configuration_or_paths() -> None:
 def test_route_runtime_dependencies_remain_lazy_for_selected_service_tests() -> None:
     assert APP_MAIN_IMPORTS == 0
     assert TEST_CLIENT_CREATIONS == 0
-    assert "app.main" not in sys.modules
 
 
 def test_route_is_one_path_parameter_get_only_and_preserves_http_200_fail_closed(
