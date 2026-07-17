@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import builtins
 import json
 from pathlib import Path
@@ -253,7 +254,10 @@ def test_route_family_is_get_only_and_internal_only() -> None:
         if "internal/alpha/review-console" in getattr(route, "path", "")
     }
 
-    assert set(route_methods) == {f"{ROUTE_PREFIX}/projections/{{projection_id}}"}
+    assert set(route_methods) == {
+        f"{ROUTE_PREFIX}/projections/{{projection_id}}",
+        f"{ROUTE_PREFIX}/local-exchange-projections/{{sample_handle}}",
+    }
     for path, methods in route_methods.items():
         assert path.startswith("/api/v1/internal/")
         assert "GET" in methods
@@ -301,18 +305,119 @@ def test_enabled_route_does_not_read_files(monkeypatch: pytest.MonkeyPatch) -> N
     _assert_safe_success_response(payload, ALLOWED_PROJECTION_ID)
 
 
-def test_no_frontend_hook_was_added() -> None:
-    frontend_root = Path("frontend/src")
-    frontend_files = [
-        path
-        for path in frontend_root.rglob("*")
-        if path.is_file() and path.suffix in {".js", ".jsx", ".ts", ".tsx"}
-    ]
-    joined = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in frontend_files)
+def test_current_frontend_integration_is_bounded_and_route_authorities_remain_separate() -> None:
+    frontend_api = Path("frontend/src/api/sentigraphApi.js").read_text(encoding="utf-8")
+    frontend_page = Path("frontend/src/pages/InternalAlphaReviewConsole.jsx").read_text(encoding="utf-8")
+    route_source = Path("backend/app/api/v1/routes/internal_alpha_review_console.py").read_text(
+        encoding="utf-8"
+    )
 
-    assert "internal_alpha_review_console" not in joined
-    assert "internal-alpha-review-console" not in joined
-    assert "review-console/projections" not in joined
+    assert "const GOVERNED_RECORD_REVIEW_VIEW = 'governedRecordReview'" in frontend_page
+    assert "useState(GOVERNED_RECORD_REVIEW_VIEW)" in frontend_page
+
+    assert "getInternalAlphaLocalExchangeProjection" in frontend_api
+    assert "normalizeInternalAlphaLocalExchangeProjection" in frontend_api
+    assert "internalAlphaLocalExchangeProjectionReview" in frontend_page
+    assert "localExchangeProjectionState" in frontend_page
+    assert "'helldivers2-psn-demo'" in frontend_api
+
+    selection_guard = (
+        "if (selectedReviewView !== LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW) return"
+    )
+    request_call = (
+        "getInternalAlphaLocalExchangeProjection(LOCAL_EXCHANGE_PROJECTION_SAMPLE_HANDLE)"
+    )
+    selection_effect_dependency = "}, [selectedReviewView])"
+    selection_guard_index = frontend_page.index(selection_guard)
+    request_call_index = frontend_page.index(request_call)
+    selection_effect_end_index = frontend_page.index(
+        selection_effect_dependency,
+        request_call_index,
+    )
+    assert selection_guard_index < request_call_index < selection_effect_end_index
+    assert frontend_page.count(request_call) == 1
+
+    for boundary_copy in (
+        "Real metadata compatibility demonstrated for one approved sample.",
+        "Read-only and human-review-only.",
+        "Not a persisted governed record.",
+        "Not trust approval.",
+        "Not production readiness.",
+        "Not full-web or full-platform coverage.",
+    ):
+        assert boundary_copy in frontend_page
+
+    joined_frontend = f"{frontend_api}\n{frontend_page}"
+    for unsafe_symbol in (
+        "filenameInput",
+        "pathInput",
+        "rootInput",
+        "adapterInput",
+        "configInput",
+        "approveWrite",
+        "rejectProjection",
+        "persistProjection",
+        "promoteProjection",
+        "publishProjection",
+        "exportProjection",
+        "decision-ledger",
+    ):
+        assert unsafe_symbol not in joined_frontend
+    assert "result_file_name" not in frontend_page
+
+    route_tree = ast.parse(route_source)
+    route_functions = {
+        node.name: node
+        for node in route_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    b05_route = route_functions["get_internal_alpha_local_exchange_review_projection"]
+    f10_route = route_functions["get_internal_alpha_review_console_projection"]
+
+    b05_get_decorators = [
+        decorator
+        for decorator in b05_route.decorator_list
+        if isinstance(decorator, ast.Call)
+        and isinstance(decorator.func, ast.Attribute)
+        and isinstance(decorator.func.value, ast.Name)
+        and decorator.func.value.id == "router"
+        and decorator.func.attr == "get"
+    ]
+    assert len(b05_get_decorators) == 1
+    assert ast.literal_eval(b05_get_decorators[0].args[0]) == (
+        "/local-exchange-projections/{sample_handle}"
+    )
+    assert [argument.arg for argument in b05_route.args.args] == ["sample_handle"]
+
+    b05_calls = {
+        node.func.id
+        for node in ast.walk(b05_route)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert b05_calls == {"build_internal_alpha_local_exchange_review_projection"}
+    assert "build_governed_nonproduction_review_console_projection" not in b05_calls
+    assert "_governed_record_projection_enabled" not in b05_calls
+
+    f10_get_paths = [
+        ast.literal_eval(decorator.args[0])
+        for decorator in f10_route.decorator_list
+        if isinstance(decorator, ast.Call)
+        and isinstance(decorator.func, ast.Attribute)
+        and isinstance(decorator.func.value, ast.Name)
+        and decorator.func.value.id == "router"
+        and decorator.func.attr == "get"
+    ]
+    assert f10_get_paths == ["/projections/{projection_id}"]
+    f10_calls = {
+        node.func.id
+        for node in ast.walk(f10_route)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "_governed_record_projection_enabled" in f10_calls
+    assert "build_governed_nonproduction_review_console_projection" in f10_calls
+    assert route_source.count('@router.get("/local-exchange-projections/{sample_handle}")') == 1
+    for mutation_decorator in ("post", "put", "patch", "delete"):
+        assert f'@router.{mutation_decorator}("/local-exchange-projections/' not in route_source
 
 
 def test_approval_phrases_are_not_user_input_or_write_authorization() -> None:
