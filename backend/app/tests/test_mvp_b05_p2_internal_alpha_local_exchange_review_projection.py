@@ -3,15 +3,14 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
 from app.services.local_exchange_review_only_projection_bridge import (
     PROJECTION_FIELDS,
     build_disabled_local_exchange_review_only_projection,
@@ -32,6 +31,7 @@ SERVICE_MODULE = "app.services.internal_alpha_local_exchange_review_projection"
 ROUTE_MODULE = "app.api.v1.routes.internal_alpha_review_console"
 SAFE_HANDLE = "helldivers2-psn-demo"
 SYNTHETIC_RESULT_NAME = "synthetic-result.json"
+REAL_RESULT_NAME = "provider_result_helldivers2-psn-demo_20260614_055754.json"
 ROUTE_PATH_TEMPLATE = (
     "/api/v1/internal/alpha/review-console/"
     "local-exchange-projections/{sample_handle}"
@@ -114,15 +114,25 @@ EXPECTED_NULL_FIELDS = (
     "gate_summary",
 )
 
-client = TestClient(app)
+APP_MAIN_IMPORTS = 0
+TEST_CLIENT_CREATIONS = 0
 
 
 def _service() -> Any:
     return importlib.import_module(SERVICE_MODULE)
 
 
-def _route() -> Any:
-    return importlib.import_module(ROUTE_MODULE)
+def _route_client() -> tuple[Any, Any]:
+    global APP_MAIN_IMPORTS, TEST_CLIENT_CREATIONS
+
+    from fastapi.testclient import TestClient
+
+    APP_MAIN_IMPORTS += 1
+    from app.main import app
+
+    client = TestClient(app)
+    TEST_CLIENT_CREATIONS += 1
+    return importlib.import_module(ROUTE_MODULE), client
 
 
 def _enabled_environment() -> dict[str, str]:
@@ -157,6 +167,10 @@ def _registry(service: Any, **entry_overrides: object) -> Mapping[str, Any]:
     return service.build_internal_alpha_local_exchange_sample_registry(
         [_entry(service, **entry_overrides)]
     )
+
+
+def _empty_registry(service: Any) -> Mapping[str, Any]:
+    return service.build_internal_alpha_local_exchange_sample_registry()
 
 
 def _ready_upstream() -> dict[str, Any]:
@@ -291,9 +305,36 @@ def test_constants_default_registry_and_exact_b03_contract_are_frozen() -> None:
     assert service.PROJECTION_FIELDS is PROJECTION_FIELDS
     assert len(PROJECTION_FIELDS) == 52
     assert isinstance(service.DEFAULT_SAMPLE_REGISTRY, MappingProxyType)
-    assert dict(service.DEFAULT_SAMPLE_REGISTRY) == {}
+    assert tuple(service.DEFAULT_SAMPLE_REGISTRY) == (SAFE_HANDLE,)
+    entry = service.DEFAULT_SAMPLE_REGISTRY[SAFE_HANDLE]
+    assert isinstance(
+        entry,
+        service.InternalAlphaLocalExchangeSampleRegistryEntry,
+    )
+    assert tuple(service.InternalAlphaLocalExchangeSampleRegistryEntry.__dataclass_fields__) == (
+        "sample_handle",
+        "result_file_name",
+        "enabled",
+        "route_mode",
+        "capability_label",
+    )
+    assert (
+        entry.sample_handle,
+        entry.result_file_name,
+        entry.enabled,
+        entry.route_mode,
+        entry.capability_label,
+    ) == (
+        SAFE_HANDLE,
+        REAL_RESULT_NAME,
+        True,
+        ROUTE_MODE,
+        CAPABILITY_LABEL,
+    )
     with pytest.raises(TypeError):
         service.DEFAULT_SAMPLE_REGISTRY[SAFE_HANDLE] = object()
+    with pytest.raises(ValueError, match="duplicate_sample_handle"):
+        service.build_internal_alpha_local_exchange_sample_registry([entry, entry])
 
 
 @pytest.mark.parametrize(
@@ -349,7 +390,7 @@ def test_valid_handle_is_accepted_and_malformed_handle_never_looks_up_registry()
     assert calls == {"staging": 0, "projection": 0}
 
 
-def test_registry_is_immutable_rejects_duplicates_and_has_no_real_default_mapping() -> None:
+def test_registry_is_immutable_and_rejects_duplicates() -> None:
     service = _service()
     entry = _entry(service)
     registry = service.build_internal_alpha_local_exchange_sample_registry([entry])
@@ -361,7 +402,6 @@ def test_registry_is_immutable_rejects_duplicates_and_has_no_real_default_mappin
         registry[SAFE_HANDLE] = entry
     with pytest.raises(ValueError, match="duplicate_sample_handle"):
         service.build_internal_alpha_local_exchange_sample_registry([entry, entry])
-    assert SAFE_HANDLE not in SERVICE_PATH.read_text(encoding="utf-8")
     assert SYNTHETIC_RESULT_NAME not in SERVICE_PATH.read_text(encoding="utf-8")
 
 
@@ -369,7 +409,7 @@ def test_registry_is_immutable_rejects_duplicates_and_has_no_real_default_mappin
 def test_unknown_and_disabled_entries_are_indistinguishable(entry_enabled: bool | None) -> None:
     service = _service()
     registry = (
-        service.DEFAULT_SAMPLE_REGISTRY
+        _empty_registry(service)
         if entry_enabled is None
         else _registry(service, enabled=False)
     )
@@ -480,10 +520,11 @@ def test_every_prebuilder_failure_uses_the_existing_b03_disabled_factory(
         recording_factory,
     )
 
+    empty_registry = _empty_registry(service)
     scenarios = [
-        ("invalid/handle", service.DEFAULT_SAMPLE_REGISTRY, _enabled_environment()),
-        (SAFE_HANDLE, service.DEFAULT_SAMPLE_REGISTRY, {}),
-        (SAFE_HANDLE, service.DEFAULT_SAMPLE_REGISTRY, _enabled_environment()),
+        ("invalid/handle", empty_registry, _enabled_environment()),
+        (SAFE_HANDLE, empty_registry, {}),
+        (SAFE_HANDLE, empty_registry, _enabled_environment()),
         (
             SAFE_HANDLE,
             _registry(service),
@@ -555,6 +596,52 @@ def test_synthetic_ready_path_calls_b01_and_b03_once_and_returns_same_direct_obj
     assert calls["config"].adapter_id == "synthetic_local_exchange_adapter"
 
 
+def test_real_default_mapping_uses_exact_basename_with_injected_fake_builders() -> None:
+    service = _service()
+    calls: dict[str, Any] = {
+        "staging": 0,
+        "projection": 0,
+        "result_names": [],
+    }
+    upstream = _ready_upstream()
+    upstream["result_file_name"] = REAL_RESULT_NAME
+    expected_projection = build_local_exchange_review_only_projection(
+        REAL_RESULT_NAME,
+        upstream,
+    )
+
+    def fake_staging(result_file_name: str, config: Any) -> dict[str, Any]:
+        calls["staging"] += 1
+        calls["result_names"].append(result_file_name)
+        assert config.results_dir == "synthetic-results-root"
+        assert config.export_root == "synthetic-export-root"
+        assert config.adapter_id == "synthetic_local_exchange_adapter"
+        return upstream
+
+    def fake_projection(
+        result_file_name: str,
+        received_upstream: dict[str, Any],
+    ) -> dict[str, Any]:
+        calls["projection"] += 1
+        calls["result_names"].append(result_file_name)
+        assert received_upstream is upstream
+        return expected_projection
+
+    payload = service.build_internal_alpha_local_exchange_review_projection(
+        SAFE_HANDLE,
+        environment=_enabled_environment(),
+        staging_builder=fake_staging,
+        projection_builder=fake_projection,
+    )
+
+    assert payload is expected_projection
+    assert calls == {
+        "staging": 1,
+        "projection": 1,
+        "result_names": [REAL_RESULT_NAME, REAL_RESULT_NAME],
+    }
+
+
 def test_direct_b03_response_has_no_envelope_or_f10_persisted_record_fields() -> None:
     service = _service()
     payload = service.build_internal_alpha_local_exchange_review_projection(
@@ -584,7 +671,7 @@ def test_responses_never_expose_server_configuration_or_paths() -> None:
     environment = _enabled_environment()
     payload = service.build_internal_alpha_local_exchange_review_projection(
         SAFE_HANDLE,
-        registry=service.DEFAULT_SAMPLE_REGISTRY,
+        registry=_empty_registry(service),
         environment=environment,
     )
     rendered = repr(payload)
@@ -598,10 +685,16 @@ def test_responses_never_expose_server_configuration_or_paths() -> None:
     assert payload["raw_metadata_exposed"] is False
 
 
+def test_route_runtime_dependencies_remain_lazy_for_selected_service_tests() -> None:
+    assert APP_MAIN_IMPORTS == 0
+    assert TEST_CLIENT_CREATIONS == 0
+    assert "app.main" not in sys.modules
+
+
 def test_route_is_one_path_parameter_get_only_and_preserves_http_200_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    route = _route()
+    route, client = _route_client()
     signature = inspect.signature(
         route.get_internal_alpha_local_exchange_review_projection
     )
@@ -618,7 +711,7 @@ def test_route_is_one_path_parameter_get_only_and_preserves_http_200_fail_closed
 def test_route_returns_ready_projection_directly_with_http_200(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    route = _route()
+    route, client = _route_client()
     ready = build_local_exchange_review_only_projection(
         SYNTHETIC_RESULT_NAME,
         _ready_upstream(),

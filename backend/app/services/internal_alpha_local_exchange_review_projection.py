@@ -86,9 +86,6 @@ def build_internal_alpha_local_exchange_sample_registry(
     return MappingProxyType(registry)
 
 
-DEFAULT_SAMPLE_REGISTRY: Final = build_internal_alpha_local_exchange_sample_registry()
-
-
 def build_internal_alpha_local_exchange_review_projection(
     sample_handle: object,
     *,
@@ -185,3 +182,16 @@ def _is_bounded_label(value: object) -> bool:
         and 0 < len(value) <= 160
         and value.isprintable()
     )
+
+
+DEFAULT_SAMPLE_REGISTRY: Final = build_internal_alpha_local_exchange_sample_registry(
+    (
+        InternalAlphaLocalExchangeSampleRegistryEntry(
+            sample_handle="helldivers2-psn-demo",
+            result_file_name="provider_result_helldivers2-psn-demo_20260614_055754.json",
+            enabled=True,
+            route_mode=ROUTE_MODE,
+            capability_label=CAPABILITY_LABEL,
+        ),
+    )
+)
