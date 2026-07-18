@@ -1,53 +1,62 @@
 {
-  "schema": "sentigraph_cib_env_r2_r2_fixed_package_manifest_v0_1",
-  "version": "0.1",
-  "milestone": "MVP-B05-CIB-ENV-R2-R2-P1",
-  "starting_commit": "fd4624d753f3edeca694ae80d29014ed893cf947",
+  "schema": "sentigraph_cib_env_r2_r2_fixed_package_manifest_v0_2",
+  "version": "0.2",
+  "milestone": "MVP-B05-CIB-ENV-R2-R2-P1A",
+  "starting_commit": "ddde6d6266e460c43d452582e70b15090bcf9824",
   "baseline_v1_9_document_blob": "c32e5d8574d57cb6112b2e0b50144baeb6a23cc3",
-  "approval_sha256": "2a428aa4efe36e1c86231c6f796c22fe27945db38322e86dd625dd90b041b39d",
+  "approval_sha256": "4e43a4f9d01e19f319642cce94681ebcce68ce44ea04576bec2619f9bf1ef325",
+  "preserved_p1_commit": "ddde6d6266e460c43d452582e70b15090bcf9824",
   "encoding": "UTF-8",
   "bom": false,
   "line_endings": "LF",
   "file_count": 5,
+  "previous_file_sha256": {
+    "tools/governance/sentigraph_cib_env_r2_r2_p1/fixed_helper_v0_1.py.txt": "73a067c2a6dfef3de6a206f121300cfa128e611d3d4386dceb2ada477cc8ed5f",
+    "tools/governance/sentigraph_cib_env_r2_r2_p1/static_auditor_v0_1.py": "ee855827f3885d89896965c843988adf0d475c2c3cac183182f4260848bfae1a",
+    "tools/governance/sentigraph_cib_env_r2_r2_p1/auditor_self_test_fixtures_v0_1.json": "8324157052fe09a5daf02260b505f9cc7b72ccc268ff58233866a2f0433ea8c4",
+    "tools/governance/sentigraph_cib_env_r2_r2_p1/fixed_package_manifest_v0_1.json": "919f068ab34e1eec14f3037ea6a18051a9f1e32ba415b07cd3fe1ed7945ac70c",
+    "docs/health/sentigraph_mvp_b05_cib_env_r2_r2_p1_fixed_package_report_v1_0.md": "e05864f9dc65c35b4b758a2adde1409196a716eb7771f04067a18cf258365615"
+  },
   "files": [
     {
       "path": "tools/governance/sentigraph_cib_env_r2_r2_p1/fixed_helper_v0_1.py.txt",
-      "role": "future_p2_fixed_helper_text_not_executable_in_p1",
-      "sha256": "73a067c2a6dfef3de6a206f121300cfa128e611d3d4386dceb2ada477cc8ed5f",
-      "bytes": 11872
+      "role": "future_p2_broadcast_hardened_fixed_helper_text_not_executable_in_p1a",
+      "sha256": "4ed37dc12515569f2b774717358106d46cc5d6e9a0f28df05857b3c2d2e996e8",
+      "bytes": 13787
     },
     {
       "path": "tools/governance/sentigraph_cib_env_r2_r2_p1/static_auditor_v0_1.py",
-      "role": "p1_static_auditor",
-      "sha256": "ee855827f3885d89896965c843988adf0d475c2c3cac183182f4260848bfae1a",
-      "bytes": 13469
+      "role": "p1a_broadcast_semantics_static_auditor",
+      "sha256": "5a6290e8abcc73bd082c852dcf7d25a6ffdc0d7fbd4fcd06538a1f43909b43e0",
+      "bytes": 26547
     },
     {
       "path": "tools/governance/sentigraph_cib_env_r2_r2_p1/auditor_self_test_fixtures_v0_1.json",
-      "role": "p1_positive_and_negative_self_test_fixtures",
-      "sha256": "8324157052fe09a5daf02260b505f9cc7b72ccc268ff58233866a2f0433ea8c4",
-      "bytes": 4588
-    },
-    {
-      "path": "docs/health/sentigraph_mvp_b05_cib_env_r2_r2_p1_fixed_package_report_v1_0.md",
-      "role": "p1_static_validation_report",
-      "sha256": "e05864f9dc65c35b4b758a2adde1409196a716eb7771f04067a18cf258365615",
-      "bytes": 5545
+      "role": "p1a_existing_plus_broadcast_positive_and_negative_self_test_fixtures",
+      "sha256": "1e2a6682f2f68291d3a4b5ffc0019f43c72f44160ca4cf89dc59c7ee0c4af884",
+      "bytes": 32473
     },
     {
       "path": "tools/governance/sentigraph_cib_env_r2_r2_p1/fixed_package_manifest_v0_1.json",
       "role": "package_manifest_sha256_bound_externally_in_final_codex_prompt",
       "sha256": null,
       "bytes": null
+    },
+    {
+      "path": "docs/health/sentigraph_mvp_b05_cib_env_r2_r2_p1_fixed_package_report_v1_0.md",
+      "role": "p1a_static_hardening_report_sha256_bound_externally_in_final_codex_prompt",
+      "sha256": null,
+      "bytes": null
     }
   ],
-  "p1_execution_contract": {
+  "p1a_execution_contract": {
     "auditor_self_test_invocations": 1,
     "fixed_helper_static_audit_invocations": 1,
     "auditor_retries": 0,
     "fixed_helper_imports": 0,
     "fixed_helper_compiles": 0,
     "fixed_helper_executions": 0,
+    "broadcast_executions": 0,
     "protected_accesses": 0
   },
   "success_status": "candidate_completed_pending_independent_ChatGPT_acceptance",
