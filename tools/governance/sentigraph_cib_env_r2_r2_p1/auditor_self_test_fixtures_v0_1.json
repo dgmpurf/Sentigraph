@@ -1,0 +1,103 @@
+{
+  "schema": "sentigraph_cib_env_r2_r2_auditor_self_test_fixtures_v0_1",
+  "version": "0.1",
+  "case_count": 16,
+  "cases": [
+    {
+      "name": "stdout_positive_multiple_allowlisted_constants",
+      "category": "stdout",
+      "expected": true,
+      "source": "OUTPUT_A = \"A=PASS\"\nOUTPUT_B = \"B=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A, OUTPUT_B)\nprint(OUTPUT_A)\nprint(OUTPUT_B)\n"
+    },
+    {
+      "name": "stdout_negative_fstring",
+      "category": "stdout",
+      "expected": false,
+      "source": "OUTPUT_A = \"A=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A,)\nvalue = \"x\"\nprint(f\"A={value}\")\n"
+    },
+    {
+      "name": "stdout_negative_runtime_concatenation",
+      "category": "stdout",
+      "expected": false,
+      "source": "OUTPUT_A = \"A=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A,)\nruntime_value = \"x\"\nprint(\"A=\" + runtime_value)\n"
+    },
+    {
+      "name": "stdout_negative_runtime_formatting",
+      "category": "stdout",
+      "expected": false,
+      "source": "OUTPUT_A = \"A=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A,)\nruntime_value = \"x\"\nprint(\"A={}\".format(runtime_value))\n"
+    },
+    {
+      "name": "stdout_negative_exception_text",
+      "category": "stdout",
+      "expected": false,
+      "source": "OUTPUT_A = \"A=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A,)\ntry:\n    raise RuntimeError()\nexcept RuntimeError as exc:\n    print(str(exc))\n"
+    },
+    {
+      "name": "stdout_negative_path",
+      "category": "stdout",
+      "expected": false,
+      "source": "OUTPUT_A = \"A=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A,)\npath = \"C:/private\"\nprint(path)\n"
+    },
+    {
+      "name": "stdout_negative_value",
+      "category": "stdout",
+      "expected": false,
+      "source": "OUTPUT_A = \"A=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A,)\nvalue = \"secret\"\nprint(value)\n"
+    },
+    {
+      "name": "stdout_negative_id",
+      "category": "stdout",
+      "expected": false,
+      "source": "OUTPUT_A = \"A=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A,)\nrecord_id = \"id-1\"\nprint(record_id)\n"
+    },
+    {
+      "name": "stdout_negative_count",
+      "category": "stdout",
+      "expected": false,
+      "source": "OUTPUT_A = \"A=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A,)\ncount = 2\nprint(count)\n"
+    },
+    {
+      "name": "stdout_negative_registry_content",
+      "category": "stdout",
+      "expected": false,
+      "source": "OUTPUT_A = \"A=PASS\"\nAPPROVED_STDOUT = (OUTPUT_A,)\nregistry_content = \"x\"\nprint(registry_content)\n"
+    },
+    {
+      "name": "reparse_positive_direct_attribute",
+      "category": "reparse",
+      "expected": true,
+      "source": "import stat\nfor entry in entries:\n    file_stat = entry.stat(follow_symlinks=False)\n    if file_stat.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:\n        continue\n    visit(entry)\n"
+    },
+    {
+      "name": "reparse_positive_safe_getattr",
+      "category": "reparse",
+      "expected": true,
+      "source": "import stat\nfor entry in entries:\n    file_stat = entry.stat(follow_symlinks=False)\n    if getattr(file_stat, \"st_file_attributes\", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:\n        continue\n    visit(entry)\n"
+    },
+    {
+      "name": "reparse_negative_missing_bitmask",
+      "category": "reparse",
+      "expected": false,
+      "source": "for entry in entries:\n    file_stat = entry.stat(follow_symlinks=False)\n    if getattr(file_stat, \"st_file_attributes\", 0):\n        continue\n    visit(entry)\n"
+    },
+    {
+      "name": "reparse_negative_missing_skip",
+      "category": "reparse",
+      "expected": false,
+      "source": "import stat\nfor entry in entries:\n    file_stat = entry.stat(follow_symlinks=False)\n    if getattr(file_stat, \"st_file_attributes\", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:\n        mark(entry)\n    visit(entry)\n"
+    },
+    {
+      "name": "reparse_negative_detection_followed_by_descent",
+      "category": "reparse",
+      "expected": false,
+      "source": "import stat\nfor entry in entries:\n    file_stat = entry.stat(follow_symlinks=False)\n    if getattr(file_stat, \"st_file_attributes\", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:\n        walk(entry)\n    visit(entry)\n"
+    },
+    {
+      "name": "reparse_negative_normalization_fallback",
+      "category": "reparse",
+      "expected": false,
+      "source": "import os\nimport stat\nfor entry in entries:\n    normalized = os.path.normcase(entry.path)\n    file_stat = entry.stat(follow_symlinks=False)\n    if getattr(file_stat, \"st_file_attributes\", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:\n        continue\n    visit(normalized)\n"
+    }
+  ]
+}
