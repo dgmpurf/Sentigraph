@@ -188,7 +188,7 @@ DEFAULT_SAMPLE_REGISTRY: Final = build_internal_alpha_local_exchange_sample_regi
     (
         InternalAlphaLocalExchangeSampleRegistryEntry(
             sample_handle="helldivers2-psn-demo",
-            result_file_name="provider_result_helldivers2-psn-demo_20260614_055754.json",
+            result_file_name="provider_result_helldivers2-psn-demo_20260720_123627.json",
             enabled=True,
             route_mode=ROUTE_MODE,
             capability_label=CAPABILITY_LABEL,

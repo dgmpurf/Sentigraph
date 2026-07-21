@@ -30,7 +30,8 @@ SERVICE_MODULE = "app.services.internal_alpha_local_exchange_review_projection"
 ROUTE_MODULE = "app.api.v1.routes.internal_alpha_review_console"
 SAFE_HANDLE = "helldivers2-psn-demo"
 SYNTHETIC_RESULT_NAME = "synthetic-result.json"
-REAL_RESULT_NAME = "provider_result_helldivers2-psn-demo_20260614_055754.json"
+HISTORICAL_RESULT_NAME = "provider_result_helldivers2-psn-demo_20260614_055754.json"
+REAL_RESULT_NAME = "provider_result_helldivers2-psn-demo_20260720_123627.json"
 ROUTE_PATH_TEMPLATE = (
     "/api/v1/internal/alpha/review-console/"
     "local-exchange-projections/{sample_handle}"
@@ -303,6 +304,9 @@ def test_constants_default_registry_and_exact_b03_contract_are_frozen() -> None:
     )
     assert service.PROJECTION_FIELDS is PROJECTION_FIELDS
     assert len(PROJECTION_FIELDS) == 52
+    service_source = SERVICE_PATH.read_text(encoding="utf-8")
+    assert service_source.count(REAL_RESULT_NAME) == 1
+    assert HISTORICAL_RESULT_NAME not in service_source
     assert isinstance(service.DEFAULT_SAMPLE_REGISTRY, MappingProxyType)
     assert tuple(service.DEFAULT_SAMPLE_REGISTRY) == (SAFE_HANDLE,)
     entry = service.DEFAULT_SAMPLE_REGISTRY[SAFE_HANDLE]
