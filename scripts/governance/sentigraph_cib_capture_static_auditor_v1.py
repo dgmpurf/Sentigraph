@@ -742,6 +742,343 @@ def _check_forbidden_operations(
     return len(bindings) == 3 and all(count == 2 for count in load_counts.values())
 
 
+def _dataflow_name_nodes(
+    tree: ast.AST, name: str, context_type: type[ast.expr_context]
+) -> list[ast.Name]:
+    """Collect exact Name occurrences for one identifier and AST context."""
+
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name)
+        and node.id == name
+        and isinstance(node.ctx, context_type)
+    ]
+
+
+def _dataflow_direct_assignment(tree: ast.AST, name: str) -> ast.Assign | None:
+    """Return the sole ordinary direct assignment to a simple name."""
+
+    assignments = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == name
+    ]
+    if len(assignments) != 1:
+        return None
+    return assignments[0]
+
+
+def _dataflow_has_alternate_target(
+    tree: ast.AST, name: str, allowed_assignment: ast.Assign
+) -> bool:
+    """Reject alternate, destructuring, annotated, augmented, or named targets."""
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            if node is allowed_assignment:
+                continue
+            if any(
+                isinstance(candidate, ast.Name)
+                and candidate.id == name
+                and isinstance(candidate.ctx, ast.Store)
+                for target in node.targets
+                for candidate in ast.walk(target)
+            ):
+                return True
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+            target = node.target
+            if any(
+                isinstance(candidate, ast.Name) and candidate.id == name
+                for candidate in ast.walk(target)
+            ):
+                return True
+    return any(
+        isinstance(node, ast.Name)
+        and node.id == name
+        and isinstance(node.ctx, ast.Del)
+        for node in ast.walk(tree)
+    )
+
+
+def _dataflow_dict_field(
+    tree: ast.AST, object_name: str, field_name: str
+) -> ast.expr | None:
+    """Return a field value from the sole direct dict-literal assignment."""
+
+    assignment = _dataflow_direct_assignment(tree, object_name)
+    if assignment is None or not isinstance(assignment.value, ast.Dict):
+        return None
+    matches: list[ast.expr] = []
+    for key, value in zip(assignment.value.keys, assignment.value.values):
+        if (
+            isinstance(key, ast.Constant)
+            and isinstance(key.value, str)
+            and key.value == field_name
+        ):
+            matches.append(value)
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _dataflow_compact_json_object_load(
+    tree: ast.AST, object_name: str, bytes_name: str
+) -> ast.Name | None:
+    """Prove the exact compact JSON-to-UTF-8 assignment and return its object Load."""
+
+    assignment = _dataflow_direct_assignment(tree, bytes_name)
+    if assignment is None or not isinstance(assignment.value, ast.Call):
+        return None
+    encode_call = assignment.value
+    if not (
+        isinstance(encode_call.func, ast.Attribute)
+        and encode_call.func.attr == "encode"
+        and len(encode_call.args) == 1
+        and isinstance(encode_call.args[0], ast.Constant)
+        and encode_call.args[0].value == "utf-8"
+        and not encode_call.keywords
+        and isinstance(encode_call.func.value, ast.Call)
+    ):
+        return None
+    dumps_call = encode_call.func.value
+    if not (
+        _call_name(dumps_call.func) == "json.dumps"
+        and len(dumps_call.args) == 1
+        and isinstance(dumps_call.args[0], ast.Name)
+        and dumps_call.args[0].id == object_name
+        and isinstance(dumps_call.args[0].ctx, ast.Load)
+        and len(dumps_call.keywords) == 3
+    ):
+        return None
+    keywords = {keyword.arg: keyword.value for keyword in dumps_call.keywords}
+    if set(keywords) != {"ensure_ascii", "separators", "sort_keys"}:
+        return None
+    separators = keywords["separators"]
+    if not (
+        isinstance(keywords["ensure_ascii"], ast.Constant)
+        and keywords["ensure_ascii"].value is False
+        and isinstance(separators, ast.Tuple)
+        and len(separators.elts) == 2
+        and all(isinstance(element, ast.Constant) for element in separators.elts)
+        and [element.value for element in separators.elts] == [",", ":"]
+        and isinstance(keywords["sort_keys"], ast.Constant)
+        and keywords["sort_keys"].value is False
+    ):
+        return None
+    return dumps_call.args[0]
+
+
+def _dataflow_object_is_immutable_single_use(
+    tree: ast.AST, object_name: str, bytes_name: str
+) -> bool:
+    """Require one dict Store and one exact serialization Load with no mutation."""
+
+    assignment = _dataflow_direct_assignment(tree, object_name)
+    serialization_load = _dataflow_compact_json_object_load(
+        tree, object_name, bytes_name
+    )
+    stores = _dataflow_name_nodes(tree, object_name, ast.Store)
+    loads = _dataflow_name_nodes(tree, object_name, ast.Load)
+    return bool(
+        assignment is not None
+        and isinstance(assignment.value, ast.Dict)
+        and not _dataflow_has_alternate_target(tree, object_name, assignment)
+        and len(stores) == 1
+        and stores[0] is assignment.targets[0]
+        and len(loads) == 1
+        and serialization_load is not None
+        and loads[0] is serialization_load
+    )
+
+
+_transport_check_one_salt = _check_one_salt
+_transport_check_one_combined_hash = _check_one_combined_hash
+_transport_check_current_constants = _check_current_constants
+
+
+def _check_one_salt(tree: ast.AST) -> bool:
+    """Prove salt generation, salt.hex(), and both salt_hex consumers by identity."""
+
+    if not _transport_check_one_salt(tree):
+        return False
+    token_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _call_name(node.func) == "secrets.token_bytes"
+    ]
+    if not (
+        len(token_calls) == 1
+        and len(token_calls[0].args) == 1
+        and isinstance(token_calls[0].args[0], ast.Constant)
+        and token_calls[0].args[0].value == 32
+        and not token_calls[0].keywords
+    ):
+        return False
+    salt_assignment = _dataflow_direct_assignment(tree, "salt")
+    if not (
+        salt_assignment is not None
+        and salt_assignment.value is token_calls[0]
+        and not _dataflow_has_alternate_target(tree, "salt", salt_assignment)
+    ):
+        return False
+    salt_stores = _dataflow_name_nodes(tree, "salt", ast.Store)
+    salt_loads = _dataflow_name_nodes(tree, "salt", ast.Load)
+    if not (
+        len(salt_stores) == 1
+        and salt_stores[0] is salt_assignment.targets[0]
+        and len(salt_loads) == 1
+    ):
+        return False
+    hex_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "hex"
+    ]
+    if not (
+        len(hex_calls) == 1
+        and not hex_calls[0].args
+        and not hex_calls[0].keywords
+        and isinstance(hex_calls[0].func.value, ast.Name)
+        and hex_calls[0].func.value.id == "salt"
+        and isinstance(hex_calls[0].func.value.ctx, ast.Load)
+        and salt_loads[0] is hex_calls[0].func.value
+    ):
+        return False
+    salt_hex_assignment = _dataflow_direct_assignment(tree, "salt_hex")
+    if not (
+        salt_hex_assignment is not None
+        and salt_hex_assignment.value is hex_calls[0]
+        and not _dataflow_has_alternate_target(
+            tree, "salt_hex", salt_hex_assignment
+        )
+    ):
+        return False
+    salt_hex_stores = _dataflow_name_nodes(tree, "salt_hex", ast.Store)
+    salt_hex_loads = _dataflow_name_nodes(tree, "salt_hex", ast.Load)
+    canonical_value = _dataflow_dict_field(tree, "canonical_object", "salt_hex")
+    receipt_value = _dataflow_dict_field(tree, "safe_receipt", "salt_hex")
+    if not (
+        len(salt_hex_stores) == 1
+        and salt_hex_stores[0] is salt_hex_assignment.targets[0]
+        and len(salt_hex_loads) == 2
+        and isinstance(canonical_value, ast.Name)
+        and canonical_value.id == "salt_hex"
+        and isinstance(canonical_value.ctx, ast.Load)
+        and isinstance(receipt_value, ast.Name)
+        and receipt_value.id == "salt_hex"
+        and isinstance(receipt_value.ctx, ast.Load)
+    ):
+        return False
+    return all(
+        node is canonical_value or node is receipt_value for node in salt_hex_loads
+    ) and canonical_value is not receipt_value
+
+
+def _check_one_combined_hash(
+    tree: ast.AST, parent_map: dict[ast.AST, ast.AST]
+) -> bool:
+    """Prove canonical-byte hashing and receipt digest use by AST identity."""
+
+    if not _transport_check_one_combined_hash(tree, parent_map):
+        return False
+    sha_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _call_name(node.func) == "hashlib.sha256"
+    ]
+    if not (
+        len(sha_calls) == 1
+        and len(sha_calls[0].args) == 1
+        and isinstance(sha_calls[0].args[0], ast.Name)
+        and sha_calls[0].args[0].id == "canonical_bytes"
+        and isinstance(sha_calls[0].args[0].ctx, ast.Load)
+        and not sha_calls[0].keywords
+    ):
+        return False
+    digest_attribute = parent_map.get(sha_calls[0])
+    digest_call = parent_map.get(digest_attribute)
+    if not (
+        isinstance(digest_attribute, ast.Attribute)
+        and digest_attribute.value is sha_calls[0]
+        and digest_attribute.attr == "hexdigest"
+        and isinstance(digest_call, ast.Call)
+        and digest_call.func is digest_attribute
+        and not digest_call.args
+        and not digest_call.keywords
+    ):
+        return False
+    combined_assignment = _dataflow_direct_assignment(
+        tree, "combined_binding_sha256"
+    )
+    if not (
+        combined_assignment is not None
+        and combined_assignment.value is digest_call
+        and not _dataflow_has_alternate_target(
+            tree, "combined_binding_sha256", combined_assignment
+        )
+    ):
+        return False
+    combined_stores = _dataflow_name_nodes(
+        tree, "combined_binding_sha256", ast.Store
+    )
+    combined_loads = _dataflow_name_nodes(
+        tree, "combined_binding_sha256", ast.Load
+    )
+    receipt_value = _dataflow_dict_field(
+        tree, "safe_receipt", "combined_binding_sha256"
+    )
+    if not (
+        len(combined_stores) == 1
+        and combined_stores[0] is combined_assignment.targets[0]
+        and len(combined_loads) == 1
+        and isinstance(receipt_value, ast.Name)
+        and receipt_value.id == "combined_binding_sha256"
+        and isinstance(receipt_value.ctx, ast.Load)
+        and combined_loads[0] is receipt_value
+    ):
+        return False
+    canonical_assignment = _dataflow_direct_assignment(tree, "canonical_bytes")
+    canonical_stores = _dataflow_name_nodes(tree, "canonical_bytes", ast.Store)
+    canonical_loads = _dataflow_name_nodes(tree, "canonical_bytes", ast.Load)
+    canonical_object_load = _dataflow_compact_json_object_load(
+        tree, "canonical_object", "canonical_bytes"
+    )
+    return bool(
+        canonical_assignment is not None
+        and canonical_object_load is not None
+        and not _dataflow_has_alternate_target(
+            tree, "canonical_bytes", canonical_assignment
+        )
+        and len(canonical_stores) == 1
+        and canonical_stores[0] is canonical_assignment.targets[0]
+        and len(canonical_loads) == 1
+        and canonical_loads[0] is sha_calls[0].args[0]
+    )
+
+
+def _check_current_constants(
+    tree: ast.AST, parent_map: dict[ast.AST, ast.AST]
+) -> bool:
+    """Retain constants while enforcing immutable single-use binding objects."""
+
+    return bool(
+        _transport_check_current_constants(tree, parent_map)
+        and _dataflow_object_is_immutable_single_use(
+            tree, "canonical_object", "canonical_bytes"
+        )
+        and _dataflow_object_is_immutable_single_use(
+            tree, "safe_receipt", "receipt_bytes"
+        )
+    )
+
+
 def _evaluate_checks(text: str, tree: ast.AST) -> dict[str, bool]:
     parent_map = _parents(tree)
     check_functions: dict[str, Callable[[], bool]] = {
@@ -1003,8 +1340,24 @@ def _self_test_fixtures() -> list[tuple[str, str | None]]:
             _replace_once(valid, lookup_block, lookup_block + "\n    supplied_input = sys.stdin.read()"),
             "FORBIDDEN_OPERATION_SCAN",
         ),
+        (
+            _replace_once(
+                valid,
+                "    salt = secrets.token_bytes(32)\n    salt_hex = salt.hex()",
+                '    unused_salt = secrets.token_bytes(32)\n    salt_hex = "0" * 64',
+            ),
+            "EXACT_ONE_SALT_GENERATION",
+        ),
+        (
+            _replace_once(
+                valid,
+                "    combined_binding_sha256 = hashlib.sha256(canonical_bytes).hexdigest()",
+                '    unused_hash = hashlib.sha256(canonical_bytes).hexdigest()\n    combined_binding_sha256 = "0" * 64',
+            ),
+            "EXACT_ONE_COMBINED_SHA256",
+        ),
     ]
-    _require(len(fixtures) == 14)
+    _require(len(fixtures) == 16)
     return fixtures
 
 
@@ -1013,10 +1366,10 @@ def _emit_self_test_result(passed_count: int) -> None:
         "schema": "sentigraph_cib_capture_static_auditor_self_test_result_v0_1",
         "version": VERSION,
         "mode": "self_test",
-        "fixture_count": 14,
+        "fixture_count": 16,
         "passed_count": passed_count,
-        "failed_count": 14 - passed_count,
-        "status": "pass" if passed_count == 14 else "fail",
+        "failed_count": 16 - passed_count,
+        "status": "pass" if passed_count == 16 else "fail",
         "environment_accessed": False,
         "runner_executed": False,
     }
@@ -1040,7 +1393,7 @@ def _run_self_test() -> int:
     except Exception:
         passed_count = 0
     _emit_self_test_result(passed_count)
-    return 0 if passed_count == 14 else 1
+    return 0 if passed_count == 16 else 1
 
 
 def _emit_audit_result(
