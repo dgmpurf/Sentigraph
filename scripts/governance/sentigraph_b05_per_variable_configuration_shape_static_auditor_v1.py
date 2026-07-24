@@ -128,6 +128,7 @@ FIXTURE_SPECS = (
     ),
     ("file_open_added", "NO_FILE_NETWORK_SUBPROCESS_DATABASE_DYNAMIC_ACTIONS"),
     ("main_guard_removed", "MAIN_GUARD_EXACTLY_ONCE"),
+    ("extra_top_level_main_call", "TOP_LEVEL_SURFACE_EXACT"),
 )
 
 VALID_PUBLIC_RUNNER = r'''from __future__ import annotations
@@ -934,43 +935,47 @@ def _main_guard_exactly_once(tree):
     )
 
 
-def _is_direct_main_call_statement(node):
-    return (
-        isinstance(node, ast.Expr)
-        and isinstance(node.value, ast.Call)
-        and isinstance(node.value.func, ast.Name)
-        and node.value.func.id == "main"
-        and not node.value.args
-        and not node.value.keywords
-    )
-
-
 def _top_level_surface_exact(tree):
-    assignment_names = []
-    for node in tree.body:
-        if isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef)):
-            continue
-        if isinstance(node, ast.If) and _node_matches_expression(
-            node.test, '__name__ == "__main__"'
-        ):
-            continue
-        if _is_direct_main_call_statement(node):
-            continue
-        if (
-            isinstance(node, ast.Assign)
-            and len(node.targets) == 1
-            and isinstance(node.targets[0], ast.Name)
-        ):
-            assignment_names.append(node.targets[0].id)
-            continue
-        return False
-    return tuple(assignment_names) == (
+    expected_assignments = (
         "RUNNER_SCHEMA",
         "RESULT_SCHEMA",
         "VERSION",
         "VARIABLE_NAMES",
         "SHAPE_LABELS",
         "ADAPTER_PATTERN",
+    )
+    nodes = tree.body
+    index = 0
+
+    while index < len(nodes) and isinstance(nodes[index], (ast.Import, ast.ImportFrom)):
+        index += 1
+
+    assignment_names = []
+    while index < len(nodes) and isinstance(nodes[index], ast.Assign):
+        node = nodes[index]
+        if (
+            len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            assignment_names.append(node.targets[0].id)
+        else:
+            return False
+        index += 1
+
+    if tuple(assignment_names) != expected_assignments:
+        return False
+
+    while index < len(nodes) and isinstance(nodes[index], ast.FunctionDef):
+        index += 1
+
+    if index == len(nodes):
+        return True
+
+    guard = nodes[index]
+    return (
+        index == len(nodes) - 1
+        and isinstance(guard, ast.If)
+        and _node_matches_expression(guard.test, '__name__ == "__main__"')
     )
 
 
@@ -2022,7 +2027,18 @@ def _negative_source_rc1(name):
             '''if __name__ == "__main__":
     main()
 ''',
+            "",
+        )
+    if name == "extra_top_level_main_call":
+        return _replace_first(
+            source,
+            '''if __name__ == "__main__":
+    main()
+''',
             '''main()
+
+if __name__ == "__main__":
+    main()
 ''',
         )
     return None
@@ -2085,9 +2101,9 @@ def _execute_matrix(external_runner_bytes, qualification):
         and valid_audit["status"] == "pass"
         and external_audit["status"] == "pass"
         and embedded_external_equal
-        and len(FIXTURE_SPECS) == 30
-        and negative_rejected == 30
-        and exact_single_failure_matches == 30
+        and len(FIXTURE_SPECS) == 31
+        and negative_rejected == 31
+        and exact_single_failure_matches == 31
         and parse_failures == 0
     )
     if valid_audit["status"] != "pass":
