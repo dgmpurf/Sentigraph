@@ -9,6 +9,7 @@ from app.schemas.external_collector_bridge import (
     ExternalCollectorValidationResult,
 )
 from app.services.external_collector_bridge import (
+    ExternalCollectorBridgeLookupError,
     get_external_collector_package_detail,
     get_external_collector_status,
     list_external_collector_packages,
@@ -28,21 +29,17 @@ def external_collector_packages() -> list[ExternalCollectorPackageSummary]:
     return list_external_collector_packages()
 
 
-@router.get("/packages/{package_name}", response_model=ExternalCollectorPackageDetail)
+@router.get("/packages/{package_name:path}", response_model=ExternalCollectorPackageDetail)
 def external_collector_package_detail(package_name: str) -> ExternalCollectorPackageDetail:
     try:
         return get_external_collector_package_detail(package_name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExternalCollectorBridgeLookupError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.status) from exc
 
 
-@router.post("/packages/{package_name}/validate", response_model=ExternalCollectorValidationResult)
+@router.post("/packages/{package_name:path}/validate", response_model=ExternalCollectorValidationResult)
 def external_collector_package_validate(package_name: str) -> ExternalCollectorValidationResult:
     try:
         return validate_external_collector_package(package_name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExternalCollectorBridgeLookupError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.status) from exc

@@ -56,6 +56,23 @@ const BOUNDARY_TAGS = [
   'not causal proof',
 ]
 
+const SAFE_BRIDGE_ERROR_LABEL = {
+  blocked_path_escape: 'Package path was rejected by containment policy.',
+  external_collector_invalid_package_name: 'Package name is invalid.',
+  external_collector_bridge_not_configured: 'External Collector bridge is not configured.',
+  external_collector_configured_root_missing: 'Configured External Collector root is unavailable.',
+  external_collector_package_not_found: 'Package was not found inside the configured root.',
+  external_collector_internal_failure: 'External Collector bridge could not complete the bounded lookup.',
+}
+
+function safeBridgeErrorMessage(requestError, fallback) {
+  const detail = requestError?.response?.data?.detail
+  if (typeof detail === 'string' && SAFE_BRIDGE_ERROR_LABEL[detail]) {
+    return SAFE_BRIDGE_ERROR_LABEL[detail]
+  }
+  return requestError?.message || fallback
+}
+
 function statusTag(status) {
   return <Tag color={STATUS_COLOR[status] || 'default'}>{status || 'unknown'}</Tag>
 }
@@ -101,7 +118,7 @@ export function ExternalCollectorBridge() {
         setPackages([])
       }
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to load external collector bridge status.')
+      setError(safeBridgeErrorMessage(requestError, 'Unable to load external collector bridge status.'))
       setPackages([])
     } finally {
       setLoading(false)
@@ -121,7 +138,7 @@ export function ExternalCollectorBridge() {
     try {
       setDetail(await getExternalCollectorPackage(packageName))
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to load package detail.')
+      setError(safeBridgeErrorMessage(requestError, 'Unable to load package detail.'))
     } finally {
       setDetailLoading(false)
     }
@@ -135,7 +152,7 @@ export function ExternalCollectorBridge() {
     try {
       setValidation(await validateExternalCollectorPackage(packageName))
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to validate package locally.')
+      setError(safeBridgeErrorMessage(requestError, 'Unable to validate package locally.'))
     } finally {
       setValidating(false)
     }

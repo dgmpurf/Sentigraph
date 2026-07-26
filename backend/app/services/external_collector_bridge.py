@@ -18,6 +18,8 @@ from app.schemas.external_collector_bridge import (
 EXPORTS_ENV_VAR = "SENTIGRAPH_EXTERNAL_COLLECTOR_EXPORTS_DIR"
 SUGGESTED_LOCAL_PATH = r"G:\AICODING\网页端任务二\exports\sentigraph-evidence-v1"
 PACKAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+WINDOWS_DRIVE_PATTERN = re.compile(r"^[A-Za-z]:")
+DOT_ONLY_SEGMENT_PATTERN = re.compile(r"^\.+$")
 PACKAGE_INDEX_FILE = "package_index.json"
 PACKAGE_ROLE_PRIORITY = {
     "recommended_demo_sample": 0,
@@ -64,6 +66,15 @@ COVERAGE_PHRASES = [
     "not official verification",
     "not causal proof",
 ]
+
+
+class ExternalCollectorBridgeLookupError(Exception):
+    """Bounded package-lookup failure safe for API status mapping."""
+
+    def __init__(self, status: str, http_status: int) -> None:
+        super().__init__(status)
+        self.status = status
+        self.http_status = http_status
 
 
 def get_external_collector_status() -> ExternalCollectorStatus:
@@ -223,8 +234,16 @@ def _configured_exports_dir() -> Path | None:
 
 def _direct_package_dirs(exports_dir: Path) -> list[Path]:
     try:
-        return sorted([child for child in exports_dir.iterdir() if child.is_dir()], key=lambda item: item.name.lower())
-    except OSError:
+        base_dir = exports_dir.resolve(strict=False)
+        contained_dirs: list[Path] = []
+        for child in base_dir.iterdir():
+            resolved_child = child.resolve(strict=False)
+            if not _is_canonical_direct_child(resolved_child, base_dir):
+                continue
+            if resolved_child.is_dir():
+                contained_dirs.append(resolved_child)
+        return sorted(contained_dirs, key=lambda item: item.name.lower())
+    except (OSError, RuntimeError):
         return []
 
 
@@ -277,18 +296,54 @@ def _index_package_name(item: dict[str, Any]) -> str:
 
 
 def _resolve_package_dir(package_name: str) -> Path:
-    if not PACKAGE_NAME_PATTERN.fullmatch(package_name) or package_name in {".", ".."}:
-        raise ValueError("Invalid package name.")
-    exports_dir = _configured_exports_dir()
-    if not exports_dir:
-        raise FileNotFoundError("External collector exports directory is not configured.")
-    base_dir = exports_dir.resolve()
-    package_dir = (base_dir / package_name).resolve()
-    if package_dir.parent != base_dir:
-        raise ValueError("Package path must stay inside the configured exports directory.")
-    if not package_dir.exists() or not package_dir.is_dir():
-        raise FileNotFoundError("Package folder does not exist.")
-    return package_dir
+    rejection_status = _package_name_rejection_status(package_name)
+    if rejection_status is not None:
+        raise ExternalCollectorBridgeLookupError(rejection_status, 400)
+
+    try:
+        exports_dir = _configured_exports_dir()
+        if exports_dir is None:
+            raise ExternalCollectorBridgeLookupError("external_collector_bridge_not_configured", 404)
+
+        base_dir = exports_dir.resolve(strict=False)
+        if not base_dir.exists() or not base_dir.is_dir():
+            raise ExternalCollectorBridgeLookupError("external_collector_configured_root_missing", 404)
+
+        package_dir = (base_dir / package_name).resolve(strict=False)
+        if not _is_canonical_direct_child(package_dir, base_dir):
+            raise ExternalCollectorBridgeLookupError("blocked_path_escape", 400)
+        if not package_dir.exists() or not package_dir.is_dir():
+            raise ExternalCollectorBridgeLookupError("external_collector_package_not_found", 404)
+        return package_dir
+    except ExternalCollectorBridgeLookupError:
+        raise
+    except (OSError, RuntimeError) as exc:
+        raise ExternalCollectorBridgeLookupError("external_collector_internal_failure", 500) from exc
+
+
+def _package_name_rejection_status(package_name: str) -> str | None:
+    if not package_name:
+        return "external_collector_invalid_package_name"
+
+    normalized = package_name.replace("\\", "/")
+    segments = normalized.split("/")
+    if (
+        WINDOWS_DRIVE_PATTERN.match(package_name)
+        or "/" in normalized
+        or any(DOT_ONLY_SEGMENT_PATTERN.fullmatch(segment) for segment in segments)
+    ):
+        return "blocked_path_escape"
+    if not PACKAGE_NAME_PATTERN.fullmatch(package_name):
+        return "external_collector_invalid_package_name"
+    return None
+
+
+def _is_canonical_direct_child(candidate: Path, root: Path) -> bool:
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError:
+        return False
+    return len(relative.parts) == 1 and candidate.parent == root
 
 
 def _package_summary(

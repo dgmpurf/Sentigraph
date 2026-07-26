@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import quote
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services import external_collector_bridge as bridge
 
 
 client = TestClient(app)
@@ -178,7 +181,205 @@ def test_external_collector_blocks_path_traversal(tmp_path: Path, monkeypatch) -
 
     response = client.get("/api/v1/external-collector/packages/..%2Fsecret")
 
-    assert response.status_code in {400, 404}
+    assert response.status_code == 400
+    assert response.json() == {"detail": "blocked_path_escape"}
+    assert str(tmp_path) not in response.text
+
+
+@pytest.mark.parametrize(
+    "unsafe_name",
+    [
+        "../secret",
+        r"..\secret",
+        "nested/../../secret",
+        r"nested\../..\secret",
+        "/absolute/secret",
+        r"C:\private\secret",
+        r"\\server\share\secret",
+        r"\leading\secret",
+        ".",
+        "..",
+        "...",
+        "nested/package",
+    ],
+)
+def test_external_collector_path_like_names_receive_bounded_containment_status(
+    tmp_path: Path,
+    monkeypatch,
+    unsafe_name: str,
+) -> None:
+    exports_dir = tmp_path / "exports"
+    exports_dir.mkdir()
+    monkeypatch.setenv("SENTIGRAPH_EXTERNAL_COLLECTOR_EXPORTS_DIR", str(exports_dir))
+
+    encoded_name = {
+        ".": "%2E",
+        "..": "%2E%2E",
+        "...": "%2E%2E%2E",
+    }.get(unsafe_name, quote(unsafe_name, safe=""))
+    response = client.get(f"/api/v1/external-collector/packages/{encoded_name}")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "blocked_path_escape"}
+    assert str(tmp_path) not in response.text
+    assert unsafe_name not in response.text
+
+
+def test_external_collector_invalid_non_path_name_has_distinct_safe_status(tmp_path: Path, monkeypatch) -> None:
+    exports_dir = tmp_path / "exports"
+    exports_dir.mkdir()
+    monkeypatch.setenv("SENTIGRAPH_EXTERNAL_COLLECTOR_EXPORTS_DIR", str(exports_dir))
+
+    response = client.get("/api/v1/external-collector/packages/bad%20package")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "external_collector_invalid_package_name"}
+    assert str(tmp_path) not in response.text
+
+
+def test_external_collector_lookup_statuses_distinguish_configuration_and_missing_package(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("SENTIGRAPH_EXTERNAL_COLLECTOR_EXPORTS_DIR", raising=False)
+    not_configured = client.get("/api/v1/external-collector/packages/safe_package")
+
+    missing_root = tmp_path / "missing_exports"
+    monkeypatch.setenv("SENTIGRAPH_EXTERNAL_COLLECTOR_EXPORTS_DIR", str(missing_root))
+    configured_root_missing = client.get("/api/v1/external-collector/packages/safe_package")
+
+    exports_dir = tmp_path / "exports"
+    exports_dir.mkdir()
+    monkeypatch.setenv("SENTIGRAPH_EXTERNAL_COLLECTOR_EXPORTS_DIR", str(exports_dir))
+    package_missing = client.get("/api/v1/external-collector/packages/safe_package")
+
+    assert not_configured.status_code == 404
+    assert not_configured.json() == {"detail": "external_collector_bridge_not_configured"}
+    assert configured_root_missing.status_code == 404
+    assert configured_root_missing.json() == {"detail": "external_collector_configured_root_missing"}
+    assert package_missing.status_code == 404
+    assert package_missing.json() == {"detail": "external_collector_package_not_found"}
+    assert str(tmp_path) not in configured_root_missing.text
+    assert str(tmp_path) not in package_missing.text
+
+
+def test_external_collector_rejected_path_does_not_open_or_enumerate_package_content(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    exports_dir = tmp_path / "exports"
+    exports_dir.mkdir()
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / "manifest.json").write_text('{"private": "must-not-be-read"}', encoding="utf-8")
+    monkeypatch.setenv("SENTIGRAPH_EXTERNAL_COLLECTOR_EXPORTS_DIR", str(exports_dir))
+    read_calls: list[Path] = []
+    enumeration_calls: list[Path] = []
+    original_read_text = Path.read_text
+    original_iterdir = Path.iterdir
+
+    def tracked_read_text(path: Path, *args, **kwargs):
+        read_calls.append(path)
+        return original_read_text(path, *args, **kwargs)
+
+    def tracked_iterdir(path: Path):
+        enumeration_calls.append(path)
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "read_text", tracked_read_text)
+    monkeypatch.setattr(Path, "iterdir", tracked_iterdir)
+
+    response = client.get("/api/v1/external-collector/packages/..%2Foutside")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "blocked_path_escape"}
+    assert read_calls == []
+    assert enumeration_calls == []
+    assert str(outside_dir) not in response.text
+    assert "must-not-be-read" not in response.text
+
+
+def test_external_collector_canonical_sibling_prefix_escape_is_rejected(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    exports_dir = tmp_path / "safe"
+    exports_dir.mkdir()
+    sibling_dir = tmp_path / "safe-evil"
+    sibling_dir.mkdir()
+    candidate = exports_dir / "linked_package"
+    original_resolve = Path.resolve
+
+    def redirected_resolve(path: Path, *args, **kwargs):
+        if path == exports_dir:
+            return exports_dir
+        if path == candidate:
+            return sibling_dir
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(bridge, "_configured_exports_dir", lambda: exports_dir)
+    monkeypatch.setattr(Path, "resolve", redirected_resolve)
+
+    response = client.get("/api/v1/external-collector/packages/linked_package")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "blocked_path_escape"}
+    assert str(exports_dir) not in response.text
+    assert str(sibling_dir) not in response.text
+
+
+def test_external_collector_listing_skips_canonical_outside_root_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    exports_dir = tmp_path / "exports"
+    linked_package = exports_dir / "linked_package"
+    linked_package.mkdir(parents=True)
+    outside_package = tmp_path / "outside" / "linked_package"
+    outside_package.mkdir(parents=True)
+    original_resolve = Path.resolve
+
+    def redirected_resolve(path: Path, *args, **kwargs):
+        if path == exports_dir:
+            return exports_dir
+        if path == linked_package:
+            return outside_package
+        return original_resolve(path, *args, **kwargs)
+
+    def unexpected_summary(*args, **kwargs):
+        pytest.fail("outside-root directory must not reach package summary parsing")
+
+    monkeypatch.setattr(bridge, "_configured_exports_dir", lambda: exports_dir)
+    monkeypatch.setattr(Path, "resolve", redirected_resolve)
+    monkeypatch.setattr(bridge, "_package_summary", unexpected_summary)
+
+    assert bridge.list_external_collector_packages() == []
+
+
+def test_external_collector_validation_route_rejects_encoded_traversal(tmp_path: Path, monkeypatch) -> None:
+    exports_dir = tmp_path / "exports"
+    exports_dir.mkdir()
+    monkeypatch.setenv("SENTIGRAPH_EXTERNAL_COLLECTOR_EXPORTS_DIR", str(exports_dir))
+
+    response = client.post("/api/v1/external-collector/packages/..%2Fsecret/validate")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "blocked_path_escape"}
+    assert str(tmp_path) not in response.text
+
+
+def test_external_collector_internal_path_failure_is_bounded(monkeypatch) -> None:
+    def fail_configuration_lookup() -> Path:
+        raise OSError(r"C:\private\collector\must-not-leak")
+
+    monkeypatch.setattr(bridge, "_configured_exports_dir", fail_configuration_lookup)
+
+    response = client.get("/api/v1/external-collector/packages/safe_package")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "external_collector_internal_failure"}
+    assert "must-not-leak" not in response.text
+    assert "C:" not in response.text
 
 
 def _write_package(
