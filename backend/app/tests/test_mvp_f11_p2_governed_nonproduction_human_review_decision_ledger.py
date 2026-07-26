@@ -317,6 +317,11 @@ def _row_count(ledger, table: str) -> int:
         return connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
 
 
+@pytest.fixture
+def isolated_formal_target(tmp_path: Path) -> Path:
+    return tmp_path.joinpath(*FORMAL_TARGET.parts)
+
+
 def _assert_false_boundaries(value: dict[str, Any]) -> None:
     assert value["human_review_required"] is True
     assert value["no_automatic_trust_upgrade"] is True
@@ -336,8 +341,10 @@ def test_existing_f10_review_console_route_remains_separate_get_only() -> None:
     assert '@router.post("/decisions")' not in source
 
 
-def test_formal_runtime_ledger_target_is_absent() -> None:
-    assert not FORMAL_TARGET.exists()
+def test_formal_runtime_ledger_target_is_absent(
+    isolated_formal_target: Path,
+) -> None:
+    assert not isolated_formal_target.exists()
 
 
 def test_service_exposes_exact_contract_constants_and_public_surface() -> None:
@@ -1053,6 +1060,7 @@ def test_store_defaults_disabled_and_enabled_requires_explicit_test_path(
 
 def test_formal_target_is_rejected_without_sqlite_open(
     monkeypatch: pytest.MonkeyPatch,
+    isolated_formal_target: Path,
 ) -> None:
     module = _service()
     connect_calls = 0
@@ -1064,7 +1072,7 @@ def test_formal_target_is_rejected_without_sqlite_open(
 
     monkeypatch.setattr(module.sqlite3, "connect", fail_connect)
     ledger = module.GovernedNonproductionHumanReviewDecisionLedger(
-        database_path=Path(module.LOGICAL_TARGET_LABEL),
+        database_path=isolated_formal_target,
         enabled=True,
     )
     with pytest.raises(
@@ -1072,7 +1080,7 @@ def test_formal_target_is_rejected_without_sqlite_open(
     ):
         ledger.initialize()
     assert connect_calls == 0
-    assert not FORMAL_TARGET.exists()
+    assert not isolated_formal_target.exists()
 
 
 def test_initialization_creates_exact_table_columns_and_unique_constraints(

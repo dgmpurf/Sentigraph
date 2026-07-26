@@ -17,11 +17,11 @@ APPROVAL_PHRASE_8Z22 = "APPROVE_8Z_22_INTERNAL_ALPHA_REVIEW_CONSOLE_DISABLED_BAC
 ALLOWED_8Z22_ROUTE_RELATIVE_PATH = "backend/app/api/v1/routes/internal_alpha_review_console.py"
 ALLOWED_8Z22_ROUTE_PATH = REPO_ROOT / ALLOWED_8Z22_ROUTE_RELATIVE_PATH
 
-FORBIDDEN_IMPLEMENTATION_PATHS = [
-    "backend/app/api/v1/routes/review_console.py",
+CURRENT_REVIEW_CONSOLE_IMPLEMENTATION_PATHS = [
+    "backend/app/api/v1/routes/internal_alpha_review_console.py",
     "frontend/src/pages/InternalAlphaReviewConsole.jsx",
-    "frontend/src/pages/ReviewConsole.jsx",
-    "frontend/src/components/internalAlphaReviewConsole",
+    "frontend/src/App.jsx",
+    "frontend/src/api/sentigraphApi.js",
 ]
 
 ALLOWED_8Z22_ROUTE_REQUIRED_FRAGMENTS = [
@@ -203,10 +203,6 @@ def _source_files_for_static_scan() -> list[Path]:
     return files
 
 
-def _source_files_excluding_allowed_8z22_route() -> list[Path]:
-    return [path for path in _source_files_for_static_scan() if path != ALLOWED_8Z22_ROUTE_PATH]
-
-
 def _assert_allowed_8z22_route_skeleton_remains_narrow() -> None:
     if not ALLOWED_8Z22_ROUTE_PATH.exists():
         return
@@ -283,18 +279,32 @@ def test_future_8z18_phrase_is_inactive_tests_only_wording() -> None:
         assert phrase.casefold() not in combined.casefold()
 
 
-def test_no_current_review_console_implementation_surface_exists() -> None:
-    for relative_path in FORBIDDEN_IMPLEMENTATION_PATHS:
-        assert not (REPO_ROOT / relative_path).exists(), relative_path
+def test_current_review_console_exists_with_review_only_safety_boundary() -> None:
+    for relative_path in CURRENT_REVIEW_CONSOLE_IMPLEMENTATION_PATHS:
+        assert (REPO_ROOT / relative_path).is_file(), relative_path
 
     _assert_allowed_8z22_route_skeleton_remains_narrow()
 
-    active_text = "\n".join(_read(path) for path in _source_files_excluding_allowed_8z22_route())
-    active_lower = active_text.casefold()
-    assert "internal-alpha-review-console" not in active_lower
-    assert "review-console" not in active_lower
-    assert "internalalphareviewconsole" not in active_lower
-    assert "reviewconsole" not in active_lower
+    route_text = _read(ALLOWED_8Z22_ROUTE_PATH)
+    frontend_text = _read(REPO_ROOT / "frontend/src/pages/InternalAlphaReviewConsole.jsx")
+    app_text = _read(REPO_ROOT / "frontend/src/App.jsx")
+    api_text = _read(REPO_ROOT / "frontend/src/api/sentigraphApi.js")
+
+    assert '@router.get("/projections/{projection_id}")' in route_text
+    assert '@router.get("/local-exchange-projections/{sample_handle}")' in route_text
+    assert '"human_review_required": True' in route_text
+    assert '"no_automatic_trust_upgrade": True' in route_text
+    assert '"production_ready": False' in route_text
+    assert '"actual_write_enabled": False' in route_text
+    assert "@router.post" not in route_text
+
+    assert "#/internal-alpha/review-console" in app_text
+    assert "Local-exchange projection review" in frontend_text
+    assert "Read-only and human-review-only." in frontend_text
+    assert "No alternate projection is loaded automatically." in frontend_text
+    assert "production_ready = false" in frontend_text
+    assert "public_output_enabled = false" in frontend_text
+    assert "getInternalAlphaReviewConsoleProjection" in api_text
 
 
 def test_no_public_or_customer_review_console_aliases_exist_in_active_code() -> None:

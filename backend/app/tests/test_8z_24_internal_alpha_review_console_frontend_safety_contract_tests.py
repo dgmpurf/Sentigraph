@@ -201,7 +201,6 @@ FORBIDDEN_READINESS_OVERCLAIMS = [
     "frontend-ready",
     "route_ready",
     "frontend_ready",
-    "production_ready",
     "public_ready",
     "customer_ready",
     "export_ready",
@@ -417,10 +416,22 @@ def test_no_forbidden_display_fields_in_review_console_frontend_surface() -> Non
         assert _casefold(forbidden) not in related_text, forbidden
 
 
-def test_no_readiness_overclaim_in_review_console_frontend_surface() -> None:
+def test_production_readiness_state_is_exposed_only_as_safely_disabled() -> None:
     related_text = _casefold("\n".join([_joined_text(_review_console_static_shell_files()), _read_only_8z30_helper_body()]))
     for forbidden in FORBIDDEN_READINESS_OVERCLAIMS:
         assert _casefold(forbidden) not in related_text, forbidden
+
+    assert "review_only = true" in related_text
+    assert "persistent_staging_write = false" in related_text
+    assert "review_decision_write = false" in related_text
+    assert "production_ready = false" in related_text
+    assert "public_output_enabled = false" in related_text
+    for unauthorized_true_form in [
+        "production_ready = true",
+        '"production_ready": true',
+        "production_ready: true",
+    ]:
+        assert unauthorized_true_form not in related_text
 
 
 def test_backend_route_skeleton_remains_internal_disabled_and_file_delivery_free() -> None:

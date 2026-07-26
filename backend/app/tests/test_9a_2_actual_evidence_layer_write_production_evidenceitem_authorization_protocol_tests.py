@@ -191,7 +191,7 @@ def test_blocker_matrix_covers_mandatory_blockers() -> None:
     )
 
 
-def test_backend_routes_do_not_expose_9a_write_surface() -> None:
+def test_human_review_decision_post_exists_without_9a_production_write_authority() -> None:
     route_sources = _all_route_sources()
     assert route_sources, "backend route files should be discoverable"
 
@@ -211,14 +211,30 @@ def test_backend_routes_do_not_expose_9a_write_surface() -> None:
         for token in forbidden_route_tokens:
             assert token not in source, f"{path} exposes forbidden route token: {token}"
 
-    for path, source in route_sources.items():
-        lowered = source.lower()
-        if "9a" not in lowered:
-            continue
-        assert "@router.post" not in lowered
-        assert "@router.put" not in lowered
-        assert "@router.patch" not in lowered
-        assert "@router.delete" not in lowered
+    decision_route_path = (
+        REPO_ROOT
+        / "backend"
+        / "app"
+        / "api"
+        / "v1"
+        / "routes"
+        / "internal_alpha_governed_review_decisions.py"
+    )
+    decision_route = route_sources[decision_route_path]
+
+    assert '@router.post("/decisions")' in decision_route
+    assert '@router.get("/decisions/{decision_id}")' in decision_route
+    assert "decision_type: StrictStr" in decision_route
+    assert "record_governed_nonproduction_human_review_decision" in decision_route
+    assert '"receipt": receipt' in decision_route
+    assert '"decision_ledger_write_performed": write_performed' in decision_route
+    assert '"human_review_required": True' in decision_route
+    assert '"no_automatic_trust_upgrade": True' in decision_route
+    assert '"production_object_enabled": False' in decision_route
+    assert '"review_queue_runtime_enabled": False' in decision_route
+    assert '"operator_runtime_ready": False' in decision_route
+    assert '"public_ready": False' in decision_route
+    assert '"production_ready": False' in decision_route
 
 
 def test_frontend_has_no_9a_write_cta_or_api_hook() -> None:
