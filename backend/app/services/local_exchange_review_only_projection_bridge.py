@@ -114,6 +114,8 @@ _CANDIDATE_FIELDS = frozenset(
         "validation_status",
         "evidence_count",
         "source_count",
+        "comment_count",
+        "root_candidate_count",
         "warning_count",
         "error_count",
         "review_status",
@@ -313,6 +315,8 @@ def build_local_exchange_review_only_projection(
         coverage_summary={
             "evidence_count": counts["evidence_count"],
             "source_count": counts["source_count"],
+            "comment_count": counts["comment_count"],
+            "root_candidate_count": counts["root_candidate_count"],
             "coverage_basis": "selected_package_metadata_counts_only",
             "full_web_coverage_claimed": False,
             "full_platform_coverage_claimed": False,
@@ -454,7 +458,14 @@ def _candidate_identifiers(candidate: Mapping[str, Any]) -> dict[str, str | None
 
 def _candidate_counts(candidate: Mapping[str, Any]) -> dict[str, int] | None:
     counts: dict[str, int] = {}
-    for field in ("evidence_count", "source_count", "warning_count", "error_count"):
+    for field in (
+        "evidence_count",
+        "source_count",
+        "comment_count",
+        "root_candidate_count",
+        "warning_count",
+        "error_count",
+    ):
         value = _nonnegative_int(candidate.get(field))
         if value is None:
             return None

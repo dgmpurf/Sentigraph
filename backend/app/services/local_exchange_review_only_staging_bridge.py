@@ -138,7 +138,15 @@ def adapt_local_exchange_metadata_to_provider_result(
     evidence_count = _nonnegative_int(summary.get("evidence_count", summary.get("evidence_items")))
     source_count = _nonnegative_int(summary.get("source_count", summary.get("sources")))
     comment_count = _nonnegative_int(summary.get("comment_count", summary.get("comment_samples")))
-    if evidence_count is None or source_count is None or comment_count is None:
+    root_candidate_count = _nonnegative_int(
+        summary.get("root_candidate_count", summary.get("root_candidates"))
+    )
+    if (
+        evidence_count is None
+        or source_count is None
+        or comment_count is None
+        or root_candidate_count is None
+    ):
         return _adapter_stop("manual_review_required", "incomplete_actual_metadata_summary")
 
     validation_summary = metadata.get("validation_summary")
@@ -192,6 +200,7 @@ def adapt_local_exchange_metadata_to_provider_result(
             "evidence_count": evidence_count,
             "source_count": source_count,
             "comment_count": comment_count,
+            "root_candidate_count": root_candidate_count,
         },
         "validation_summary": {
             "status": str(validation_status),
@@ -328,6 +337,8 @@ def _build_staging_handoff(
         "validation_status": validation_summary.get("status"),
         "evidence_count": metadata_summary.get("evidence_count"),
         "source_count": metadata_summary.get("source_count"),
+        "comment_count": metadata_summary.get("comment_count"),
+        "root_candidate_count": metadata_summary.get("root_candidate_count"),
         "warning_count": validation_summary.get("warnings"),
         "error_count": validation_summary.get("errors"),
         "coverage_note": provider_summary.get("coverage_note"),

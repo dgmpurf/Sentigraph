@@ -97,6 +97,8 @@ class ReviewOnlyStagingCandidate:
     validation_status: str | None
     evidence_count: int | None
     source_count: int | None
+    comment_count: int | None
+    root_candidate_count: int | None
     warning_count: int | None
     error_count: int | None
     metadata_summary: dict[str, Any]
@@ -222,6 +224,8 @@ def create_review_only_staging_candidate(
         validation_status=_safe_str(handoff_summary.get("validation_status")),
         evidence_count=_safe_int(handoff_summary.get("evidence_count")),
         source_count=_safe_int(handoff_summary.get("source_count")),
+        comment_count=_safe_int(handoff_summary.get("comment_count")),
+        root_candidate_count=_safe_int(handoff_summary.get("root_candidate_count")),
         warning_count=_safe_int(handoff_summary.get("warning_count")),
         error_count=_safe_int(handoff_summary.get("error_count")),
         metadata_summary=_metadata_summary(handoff_summary),
@@ -293,6 +297,8 @@ def build_safe_review_only_staging_summary(
         "validation_status": candidate.validation_status,
         "evidence_count": candidate.evidence_count,
         "source_count": candidate.source_count,
+        "comment_count": candidate.comment_count,
+        "root_candidate_count": candidate.root_candidate_count,
         "warning_count": candidate.warning_count,
         "error_count": candidate.error_count,
         "review_status": candidate.review_status,
@@ -340,6 +346,8 @@ def _metadata_summary(handoff_summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "evidence_count": _safe_int(handoff_summary.get("evidence_count")),
         "source_count": _safe_int(handoff_summary.get("source_count")),
+        "comment_count": _safe_int(handoff_summary.get("comment_count")),
+        "root_candidate_count": _safe_int(handoff_summary.get("root_candidate_count")),
         "package_name": _safe_str(handoff_summary.get("package_name")),
     }
 
@@ -354,6 +362,10 @@ def _validation_summary(handoff_summary: dict[str, Any]) -> dict[str, Any]:
 
 def _coverage_summary(handoff_summary: dict[str, Any]) -> dict[str, Any]:
     return {
+        "evidence_count": _safe_int(handoff_summary.get("evidence_count")),
+        "source_count": _safe_int(handoff_summary.get("source_count")),
+        "comment_count": _safe_int(handoff_summary.get("comment_count")),
+        "root_candidate_count": _safe_int(handoff_summary.get("root_candidate_count")),
         "coverage_note": _safe_str(handoff_summary.get("coverage_note")),
         "coverage_note_present": bool(handoff_summary.get("coverage_note")),
         "not_full_web": True,
@@ -392,7 +404,7 @@ def _safety_flags() -> dict[str, bool]:
 
 
 def _safe_int(value: Any) -> int | None:
-    return value if isinstance(value, int) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def _safe_str(value: Any) -> str | None:

@@ -194,6 +194,8 @@ def _ready_upstream() -> dict[str, Any]:
         "validation_status": "passed",
         "evidence_count": 3,
         "source_count": 2,
+        "comment_count": 4,
+        "root_candidate_count": 1,
         "warning_count": 0,
         "error_count": 0,
         "review_status": "ready_for_human_review",

@@ -74,6 +74,7 @@ def _v1_payload(
             "evidence_items": 34,
             "sources": 7,
             "comment_samples": 28,
+            "root_candidates": 6,
         },
         "validation_summary": {
             "status": "passed",
@@ -327,7 +328,12 @@ def test_pure_v1_to_v0_1_adapter_is_exact_and_deterministic() -> None:
             "package_index_ref": "package_index.json",
             "package_locator_strategy": "package_name_under_configured_export_root",
         },
-        "metadata_summary": {"evidence_count": 34, "source_count": 7, "comment_count": 28},
+        "metadata_summary": {
+            "evidence_count": 34,
+            "source_count": 7,
+            "comment_count": 28,
+            "root_candidate_count": 6,
+        },
         "validation_summary": {"status": "passed", "errors": 0, "warnings": 0},
         "coverage_note": "Selected package coverage only; not full-web or full-platform coverage.",
         "safety_markers": source["safety_markers"],
@@ -342,9 +348,50 @@ def test_safe_package_creates_exactly_one_in_memory_candidate_and_gate(tmp_path:
     assert payload["candidate_count"] == 1
     assert payload["staging_candidate"]["package_name"] == "safe_package"
     assert payload["staging_candidate"]["analysis_request_id"] == "analysis_request_b01_fixture"
+    assert payload["staging_candidate"]["evidence_count"] == 34
+    assert payload["staging_candidate"]["source_count"] == 7
+    assert payload["staging_candidate"]["comment_count"] == 28
+    assert payload["staging_candidate"]["root_candidate_count"] == 6
     assert payload["gate_summary"]["staging_status"] == "ready_for_human_review"
     assert payload["production_import_allowed"] is False
     _assert_safe_response(payload, tmp_path)
+
+
+def test_exact_four_v1_counts_survive_adapter_and_b01_staging(tmp_path: Path) -> None:
+    source = _v1_payload()
+    source["summary"] = {
+        "evidence_items": 7,
+        "sources": 3,
+        "comment_samples": 4,
+        "root_candidates": 2,
+    }
+
+    adapter = adapt_local_exchange_metadata_to_provider_result(source)
+    assert adapter.status == "adapted"
+    assert adapter.provider_result is not None
+    assert adapter.provider_result["metadata_summary"] == {
+        "evidence_count": 7,
+        "source_count": 3,
+        "comment_count": 4,
+        "root_candidate_count": 2,
+    }
+
+    config = _config(tmp_path)
+    _write_result(Path(config.results_dir), source)
+    _write_package(Path(config.export_root), "safe_package")
+    payload = build_local_exchange_review_only_staging_response("provider_result.json", config)
+
+    assert payload["status"] == "ready_for_human_review"
+    assert payload["candidate_count"] == 1
+    assert {
+        key: payload["staging_candidate"][key]
+        for key in ("evidence_count", "source_count", "comment_count", "root_candidate_count")
+    } == {
+        "evidence_count": 7,
+        "source_count": 3,
+        "comment_count": 4,
+        "root_candidate_count": 2,
+    }
 
 
 def test_needs_manual_snapshot_remains_manual_and_never_ready(tmp_path: Path) -> None:

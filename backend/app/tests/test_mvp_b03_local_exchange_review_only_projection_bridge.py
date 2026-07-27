@@ -139,6 +139,8 @@ def _ready_upstream() -> dict[str, Any]:
         "validation_status": "passed",
         "evidence_count": 34,
         "source_count": 7,
+        "comment_count": 28,
+        "root_candidate_count": 6,
         "warning_count": 0,
         "error_count": 0,
         "review_status": "ready_for_human_review",
@@ -236,7 +238,12 @@ def _provider_payload() -> dict[str, Any]:
         "package_index_ref": "package_index.json",
         "package_root_ref": "configured_export_root",
         "package_relative_path": "safe_package",
-        "summary": {"evidence_items": 34, "sources": 7, "comment_samples": 28},
+        "summary": {
+            "evidence_items": 34,
+            "sources": 7,
+            "comment_samples": 28,
+            "root_candidates": 6,
+        },
         "validation_summary": {"status": "passed", "errors": 0, "warnings": 0},
         "coverage_note": "Selected package coverage only; not full-web or full-platform coverage.",
         "safety_markers": {
@@ -348,11 +355,39 @@ def test_ready_projection_is_deterministic_and_metadata_only() -> None:
     assert first["coverage_summary"] == {
         "evidence_count": 34,
         "source_count": 7,
+        "comment_count": 28,
+        "root_candidate_count": 6,
         "coverage_basis": "selected_package_metadata_counts_only",
         "full_web_coverage_claimed": False,
         "full_platform_coverage_claimed": False,
     }
     _assert_boundary_flags(first)
+
+
+def test_projection_preserves_exact_four_counts_without_changing_top_level_contract() -> None:
+    upstream = _ready_upstream()
+    upstream["staging_candidate"].update(
+        evidence_count=7,
+        source_count=3,
+        comment_count=4,
+        root_candidate_count=2,
+    )
+
+    projection = build_local_exchange_review_only_projection("provider_result.json", upstream)
+
+    assert projection["projection_status"] == "ready_for_human_review"
+    assert tuple(projection) == EXPECTED_PROJECTION_FIELDS
+    assert len(projection) == 52
+    assert projection["coverage_summary"] == {
+        "evidence_count": 7,
+        "source_count": 3,
+        "comment_count": 4,
+        "root_candidate_count": 2,
+        "coverage_basis": "selected_package_metadata_counts_only",
+        "full_web_coverage_claimed": False,
+        "full_platform_coverage_claimed": False,
+    }
+    _assert_boundary_flags(projection)
 
 
 @pytest.mark.parametrize(
