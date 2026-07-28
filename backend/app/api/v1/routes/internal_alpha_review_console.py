@@ -9,6 +9,10 @@ from app.services.internal_alpha_review_console_safe_metadata_projection import 
     APPROVAL_PHRASE as PROJECTION_APPROVAL_PHRASE,
     build_internal_alpha_review_console_safe_metadata_projection,
 )
+from app.services.internal_alpha_local_exchange_sample_catalog import (
+    build_internal_alpha_local_exchange_sample_catalog,
+    build_unavailable_internal_alpha_local_exchange_sample_catalog,
+)
 from app.services.internal_alpha_local_exchange_review_projection import (
     build_internal_alpha_local_exchange_review_projection,
 )
@@ -30,6 +34,16 @@ ALLOWED_PROJECTION_IDS = {
     "internal-alpha-safe-projection-fixture",
     "8z16-no-write-alpha-fixture",
 }
+
+
+@router.get("/local-exchange-samples")
+def get_internal_alpha_local_exchange_sample_catalog() -> dict[str, Any]:
+    if not _route_enabled():
+        return build_unavailable_internal_alpha_local_exchange_sample_catalog()
+    try:
+        return build_internal_alpha_local_exchange_sample_catalog()
+    except ValueError:
+        return build_unavailable_internal_alpha_local_exchange_sample_catalog()
 
 
 @router.get("/local-exchange-projections/{sample_handle}")

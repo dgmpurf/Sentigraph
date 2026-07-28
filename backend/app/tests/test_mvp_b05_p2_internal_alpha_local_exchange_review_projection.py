@@ -164,7 +164,11 @@ def _entry(
     return service.InternalAlphaLocalExchangeSampleRegistryEntry(
         sample_handle=SAFE_HANDLE,
         result_file_name=SYNTHETIC_RESULT_NAME,
+        display_label="Synthetic sample",
+        sample_role="synthetic_sample",
+        is_default=True,
         enabled=enabled,
+        catalog_order=0,
         route_mode=route_mode,
         capability_label=capability_label,
     )
@@ -322,7 +326,11 @@ def test_constants_default_registry_and_exact_b03_contract_are_frozen() -> None:
     assert tuple(service.InternalAlphaLocalExchangeSampleRegistryEntry.__dataclass_fields__) == (
         "sample_handle",
         "result_file_name",
+        "display_label",
+        "sample_role",
+        "is_default",
         "enabled",
+        "catalog_order",
         "route_mode",
         "capability_label",
     )
@@ -833,76 +841,88 @@ def _javascript_function(source: str, function_name: str) -> str:
     raise AssertionError(f"unterminated function: {function_name}")
 
 
-def test_frontend_api_has_exact_normalizer_and_one_encoded_get_without_fallback() -> None:
+def test_frontend_api_has_exact_normalizers_and_one_get_per_helper_without_fallback() -> None:
     source = FRONTEND_API_PATH.read_text(encoding="utf-8")
-    helper = _javascript_function(source, "getInternalAlphaLocalExchangeProjection")
-    normalizer = _javascript_function(
+    projection_helper = _javascript_function(source, "getInternalAlphaLocalExchangeProjection")
+    projection_normalizer = _javascript_function(
         source,
         "normalizeInternalAlphaLocalExchangeProjection",
     )
-
-    safe_handles_start = source.index(
-        "export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES"
+    catalog_helper = _javascript_function(
+        source,
+        "getInternalAlphaLocalExchangeSampleCatalog",
     )
-    safe_handles_end = source.index("])", safe_handles_start)
-    safe_handles_block = source[safe_handles_start:safe_handles_end]
-    assert re.findall(r"'([a-z0-9-]+)'", safe_handles_block) == list(
-        ORDERED_SAFE_HANDLES
+    catalog_normalizer = _javascript_function(
+        source,
+        "normalizeInternalAlphaLocalExchangeSampleCatalog",
     )
-    assert helper.count("apiClient.get(") == 1
-    assert "encodeURIComponent(sampleHandle)" in helper
-    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT" in helper
-    assert (
-        "const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT = "
-        "'local-exchange-projections'"
-    ) in source
-    assert "normalizeInternalAlphaLocalExchangeProjection" in helper
-    assert "?" not in helper
-    assert "apiClient.post" not in helper
-    assert "apiClient.put" not in helper
-    assert "apiClient.patch" not in helper
-    assert "apiClient.delete" not in helper
-    assert "retry" not in helper.casefold()
-    assert "fallback" not in helper.casefold()
-    assert "projectionId" not in helper
 
-    assert "Object.keys" in normalizer
-    assert "Object.freeze" in normalizer
-    assert "frontend_projection_contract_mismatch" in normalizer
+    assert projection_helper.count("apiClient.get(") == 1
+    assert "encodeURIComponent(sampleHandle)" in projection_helper
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT" in projection_helper
+    assert "normalizeInternalAlphaLocalExchangeProjection" in projection_helper
+    assert catalog_helper.count("apiClient.get(") == 1
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLES_SEGMENT" in catalog_helper
+    assert "normalizeInternalAlphaLocalExchangeSampleCatalog" in catalog_helper
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES" not in source
+    for handle in ORDERED_SAFE_HANDLES:
+        assert handle not in source
+    for label in ("Current curated sample", "Accepted historical sample"):
+        assert label not in source
+
+    for helper in (projection_helper, catalog_helper):
+        assert "apiClient.post" not in helper
+        assert "apiClient.put" not in helper
+        assert "apiClient.patch" not in helper
+        assert "apiClient.delete" not in helper
+        assert "retry" not in helper.casefold()
+        assert "fallback" not in helper.casefold()
+
+    assert "Object.keys" in projection_normalizer
+    assert "Object.freeze" in projection_normalizer
+    assert "frontend_projection_contract_mismatch" in projection_normalizer
+    assert "Object.keys" in catalog_normalizer
+    assert "Object.freeze" in catalog_normalizer
+    assert "frontend_sample_catalog_contract_mismatch" in catalog_normalizer
     assert len(PROJECTION_FIELDS) == 52
     for field in PROJECTION_FIELDS:
         assert f"'{field}'" in source
 
 
-def test_frontend_page_keeps_f10_default_and_adds_dual_sample_cached_b05_state_view() -> None:
+def test_frontend_page_keeps_f10_default_and_uses_backend_catalog_for_cached_b05_state() -> None:
     source = FRONTEND_PAGE_PATH.read_text(encoding="utf-8")
 
     assert "getInternalAlphaReviewConsoleProjection" in source
     assert "GOVERNED_REVIEW_CONSOLE_PROJECTION_ID" in source
     assert "internalAlphaLocalExchangeProjectionReview" in source
+    assert "getInternalAlphaLocalExchangeSampleCatalog" in source
+    assert source.count("getInternalAlphaLocalExchangeSampleCatalog(") == 1
+    assert "localExchangeCatalogRequestStarted" in source
+    assert "localExchangeCatalogState" in source
+    assert "localExchangeCatalog.samples.map" in source
+    assert "sample.sample_handle" in source
+    assert "sample.display_label" in source
+    assert "sample.sample_role" in source
+    assert "sample.is_default" in source
+    assert "sample.enabled" in source
+    assert "LOCAL_EXCHANGE_SAMPLE_OPTIONS" not in source
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES" not in source
+    for handle in ORDERED_SAFE_HANDLES:
+        assert handle not in source
+    for label in ("Current curated sample", "Accepted historical sample"):
+        assert label not in source
+
     assert "selectedLocalExchangeSampleHandle" in source
     assert "localExchangeProjectionStateByHandle" in source
     assert "getInternalAlphaLocalExchangeProjection" in source
     assert source.count("getInternalAlphaLocalExchangeProjection(") == 1
-    assert "LOCAL_EXCHANGE_SAMPLE_OPTIONS" in source
-    assert "Current curated sample" in source
-    assert "Accepted historical sample" in source
     assert 'aria-label="Read-only local-exchange sample"' in source
-    local_view_start = source.index(
-        "if (selectedReviewView === LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW)"
-    )
-    sample_selector_start = source.index(
-        'aria-label="Read-only local-exchange sample"'
-    )
-    assert sample_selector_start > local_view_start
-    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0]" in source
-    assert "value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0]" in source
-    assert "value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[1]" in source
     assert "requestedLocalExchangeHandles.current.has(selectedLocalExchangeSampleHandle)" in source
     assert "requestedLocalExchangeHandles.current.add(selectedLocalExchangeSampleHandle)" in source
     assert "getInternalAlphaLocalExchangeProjection(selectedLocalExchangeSampleHandle)" in source
-    assert "[selectedReviewView, selectedLocalExchangeSampleHandle]" in source
     assert "localExchangeProjectionStateByHandle[selectedLocalExchangeSampleHandle]" in source
+    assert "catalogPhase !== 'loaded'" in source
+    assert "selectedLocalExchangeSample?.enabled" in source
     for request_phase in ("idle", "loading", "loaded", "unavailable", "bounded_error"):
         assert request_phase in source
     for projection_phase in (
@@ -927,7 +947,6 @@ def test_frontend_page_keeps_f10_default_and_adds_dual_sample_cached_b05_state_v
     assert "console.log" not in source
     assert "retry" not in source.casefold()
     assert "prefetch" not in source.casefold()
-
 
 def test_frontend_b05_surface_has_no_filename_path_config_or_mutation_controls() -> None:
     api_source = FRONTEND_API_PATH.read_text(encoding="utf-8")

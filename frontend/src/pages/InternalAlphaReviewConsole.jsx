@@ -4,9 +4,9 @@ import { Eye, Lock, ShieldCheck, TriangleAlert } from 'lucide-react'
 
 import {
   getInternalAlphaLocalExchangeProjection,
+  getInternalAlphaLocalExchangeSampleCatalog,
   getInternalAlphaReviewConsoleProjection,
   INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
-  INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES,
   INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS,
 } from '../api/sentigraphApi.js'
 import { INTERNAL_ALPHA_REVIEW_CONSOLE_STATIC_FIXTURE } from '../data/internalAlphaReviewConsoleStaticFixture.js'
@@ -20,6 +20,12 @@ const STATIC_SOURCE_CHAIN_BOUNDARY_LABEL =
   'source_chain_boundary = evidence_layer_write_candidate_boundary'
 const GOVERNED_RECORD_REVIEW_VIEW = 'governedRecordReview'
 const LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW = 'internalAlphaLocalExchangeProjectionReview'
+
+const INITIAL_LOCAL_EXCHANGE_CATALOG_STATE = Object.freeze({
+  catalogPhase: 'loading',
+  catalog: null,
+  errorCode: null,
+})
 
 const INITIAL_LOCAL_EXCHANGE_PROJECTION_STATE = Object.freeze({
   requestPhase: 'idle',
@@ -46,16 +52,6 @@ const REVIEW_SURFACE_OPTIONS = Object.freeze([
   },
 ])
 
-const LOCAL_EXCHANGE_SAMPLE_OPTIONS = Object.freeze([
-  {
-    value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0],
-    label: 'Current curated sample',
-  },
-  {
-    value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[1],
-    label: 'Accepted historical sample',
-  },
-])
 
 const SAFE_METADATA_FIELDS = Object.freeze([
   'persisted_record_id',
@@ -241,26 +237,68 @@ export function InternalAlphaReviewConsole() {
   const fixture = INTERNAL_ALPHA_REVIEW_CONSOLE_STATIC_FIXTURE
   const [routeState, setRouteState] = useState(STATIC_FALLBACK_ROUTE_STATE)
   const [selectedReviewView, setSelectedReviewView] = useState(GOVERNED_RECORD_REVIEW_VIEW)
-  const [selectedLocalExchangeSampleHandle, setSelectedLocalExchangeSampleHandle] = useState(
-    INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0],
+  const [localExchangeCatalogState, setLocalExchangeCatalogState] = useState(
+    INITIAL_LOCAL_EXCHANGE_CATALOG_STATE,
   )
-  const [localExchangeProjectionStateByHandle, setLocalExchangeProjectionStateByHandle] = useState(
-    () =>
-      Object.fromEntries(
-        INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES.map((sampleHandle) => [
-          sampleHandle,
-          INITIAL_LOCAL_EXCHANGE_PROJECTION_STATE,
-        ]),
-      ),
-  )
+  const [selectedLocalExchangeSampleHandle, setSelectedLocalExchangeSampleHandle] = useState(null)
+  const [localExchangeProjectionStateByHandle, setLocalExchangeProjectionStateByHandle] = useState({})
   const requestedLocalExchangeHandles = useRef(new Set())
+  const localExchangeCatalogRequestStarted = useRef(false)
   const pageIsMounted = useRef(true)
+  const localExchangeCatalog = localExchangeCatalogState.catalog
+  const catalogPhase = localExchangeCatalogState.catalogPhase
+  const selectedLocalExchangeSample = localExchangeCatalog?.samples.find(
+    (sample) => sample.sample_handle === selectedLocalExchangeSampleHandle,
+  )
+  const localExchangeSampleOptions = localExchangeCatalog
+    ? localExchangeCatalog.samples.map((sample) => ({
+        value: sample.sample_handle,
+        label: sample.display_label,
+        title: sample.sample_role,
+        disabled: !sample.enabled,
+      }))
+    : []
 
   useEffect(() => {
     pageIsMounted.current = true
     return () => {
       pageIsMounted.current = false
     }
+  }, [])
+
+  useEffect(() => {
+    if (localExchangeCatalogRequestStarted.current) return
+    localExchangeCatalogRequestStarted.current = true
+
+    getInternalAlphaLocalExchangeSampleCatalog()
+      .then((catalog) => {
+        if (!pageIsMounted.current) return
+        const defaultSample = catalog.samples.find((sample) => sample.is_default)
+        setLocalExchangeCatalogState({
+          catalogPhase: 'loaded',
+          catalog,
+          errorCode: null,
+        })
+        setSelectedLocalExchangeSampleHandle(defaultSample.sample_handle)
+        setLocalExchangeProjectionStateByHandle(
+          Object.fromEntries(
+            catalog.samples.map((sample) => [
+              sample.sample_handle,
+              INITIAL_LOCAL_EXCHANGE_PROJECTION_STATE,
+            ]),
+          ),
+        )
+      })
+      .catch(() => {
+        if (!pageIsMounted.current) return
+        setLocalExchangeCatalogState({
+          catalogPhase: 'unavailable',
+          catalog: null,
+          errorCode: 'sample_catalog_unavailable',
+        })
+        setSelectedLocalExchangeSampleHandle(null)
+        setLocalExchangeProjectionStateByHandle({})
+      })
   }, [])
 
   useEffect(() => {
@@ -291,6 +329,8 @@ export function InternalAlphaReviewConsole() {
 
   useEffect(() => {
     if (selectedReviewView !== LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW) return
+    if (catalogPhase !== 'loaded' || !selectedLocalExchangeSample?.enabled) return
+    if (typeof selectedLocalExchangeSampleHandle !== 'string') return
     if (requestedLocalExchangeHandles.current.has(selectedLocalExchangeSampleHandle)) return
 
     requestedLocalExchangeHandles.current.add(selectedLocalExchangeSampleHandle)
@@ -323,7 +363,12 @@ export function InternalAlphaReviewConsole() {
           },
         }))
       })
-  }, [selectedReviewView, selectedLocalExchangeSampleHandle])
+  }, [
+    catalogPhase,
+    selectedLocalExchangeSample?.enabled,
+    selectedLocalExchangeSampleHandle,
+    selectedReviewView,
+  ])
 
   const reviewSurfaceSelector = (
     <Card className="panel-card internal-alpha-review-card">
@@ -358,17 +403,29 @@ export function InternalAlphaReviewConsole() {
             <Text strong>Read-only local-exchange sample</Text>
             <Select
               aria-label="Read-only local-exchange sample"
-              value={selectedLocalExchangeSampleHandle}
-              options={LOCAL_EXCHANGE_SAMPLE_OPTIONS}
+              value={selectedLocalExchangeSampleHandle ?? undefined}
+              options={localExchangeSampleOptions}
               onChange={setSelectedLocalExchangeSampleHandle}
+              disabled={catalogPhase !== 'loaded'}
+              placeholder="Sample catalog unavailable"
+              notFoundContent="No enabled samples available"
               style={{ minWidth: 280 }}
             />
             <Text type="secondary">
-              Selected sample handle = {selectedLocalExchangeSampleHandle}. Selection is read-only and cached for
-              this page mount.
+              Selected sample handle = {selectedLocalExchangeSampleHandle ?? 'not available'}. Selection is read-only
+              and cached for this page mount.
             </Text>
           </Space>
         </Card>
+
+        {catalogPhase !== 'loaded' && (
+          <Alert
+            showIcon
+            type={catalogPhase === 'loading' ? 'info' : 'warning'}
+            message={catalogPhase === 'loading' ? 'Loading sample catalog' : 'Sample catalog unavailable'}
+            description="No local-exchange projection request is made until a valid backend catalog is loaded."
+          />
+        )}
 
         <section className="internal-alpha-review-hero">
           <div>

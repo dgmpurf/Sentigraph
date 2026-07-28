@@ -256,6 +256,7 @@ def test_route_family_is_get_only_and_internal_only() -> None:
 
     assert set(route_methods) == {
         f"{ROUTE_PREFIX}/projections/{{projection_id}}",
+        f"{ROUTE_PREFIX}/local-exchange-samples",
         f"{ROUTE_PREFIX}/local-exchange-projections/{{sample_handle}}",
     }
     for path, methods in route_methods.items():
@@ -314,28 +315,31 @@ def test_current_frontend_integration_is_bounded_and_route_authorities_remain_se
 
     assert "const GOVERNED_RECORD_REVIEW_VIEW = 'governedRecordReview'" in frontend_page
     assert "useState(GOVERNED_RECORD_REVIEW_VIEW)" in frontend_page
-
+    assert "getInternalAlphaLocalExchangeSampleCatalog" in frontend_api
+    assert "normalizeInternalAlphaLocalExchangeSampleCatalog" in frontend_api
     assert "getInternalAlphaLocalExchangeProjection" in frontend_api
     assert "normalizeInternalAlphaLocalExchangeProjection" in frontend_api
     assert "internalAlphaLocalExchangeProjectionReview" in frontend_page
+    assert "localExchangeCatalogState" in frontend_page
     assert "localExchangeProjectionState" in frontend_page
-    assert "'helldivers2-psn-demo'" in frontend_api
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES" not in frontend_api
+    assert "LOCAL_EXCHANGE_SAMPLE_OPTIONS" not in frontend_page
+    for duplicated_catalog_value in (
+        "helldivers2-psn-demo",
+        "helldivers2-psn-demo-20260614",
+        "Current curated sample",
+        "Accepted historical sample",
+    ):
+        assert duplicated_catalog_value not in frontend_api
+        assert duplicated_catalog_value not in frontend_page
 
-    selection_guard = (
-        "if (selectedReviewView !== LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW) return"
-    )
-    request_call = (
-        "getInternalAlphaLocalExchangeProjection(LOCAL_EXCHANGE_PROJECTION_SAMPLE_HANDLE)"
-    )
-    selection_effect_dependency = "}, [selectedReviewView])"
-    selection_guard_index = frontend_page.index(selection_guard)
-    request_call_index = frontend_page.index(request_call)
-    selection_effect_end_index = frontend_page.index(
-        selection_effect_dependency,
-        request_call_index,
-    )
-    assert selection_guard_index < request_call_index < selection_effect_end_index
+    catalog_guard = "if (catalogPhase !== 'loaded' || !selectedLocalExchangeSample?.enabled) return"
+    selection_guard = "if (selectedReviewView !== LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW) return"
+    request_call = "getInternalAlphaLocalExchangeProjection(selectedLocalExchangeSampleHandle)"
+    assert frontend_page.index(selection_guard) < frontend_page.index(catalog_guard)
+    assert frontend_page.index(catalog_guard) < frontend_page.index(request_call)
     assert frontend_page.count(request_call) == 1
+    assert frontend_page.count("getInternalAlphaLocalExchangeSampleCatalog(") == 1
 
     for boundary_copy in (
         "Real metadata compatibility demonstrated for one approved sample.",
@@ -371,11 +375,34 @@ def test_current_frontend_integration_is_bounded_and_route_authorities_remain_se
         for node in route_tree.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
+    catalog_route = route_functions["get_internal_alpha_local_exchange_sample_catalog"]
     b05_route = route_functions["get_internal_alpha_local_exchange_review_projection"]
     f10_route = route_functions["get_internal_alpha_review_console_projection"]
 
-    b05_get_decorators = [
-        decorator
+    catalog_get_paths = [
+        ast.literal_eval(decorator.args[0])
+        for decorator in catalog_route.decorator_list
+        if isinstance(decorator, ast.Call)
+        and isinstance(decorator.func, ast.Attribute)
+        and isinstance(decorator.func.value, ast.Name)
+        and decorator.func.value.id == "router"
+        and decorator.func.attr == "get"
+    ]
+    assert catalog_get_paths == ["/local-exchange-samples"]
+    assert [argument.arg for argument in catalog_route.args.args] == []
+    catalog_calls = {
+        node.func.id
+        for node in ast.walk(catalog_route)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert catalog_calls == {
+        "_route_enabled",
+        "build_internal_alpha_local_exchange_sample_catalog",
+        "build_unavailable_internal_alpha_local_exchange_sample_catalog",
+    }
+
+    b05_get_paths = [
+        ast.literal_eval(decorator.args[0])
         for decorator in b05_route.decorator_list
         if isinstance(decorator, ast.Call)
         and isinstance(decorator.func, ast.Attribute)
@@ -383,12 +410,8 @@ def test_current_frontend_integration_is_bounded_and_route_authorities_remain_se
         and decorator.func.value.id == "router"
         and decorator.func.attr == "get"
     ]
-    assert len(b05_get_decorators) == 1
-    assert ast.literal_eval(b05_get_decorators[0].args[0]) == (
-        "/local-exchange-projections/{sample_handle}"
-    )
+    assert b05_get_paths == ["/local-exchange-projections/{sample_handle}"]
     assert [argument.arg for argument in b05_route.args.args] == ["sample_handle"]
-
     b05_calls = {
         node.func.id
         for node in ast.walk(b05_route)
@@ -415,10 +438,8 @@ def test_current_frontend_integration_is_bounded_and_route_authorities_remain_se
     }
     assert "_governed_record_projection_enabled" in f10_calls
     assert "build_governed_nonproduction_review_console_projection" in f10_calls
-    assert route_source.count('@router.get("/local-exchange-projections/{sample_handle}")') == 1
     for mutation_decorator in ("post", "put", "patch", "delete"):
-        assert f'@router.{mutation_decorator}("/local-exchange-projections/' not in route_source
-
+        assert f'@router.{mutation_decorator}("/local-exchange-' not in route_source
 
 def test_approval_phrases_are_not_user_input_or_write_authorization() -> None:
     route_module = Path("backend/app/api/v1/routes/internal_alpha_review_console.py")

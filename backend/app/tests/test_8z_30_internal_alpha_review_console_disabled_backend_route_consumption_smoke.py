@@ -323,36 +323,31 @@ def test_backend_route_tests_still_define_existing_disabled_internal_get_route()
     assert "unsupported_projection" in route_test_text
 
 
-def test_b05_api_helper_is_separate_normalized_and_exactly_one_get() -> None:
+def test_b05_api_helpers_are_separate_normalized_and_exactly_one_get_each() -> None:
     api_text = _read(FRONTEND_API_CLIENT)
-    helper_body = _helper_body(api_text, B05_READ_ONLY_HELPER)
-    safe_handles_start = api_text.index(
-        "export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES"
-    )
-    safe_handles_end = api_text.index("])", safe_handles_start)
-    safe_handles_block = api_text[safe_handles_start:safe_handles_end]
+    projection_helper = _helper_body(api_text, B05_READ_ONLY_HELPER)
+    catalog_helper = _helper_body(api_text, "getInternalAlphaLocalExchangeSampleCatalog")
 
     assert f"export async function {B05_READ_ONLY_HELPER}(sampleHandle)" in api_text
     assert f"export function {B05_NORMALIZER}(data)" in api_text
-    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES" in api_text
-    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS" in api_text
-    assert re.findall(r"'([a-z0-9-]+)'", safe_handles_block) == list(
-        B05_ORDERED_SAFE_HANDLES
-    )
-    assert (
-        "const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT = "
-        "'local-exchange-projections'"
-    ) in api_text
-    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT" in helper_body
-    assert "encodeURIComponent(sampleHandle)" in helper_body
-    assert "normalizeInternalAlphaLocalExchangeProjection(data)" in helper_body
-    assert helper_body.count("apiClient.get(") == 1
-    assert "projectionId" not in helper_body
-    assert "params:" not in helper_body
+    assert "export async function getInternalAlphaLocalExchangeSampleCatalog()" in api_text
+    assert "export function normalizeInternalAlphaLocalExchangeSampleCatalog(data)" in api_text
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES" not in api_text
+    for handle in B05_ORDERED_SAFE_HANDLES:
+        assert handle not in api_text
+    for label in ("Current curated sample", "Accepted historical sample"):
+        assert label not in api_text
 
-    for forbidden in FORBIDDEN_ROUTE_METHODS:
-        assert forbidden not in helper_body, forbidden
-
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT" in projection_helper
+    assert "encodeURIComponent(sampleHandle)" in projection_helper
+    assert "normalizeInternalAlphaLocalExchangeProjection(data)" in projection_helper
+    assert projection_helper.count("apiClient.get(") == 1
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLES_SEGMENT" in catalog_helper
+    assert "normalizeInternalAlphaLocalExchangeSampleCatalog(data)" in catalog_helper
+    assert catalog_helper.count("apiClient.get(") == 1
+    for helper_body in (projection_helper, catalog_helper):
+        for forbidden in FORBIDDEN_ROUTE_METHODS:
+            assert forbidden not in helper_body, forbidden
 
 def test_b05_backend_route_inventory_is_exact_get_only_and_separate_from_f10_gate() -> None:
     route_text = _read(BACKEND_ROUTE)
@@ -382,22 +377,32 @@ def test_b05_frontend_state_view_copy_and_no_mutation_controls_are_distinct() ->
     assert f"{B05_STATE_ID}ByHandle" in shell
     assert B05_READ_ONLY_HELPER in shell
     assert shell.count(f"{B05_READ_ONLY_HELPER}(") == 1
+    assert "getInternalAlphaLocalExchangeSampleCatalog" in shell
+    assert shell.count("getInternalAlphaLocalExchangeSampleCatalog(") == 1
     assert "GOVERNED_RECORD_REVIEW_VIEW" in shell
     assert "useState(GOVERNED_RECORD_REVIEW_VIEW)" in shell
     assert "selectedLocalExchangeSampleHandle" in shell
-    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0]" in shell
-    assert "value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0]" in shell
-    assert "value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[1]" in shell
-    assert "LOCAL_EXCHANGE_SAMPLE_OPTIONS" in shell
-    assert "Current curated sample" in shell
-    assert "Accepted historical sample" in shell
+    assert "localExchangeCatalogState" in shell
+    assert "localExchangeCatalog.samples.map" in shell
+    assert "sample.sample_handle" in shell
+    assert "sample.display_label" in shell
+    assert "sample.sample_role" in shell
+    assert "sample.is_default" in shell
+    assert "sample.enabled" in shell
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES" not in shell
+    assert "LOCAL_EXCHANGE_SAMPLE_OPTIONS" not in shell
+    for handle in B05_ORDERED_SAFE_HANDLES:
+        assert handle not in shell
+    for label in ("Current curated sample", "Accepted historical sample"):
+        assert label not in shell
     assert 'aria-label="Read-only local-exchange sample"' in shell
     assert "requestedLocalExchangeHandles" in shell
     assert "requestedLocalExchangeHandles.current.has(selectedLocalExchangeSampleHandle)" in shell
     assert "requestedLocalExchangeHandles.current.add(selectedLocalExchangeSampleHandle)" in shell
     assert f"{B05_READ_ONLY_HELPER}(selectedLocalExchangeSampleHandle)" in shell
-    assert "[selectedReviewView, selectedLocalExchangeSampleHandle]" in shell
     assert "localExchangeProjectionStateByHandle[selectedLocalExchangeSampleHandle]" in shell
+    assert "catalogPhase !== 'loaded'" in shell
+    assert "selectedLocalExchangeSample?.enabled" in shell
     assert "result_file_name" not in shell
     for phase in ("idle", "loading", "loaded", "unavailable", "bounded_error"):
         assert phase in shell

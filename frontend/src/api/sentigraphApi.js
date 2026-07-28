@@ -13,11 +13,33 @@ export const INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS = Object.freeze([
 const INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT = 'review-console'
 const INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT = 'projections'
 const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT = 'local-exchange-projections'
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLES_SEGMENT = 'local-exchange-samples'
 
-export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES = Object.freeze([
-  'helldivers2-psn-demo',
-  'helldivers2-psn-demo-20260614',
+export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS = Object.freeze([
+  'schema',
+  'version',
+  'mode',
+  'status',
+  'sample_count',
+  'default_sample_handle',
+  'samples',
+  'read_only',
+  'human_review_required',
+  'production_ready',
+  'mutable_authority_granted',
 ])
+export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS = Object.freeze([
+  'sample_handle',
+  'display_label',
+  'sample_role',
+  'is_default',
+  'enabled',
+  'catalog_order',
+])
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_MAX_CATALOG_SAMPLES = 16
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_DISPLAY_LABEL_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9 -]{0,78}[A-Za-z0-9])?$/
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_ROLE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
+
 export const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS = Object.freeze([
   'projection_schema',
   'projection_version',
@@ -109,6 +131,101 @@ const INTERNAL_ALPHA_LOCAL_EXCHANGE_FALSE_FLAGS = Object.freeze([
   'mutable_authority_granted',
 ])
 
+export function normalizeInternalAlphaLocalExchangeSampleCatalog(data) {
+  const contractError = () => {
+    throw new Error('frontend_sample_catalog_contract_mismatch')
+  }
+  if (!isPlainInternalAlphaProjectionObject(data)) contractError()
+
+  const keys = Object.keys(data)
+  if (
+    keys.length !== INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS.length ||
+    keys.some((field, index) => field !== INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS[index])
+  ) {
+    contractError()
+  }
+  if (
+    data.schema !== 'sentigraph_internal_alpha_local_exchange_sample_catalog_v0_1' ||
+    data.version !== '0.1' ||
+    data.mode !== 'internal_alpha_read_only_local_exchange_sample_catalog' ||
+    data.status !== 'ready' ||
+    data.read_only !== true ||
+    data.human_review_required !== true ||
+    data.production_ready !== false ||
+    data.mutable_authority_granted !== false ||
+    !Array.isArray(data.samples) ||
+    !Number.isInteger(data.sample_count) ||
+    data.sample_count < 1 ||
+    data.sample_count > INTERNAL_ALPHA_LOCAL_EXCHANGE_MAX_CATALOG_SAMPLES ||
+    data.sample_count !== data.samples.length
+  ) {
+    contractError()
+  }
+  if (
+    typeof data.default_sample_handle !== 'string' ||
+    data.default_sample_handle.length > INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_MAX_LENGTH ||
+    !INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_PATTERN.test(data.default_sample_handle)
+  ) {
+    contractError()
+  }
+
+  const seenHandles = new Set()
+  let defaultCount = 0
+  const normalizedSamples = data.samples.map((sample, index) => {
+    if (!isPlainInternalAlphaProjectionObject(sample)) contractError()
+    const sampleKeys = Object.keys(sample)
+    if (
+      sampleKeys.length !== INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS.length ||
+      sampleKeys.some((field, fieldIndex) => field !== INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS[fieldIndex]) ||
+      typeof sample.sample_handle !== 'string' ||
+      sample.sample_handle.length > INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_MAX_LENGTH ||
+      !INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_PATTERN.test(sample.sample_handle) ||
+      seenHandles.has(sample.sample_handle) ||
+      typeof sample.display_label !== 'string' ||
+      !INTERNAL_ALPHA_LOCAL_EXCHANGE_DISPLAY_LABEL_PATTERN.test(sample.display_label) ||
+      typeof sample.sample_role !== 'string' ||
+      !INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_ROLE_PATTERN.test(sample.sample_role) ||
+      typeof sample.is_default !== 'boolean' ||
+      typeof sample.enabled !== 'boolean' ||
+      sample.catalog_order !== index
+    ) {
+      contractError()
+    }
+    seenHandles.add(sample.sample_handle)
+    if (sample.is_default) {
+      defaultCount += 1
+      if (!sample.enabled || sample.sample_handle !== data.default_sample_handle) contractError()
+    }
+    return Object.freeze(
+      Object.fromEntries(
+        INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS.map((field) => [field, sample[field]]),
+      ),
+    )
+  })
+  if (defaultCount !== 1 || !seenHandles.has(data.default_sample_handle)) contractError()
+
+  return Object.freeze({
+    schema: data.schema,
+    version: data.version,
+    mode: data.mode,
+    status: data.status,
+    sample_count: data.sample_count,
+    default_sample_handle: data.default_sample_handle,
+    samples: Object.freeze(normalizedSamples),
+    read_only: data.read_only,
+    human_review_required: data.human_review_required,
+    production_ready: data.production_ready,
+    mutable_authority_granted: data.mutable_authority_granted,
+  })
+}
+
+export async function getInternalAlphaLocalExchangeSampleCatalog() {
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT}/${INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLES_SEGMENT}`,
+  )
+  return normalizeInternalAlphaLocalExchangeSampleCatalog(data)
+}
+
 export async function getInternalAlphaReviewConsoleProjection(projectionId) {
   const projectionIsAllowed = INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS.includes(projectionId)
   if (!projectionIsAllowed) throw new Error('Unsupported internal alpha review console projection id')
@@ -172,8 +289,7 @@ export async function getInternalAlphaLocalExchangeProjection(sampleHandle) {
   const handleIsAllowed =
     typeof sampleHandle === 'string' &&
     sampleHandle.length <= INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_MAX_LENGTH &&
-    INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_PATTERN.test(sampleHandle) &&
-    INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES.includes(sampleHandle)
+    INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_PATTERN.test(sampleHandle)
   if (!handleIsAllowed) throw new Error('Unsupported internal alpha local exchange sample handle')
 
   const encodedSampleHandle = encodeURIComponent(sampleHandle)

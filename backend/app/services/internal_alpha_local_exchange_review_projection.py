@@ -48,6 +48,8 @@ _REQUIRED_GATES = (
     B01_LOCAL_EXCHANGE_GATE_ENV,
     B03_PROJECTION_GATE_ENV,
 )
+_SAFE_DISPLAY_LABEL = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 -]{0,78}[A-Za-z0-9])?$")
+_SAFE_SAMPLE_ROLE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 StagingBuilder = Callable[
     [str, LocalExchangeReviewOnlyStagingBridgeConfig],
@@ -60,7 +62,11 @@ ProjectionBuilder = Callable[[str, Mapping[str, Any] | object], dict[str, Any]]
 class InternalAlphaLocalExchangeSampleRegistryEntry:
     sample_handle: str
     result_file_name: str
+    display_label: str
+    sample_role: str
+    is_default: bool
     enabled: bool
+    catalog_order: int
     route_mode: str
     capability_label: str
 
@@ -169,7 +175,15 @@ def _is_bounded_registry_entry(value: object) -> bool:
         and isinstance(value.result_file_name, str)
         and 0 < len(value.result_file_name) <= 160
         and _SAFE_RESULT_BASENAME.fullmatch(value.result_file_name) is not None
+        and isinstance(value.display_label, str)
+        and _SAFE_DISPLAY_LABEL.fullmatch(value.display_label) is not None
+        and isinstance(value.sample_role, str)
+        and _SAFE_SAMPLE_ROLE.fullmatch(value.sample_role) is not None
+        and isinstance(value.is_default, bool)
         and isinstance(value.enabled, bool)
+        and isinstance(value.catalog_order, int)
+        and not isinstance(value.catalog_order, bool)
+        and 0 <= value.catalog_order <= 31
         and _is_bounded_label(value.route_mode)
         and _is_bounded_label(value.capability_label)
     )
@@ -189,14 +203,22 @@ DEFAULT_SAMPLE_REGISTRY: Final = build_internal_alpha_local_exchange_sample_regi
         InternalAlphaLocalExchangeSampleRegistryEntry(
             sample_handle="helldivers2-psn-demo",
             result_file_name="provider_result_helldivers2-psn-demo_20260720_123627.json",
+            display_label="Current curated sample",
+            sample_role="current_curated",
+            is_default=True,
             enabled=True,
+            catalog_order=0,
             route_mode=ROUTE_MODE,
             capability_label=CAPABILITY_LABEL,
         ),
         InternalAlphaLocalExchangeSampleRegistryEntry(
             sample_handle="helldivers2-psn-demo-20260614",
             result_file_name="provider_result_helldivers2-psn-demo_20260614_055754.json",
+            display_label="Accepted historical sample",
+            sample_role="accepted_historical",
+            is_default=False,
             enabled=True,
+            catalog_order=1,
             route_mode=ROUTE_MODE,
             capability_label=CAPABILITY_LABEL,
         ),
