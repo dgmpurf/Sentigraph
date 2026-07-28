@@ -30,6 +30,8 @@ B05_ROUTE_DECORATOR = '@router.get("/local-exchange-projections/{sample_handle}"
 B05_VIEW_ID = "internalAlphaLocalExchangeProjectionReview"
 B05_STATE_ID = "localExchangeProjectionState"
 B05_SAFE_HANDLE = "helldivers2-psn-demo"
+B05_HISTORICAL_SAFE_HANDLE = "helldivers2-psn-demo-20260614"
+B05_ORDERED_SAFE_HANDLES = (B05_SAFE_HANDLE, B05_HISTORICAL_SAFE_HANDLE)
 SAFE_PROJECTION_ID = "internal-alpha-safe-projection-fixture"
 SAFE_ALT_PROJECTION_ID = "8z16-no-write-alpha-fixture"
 GOVERNED_PROJECTION_ID = "governed-nonproduction-record-review-v0-1"
@@ -324,12 +326,19 @@ def test_backend_route_tests_still_define_existing_disabled_internal_get_route()
 def test_b05_api_helper_is_separate_normalized_and_exactly_one_get() -> None:
     api_text = _read(FRONTEND_API_CLIENT)
     helper_body = _helper_body(api_text, B05_READ_ONLY_HELPER)
+    safe_handles_start = api_text.index(
+        "export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES"
+    )
+    safe_handles_end = api_text.index("])", safe_handles_start)
+    safe_handles_block = api_text[safe_handles_start:safe_handles_end]
 
     assert f"export async function {B05_READ_ONLY_HELPER}(sampleHandle)" in api_text
     assert f"export function {B05_NORMALIZER}(data)" in api_text
     assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES" in api_text
     assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS" in api_text
-    assert B05_SAFE_HANDLE in api_text
+    assert re.findall(r"'([a-z0-9-]+)'", safe_handles_block) == list(
+        B05_ORDERED_SAFE_HANDLES
+    )
     assert (
         "const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT = "
         "'local-exchange-projections'"
@@ -370,11 +379,25 @@ def test_b05_frontend_state_view_copy_and_no_mutation_controls_are_distinct() ->
     shell = _read(FRONTEND_SHELL)
 
     assert B05_VIEW_ID in shell
-    assert B05_STATE_ID in shell
+    assert f"{B05_STATE_ID}ByHandle" in shell
     assert B05_READ_ONLY_HELPER in shell
+    assert shell.count(f"{B05_READ_ONLY_HELPER}(") == 1
     assert "GOVERNED_RECORD_REVIEW_VIEW" in shell
     assert "useState(GOVERNED_RECORD_REVIEW_VIEW)" in shell
+    assert "selectedLocalExchangeSampleHandle" in shell
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0]" in shell
+    assert "value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0]" in shell
+    assert "value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[1]" in shell
+    assert "LOCAL_EXCHANGE_SAMPLE_OPTIONS" in shell
+    assert "Current curated sample" in shell
+    assert "Accepted historical sample" in shell
+    assert 'aria-label="Read-only local-exchange sample"' in shell
     assert "requestedLocalExchangeHandles" in shell
+    assert "requestedLocalExchangeHandles.current.has(selectedLocalExchangeSampleHandle)" in shell
+    assert "requestedLocalExchangeHandles.current.add(selectedLocalExchangeSampleHandle)" in shell
+    assert f"{B05_READ_ONLY_HELPER}(selectedLocalExchangeSampleHandle)" in shell
+    assert "[selectedReviewView, selectedLocalExchangeSampleHandle]" in shell
+    assert "localExchangeProjectionStateByHandle[selectedLocalExchangeSampleHandle]" in shell
     assert "result_file_name" not in shell
     for phase in ("idle", "loading", "loaded", "unavailable", "bounded_error"):
         assert phase in shell
@@ -410,3 +433,6 @@ def test_b05_frontend_state_view_copy_and_no_mutation_controls_are_distinct() ->
         "decision-ledger",
     ):
         assert forbidden not in shell
+
+    assert "retry" not in shell.casefold()
+    assert "prefetch" not in shell.casefold()

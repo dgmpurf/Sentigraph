@@ -20,7 +20,6 @@ const STATIC_SOURCE_CHAIN_BOUNDARY_LABEL =
   'source_chain_boundary = evidence_layer_write_candidate_boundary'
 const GOVERNED_RECORD_REVIEW_VIEW = 'governedRecordReview'
 const LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW = 'internalAlphaLocalExchangeProjectionReview'
-const LOCAL_EXCHANGE_PROJECTION_SAMPLE_HANDLE = INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0]
 
 const INITIAL_LOCAL_EXCHANGE_PROJECTION_STATE = Object.freeze({
   requestPhase: 'idle',
@@ -44,6 +43,17 @@ const REVIEW_SURFACE_OPTIONS = Object.freeze([
   {
     value: LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW,
     label: 'Local-exchange projection review',
+  },
+])
+
+const LOCAL_EXCHANGE_SAMPLE_OPTIONS = Object.freeze([
+  {
+    value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0],
+    label: 'Current curated sample',
+  },
+  {
+    value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[1],
+    label: 'Accepted historical sample',
   },
 ])
 
@@ -231,8 +241,17 @@ export function InternalAlphaReviewConsole() {
   const fixture = INTERNAL_ALPHA_REVIEW_CONSOLE_STATIC_FIXTURE
   const [routeState, setRouteState] = useState(STATIC_FALLBACK_ROUTE_STATE)
   const [selectedReviewView, setSelectedReviewView] = useState(GOVERNED_RECORD_REVIEW_VIEW)
-  const [localExchangeProjectionState, setLocalExchangeProjectionState] = useState(
-    INITIAL_LOCAL_EXCHANGE_PROJECTION_STATE,
+  const [selectedLocalExchangeSampleHandle, setSelectedLocalExchangeSampleHandle] = useState(
+    INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0],
+  )
+  const [localExchangeProjectionStateByHandle, setLocalExchangeProjectionStateByHandle] = useState(
+    () =>
+      Object.fromEntries(
+        INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES.map((sampleHandle) => [
+          sampleHandle,
+          INITIAL_LOCAL_EXCHANGE_PROJECTION_STATE,
+        ]),
+      ),
   )
   const requestedLocalExchangeHandles = useRef(new Set())
   const pageIsMounted = useRef(true)
@@ -272,30 +291,39 @@ export function InternalAlphaReviewConsole() {
 
   useEffect(() => {
     if (selectedReviewView !== LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW) return
-    if (requestedLocalExchangeHandles.current.has(LOCAL_EXCHANGE_PROJECTION_SAMPLE_HANDLE)) return
+    if (requestedLocalExchangeHandles.current.has(selectedLocalExchangeSampleHandle)) return
 
-    requestedLocalExchangeHandles.current.add(LOCAL_EXCHANGE_PROJECTION_SAMPLE_HANDLE)
-    setLocalExchangeProjectionState({
-      requestPhase: 'loading',
-      projectionPhase: null,
-      projection: null,
-      errorCode: null,
-    })
-    getInternalAlphaLocalExchangeProjection(LOCAL_EXCHANGE_PROJECTION_SAMPLE_HANDLE)
+    requestedLocalExchangeHandles.current.add(selectedLocalExchangeSampleHandle)
+    setLocalExchangeProjectionStateByHandle((currentStateByHandle) => ({
+      ...currentStateByHandle,
+      [selectedLocalExchangeSampleHandle]: {
+        requestPhase: 'loading',
+        projectionPhase: null,
+        projection: null,
+        errorCode: null,
+      },
+    }))
+    getInternalAlphaLocalExchangeProjection(selectedLocalExchangeSampleHandle)
       .then((projection) => {
         if (!pageIsMounted.current) return
-        setLocalExchangeProjectionState(describeLocalExchangeProjection(projection))
+        setLocalExchangeProjectionStateByHandle((currentStateByHandle) => ({
+          ...currentStateByHandle,
+          [selectedLocalExchangeSampleHandle]: describeLocalExchangeProjection(projection),
+        }))
       })
       .catch(() => {
         if (!pageIsMounted.current) return
-        setLocalExchangeProjectionState({
-          requestPhase: 'bounded_error',
-          projectionPhase: null,
-          projection: null,
-          errorCode: 'frontend_projection_contract_mismatch',
-        })
+        setLocalExchangeProjectionStateByHandle((currentStateByHandle) => ({
+          ...currentStateByHandle,
+          [selectedLocalExchangeSampleHandle]: {
+            requestPhase: 'bounded_error',
+            projectionPhase: null,
+            projection: null,
+            errorCode: 'frontend_projection_contract_mismatch',
+          },
+        }))
       })
-  }, [selectedReviewView])
+  }, [selectedReviewView, selectedLocalExchangeSampleHandle])
 
   const reviewSurfaceSelector = (
     <Card className="panel-card internal-alpha-review-card">
@@ -314,6 +342,9 @@ export function InternalAlphaReviewConsole() {
   )
 
   if (selectedReviewView === LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW) {
+    const localExchangeProjectionState =
+      localExchangeProjectionStateByHandle[selectedLocalExchangeSampleHandle] ??
+      INITIAL_LOCAL_EXCHANGE_PROJECTION_STATE
     const localProjection = localExchangeProjectionState.projection
     const localWarnings = localProjection?.warnings ?? []
     const localBlockers = localProjection?.blockers ?? []
@@ -321,6 +352,23 @@ export function InternalAlphaReviewConsole() {
     return (
       <div className="page-stack internal-alpha-review-shell-page">
         {reviewSurfaceSelector}
+
+        <Card className="panel-card internal-alpha-review-card">
+          <Space wrap align="center">
+            <Text strong>Read-only local-exchange sample</Text>
+            <Select
+              aria-label="Read-only local-exchange sample"
+              value={selectedLocalExchangeSampleHandle}
+              options={LOCAL_EXCHANGE_SAMPLE_OPTIONS}
+              onChange={setSelectedLocalExchangeSampleHandle}
+              style={{ minWidth: 280 }}
+            />
+            <Text type="secondary">
+              Selected sample handle = {selectedLocalExchangeSampleHandle}. Selection is read-only and cached for
+              this page mount.
+            </Text>
+          </Space>
+        </Card>
 
         <section className="internal-alpha-review-hero">
           <div>

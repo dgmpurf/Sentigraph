@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
@@ -29,9 +30,15 @@ FRONTEND_PAGE_PATH = REPO_ROOT / "frontend/src/pages/InternalAlphaReviewConsole.
 SERVICE_MODULE = "app.services.internal_alpha_local_exchange_review_projection"
 ROUTE_MODULE = "app.api.v1.routes.internal_alpha_review_console"
 SAFE_HANDLE = "helldivers2-psn-demo"
+HISTORICAL_HANDLE = "helldivers2-psn-demo-20260614"
+ORDERED_SAFE_HANDLES = (SAFE_HANDLE, HISTORICAL_HANDLE)
 SYNTHETIC_RESULT_NAME = "synthetic-result.json"
 HISTORICAL_RESULT_NAME = "provider_result_helldivers2-psn-demo_20260614_055754.json"
 REAL_RESULT_NAME = "provider_result_helldivers2-psn-demo_20260720_123627.json"
+ORDERED_DEFAULT_MAPPINGS = (
+    (SAFE_HANDLE, REAL_RESULT_NAME),
+    (HISTORICAL_HANDLE, HISTORICAL_RESULT_NAME),
+)
 ROUTE_PATH_TEMPLATE = (
     "/api/v1/internal/alpha/review-console/"
     "local-exchange-projections/{sample_handle}"
@@ -308,14 +315,10 @@ def test_constants_default_registry_and_exact_b03_contract_are_frozen() -> None:
     assert len(PROJECTION_FIELDS) == 52
     service_source = SERVICE_PATH.read_text(encoding="utf-8")
     assert service_source.count(REAL_RESULT_NAME) == 1
-    assert HISTORICAL_RESULT_NAME not in service_source
+    assert service_source.count(HISTORICAL_RESULT_NAME) == 1
     assert isinstance(service.DEFAULT_SAMPLE_REGISTRY, MappingProxyType)
-    assert tuple(service.DEFAULT_SAMPLE_REGISTRY) == (SAFE_HANDLE,)
-    entry = service.DEFAULT_SAMPLE_REGISTRY[SAFE_HANDLE]
-    assert isinstance(
-        entry,
-        service.InternalAlphaLocalExchangeSampleRegistryEntry,
-    )
+    assert len(service.DEFAULT_SAMPLE_REGISTRY) == 2
+    assert tuple(service.DEFAULT_SAMPLE_REGISTRY) == ORDERED_SAFE_HANDLES
     assert tuple(service.InternalAlphaLocalExchangeSampleRegistryEntry.__dataclass_fields__) == (
         "sample_handle",
         "result_file_name",
@@ -323,21 +326,28 @@ def test_constants_default_registry_and_exact_b03_contract_are_frozen() -> None:
         "route_mode",
         "capability_label",
     )
-    assert (
-        entry.sample_handle,
-        entry.result_file_name,
-        entry.enabled,
-        entry.route_mode,
-        entry.capability_label,
-    ) == (
-        SAFE_HANDLE,
-        REAL_RESULT_NAME,
-        True,
-        ROUTE_MODE,
-        CAPABILITY_LABEL,
-    )
+    for sample_handle, result_file_name in ORDERED_DEFAULT_MAPPINGS:
+        entry = service.DEFAULT_SAMPLE_REGISTRY[sample_handle]
+        assert isinstance(
+            entry,
+            service.InternalAlphaLocalExchangeSampleRegistryEntry,
+        )
+        assert (
+            entry.sample_handle,
+            entry.result_file_name,
+            entry.enabled,
+            entry.route_mode,
+            entry.capability_label,
+        ) == (
+            sample_handle,
+            result_file_name,
+            True,
+            ROUTE_MODE,
+            CAPABILITY_LABEL,
+        )
     with pytest.raises(TypeError):
         service.DEFAULT_SAMPLE_REGISTRY[SAFE_HANDLE] = object()
+    entry = service.DEFAULT_SAMPLE_REGISTRY[SAFE_HANDLE]
     with pytest.raises(ValueError, match="duplicate_sample_handle"):
         service.build_internal_alpha_local_exchange_sample_registry([entry, entry])
 
@@ -382,7 +392,10 @@ def test_valid_handle_is_accepted_and_malformed_handle_never_looks_up_registry()
         calls["projection"] += 1
         raise AssertionError("B03 must not run")
 
-    assert service.validate_internal_alpha_local_exchange_sample_handle(SAFE_HANDLE) is True
+    assert all(
+        service.validate_internal_alpha_local_exchange_sample_handle(handle) is True
+        for handle in ORDERED_SAFE_HANDLES
+    )
     payload = service.build_internal_alpha_local_exchange_review_projection(
         "../invalid",
         registry=_ExplodingRegistry(),
@@ -601,7 +614,14 @@ def test_synthetic_ready_path_calls_b01_and_b03_once_and_returns_same_direct_obj
     assert calls["config"].adapter_id == "synthetic_local_exchange_adapter"
 
 
-def test_real_default_mapping_uses_exact_basename_with_injected_fake_builders() -> None:
+@pytest.mark.parametrize(
+    ("sample_handle", "expected_result_name"),
+    ORDERED_DEFAULT_MAPPINGS,
+)
+def test_each_default_registry_handle_uses_only_its_exact_basename_with_injected_fake_builders(
+    sample_handle: str,
+    expected_result_name: str,
+) -> None:
     service = _service()
     calls: dict[str, Any] = {
         "staging": 0,
@@ -609,9 +629,9 @@ def test_real_default_mapping_uses_exact_basename_with_injected_fake_builders() 
         "result_names": [],
     }
     upstream = _ready_upstream()
-    upstream["result_file_name"] = REAL_RESULT_NAME
+    upstream["result_file_name"] = expected_result_name
     expected_projection = build_local_exchange_review_only_projection(
-        REAL_RESULT_NAME,
+        expected_result_name,
         upstream,
     )
 
@@ -633,7 +653,7 @@ def test_real_default_mapping_uses_exact_basename_with_injected_fake_builders() 
         return expected_projection
 
     payload = service.build_internal_alpha_local_exchange_review_projection(
-        SAFE_HANDLE,
+        sample_handle,
         environment=_enabled_environment(),
         staging_builder=fake_staging,
         projection_builder=fake_projection,
@@ -643,7 +663,7 @@ def test_real_default_mapping_uses_exact_basename_with_injected_fake_builders() 
     assert calls == {
         "staging": 1,
         "projection": 1,
-        "result_names": [REAL_RESULT_NAME, REAL_RESULT_NAME],
+        "result_names": [expected_result_name, expected_result_name],
     }
 
 
@@ -821,8 +841,14 @@ def test_frontend_api_has_exact_normalizer_and_one_encoded_get_without_fallback(
         "normalizeInternalAlphaLocalExchangeProjection",
     )
 
-    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES" in source
-    assert SAFE_HANDLE in source
+    safe_handles_start = source.index(
+        "export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES"
+    )
+    safe_handles_end = source.index("])", safe_handles_start)
+    safe_handles_block = source[safe_handles_start:safe_handles_end]
+    assert re.findall(r"'([a-z0-9-]+)'", safe_handles_block) == list(
+        ORDERED_SAFE_HANDLES
+    )
     assert helper.count("apiClient.get(") == 1
     assert "encodeURIComponent(sampleHandle)" in helper
     assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT" in helper
@@ -843,18 +869,40 @@ def test_frontend_api_has_exact_normalizer_and_one_encoded_get_without_fallback(
     assert "Object.keys" in normalizer
     assert "Object.freeze" in normalizer
     assert "frontend_projection_contract_mismatch" in normalizer
+    assert len(PROJECTION_FIELDS) == 52
     for field in PROJECTION_FIELDS:
         assert f"'{field}'" in source
 
 
-def test_frontend_page_keeps_f10_default_and_adds_distinct_b05_state_view_and_copy() -> None:
+def test_frontend_page_keeps_f10_default_and_adds_dual_sample_cached_b05_state_view() -> None:
     source = FRONTEND_PAGE_PATH.read_text(encoding="utf-8")
 
     assert "getInternalAlphaReviewConsoleProjection" in source
     assert "GOVERNED_REVIEW_CONSOLE_PROJECTION_ID" in source
     assert "internalAlphaLocalExchangeProjectionReview" in source
-    assert "localExchangeProjectionState" in source
+    assert "selectedLocalExchangeSampleHandle" in source
+    assert "localExchangeProjectionStateByHandle" in source
     assert "getInternalAlphaLocalExchangeProjection" in source
+    assert source.count("getInternalAlphaLocalExchangeProjection(") == 1
+    assert "LOCAL_EXCHANGE_SAMPLE_OPTIONS" in source
+    assert "Current curated sample" in source
+    assert "Accepted historical sample" in source
+    assert 'aria-label="Read-only local-exchange sample"' in source
+    local_view_start = source.index(
+        "if (selectedReviewView === LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW)"
+    )
+    sample_selector_start = source.index(
+        'aria-label="Read-only local-exchange sample"'
+    )
+    assert sample_selector_start > local_view_start
+    assert "INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0]" in source
+    assert "value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[0]" in source
+    assert "value: INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES[1]" in source
+    assert "requestedLocalExchangeHandles.current.has(selectedLocalExchangeSampleHandle)" in source
+    assert "requestedLocalExchangeHandles.current.add(selectedLocalExchangeSampleHandle)" in source
+    assert "getInternalAlphaLocalExchangeProjection(selectedLocalExchangeSampleHandle)" in source
+    assert "[selectedReviewView, selectedLocalExchangeSampleHandle]" in source
+    assert "localExchangeProjectionStateByHandle[selectedLocalExchangeSampleHandle]" in source
     for request_phase in ("idle", "loading", "loaded", "unavailable", "bounded_error"):
         assert request_phase in source
     for projection_phase in (
@@ -878,6 +926,7 @@ def test_frontend_page_keeps_f10_default_and_adds_distinct_b05_state_view_and_co
     assert "sessionStorage" not in source
     assert "console.log" not in source
     assert "retry" not in source.casefold()
+    assert "prefetch" not in source.casefold()
 
 
 def test_frontend_b05_surface_has_no_filename_path_config_or_mutation_controls() -> None:

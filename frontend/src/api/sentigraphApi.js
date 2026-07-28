@@ -16,6 +16,7 @@ const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT = 'local-exchange-projec
 
 export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAFE_SAMPLE_HANDLES = Object.freeze([
   'helldivers2-psn-demo',
+  'helldivers2-psn-demo-20260614',
 ])
 export const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS = Object.freeze([
   'projection_schema',

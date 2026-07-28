@@ -193,5 +193,12 @@ DEFAULT_SAMPLE_REGISTRY: Final = build_internal_alpha_local_exchange_sample_regi
             route_mode=ROUTE_MODE,
             capability_label=CAPABILITY_LABEL,
         ),
+        InternalAlphaLocalExchangeSampleRegistryEntry(
+            sample_handle="helldivers2-psn-demo-20260614",
+            result_file_name="provider_result_helldivers2-psn-demo_20260614_055754.json",
+            enabled=True,
+            route_mode=ROUTE_MODE,
+            capability_label=CAPABILITY_LABEL,
+        ),
     )
 )
