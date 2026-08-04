@@ -675,6 +675,87 @@ def test_each_default_registry_handle_uses_only_its_exact_basename_with_injected
     }
 
 
+@pytest.mark.parametrize(
+    "projection_case",
+    ("reordered_complete", "missing_mutable_authority_granted"),
+)
+def test_reordered_or_incomplete_injected_projection_fails_closed(
+    projection_case: str,
+) -> None:
+    service = _service()
+    environment = _enabled_environment()
+    upstream_path_marker = "synthetic/private/upstream/path"
+    invalid_projection_marker = "invalid_projection_content_must_not_escape"
+    upstream = _ready_upstream()
+    upstream["synthetic_private_marker"] = upstream_path_marker
+    calls: dict[str, Any] = {
+        "staging": 0,
+        "projection": 0,
+        "result_names": [],
+    }
+
+    def fake_staging(result_file_name: str, config: Any) -> dict[str, Any]:
+        calls["staging"] += 1
+        calls["result_names"].append(result_file_name)
+        assert result_file_name == REAL_RESULT_NAME
+        assert config.results_dir == "synthetic-results-root"
+        assert config.export_root == "synthetic-export-root"
+        assert config.adapter_id == "synthetic_local_exchange_adapter"
+        return upstream
+
+    def fake_projection(
+        result_file_name: str,
+        received_upstream: dict[str, Any],
+    ) -> dict[str, Any]:
+        calls["projection"] += 1
+        calls["result_names"].append(result_file_name)
+        assert result_file_name == REAL_RESULT_NAME
+        assert received_upstream is upstream
+
+        ordered_items = [
+            (field, invalid_projection_marker)
+            for field in PROJECTION_FIELDS
+        ]
+        if projection_case == "reordered_complete":
+            invalid_projection = dict(ordered_items[1:] + ordered_items[:1])
+            assert len(invalid_projection) == 52
+            assert set(invalid_projection) == set(PROJECTION_FIELDS)
+            assert tuple(invalid_projection) != PROJECTION_FIELDS
+            return invalid_projection
+
+        missing_field = "mutable_authority_granted"
+        invalid_projection = dict(
+            (field, value)
+            for field, value in ordered_items
+            if field != missing_field
+        )
+        assert len(invalid_projection) == 51
+        assert missing_field not in invalid_projection
+        assert tuple(invalid_projection) == tuple(
+            field for field in PROJECTION_FIELDS if field != missing_field
+        )
+        return invalid_projection
+
+    payload = service.build_internal_alpha_local_exchange_review_projection(
+        SAFE_HANDLE,
+        environment=environment,
+        staging_builder=fake_staging,
+        projection_builder=fake_projection,
+    )
+
+    _assert_exact_sentinel(payload, "b05_projection_contract_mismatch")
+    assert calls == {
+        "staging": 1,
+        "projection": 1,
+        "result_names": [REAL_RESULT_NAME, REAL_RESULT_NAME],
+    }
+    rendered = repr(payload)
+    for config_name in CONFIG_ENVS:
+        assert environment[config_name] not in rendered
+    assert upstream_path_marker not in rendered
+    assert invalid_projection_marker not in rendered
+
+
 def test_direct_b03_response_has_no_envelope_or_f10_persisted_record_fields() -> None:
     service = _service()
     payload = service.build_internal_alpha_local_exchange_review_projection(
