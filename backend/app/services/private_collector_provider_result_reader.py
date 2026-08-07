@@ -122,6 +122,8 @@ class PrivateCollectorProviderResultReaderResult:
 def read_provider_result_metadata(
     provider_result: dict[str, Any] | str | Path,
     export_root: str | Path,
+    *,
+    metadata_read_profile: str | None = None,
 ) -> PrivateCollectorProviderResultReaderResult:
     """Read a metadata-only provider result and resolve its package reference."""
 
@@ -155,7 +157,14 @@ def read_provider_result_metadata(
             safe_summary=build_provider_handoff_summary(payload, None, status="manual_review_required"),
         )
 
-    resolver_result = resolve_provider_result_package(payload, export_root)
+    if metadata_read_profile is None:
+        resolver_result = resolve_provider_result_package(payload, export_root)
+    else:
+        resolver_result = resolve_provider_result_package(
+            payload,
+            export_root,
+            metadata_read_profile=metadata_read_profile,
+        )
     final_status = _status_from_provider_and_resolver(provider_status, resolver_result.status)
     warnings = list(resolver_result.warnings)
     if provider_status in MANUAL_REVIEW_PROVIDER_STATUSES:
@@ -237,6 +246,8 @@ def validate_provider_result_metadata(provider_result: dict[str, Any]) -> Privat
 def resolve_provider_result_package(
     provider_result: dict[str, Any],
     export_root: str | Path,
+    *,
+    metadata_read_profile: str | None = None,
 ) -> PrivateCollectorPackageResolutionResult:
     package_reference = provider_result["package_reference"]
     strategy = package_reference["package_locator_strategy"]
@@ -251,7 +262,13 @@ def resolve_provider_result_package(
         package_entry = {
             "package_path_relative": package_reference.get("package_path_relative"),
         }
-    return resolve_private_collector_package(export_root, package_entry)
+    if metadata_read_profile is None:
+        return resolve_private_collector_package(export_root, package_entry)
+    return resolve_private_collector_package(
+        export_root,
+        package_entry,
+        metadata_read_profile=metadata_read_profile,
+    )
 
 
 def build_provider_handoff_summary(

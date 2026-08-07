@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from app.services.private_collector_package_resolver import REQUIRED_PACKAGE_METADATA_FILES
+import app.services.private_collector_provider_result_reader as provider_reader_module
+from app.services.private_collector_package_resolver import (
+    GOVERNED_B05_METADATA_READ_PROFILE,
+    PrivateCollectorPackageResolutionResult,
+    REQUIRED_PACKAGE_METADATA_FILES,
+)
 from app.services.private_collector_provider_result_reader import (
     build_provider_handoff_summary,
     read_provider_result_metadata,
@@ -77,6 +82,14 @@ def _write_provider_result(path: Path, payload: dict) -> Path:
     return path
 
 
+def _accepted_resolution(package_name: str = "helldivers_package") -> PrivateCollectorPackageResolutionResult:
+    return PrivateCollectorPackageResolutionResult(
+        status="accepted_metadata_only",
+        package_name=package_name,
+        locator_strategy="package_name_under_configured_export_root",
+    )
+
+
 def test_valid_provider_result_with_package_name_resolves_to_metadata_only_summary(tmp_path: Path) -> None:
     export_root = tmp_path / "exports"
     _write_package(export_root, "helldivers_package")
@@ -143,6 +156,76 @@ def test_relative_locator_calls_resolver_with_explicit_relative_field(tmp_path: 
     assert result.status == "accepted_metadata_only"
     assert result.package_name == "relative_package"
     assert result.locator_strategy == "package_path_relative_to_export_root"
+
+
+def test_named_metadata_read_profile_is_forwarded_to_resolver_exactly_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[object, object, object]] = []
+
+    def fake_resolver(
+        export_root: object,
+        package_entry: object,
+        *,
+        metadata_read_profile: object,
+    ) -> PrivateCollectorPackageResolutionResult:
+        calls.append((export_root, package_entry, metadata_read_profile))
+        return _accepted_resolution()
+
+    monkeypatch.setattr(
+        provider_reader_module,
+        "resolve_private_collector_package",
+        fake_resolver,
+    )
+
+    result = read_provider_result_metadata(
+        _provider_result_payload(),
+        tmp_path / "exports",
+        metadata_read_profile=GOVERNED_B05_METADATA_READ_PROFILE,
+    )
+
+    assert result.status == "accepted_metadata_only"
+    assert calls == [
+        (
+            tmp_path / "exports",
+            {"package_name": "helldivers_package"},
+            GOVERNED_B05_METADATA_READ_PROFILE,
+        )
+    ]
+
+
+def test_omitted_metadata_read_profile_preserves_two_argument_resolver_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[object, object]] = []
+
+    def strict_two_argument_resolver(
+        export_root: object,
+        package_entry: object,
+    ) -> PrivateCollectorPackageResolutionResult:
+        calls.append((export_root, package_entry))
+        return _accepted_resolution()
+
+    monkeypatch.setattr(
+        provider_reader_module,
+        "resolve_private_collector_package",
+        strict_two_argument_resolver,
+    )
+
+    result = read_provider_result_metadata(
+        _provider_result_payload(),
+        tmp_path / "exports",
+    )
+
+    assert result.status == "accepted_metadata_only"
+    assert calls == [
+        (
+            tmp_path / "exports",
+            {"package_name": "helldivers_package"},
+        )
+    ]
 
 
 def test_manual_review_required_legacy_path_does_not_silently_accept(tmp_path: Path) -> None:

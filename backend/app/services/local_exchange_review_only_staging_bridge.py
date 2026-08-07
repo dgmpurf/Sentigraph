@@ -9,6 +9,9 @@ from app.schemas.local_exchange import LocalExchangeReaderConfig
 from app.services.local_exchange_reader import (
     read_provider_result_metadata as read_local_exchange_provider_result_metadata,
 )
+from app.services.private_collector_package_resolver import (
+    GOVERNED_B05_METADATA_READ_PROFILE as _RESOLVER_GOVERNED_B05_METADATA_READ_PROFILE,
+)
 from app.services.private_collector_provider_result_reader import (
     PrivateCollectorProviderResultReaderResult,
     read_provider_result_metadata as read_private_collector_provider_result_metadata,
@@ -19,6 +22,10 @@ from app.services.private_collector_review_only_staging import (
     create_review_only_staging_candidate,
 )
 
+
+GOVERNED_B05_STAGING_METADATA_READ_PROFILE = (
+    _RESOLVER_GOVERNED_B05_METADATA_READ_PROFILE
+)
 
 RESPONSE_SCHEMA = "internal_operator_review_only_staging_local_exchange_response_v0_1"
 OUTPUT_PROVIDER_RESULT_SCHEMA = "sentigraph_provider_job_result_v0_1"
@@ -78,6 +85,7 @@ class LocalExchangeReviewOnlyStagingBridgeConfig:
     results_dir: str = ""
     export_root: str = ""
     adapter_id: str = ""
+    metadata_read_profile: str | None = None
 
 
 @dataclass(slots=True)
@@ -259,10 +267,17 @@ def build_local_exchange_review_only_staging_response(
         response["warnings"] = list(adapter_result.warnings)
         return response
 
-    provider_reader_result = read_private_collector_provider_result_metadata(
-        adapter_result.provider_result,
-        config.export_root,
-    )
+    if config.metadata_read_profile is None:
+        provider_reader_result = read_private_collector_provider_result_metadata(
+            adapter_result.provider_result,
+            config.export_root,
+        )
+    else:
+        provider_reader_result = read_private_collector_provider_result_metadata(
+            adapter_result.provider_result,
+            config.export_root,
+            metadata_read_profile=config.metadata_read_profile,
+        )
     response["provider_result_status"] = provider_reader_result.status
     response["package_resolution_status"] = (
         provider_reader_result.resolver_result.status

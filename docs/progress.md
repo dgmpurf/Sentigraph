@@ -1,10 +1,12 @@
 # Sentigraph Progress
 
-Last updated: 2026-06-22
+Last updated: 2026-08-07
 
 ## 1. Current Project Status
 
 Sentigraph is currently a mock-default, YouTube-real-capable, evidence-ingestion-ready desktop web MVP.
+
+Latest V0.3R1 Corrected Route A Class 2 preparation update: completed as a corrected uncommitted candidate and independently accepted by ChatGPT on 2026-08-07. The governed B05 path now selects an exact five-file metadata-read profile (`README.md`, `coverage_note.md`, `manifest.json`, `validation_report.json`, and `validation_report.md`) while the generic private-collector resolver retains its existing six-file behavior; B05 still validates `package_index_ref` provenance but does not open the `package_index.json` body. B01/B03 lazy included-router compatibility tests were corrected without changing product routing. Fresh bounded validation passed with `git diff --check`, compilation of the four production files, and the exact five-file focused pytest run (`175 passed, 0 failed, 0 skipped, 0 errors`; one existing `StarletteDeprecationWarning`). No governed runtime retry, second GET, Goal mutation, Project Source access/change, or production, persistence, public, export, or delivery action occurred. Class 2 remains not established, and commit/push remain pending separate governance. Next recommended task: perform the final independent review of the exact ten-file dirty set and separately decide the exact stage/commit/push operation; do not retry the runtime yet.
 
 Latest Phase 7X/7Y Report Export Public Access / External Delivery Gate
 update: designed and implemented on 2026-06-22. Phase 7X added the

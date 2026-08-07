@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
+import json
 import re
 from collections.abc import Mapping
 from pathlib import Path
@@ -15,6 +16,11 @@ from app.services.local_exchange_review_only_projection_bridge import (
     PROJECTION_FIELDS,
     build_disabled_local_exchange_review_only_projection,
     build_local_exchange_review_only_projection,
+)
+from app.services.private_collector_package_resolver import (
+    GOVERNED_B05_METADATA_READ_PROFILE,
+    GOVERNED_B05_READABLE_METADATA_FILES,
+    REQUIRED_PACKAGE_METADATA_FILES,
 )
 
 
@@ -257,6 +263,95 @@ def _ready_upstream() -> dict[str, Any]:
             "full_evidence_rows_read": False,
         },
     }
+
+
+def _write_governed_b05_fixture(tmp_path: Path) -> dict[str, str]:
+    results_dir = tmp_path / "results"
+    results_dir.mkdir(parents=True)
+    provider_result = {
+        "schema": "sentigraph_provider_job_result_v1",
+        "request_schema": "sentigraph_analysis_request_v1",
+        "contract_version": "1.0",
+        "adapter_id": "synthetic_local_exchange_adapter",
+        "compatibility_status": "compatible",
+        "status": "package_ready",
+        "provider_result_id": "synthetic_provider_result",
+        "provider_job_id": "synthetic_provider_job",
+        "sentigraph_request_id": "synthetic_analysis_request",
+        "provider_type": "private_collector_local_file",
+        "package_contract": "sentigraph_evidence_export_v1",
+        "package_id": "synthetic_package",
+        "package_role": "review_ready_candidate",
+        "package_index_ref": "package_index.json",
+        "package_root_ref": "configured_export_root",
+        "package_relative_path": "synthetic_package",
+        "summary": {
+            "evidence_items": 7,
+            "sources": 3,
+            "comment_samples": 4,
+            "root_candidates": 3,
+        },
+        "validation_summary": {"status": "passed", "errors": 0, "warnings": 0},
+        "coverage_note": "Selected package metadata counts only.",
+        "safety_markers": {
+            "raw_author_id_exported": False,
+            "raw_author_name_exported": False,
+            "profile_url_exported": False,
+            "raw_author_id_removed": True,
+            "raw_author_name_removed": True,
+            "no_private_messages": True,
+        },
+        "created_at": "2026-08-07T00:00:00Z",
+        "warnings": [],
+        "errors": [],
+        "nextAction": "review_package_metadata",
+    }
+    (results_dir / SYNTHETIC_RESULT_NAME).write_text(
+        json.dumps(provider_result),
+        encoding="utf-8",
+    )
+
+    export_root = tmp_path / "exports"
+    package_dir = export_root / "synthetic_package"
+    package_dir.mkdir(parents=True)
+    for filename in REQUIRED_PACKAGE_METADATA_FILES:
+        target = package_dir / filename
+        if filename == "manifest.json":
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema": "sentigraph_evidence_export_manifest_v1",
+                        "package_name": "synthetic_package",
+                        "raw_author_id_removed": True,
+                        "raw_author_name_removed": True,
+                        "profile_url_exported": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        elif filename == "validation_report.json":
+            target.write_text(
+                json.dumps({"status": "passed", "errors": 0, "warnings": 0}),
+                encoding="utf-8",
+            )
+        elif filename.endswith(".json"):
+            target.write_text("{}", encoding="utf-8")
+        else:
+            target.write_text("synthetic metadata only", encoding="utf-8")
+    (package_dir / "package_index.json").write_text(
+        json.dumps({"token": "package-index-body-must-not-be-opened"}),
+        encoding="utf-8",
+    )
+
+    environment = {gate: "true" for gate in ALL_GATES}
+    environment.update(
+        {
+            RESULTS_DIR_ENV: str(results_dir),
+            EXPORT_ROOT_ENV: str(export_root),
+            ADAPTER_ID_ENV: "synthetic_local_exchange_adapter",
+        }
+    )
+    return environment
 
 
 def _assert_exact_sentinel(payload: dict[str, Any], error_code: str) -> None:
@@ -620,6 +715,48 @@ def test_synthetic_ready_path_calls_b01_and_b03_once_and_returns_same_direct_obj
     assert calls["config"].results_dir == "synthetic-results-root"
     assert calls["config"].export_root == "synthetic-export-root"
     assert calls["config"].adapter_id == "synthetic_local_exchange_adapter"
+    assert calls["config"].metadata_read_profile == GOVERNED_B05_METADATA_READ_PROFILE
+
+
+def test_governed_b05_profile_opens_exact_five_metadata_files_and_returns_ready_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service()
+    environment = _write_governed_b05_fixture(tmp_path)
+    package_dir = tmp_path / "exports" / "synthetic_package"
+    original_read_text = Path.read_text
+    package_reads: list[str] = []
+
+    def guarded_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.parent == package_dir:
+            if self.name == "package_index.json":
+                raise AssertionError("governed B05 path must not open package_index.json")
+            package_reads.append(self.name)
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    payload = service.build_internal_alpha_local_exchange_review_projection(
+        SAFE_HANDLE,
+        registry=_registry(service),
+        environment=environment,
+    )
+
+    assert tuple(payload) == PROJECTION_FIELDS
+    assert len(payload) == 52
+    assert payload["projection_status"] == "ready_for_human_review"
+    assert payload["projection_error_code"] is None
+    assert payload["coverage_summary"] == {
+        "evidence_count": 7,
+        "source_count": 3,
+        "comment_count": 4,
+        "root_candidate_count": 3,
+        "coverage_basis": "selected_package_metadata_counts_only",
+        "full_web_coverage_claimed": False,
+        "full_platform_coverage_claimed": False,
+    }
+    assert tuple(package_reads) == GOVERNED_B05_READABLE_METADATA_FILES
 
 
 @pytest.mark.parametrize(

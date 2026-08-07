@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 from app.services.private_collector_package_resolver import (
+    GOVERNED_B05_METADATA_READ_PROFILE,
+    GOVERNED_B05_READABLE_METADATA_FILES,
     REQUIRED_PACKAGE_METADATA_FILES,
     build_safe_package_summary,
     resolve_private_collector_package,
@@ -160,6 +162,76 @@ def test_evidence_item_files_are_not_parsed_or_opened(tmp_path: Path, monkeypatc
 
     assert result.status == "accepted_metadata_only"
     assert summary.status == "accepted_metadata_only"
+
+
+def test_default_profile_still_scans_package_index_json(tmp_path: Path) -> None:
+    export_root = tmp_path / "exports"
+    package_dir = _write_package(export_root, "generic_package")
+    _write_metadata_json(
+        package_dir,
+        "package_index.json",
+        {"token": "generic-profile-must-scan-this-field"},
+    )
+
+    result = resolve_private_collector_package(
+        export_root,
+        {"package_name": "generic_package"},
+    )
+
+    assert result.status == "blocked_privacy_issue"
+    assert "token" in result.forbidden_fields
+
+
+def test_governed_b05_profile_reads_exact_five_files_without_package_index(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_root = tmp_path / "exports"
+    package_dir = _write_package(export_root, "governed_package")
+    _write_metadata_json(
+        package_dir,
+        "package_index.json",
+        {"token": "governed-profile-must-not-open-this-file"},
+    )
+    original_read_text = Path.read_text
+    opened_files: list[str] = []
+
+    def guarded_read_text(self: Path, *args, **kwargs):
+        if self.parent == package_dir:
+            if self.name == "package_index.json":
+                raise AssertionError("governed B05 profile must not open package_index.json")
+            opened_files.append(self.name)
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    result = resolve_private_collector_package(
+        export_root,
+        {"package_name": "governed_package"},
+        metadata_read_profile=GOVERNED_B05_METADATA_READ_PROFILE,
+    )
+
+    assert result.status == "accepted_metadata_only"
+    assert tuple(opened_files) == GOVERNED_B05_READABLE_METADATA_FILES
+
+
+@pytest.mark.parametrize(
+    "unsupported_profile",
+    ["unknown_profile", ["README.md"]],
+)
+def test_unknown_or_arbitrary_metadata_read_profile_fails_closed(
+    tmp_path: Path,
+    unsupported_profile: object,
+) -> None:
+    result = resolve_private_collector_package(
+        tmp_path / "exports",
+        {"package_name": "safe_package"},
+        metadata_read_profile=unsupported_profile,  # type: ignore[arg-type]
+    )
+
+    assert result.status == "needs_fix_metadata_contract"
+    assert result.resolved_package_path is None
+    assert result.errors == ["unsupported metadata_read_profile"]
 
 
 def test_safe_summary_does_not_include_absolute_filesystem_paths(tmp_path: Path) -> None:

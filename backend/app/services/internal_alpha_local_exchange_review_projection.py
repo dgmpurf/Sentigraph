@@ -13,6 +13,7 @@ from app.services.local_exchange_review_only_projection_bridge import (
     build_local_exchange_review_only_projection,
 )
 from app.services.local_exchange_review_only_staging_bridge import (
+    GOVERNED_B05_STAGING_METADATA_READ_PROFILE,
     LocalExchangeReviewOnlyStagingBridgeConfig,
     build_local_exchange_review_only_staging_response,
 )
@@ -155,6 +156,7 @@ def _build_server_owned_configuration(
         results_dir=results_dir,
         export_root=export_root,
         adapter_id=adapter_id,
+        metadata_read_profile=GOVERNED_B05_STAGING_METADATA_READ_PROFILE,
     )
 
 

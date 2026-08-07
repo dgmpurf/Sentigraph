@@ -11,6 +11,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+import fastapi.routing as fastapi_routing
 import pytest
 from fastapi.testclient import TestClient
 
@@ -220,6 +221,17 @@ def _set_server_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv(ADAPTER_ID_ENV, "external_collector_local_file_adapter")
 
 
+def _effective_app_routes() -> list[Any]:
+    iterator = getattr(fastapi_routing, "iter_route_contexts", None)
+    if iterator is not None:
+        return list(iterator(app.routes))
+    immediate = list(app.routes)
+    required = ("path", "methods", "matches")
+    if all(all(hasattr(route, name) for name in required) for route in immediate):
+        return immediate
+    raise AssertionError("unsupported_route_inventory_contract")
+
+
 def _provider_payload() -> dict[str, Any]:
     return {
         "schema": "sentigraph_provider_job_result_v1",
@@ -293,6 +305,7 @@ def _write_synthetic_fixture(tmp_path: Path) -> None:
             path.write_text(f"{ROW_SENTINEL},{RAW_SENTINEL},not valid rows", encoding="utf-8")
         else:
             path.write_text("metadata only", encoding="utf-8")
+    (package_dir / "package_index.json").write_text("{}", encoding="utf-8")
 
 
 def _assert_boundary_flags(projection: dict[str, Any]) -> None:
@@ -705,10 +718,11 @@ def test_enabled_synthetic_route_reads_one_result_and_only_fixed_safe_package_me
         "decision_writes": 0,
         "external_calls": 0,
     }
-    expected_package_reads = READABLE_METADATA_FILES & set(REQUIRED_PACKAGE_METADATA_FILES)
+    expected_package_reads = set(READABLE_METADATA_FILES)
     assert package_reads
     assert len(package_reads) == len(expected_package_reads)
     assert set(package_reads) == expected_package_reads
+    assert "package_index.json" in package_reads
     assert set(package_reads).isdisjoint(ROW_LIKE_FILES)
     assert ROW_SENTINEL not in json.dumps(payload)
     assert RAW_SENTINEL not in json.dumps(payload)
@@ -741,7 +755,7 @@ def test_existing_b01_route_remains_unchanged_and_never_calls_projection(
 def test_route_family_is_exactly_four_internal_get_only_routes() -> None:
     route_methods = {
         route.path: route.methods
-        for route in app.routes
+        for route in _effective_app_routes()
         if "staging/review-only" in getattr(route, "path", "")
     }
 

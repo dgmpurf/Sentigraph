@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import fastapi.routing as fastapi_routing
 import pytest
 from fastapi.testclient import TestClient
 
@@ -35,6 +36,17 @@ ROW_LIKE_FILES = {
     "source_manifest.jsonl",
     "collection_log.jsonl",
 }
+
+
+def _effective_app_routes() -> list[Any]:
+    iterator = getattr(fastapi_routing, "iter_route_contexts", None)
+    if iterator is not None:
+        return list(iterator(app.routes))
+    immediate = list(app.routes)
+    required = ("path", "methods", "matches")
+    if all(all(hasattr(route, name) for name in required) for route in immediate):
+        return immediate
+    raise AssertionError("unsupported_route_inventory_contract")
 
 
 def _config(tmp_path: Path, **overrides: str) -> LocalExchangeReviewOnlyStagingBridgeConfig:
@@ -552,7 +564,11 @@ def test_bridge_endpoint_is_get_only_internal_and_default_disabled(monkeypatch: 
     monkeypatch.delenv(PRIMARY_GATE, raising=False)
     monkeypatch.delenv(BRIDGE_GATE, raising=False)
     route_path = "/api/v1/internal/staging/review-only/local-exchange/candidates/{result_file_name}"
-    methods = {route.path: route.methods for route in app.routes if route.path == route_path}
+    methods = {
+        route.path: route.methods
+        for route in _effective_app_routes()
+        if route.path == route_path
+    }
 
     assert set(methods) == {route_path}
     assert methods[route_path] == {"GET"}

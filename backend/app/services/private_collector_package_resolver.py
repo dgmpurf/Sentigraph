@@ -28,6 +28,16 @@ READABLE_METADATA_FILES = {
     "package_index.json",
 }
 
+GENERIC_METADATA_READ_PROFILE = "generic_six_file"
+GOVERNED_B05_METADATA_READ_PROFILE = "governed_b05_five_file"
+GOVERNED_B05_READABLE_METADATA_FILES = (
+    "README.md",
+    "coverage_note.md",
+    "manifest.json",
+    "validation_report.json",
+    "validation_report.md",
+)
+
 FORBIDDEN_METADATA_FIELDS = {
     "cookie",
     "token",
@@ -92,6 +102,8 @@ class PrivateCollectorPackageMetadataSummary:
 def resolve_private_collector_package(
     export_root: str | Path,
     package_entry: dict[str, Any],
+    *,
+    metadata_read_profile: str = GENERIC_METADATA_READ_PROFILE,
 ) -> PrivateCollectorPackageResolutionResult:
     """Resolve a private collector package for metadata-only handoff.
 
@@ -101,6 +113,13 @@ def resolve_private_collector_package(
     """
 
     safe_mode = _safe_mode()
+    readable_metadata_files = _readable_metadata_files_for_profile(metadata_read_profile)
+    if readable_metadata_files is None:
+        return _result(
+            "needs_fix_metadata_contract",
+            errors=["unsupported metadata_read_profile"],
+            safe_mode=safe_mode,
+        )
     root = Path(export_root)
     try:
         resolved_root = root.resolve(strict=False)
@@ -153,6 +172,7 @@ def resolve_private_collector_package(
                     "package_name_under_configured_export_root",
                     warnings=warnings,
                     safe_mode=safe_mode,
+                    readable_metadata_files=readable_metadata_files,
                 )
         else:
             return _result(
@@ -192,6 +212,7 @@ def resolve_private_collector_package(
             "package_path_relative_to_export_root",
             warnings=warnings,
             safe_mode=safe_mode,
+            readable_metadata_files=readable_metadata_files,
         )
 
     if package_name is not None:
@@ -253,10 +274,16 @@ def _resolve_existing_package(
     *,
     warnings: list[str],
     safe_mode: dict[str, bool],
+    readable_metadata_files: set[str] | tuple[str, ...],
 ) -> PrivateCollectorPackageResolutionResult:
     required_files_presence = {filename: (package_dir / filename).exists() for filename in REQUIRED_PACKAGE_METADATA_FILES}
     missing_required_files = [filename for filename, exists in required_files_presence.items() if not exists]
-    forbidden_fields = sorted(_scan_metadata_files_for_forbidden_fields(package_dir))
+    forbidden_fields = sorted(
+        _scan_metadata_files_for_forbidden_fields(
+            package_dir,
+            readable_metadata_files,
+        )
+    )
     if forbidden_fields:
         return _result(
             "blocked_privacy_issue",
@@ -362,9 +389,22 @@ def _is_path_within_root(path: Path, root: Path) -> bool:
     return True
 
 
-def _scan_metadata_files_for_forbidden_fields(package_dir: Path) -> set[str]:
+def _readable_metadata_files_for_profile(
+    metadata_read_profile: object,
+) -> set[str] | tuple[str, ...] | None:
+    if metadata_read_profile == GENERIC_METADATA_READ_PROFILE:
+        return READABLE_METADATA_FILES
+    if metadata_read_profile == GOVERNED_B05_METADATA_READ_PROFILE:
+        return GOVERNED_B05_READABLE_METADATA_FILES
+    return None
+
+
+def _scan_metadata_files_for_forbidden_fields(
+    package_dir: Path,
+    readable_metadata_files: set[str] | tuple[str, ...],
+) -> set[str]:
     forbidden_fields: set[str] = set()
-    for filename in READABLE_METADATA_FILES:
+    for filename in readable_metadata_files:
         path = package_dir / filename
         if not path.exists() or not path.is_file():
             continue
