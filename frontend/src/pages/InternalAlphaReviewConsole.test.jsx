@@ -10,9 +10,17 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
+  apiClientPost: vi.fn(),
   getInternalAlphaReviewConsoleProjection: vi.fn(),
   getInternalAlphaLocalExchangeSampleCatalog: vi.fn(),
   getInternalAlphaLocalExchangeProjection: vi.fn(),
+}))
+
+vi.mock('../api/client.js', () => ({
+  apiClient: {
+    get: vi.fn(),
+    post: apiMocks.apiClientPost,
+  },
 }))
 
 vi.mock('../api/sentigraphApi.js', async (importOriginal) => {
@@ -29,11 +37,15 @@ vi.mock('../api/sentigraphApi.js', async (importOriginal) => {
 })
 
 import {
+  INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
+  INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS,
+  normalizeInternalAlphaGovernedReviewDecisionPostResponse,
   normalizeInternalAlphaLocalExchangeProjection,
   normalizeInternalAlphaLocalExchangeSampleCatalog,
+  postInternalAlphaGovernedReviewDecision,
 } from '../api/sentigraphApi.js'
 import { InternalAlphaReviewConsole } from './InternalAlphaReviewConsole.jsx'
 
@@ -44,6 +56,9 @@ const HISTORICAL_LABEL = 'Accepted historical sample'
 const CURRENT_MARKER = 'synthetic_current_visible_marker'
 const HISTORICAL_MARKER = 'synthetic_historical_visible_marker'
 const RAW_ERROR_MARKER = 'synthetic_raw_exception_message'
+const RAW_RECEIPT_MARKER = 'synthetic_raw_receipt_private_marker'
+const RAW_CONFIGURATION_MARKER = 'synthetic_configuration_secret_marker'
+const GOVERNED_DECISION_ID = 'ghrd-0123456789abcdef0123456789abcdef'
 
 const SENSITIVE_MARKERS = Object.freeze([
   'synthetic_private_path_marker',
@@ -53,7 +68,89 @@ const SENSITIVE_MARKERS = Object.freeze([
   'synthetic_raw_metadata_marker',
   'provider_result_helldivers2-psn-demo_20260720_123627.json',
   RAW_ERROR_MARKER,
+  RAW_RECEIPT_MARKER,
+  RAW_CONFIGURATION_MARKER,
 ])
+
+function createGovernedProjectionPayload({
+  status = 'governed_record_review_ready',
+  humanReviewRequired = true,
+  noAutomaticTrustUpgrade = true,
+  allowedActions = INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
+} = {}) {
+  return {
+    projection_id: INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
+    projection_status: status,
+    projection: {
+      projection_status: status,
+      source_chain_boundary: 'synthetic_governed_source_boundary',
+      record_count_class: status === 'governed_record_review_ready' ? 'exactly_one' : 'zero',
+      reservation_count_class: 'exactly_one',
+      human_review_required: humanReviewRequired,
+      no_automatic_trust_upgrade: noAutomaticTrustUpgrade,
+      allowed_actions: Array.isArray(allowedActions) ? [...allowedActions] : allowedActions,
+      blocked_actions: ['trust_approval', 'production_promotion'],
+      blockers: [],
+    },
+  }
+}
+
+function createGovernedDecisionPostResponse(
+  decisionType,
+  { status = 201, malformed = false } = {},
+) {
+  const created = status === 201
+  const falseFlags = {
+    production_evidenceitem_changed: false,
+    production_case_changed: false,
+    downstream_runtime_called: false,
+    correction_or_revocation_performed: false,
+    deleted_or_updated: false,
+  }
+  const decision = {
+    decision_id: GOVERNED_DECISION_ID,
+    decision_type: decisionType,
+    decision_status: 'recorded_append_only_nonproduction',
+    human_review_required: true,
+    no_automatic_trust_upgrade: true,
+    ...falseFlags,
+    private_marker: RAW_CONFIGURATION_MARKER,
+  }
+  const receipt = {
+    decision_id: GOVERNED_DECISION_ID,
+    decision_type: decisionType,
+    decision_status: 'recorded_append_only_nonproduction',
+    outcome: created
+      ? 'created_exactly_one_human_review_decision'
+      : 'already_exists_same_human_review_decision',
+    mutation_count: created ? 1 : 0,
+    human_review_required: true,
+    no_automatic_trust_upgrade: true,
+    ...falseFlags,
+    private_marker: RAW_RECEIPT_MARKER,
+  }
+  return {
+    status,
+    data: {
+      response_schema: malformed
+        ? 'synthetic_malformed_schema'
+        : 'sentigraph_internal_alpha_governed_review_decision_post_response_v0_1',
+      route_mode:
+        'internal_disabled_by_default_append_only_nonproduction_human_review_decision_ledger',
+      decision_id: GOVERNED_DECISION_ID,
+      decision,
+      receipt,
+      human_review_required: true,
+      no_automatic_trust_upgrade: true,
+      decision_ledger_write_performed: created,
+      production_object_enabled: false,
+      review_queue_runtime_enabled: false,
+      operator_runtime_ready: false,
+      public_ready: false,
+      production_ready: false,
+    },
+  }
+}
 
 function orderedObject(fields, values) {
   return Object.fromEntries(fields.map((field) => [field, values[field]]))
@@ -255,6 +352,23 @@ async function renderResolvedProjection(projection) {
   })
 }
 
+async function renderGovernedProjection(payload = createGovernedProjectionPayload()) {
+  apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+  apiMocks.getInternalAlphaReviewConsoleProjection.mockResolvedValue(payload)
+  const renderResult = render(<InternalAlphaReviewConsole />)
+  const expectedStatus = payload?.error
+    ? payload.error === 'route_disabled'
+      ? 'disabled'
+      : 'governed_disabled'
+    : payload.projection_status
+  await screen.findByText(expectedStatus, { exact: true })
+  return renderResult
+}
+
+async function selectGovernedDecision(decisionType) {
+  await chooseAntDesignOption('Governed human-review decision type', decisionType)
+}
+
 const compatibilityDescriptors = new Map()
 const networkDescriptors = new Map()
 let consoleErrors
@@ -285,6 +399,7 @@ function restoreDescriptors(descriptorStore) {
 }
 
 beforeEach(() => {
+  apiMocks.apiClientPost.mockReset()
   apiMocks.getInternalAlphaReviewConsoleProjection.mockReset()
   apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockReset()
   apiMocks.getInternalAlphaLocalExchangeProjection.mockReset()
@@ -388,6 +503,258 @@ afterEach(() => {
   restoreDescriptors(networkDescriptors)
   restoreDescriptors(compatibilityDescriptors)
   vi.clearAllMocks()
+})
+
+describe('InternalAlphaReviewConsole governed human-review decision contract', () => {
+  it('performs zero governed decision POSTs on page render', async () => {
+    await renderGovernedProjection({ error: 'route_disabled' })
+
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it.each([
+    ['route disabled', { error: 'route_disabled' }],
+    ['governed projection disabled', { error: 'governed_record_projection_disabled' }],
+    [
+      'record absent',
+      createGovernedProjectionPayload({ status: 'governed_record_absent' }),
+    ],
+    [
+      'record inconsistent',
+      createGovernedProjectionPayload({ status: 'governed_record_inconsistent' }),
+    ],
+    [
+      'record blocked',
+      createGovernedProjectionPayload({
+        status: 'governed_record_read_blocked_sidecar_present',
+      }),
+    ],
+    [
+      'target unavailable',
+      createGovernedProjectionPayload({ status: 'governed_record_target_unavailable' }),
+    ],
+    [
+      'bounded read-only audit failure',
+      createGovernedProjectionPayload({ status: 'governed_record_read_only_audit_failed' }),
+    ],
+    [
+      'missing allowed-actions array',
+      createGovernedProjectionPayload({ allowedActions: null }),
+    ],
+    [
+      'missing human-review requirement',
+      createGovernedProjectionPayload({ humanReviewRequired: false }),
+    ],
+    [
+      'automatic trust-upgrade invariant mismatch',
+      createGovernedProjectionPayload({ noAutomaticTrustUpgrade: false }),
+    ],
+  ])('keeps decision controls inactive for %s', async (_label, payload) => {
+    await renderGovernedProjection(payload)
+
+    expect(screen.getByRole('combobox', { name: 'Governed human-review decision type' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Confirm governed decision' }).disabled).toBe(true)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it('does not expose governed decision controls on the Local-exchange review surface', async () => {
+    apiMocks.getInternalAlphaLocalExchangeProjection.mockResolvedValue(CURRENT_PROJECTION)
+    await renderGovernedProjection()
+    await openLocalExchangeReview()
+
+    expect(screen.queryByRole('combobox', { name: 'Governed human-review decision type' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Confirm governed decision' })).toBeNull()
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it('exposes exactly the two allowed decision labels without unsafe action controls', async () => {
+    await renderGovernedProjection()
+
+    const selector = screen.getByRole('combobox', {
+      name: 'Governed human-review decision type',
+    })
+    expect(selector.disabled).toBe(false)
+    expect(INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES).toEqual([
+      'keep_pending_human_review',
+      'request_more_governance_review',
+    ])
+
+    fireEvent.mouseDown(selector)
+    for (const decisionType of INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES) {
+      const optionMatches = await screen.findAllByText(decisionType, { exact: true })
+      expect(
+        optionMatches.filter((candidate) => candidate.closest('.ant-select-item-option')),
+      ).toHaveLength(1)
+    }
+
+    const forbiddenControlName = /trust|production|correction|revocation|delete|publish|export|deliver/i
+    for (const role of ['button', 'checkbox', 'radio', 'switch']) {
+      expect(screen.queryByRole(role, { name: forbiddenControlName })).toBeNull()
+    }
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it('performs zero POSTs when a decision is selected without confirmation', async () => {
+    await renderGovernedProjection()
+    await selectGovernedDecision('keep_pending_human_review')
+
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it.each(INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES)(
+    'posts %s exactly once only after explicit confirmation',
+    async (decisionType) => {
+      apiMocks.apiClientPost.mockResolvedValue(
+        createGovernedDecisionPostResponse(decisionType),
+      )
+      await renderGovernedProjection()
+      await selectGovernedDecision(decisionType)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm governed decision' }))
+
+      await waitFor(() => {
+        expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(1)
+      })
+      expect(apiMocks.apiClientPost).toHaveBeenCalledWith(
+        '/api/v1/internal/alpha/governed-review-decisions/decisions',
+        {
+          request_schema:
+            'sentigraph_governed_nonproduction_human_review_decision_request_v0_1',
+          request_version: '0.1',
+          decision_type: decisionType,
+        },
+      )
+      expect(await screen.findByText('created', { exact: true })).toBeTruthy()
+    },
+  )
+
+  it('allows at most one POST attempt per page mount while the request is pending', async () => {
+    const postRequest = deferred()
+    apiMocks.apiClientPost.mockReturnValue(postRequest.promise)
+    await renderGovernedProjection()
+    await selectGovernedDecision('keep_pending_human_review')
+    const confirmButton = screen.getByRole('button', { name: 'Confirm governed decision' })
+
+    fireEvent.click(confirmButton)
+    fireEvent.click(confirmButton)
+
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      postRequest.resolve(
+        createGovernedDecisionPostResponse('keep_pending_human_review'),
+      )
+      await postRequest.promise
+    })
+    expect(await screen.findByText('created', { exact: true })).toBeTruthy()
+    fireEvent.click(confirmButton)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(1)
+  })
+
+  it('displays only the normalized bounded success subset', async () => {
+    apiMocks.apiClientPost.mockResolvedValue(
+      createGovernedDecisionPostResponse('request_more_governance_review'),
+    )
+    const { container } = await renderGovernedProjection()
+    await selectGovernedDecision('request_more_governance_review')
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm governed decision' }))
+
+    expect(await screen.findByText(GOVERNED_DECISION_ID, { exact: true })).toBeTruthy()
+    expect(screen.getByText('recorded_append_only_nonproduction', { exact: true })).toBeTruthy()
+    expect(
+      screen.getByText('created_exactly_one_human_review_decision', { exact: true }),
+    ).toBeTruthy()
+    for (const marker of [RAW_RECEIPT_MARKER, RAW_CONFIGURATION_MARKER]) {
+      expect(container.textContent).not.toContain(marker)
+    }
+  })
+
+  it('fails closed without exposing a raw backend error', async () => {
+    apiMocks.apiClientPost.mockRejectedValue(new Error(RAW_ERROR_MARKER))
+    const { container } = await renderGovernedProjection()
+    await selectGovernedDecision('keep_pending_human_review')
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm governed decision' }))
+
+    expect(
+      await screen.findByText('Governed decision request failed closed', { exact: true }),
+    ).toBeTruthy()
+    expect(container.textContent).not.toContain(RAW_ERROR_MARKER)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed on a malformed success response', async () => {
+    const malformed = createGovernedDecisionPostResponse(
+      'keep_pending_human_review',
+      { malformed: true },
+    )
+    expect(() =>
+      normalizeInternalAlphaGovernedReviewDecisionPostResponse(
+        malformed.data,
+        malformed.status,
+        'keep_pending_human_review',
+      ),
+    ).toThrow('frontend_governed_review_decision_contract_mismatch')
+
+    apiMocks.apiClientPost.mockResolvedValue(malformed)
+    await renderGovernedProjection()
+    await selectGovernedDecision('keep_pending_human_review')
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm governed decision' }))
+    expect(
+      await screen.findByText('Governed decision request failed closed', { exact: true }),
+    ).toBeTruthy()
+  })
+
+  it('normalizes an idempotent HTTP 200 response to the bounded safe subset', async () => {
+    apiMocks.apiClientPost.mockResolvedValue(
+      createGovernedDecisionPostResponse('keep_pending_human_review', { status: 200 }),
+    )
+
+    const result = await postInternalAlphaGovernedReviewDecision(
+      'keep_pending_human_review',
+    )
+
+    expect(result).toEqual({
+      request_status: 'already_exists',
+      decision_id: GOVERNED_DECISION_ID,
+      decision_type: 'keep_pending_human_review',
+      decision_status: 'recorded_append_only_nonproduction',
+      outcome: 'already_exists_same_human_review_decision',
+      decision_ledger_write_performed: false,
+      human_review_required: true,
+      no_automatic_trust_upgrade: true,
+      production_ready: false,
+    })
+    expect(JSON.stringify(result)).not.toContain(RAW_RECEIPT_MARKER)
+    expect(JSON.stringify(result)).not.toContain(RAW_CONFIGURATION_MARKER)
+  })
+
+  it('maps an expected non-success response to a fixed bounded state', async () => {
+    const response = createGovernedDecisionPostResponse(
+      'request_more_governance_review',
+      { status: 404 },
+    )
+    apiMocks.apiClientPost.mockRejectedValue({ response })
+
+    const result = await postInternalAlphaGovernedReviewDecision(
+      'request_more_governance_review',
+    )
+
+    expect(result).toEqual({
+      request_status: 'blocked_http_404',
+      decision_ledger_write_performed: false,
+      human_review_required: true,
+      no_automatic_trust_upgrade: true,
+      production_ready: false,
+    })
+    expect(JSON.stringify(result)).not.toContain(RAW_RECEIPT_MARKER)
+    expect(JSON.stringify(result)).not.toContain(RAW_CONFIGURATION_MARKER)
+  })
+
+  it('rejects an unsupported client decision type before HTTP', async () => {
+    await expect(
+      postInternalAlphaGovernedReviewDecision('trust_approval'),
+    ).rejects.toThrow('frontend_governed_review_decision_contract_mismatch')
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
 })
 
 describe('InternalAlphaReviewConsole synthetic local-exchange component contract', () => {

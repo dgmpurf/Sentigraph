@@ -14,6 +14,52 @@ const INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT = 'review-console'
 const INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT = 'projections'
 const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT = 'local-exchange-projections'
 const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLES_SEGMENT = 'local-exchange-samples'
+const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISIONS_SEGMENT = 'governed-review-decisions'
+const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR =
+  'frontend_governed_review_decision_contract_mismatch'
+const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_REQUEST_SCHEMA =
+  'sentigraph_governed_nonproduction_human_review_decision_request_v0_1'
+const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_RESPONSE_SCHEMA =
+  'sentigraph_internal_alpha_governed_review_decision_post_response_v0_1'
+const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_ROUTE_MODE =
+  'internal_disabled_by_default_append_only_nonproduction_human_review_decision_ledger'
+
+export const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES = Object.freeze([
+  'keep_pending_human_review',
+  'request_more_governance_review',
+])
+
+const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_RESPONSE_FIELDS = Object.freeze([
+  'response_schema',
+  'route_mode',
+  'decision_id',
+  'decision',
+  'receipt',
+  'human_review_required',
+  'no_automatic_trust_upgrade',
+  'decision_ledger_write_performed',
+  'production_object_enabled',
+  'review_queue_runtime_enabled',
+  'operator_runtime_ready',
+  'public_ready',
+  'production_ready',
+])
+
+const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_EXPECTED_FAILURE_STATUSES = Object.freeze([
+  404,
+  409,
+  422,
+  500,
+  503,
+])
+
+const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_NESTED_FALSE_FLAGS = Object.freeze([
+  'production_evidenceitem_changed',
+  'production_case_changed',
+  'downstream_runtime_called',
+  'correction_or_revocation_performed',
+  'deleted_or_updated',
+])
 
 export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS = Object.freeze([
   'schema',
@@ -234,6 +280,149 @@ export async function getInternalAlphaReviewConsoleProjection(projectionId) {
     `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT}/${INTERNAL_ALPHA_REVIEW_CONSOLE_PROJECTIONS_SEGMENT}/${encodedProjectionId}`,
   )
   return data
+}
+
+export function normalizeInternalAlphaGovernedReviewDecisionPostResponse(
+  data,
+  httpStatus,
+  requestedDecisionType,
+) {
+  const contractError = () => {
+    throw new Error(INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR)
+  }
+  if (!INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES.includes(requestedDecisionType)) {
+    contractError()
+  }
+  if (!isPlainInternalAlphaProjectionObject(data)) contractError()
+
+  const keys = Object.keys(data)
+  if (
+    keys.length !== INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_RESPONSE_FIELDS.length ||
+    keys.some(
+      (field, index) =>
+        field !== INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_RESPONSE_FIELDS[index],
+    )
+  ) {
+    contractError()
+  }
+
+  if (
+    data.response_schema !== INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_RESPONSE_SCHEMA ||
+    data.route_mode !== INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_ROUTE_MODE ||
+    data.human_review_required !== true ||
+    data.no_automatic_trust_upgrade !== true ||
+    data.production_object_enabled !== false ||
+    data.review_queue_runtime_enabled !== false ||
+    data.operator_runtime_ready !== false ||
+    data.public_ready !== false ||
+    data.production_ready !== false ||
+    typeof data.decision_ledger_write_performed !== 'boolean'
+  ) {
+    contractError()
+  }
+
+  if (INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_EXPECTED_FAILURE_STATUSES.includes(httpStatus)) {
+    if (data.decision_ledger_write_performed !== false) contractError()
+    return Object.freeze({
+      request_status: `blocked_http_${httpStatus}`,
+      decision_ledger_write_performed: false,
+      human_review_required: true,
+      no_automatic_trust_upgrade: true,
+      production_ready: false,
+    })
+  }
+
+  if (httpStatus !== 200 && httpStatus !== 201) contractError()
+  if (
+    typeof data.decision_id !== 'string' ||
+    !/^ghrd-[0-9a-f]{32}$/.test(data.decision_id) ||
+    !isPlainInternalAlphaProjectionObject(data.decision) ||
+    !isPlainInternalAlphaProjectionObject(data.receipt)
+  ) {
+    contractError()
+  }
+
+  const { decision, receipt } = data
+  if (
+    decision.decision_id !== data.decision_id ||
+    receipt.decision_id !== data.decision_id ||
+    decision.decision_type !== requestedDecisionType ||
+    receipt.decision_type !== requestedDecisionType ||
+    decision.decision_status !== 'recorded_append_only_nonproduction' ||
+    receipt.decision_status !== 'recorded_append_only_nonproduction' ||
+    decision.human_review_required !== true ||
+    receipt.human_review_required !== true ||
+    decision.no_automatic_trust_upgrade !== true ||
+    receipt.no_automatic_trust_upgrade !== true ||
+    INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_NESTED_FALSE_FLAGS.some(
+      (field) => decision[field] !== false || receipt[field] !== false,
+    )
+  ) {
+    contractError()
+  }
+
+  const expectedOutcome =
+    httpStatus === 201
+      ? 'created_exactly_one_human_review_decision'
+      : 'already_exists_same_human_review_decision'
+  const expectedMutationCount = httpStatus === 201 ? 1 : 0
+  const expectedWritePerformed = httpStatus === 201
+  if (
+    receipt.outcome !== expectedOutcome ||
+    receipt.mutation_count !== expectedMutationCount ||
+    data.decision_ledger_write_performed !== expectedWritePerformed
+  ) {
+    contractError()
+  }
+
+  return Object.freeze({
+    request_status: httpStatus === 201 ? 'created' : 'already_exists',
+    decision_id: data.decision_id,
+    decision_type: requestedDecisionType,
+    decision_status: decision.decision_status,
+    outcome: receipt.outcome,
+    decision_ledger_write_performed: data.decision_ledger_write_performed,
+    human_review_required: data.human_review_required,
+    no_automatic_trust_upgrade: data.no_automatic_trust_upgrade,
+    production_ready: data.production_ready,
+  })
+}
+
+export async function postInternalAlphaGovernedReviewDecision(decisionType) {
+  if (!INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES.includes(decisionType)) {
+    throw new Error(INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR)
+  }
+
+  const payload = {
+    request_schema: INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_REQUEST_SCHEMA,
+    request_version: '0.1',
+    decision_type: decisionType,
+  }
+  const endpoint = `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_GOVERNED_REVIEW_DECISIONS_SEGMENT}/decisions`
+
+  try {
+    const response = await apiClient.post(endpoint, payload)
+    return normalizeInternalAlphaGovernedReviewDecisionPostResponse(
+      response.data,
+      response.status,
+      decisionType,
+    )
+  } catch (error) {
+    const response = error?.response
+    if (
+      response &&
+      INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_EXPECTED_FAILURE_STATUSES.includes(
+        response.status,
+      )
+    ) {
+      return normalizeInternalAlphaGovernedReviewDecisionPostResponse(
+        response.data,
+        response.status,
+        decisionType,
+      )
+    }
+    throw new Error(INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR)
+  }
 }
 
 export function normalizeInternalAlphaLocalExchangeProjection(data) {

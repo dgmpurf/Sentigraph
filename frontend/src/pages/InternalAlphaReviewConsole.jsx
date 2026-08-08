@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Card, Col, Descriptions, List, Row, Select, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Col, Descriptions, List, Row, Select, Space, Tag, Typography } from 'antd'
 import { Eye, Lock, ShieldCheck, TriangleAlert } from 'lucide-react'
 
 import {
   getInternalAlphaLocalExchangeProjection,
   getInternalAlphaLocalExchangeSampleCatalog,
   getInternalAlphaReviewConsoleProjection,
+  INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
   INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
   INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS,
+  postInternalAlphaGovernedReviewDecision,
 } from '../api/sentigraphApi.js'
 import { INTERNAL_ALPHA_REVIEW_CONSOLE_STATIC_FIXTURE } from '../data/internalAlphaReviewConsoleStaticFixture.js'
 
@@ -51,6 +53,13 @@ const REVIEW_SURFACE_OPTIONS = Object.freeze([
     label: 'Local-exchange projection review',
   },
 ])
+
+const GOVERNED_REVIEW_DECISION_OPTIONS = Object.freeze(
+  INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES.map((decisionType) => ({
+    value: decisionType,
+    label: decisionType,
+  })),
+)
 
 
 const SAFE_METADATA_FIELDS = Object.freeze([
@@ -237,6 +246,11 @@ export function InternalAlphaReviewConsole() {
   const fixture = INTERNAL_ALPHA_REVIEW_CONSOLE_STATIC_FIXTURE
   const [routeState, setRouteState] = useState(STATIC_FALLBACK_ROUTE_STATE)
   const [selectedReviewView, setSelectedReviewView] = useState(GOVERNED_RECORD_REVIEW_VIEW)
+  const [selectedGovernedDecisionType, setSelectedGovernedDecisionType] = useState(null)
+  const [governedDecisionRequestState, setGovernedDecisionRequestState] = useState({
+    phase: 'idle',
+    result: null,
+  })
   const [localExchangeCatalogState, setLocalExchangeCatalogState] = useState(
     INITIAL_LOCAL_EXCHANGE_CATALOG_STATE,
   )
@@ -244,6 +258,7 @@ export function InternalAlphaReviewConsole() {
   const [localExchangeProjectionStateByHandle, setLocalExchangeProjectionStateByHandle] = useState({})
   const requestedLocalExchangeHandles = useRef(new Set())
   const localExchangeCatalogRequestStarted = useRef(false)
+  const governedDecisionPostAttemptStarted = useRef(false)
   const pageIsMounted = useRef(true)
   const localExchangeCatalog = localExchangeCatalogState.catalog
   const catalogPhase = localExchangeCatalogState.catalogPhase
@@ -369,6 +384,56 @@ export function InternalAlphaReviewConsole() {
     selectedLocalExchangeSampleHandle,
     selectedReviewView,
   ])
+
+  const governedProjection = routeState.projection
+  const governedAllowedActionsAreBounded = Array.isArray(governedProjection?.allowed_actions)
+  const governedAllowedActions = governedAllowedActionsAreBounded
+    ? governedProjection.allowed_actions
+    : []
+  const governedDecisionSurfaceReady =
+    selectedReviewView === GOVERNED_RECORD_REVIEW_VIEW &&
+    governedProjection !== null &&
+    routeState.status === 'governed_record_review_ready' &&
+    governedProjection.projection_status === 'governed_record_review_ready' &&
+    governedProjection.human_review_required === true &&
+    governedProjection.no_automatic_trust_upgrade === true &&
+    governedAllowedActionsAreBounded
+  const selectedGovernedDecisionIsAllowed =
+    governedDecisionSurfaceReady &&
+    INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES.includes(selectedGovernedDecisionType) &&
+    governedAllowedActions.includes(selectedGovernedDecisionType)
+
+  const handleGovernedDecisionSelection = (decisionType) => {
+    if (governedDecisionPostAttemptStarted.current) return
+    setSelectedGovernedDecisionType(decisionType)
+    setGovernedDecisionRequestState({ phase: 'idle', result: null })
+  }
+
+  const handleGovernedDecisionConfirmation = async () => {
+    if (
+      !selectedGovernedDecisionIsAllowed ||
+      governedDecisionPostAttemptStarted.current
+    ) {
+      return
+    }
+
+    governedDecisionPostAttemptStarted.current = true
+    setGovernedDecisionRequestState({ phase: 'posting', result: null })
+    try {
+      const result = await postInternalAlphaGovernedReviewDecision(
+        selectedGovernedDecisionType,
+      )
+      if (!pageIsMounted.current) return
+      const success = ['created', 'already_exists'].includes(result.request_status)
+      setGovernedDecisionRequestState({
+        phase: success ? 'bounded_success' : 'bounded_unavailable',
+        result: success ? result : null,
+      })
+    } catch {
+      if (!pageIsMounted.current) return
+      setGovernedDecisionRequestState({ phase: 'bounded_error', result: null })
+    }
+  }
 
   const reviewSurfaceSelector = (
     <Card className="panel-card internal-alpha-review-card">
@@ -563,6 +628,102 @@ export function InternalAlphaReviewConsole() {
   return (
     <div className="page-stack internal-alpha-review-shell-page">
       {reviewSurfaceSelector}
+
+      <Card className="panel-card internal-alpha-review-card">
+        <Space direction="vertical" size={12} className="full-width">
+          <Title level={4}>Governed human-review decision</Title>
+          <Paragraph>
+            This internal, nonproduction control targets an append-only human-review decision ledger. It does not
+            approve trust, upgrade trust automatically, mutate the governed evidence record, or start analysis or
+            report generation. It creates no production, public, export, or delivery output. The backend decision
+            route is disabled by default and requires separate runtime authorization before real use.
+          </Paragraph>
+          <Space wrap align="center">
+            <Select
+              aria-label="Governed human-review decision type"
+              value={selectedGovernedDecisionType ?? undefined}
+              options={GOVERNED_REVIEW_DECISION_OPTIONS}
+              onChange={handleGovernedDecisionSelection}
+              disabled={
+                !governedDecisionSurfaceReady ||
+                governedDecisionPostAttemptStarted.current
+              }
+              placeholder="Select one governed decision"
+              style={{ minWidth: 360 }}
+            />
+            <Button
+              type="primary"
+              onClick={handleGovernedDecisionConfirmation}
+              disabled={
+                !selectedGovernedDecisionIsAllowed ||
+                governedDecisionPostAttemptStarted.current
+              }
+              loading={governedDecisionRequestState.phase === 'posting'}
+            >
+              Confirm governed decision
+            </Button>
+          </Space>
+          <Text type="secondary">
+            Select one server-allowed decision, then confirm explicitly. A page mount permits at most one POST
+            attempt and never retries or performs a GET-after-POST verification.
+          </Text>
+          {!governedDecisionSurfaceReady && (
+            <Alert
+              showIcon
+              type="info"
+              message="Governed decision control unavailable"
+              description="The control remains inactive unless the governed-record projection is ready and all human-review safety invariants hold."
+            />
+          )}
+          {governedDecisionRequestState.phase === 'bounded_unavailable' && (
+            <Alert
+              showIcon
+              type="warning"
+              message="Governed decision request unavailable"
+              description="The bounded request was not accepted. No automatic retry or follow-up request was made."
+            />
+          )}
+          {governedDecisionRequestState.phase === 'bounded_error' && (
+            <Alert
+              showIcon
+              type="warning"
+              message="Governed decision request failed closed"
+              description="Only a bounded frontend state is shown. No raw backend error or receipt is exposed."
+            />
+          )}
+          {governedDecisionRequestState.phase === 'bounded_success' && (
+            <Descriptions column={1} size="small" title="Bounded decision result">
+              <Descriptions.Item label="request_status">
+                {governedDecisionRequestState.result.request_status}
+              </Descriptions.Item>
+              <Descriptions.Item label="decision_id">
+                {governedDecisionRequestState.result.decision_id}
+              </Descriptions.Item>
+              <Descriptions.Item label="decision_type">
+                {governedDecisionRequestState.result.decision_type}
+              </Descriptions.Item>
+              <Descriptions.Item label="decision_status">
+                {governedDecisionRequestState.result.decision_status}
+              </Descriptions.Item>
+              <Descriptions.Item label="outcome">
+                {governedDecisionRequestState.result.outcome}
+              </Descriptions.Item>
+              <Descriptions.Item label="decision_ledger_write_performed">
+                {String(governedDecisionRequestState.result.decision_ledger_write_performed)}
+              </Descriptions.Item>
+              <Descriptions.Item label="human_review_required">
+                {String(governedDecisionRequestState.result.human_review_required)}
+              </Descriptions.Item>
+              <Descriptions.Item label="no_automatic_trust_upgrade">
+                {String(governedDecisionRequestState.result.no_automatic_trust_upgrade)}
+              </Descriptions.Item>
+              <Descriptions.Item label="production_ready">
+                {String(governedDecisionRequestState.result.production_ready)}
+              </Descriptions.Item>
+            </Descriptions>
+          )}
+        </Space>
+      </Card>
 
       <section className="internal-alpha-review-hero">
         <div>
