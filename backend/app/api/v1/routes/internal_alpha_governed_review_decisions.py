@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import re
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter
@@ -13,11 +15,24 @@ from app.services.governed_nonproduction_human_review_decision_ledger import (
     GovernedNonproductionHumanReviewDecisionLedger,
     GovernedNonproductionHumanReviewDecisionLedgerUnavailable,
     get_governed_nonproduction_human_review_decision,
+    record_second_exact_formal_human_review_decision,
     record_governed_nonproduction_human_review_decision,
+    validate_second_exact_formal_human_review_decision_activation,
 )
 
 
 GATE = "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_LEDGER_ENABLED"
+FORMAL_SECOND_GATE = (
+    "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_FORMAL_SECOND_ENABLED"
+)
+FORMAL_SECOND_ACTIVATION_JSON = (
+    "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_"
+    "FORMAL_SECOND_ACTIVATION_JSON"
+)
+FORMAL_SECOND_ACTIVATION_SHA256 = (
+    "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_"
+    "FORMAL_SECOND_ACTIVATION_SHA256"
+)
 ROUTE_MODE = (
     "internal_disabled_by_default_append_only_nonproduction_"
     "human_review_decision_ledger"
@@ -39,6 +54,7 @@ OUTCOME_STATUS = {
 }
 
 router = APIRouter()
+_formal_second_activation_consumed = False
 
 
 class GovernedNonproductionHumanReviewDecisionRequest(BaseModel):
@@ -55,6 +71,59 @@ def _ledger_factory() -> GovernedNonproductionHumanReviewDecisionLedger:
 
 def _gate_enabled() -> bool:
     return os.getenv(GATE, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _formal_second_gate_enabled() -> bool:
+    return os.getenv(FORMAL_SECOND_GATE, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _strict_json_object(value: str) -> dict[str, Any]:
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        keys = [key for key, _ in pairs]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate_json_key")
+        return dict(pairs)
+
+    def reject_constant(_value: str) -> None:
+        raise ValueError("nonstandard_json_constant")
+
+    parsed = json.loads(
+        value,
+        object_pairs_hook=unique_object,
+        parse_constant=reject_constant,
+    )
+    if not isinstance(parsed, dict):
+        raise ValueError("activation_not_object")
+    return parsed
+
+
+def _formal_second_activation() -> tuple[dict[str, Any], str] | None:
+    raw = os.getenv(FORMAL_SECOND_ACTIVATION_JSON)
+    safe_hash = os.getenv(FORMAL_SECOND_ACTIVATION_SHA256)
+    if raw is None or safe_hash is None:
+        return None
+    try:
+        activation = _strict_json_object(raw)
+        validated = (
+            validate_second_exact_formal_human_review_decision_activation(
+                activation,
+                safe_hash,
+            )
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    except GovernedNonproductionHumanReviewDecisionIntegrityError:
+        return None
+    return validated, safe_hash
+
+
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parents[5]
 
 
 def _post_response(
@@ -118,6 +187,54 @@ def post_decision(
             content=_post_response(
                 decision=None,
                 receipt=None,
+            ),
+        )
+    if _formal_second_gate_enabled():
+        global _formal_second_activation_consumed
+        activation = _formal_second_activation()
+        if activation is None or _formal_second_activation_consumed:
+            return JSONResponse(
+                status_code=503,
+                content=_post_response(
+                    decision=None,
+                    receipt=None,
+                ),
+            )
+        activation_object, activation_hash = activation
+        _formal_second_activation_consumed = True
+        try:
+            result = record_second_exact_formal_human_review_decision(
+                repository_root=_repository_root(),
+                request=request.model_dump(),
+                second_activation_object=activation_object,
+                second_activation_binding_safe_hash=activation_hash,
+                enabled=True,
+            )
+        except Exception:
+            return JSONResponse(
+                status_code=503,
+                content=_post_response(
+                    decision=None,
+                    receipt=None,
+                ),
+            )
+        decision = result.get("decision")
+        receipt = result.get("receipt")
+        if not isinstance(receipt, dict):
+            return JSONResponse(
+                status_code=503,
+                content=_post_response(
+                    decision=None,
+                    receipt=None,
+                ),
+            )
+        outcome = receipt.get("outcome")
+        status_code = OUTCOME_STATUS.get(outcome, 503)
+        return JSONResponse(
+            status_code=status_code,
+            content=_post_response(
+                decision=decision if isinstance(decision, dict) else None,
+                receipt=receipt,
             ),
         )
     ledger = _ledger_factory()

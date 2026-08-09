@@ -386,12 +386,24 @@ def _receipt(
     return {field: values[field] for field in RECEIPT_FIELDS}
 
 
-def _identity_for(decision_type: str) -> dict[str, Any]:
+def _identity_for_context(
+    decision_type: str,
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    if (
+        not isinstance(context, dict)
+        or tuple(context) != tuple(SERVER_OWNED_CONTEXT)
+        or any(
+            type(context[field]) is not type(expected)
+            for field, expected in SERVER_OWNED_CONTEXT.items()
+        )
+    ):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
     material = {
         "request_schema": REQUEST_SCHEMA,
         "request_version": REQUEST_VERSION,
         "decision_type": decision_type,
-        **SERVER_OWNED_CONTEXT,
+        **context,
     }
     idempotency_key = _canonical_sha256(
         {field: material[field] for field in _IDEMPOTENCY_FIELDS}
@@ -404,8 +416,12 @@ def _identity_for(decision_type: str) -> dict[str, Any]:
         "ledger_scope": LEDGER_SCOPE,
         "decision_type": decision_type,
         "decision_status": DECISION_STATUS,
-        **SERVER_OWNED_CONTEXT,
+        **context,
     }
+
+
+def _identity_for(decision_type: str) -> dict[str, Any]:
+    return _identity_for_context(decision_type, SERVER_OWNED_CONTEXT)
 
 
 def _build_decision(identity: Mapping[str, Any], recorded_at: str) -> dict[str, Any]:
@@ -2012,6 +2028,617 @@ def record_first_exact_formal_human_review_decision(
         integrity_result=integrity_result,
         final_sidecar_count=final_sidecar_count,
         decision=decision if mutation_count == 1 else None,
+        receipt=receipt,
+        blockers=blockers,
+    )
+
+
+FORMAL_SECOND_ACTIVATION_SCHEMA = (
+    "sentigraph_post_classc_p03_formal_second_decision_activation_v0_1"
+)
+FORMAL_SECOND_ACTIVATION_VERSION = "0.1"
+FORMAL_SECOND_ACTIVATION_FIELDS = (
+    "activation_schema",
+    "activation_version",
+    "milestone_id",
+    "route_purpose",
+    "repository_identity",
+    "required_branch",
+    "implementation_commit",
+    "implementation_service_sha256",
+    "implementation_route_sha256",
+    "implementation_test_sha256",
+    "implementation_report_sha256",
+    "accepted_p03_design_result_sha256",
+    "accepted_p03_design_acceptance_sha256",
+    "target_identity_safe_hash",
+    "target_authorization_contract_safe_hash",
+    "accepted_first_decision_type",
+    "accepted_first_decision_id",
+    "accepted_first_idempotency_key",
+    "accepted_first_audit_receipt_reference",
+    "accepted_first_decision_canonical_sha256",
+    "required_prestate_row_count",
+    "allowed_mutation_decision_type",
+    "activation_decision_safe_hash",
+    "fresh_runtime_goal_id",
+    "fresh_runtime_approval_sha256",
+    "formal_target_access_session_limit",
+    "sqlite_connection_open_limit",
+    "sqlite_connection_reopen_limit",
+    "decision_insert_limit",
+    "automatic_retry_allowed",
+    "automatic_repair_allowed",
+    "third_decision_allowed",
+    "nonreusable",
+)
+FORMAL_SECOND_RESULT_SCHEMA = (
+    "sentigraph_post_classc_p03_formal_second_decision_result_v0_1"
+)
+FORMAL_SECOND_RESULT_VERSION = "0.1"
+FORMAL_SECOND_RESULT_FIELDS = (
+    "result_schema",
+    "result_version",
+    "outcome",
+    "second_activation_binding_safe_hash",
+    "formal_state_before",
+    "formal_state_after",
+    "target_identity_safe_hash",
+    "target_authorization_contract_safe_hash",
+    "formal_target_access_session_count",
+    "sqlite_connection_open_count",
+    "sqlite_connection_reopen_count",
+    "formal_writer_invocation_count",
+    "decision_insert_issued_count",
+    "mutation_count",
+    "decision_row_count_before",
+    "decision_row_count_after",
+    "exact_schema_verified",
+    "integrity_result",
+    "final_sidecar_count",
+    "decision",
+    "receipt",
+    "warnings",
+    "blockers",
+)
+FORMAL_SECOND_ACCEPTED_DESIGN_RESULT_SHA256 = (
+    "86aeee2bf26949c8b28b6c68361a59137ff88f642b508c118457af2063a65fc1"
+)
+FORMAL_SECOND_ACCEPTED_DESIGN_ACCEPTANCE_SHA256 = (
+    "d37bee0fb798cb3febe8eab80ad779670969a2588d469dfc837220ca821424b0"
+)
+FORMAL_SECOND_ACCEPTED_FIRST_DECISION_ID = (
+    "ghrd-b666c0f03a975c94e6b3b248bd05cdc9"
+)
+FORMAL_SECOND_ACCEPTED_FIRST_IDEMPOTENCY_KEY = (
+    "b666c0f03a975c94e6b3b248bd05cdc95fdeb596b950abbe6a4a029f0935b3db"
+)
+FORMAL_SECOND_ACCEPTED_FIRST_AUDIT_RECEIPT_REFERENCE = (
+    "ghrd-receipt-b666c0f03a975c94e6b3b248bd05cdc9"
+)
+FORMAL_SECOND_ACCEPTED_FIRST_DECISION_CANONICAL_SHA256 = (
+    "604ded010ca6ea46a6c63d4011445fdcbd775fd498231260e5cd59f88d51452e"
+)
+FORMAL_SECOND_HISTORICAL_P3_ACTIVATION_BINDING_SAFE_HASH = (
+    "d69ebc59eb77637274a1d9743b57d04571c7828eafba2e115c27ff8c82599a0d"
+)
+_FORMAL_SECOND_FIXED_ACTIVATION_VALUES = {
+    "activation_schema": FORMAL_SECOND_ACTIVATION_SCHEMA,
+    "activation_version": FORMAL_SECOND_ACTIVATION_VERSION,
+    "milestone_id": (
+        "sentigraph_post_classc_p03_formal_second_decision_route_binding_v0_1"
+    ),
+    "route_purpose": "formal_second_human_review_decision_only",
+    "repository_identity": "dgmpurf/Sentigraph",
+    "required_branch": "main",
+    "accepted_p03_design_result_sha256": (
+        FORMAL_SECOND_ACCEPTED_DESIGN_RESULT_SHA256
+    ),
+    "accepted_p03_design_acceptance_sha256": (
+        FORMAL_SECOND_ACCEPTED_DESIGN_ACCEPTANCE_SHA256
+    ),
+    "target_identity_safe_hash": FORMAL_TARGET_IDENTITY_SAFE_HASH,
+    "target_authorization_contract_safe_hash": (
+        FORMAL_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH
+    ),
+    "accepted_first_decision_type": "keep_pending_human_review",
+    "accepted_first_decision_id": FORMAL_SECOND_ACCEPTED_FIRST_DECISION_ID,
+    "accepted_first_idempotency_key": (
+        FORMAL_SECOND_ACCEPTED_FIRST_IDEMPOTENCY_KEY
+    ),
+    "accepted_first_audit_receipt_reference": (
+        FORMAL_SECOND_ACCEPTED_FIRST_AUDIT_RECEIPT_REFERENCE
+    ),
+    "accepted_first_decision_canonical_sha256": (
+        FORMAL_SECOND_ACCEPTED_FIRST_DECISION_CANONICAL_SHA256
+    ),
+    "required_prestate_row_count": 1,
+    "allowed_mutation_decision_type": "request_more_governance_review",
+    "formal_target_access_session_limit": 1,
+    "sqlite_connection_open_limit": 1,
+    "sqlite_connection_reopen_limit": 0,
+    "decision_insert_limit": 1,
+    "automatic_retry_allowed": False,
+    "automatic_repair_allowed": False,
+    "third_decision_allowed": False,
+    "nonreusable": True,
+}
+_FORMAL_SECOND_DYNAMIC_SHA256_FIELDS = (
+    "implementation_service_sha256",
+    "implementation_route_sha256",
+    "implementation_test_sha256",
+    "implementation_report_sha256",
+    "activation_decision_safe_hash",
+    "fresh_runtime_approval_sha256",
+)
+
+
+def _lower_hex_exact(value: Any, length: int) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def validate_second_exact_formal_human_review_decision_activation(
+    activation: Mapping[str, Any],
+    activation_binding_safe_hash: str,
+) -> dict[str, Any]:
+    if (
+        not isinstance(activation, dict)
+        or tuple(activation) != FORMAL_SECOND_ACTIVATION_FIELDS
+        or not _lower_hex_exact(activation_binding_safe_hash, 64)
+        or not hmac.compare_digest(
+            _canonical_sha256(activation),
+            activation_binding_safe_hash,
+        )
+        or hmac.compare_digest(
+            activation_binding_safe_hash,
+            FORMAL_SECOND_HISTORICAL_P3_ACTIVATION_BINDING_SAFE_HASH,
+        )
+    ):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+    if any(
+        field not in activation
+        or type(activation[field]) is not type(expected)
+        or activation[field] != expected
+        for field, expected in _FORMAL_SECOND_FIXED_ACTIVATION_VALUES.items()
+    ):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+    if not _lower_hex_exact(activation["implementation_commit"], 40):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+    if any(
+        not _lower_hex_exact(activation[field], 64)
+        for field in _FORMAL_SECOND_DYNAMIC_SHA256_FIELDS
+    ):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+    if (
+        not isinstance(activation["fresh_runtime_goal_id"], str)
+        or not activation["fresh_runtime_goal_id"].startswith("SENTIGRAPH_")
+        or hmac.compare_digest(
+            activation["activation_decision_safe_hash"],
+            SERVER_OWNED_CONTEXT["activation_decision_safe_hash"],
+        )
+        or hmac.compare_digest(
+            activation["activation_decision_safe_hash"],
+            FORMAL_SECOND_HISTORICAL_P3_ACTIVATION_BINDING_SAFE_HASH,
+        )
+    ):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+    return {field: activation[field] for field in FORMAL_SECOND_ACTIVATION_FIELDS}
+
+
+def _formal_second_server_owned_context(
+    activation_decision_safe_hash: str,
+    *,
+    candidate_context: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    context = (
+        dict(candidate_context)
+        if candidate_context is not None
+        else {
+            **SERVER_OWNED_CONTEXT,
+            "activation_decision_safe_hash": activation_decision_safe_hash,
+        }
+    )
+    if (
+        not _lower_hex_exact(activation_decision_safe_hash, 64)
+        or hmac.compare_digest(
+            activation_decision_safe_hash,
+            SERVER_OWNED_CONTEXT["activation_decision_safe_hash"],
+        )
+        or hmac.compare_digest(
+            activation_decision_safe_hash,
+            FORMAL_SECOND_HISTORICAL_P3_ACTIVATION_BINDING_SAFE_HASH,
+        )
+        or tuple(context) != tuple(SERVER_OWNED_CONTEXT)
+        or context.get("activation_decision_safe_hash")
+        != activation_decision_safe_hash
+        or any(
+            type(context[field]) is not type(expected)
+            or (
+                field != "activation_decision_safe_hash"
+                and context[field] != expected
+            )
+            for field, expected in SERVER_OWNED_CONTEXT.items()
+        )
+    ):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+    return {field: context[field] for field in SERVER_OWNED_CONTEXT}
+
+
+def _accepted_first_formal_decision(
+    row: tuple[Any, ...],
+) -> dict[str, Any]:
+    decision = _row_to_decision(row)
+    identity = _identity_for("keep_pending_human_review")
+    if (
+        not _identity_matches(decision, identity)
+        or decision["decision_id"]
+        != FORMAL_SECOND_ACCEPTED_FIRST_DECISION_ID
+        or decision["idempotency_key"]
+        != FORMAL_SECOND_ACCEPTED_FIRST_IDEMPOTENCY_KEY
+        or decision["audit_receipt_reference"]
+        != FORMAL_SECOND_ACCEPTED_FIRST_AUDIT_RECEIPT_REFERENCE
+        or decision["decision_canonical_hash"]
+        != FORMAL_SECOND_ACCEPTED_FIRST_DECISION_CANONICAL_SHA256
+    ):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+    return decision
+
+
+def _formal_second_result(
+    outcome: str,
+    *,
+    activation_hash: str | None = None,
+    formal_state_before: str = "not_observed",
+    formal_state_after: str = "not_changed",
+    formal_target_access_session_count: int = 0,
+    sqlite_connection_open_count: int = 0,
+    formal_writer_invocation_count: int = 0,
+    decision_insert_issued_count: int = 0,
+    mutation_count: int = 0,
+    decision_row_count_before: int | None = None,
+    decision_row_count_after: int | None = None,
+    exact_schema_verified: bool | None = None,
+    integrity_result: str = "not_observed",
+    final_sidecar_count: int | None = None,
+    decision: Mapping[str, Any] | None = None,
+    receipt: Mapping[str, Any] | None = None,
+    blockers: list[str] | None = None,
+) -> dict[str, Any]:
+    values = {
+        "result_schema": FORMAL_SECOND_RESULT_SCHEMA,
+        "result_version": FORMAL_SECOND_RESULT_VERSION,
+        "outcome": outcome,
+        "second_activation_binding_safe_hash": activation_hash,
+        "formal_state_before": formal_state_before,
+        "formal_state_after": formal_state_after,
+        "target_identity_safe_hash": FORMAL_TARGET_IDENTITY_SAFE_HASH,
+        "target_authorization_contract_safe_hash": (
+            FORMAL_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH
+        ),
+        "formal_target_access_session_count": formal_target_access_session_count,
+        "sqlite_connection_open_count": sqlite_connection_open_count,
+        "sqlite_connection_reopen_count": 0,
+        "formal_writer_invocation_count": formal_writer_invocation_count,
+        "decision_insert_issued_count": decision_insert_issued_count,
+        "mutation_count": mutation_count,
+        "decision_row_count_before": decision_row_count_before,
+        "decision_row_count_after": decision_row_count_after,
+        "exact_schema_verified": exact_schema_verified,
+        "integrity_result": integrity_result,
+        "final_sidecar_count": final_sidecar_count,
+        "decision": dict(decision) if decision is not None else None,
+        "receipt": dict(receipt) if receipt is not None else None,
+        "warnings": [],
+        "blockers": list(blockers or []),
+    }
+    return {field: values[field] for field in FORMAL_SECOND_RESULT_FIELDS}
+
+
+def record_second_exact_formal_human_review_decision(
+    *,
+    repository_root: str | Path,
+    request: Mapping[str, Any],
+    second_activation_object: Mapping[str, Any],
+    second_activation_binding_safe_hash: str,
+    enabled: bool = False,
+) -> dict[str, Any]:
+    if not enabled:
+        return _formal_second_result(
+            "blocked_formal_second_operation_disabled",
+            blockers=["blocked_formal_second_operation_disabled"],
+        )
+    try:
+        activation = (
+            validate_second_exact_formal_human_review_decision_activation(
+                second_activation_object,
+                second_activation_binding_safe_hash,
+            )
+        )
+        second_context = _formal_second_server_owned_context(
+            activation["activation_decision_safe_hash"]
+        )
+    except GovernedNonproductionHumanReviewDecisionIntegrityError:
+        return _formal_second_result(
+            "blocked_formal_second_activation_mismatch",
+            activation_hash=second_activation_binding_safe_hash,
+            blockers=["blocked_formal_second_activation_mismatch"],
+        )
+    try:
+        validated_request = (
+            validate_governed_nonproduction_human_review_decision_request(
+                request
+            )
+        )
+    except GovernedNonproductionHumanReviewDecisionValidationError as exc:
+        decision_type = (
+            request.get("decision_type") if isinstance(request, dict) else None
+        )
+        receipt = _receipt(
+            exc.outcome,
+            identity={"decision_type": decision_type},
+        )
+        return _formal_second_result(
+            exc.outcome,
+            activation_hash=second_activation_binding_safe_hash,
+            receipt=receipt,
+            blockers=[exc.outcome],
+        )
+    if dict(SERVER_OWNED_CONTEXT) != _FROZEN_SERVER_OWNED_CONTEXT:
+        receipt = _receipt(
+            "blocked_binding_or_snapshot_mismatch",
+            identity={"decision_type": validated_request["decision_type"]},
+        )
+        return _formal_second_result(
+            "blocked_binding_or_snapshot_mismatch",
+            activation_hash=second_activation_binding_safe_hash,
+            receipt=receipt,
+            blockers=["blocked_binding_or_snapshot_mismatch"],
+        )
+    try:
+        _root, target = _validate_exact_formal_decision_ledger_profile(
+            repository_root
+        )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return _formal_second_result(
+            "blocked_formal_second_target_profile_mismatch",
+            activation_hash=second_activation_binding_safe_hash,
+            blockers=["blocked_formal_second_target_profile_mismatch"],
+        )
+    if (
+        target.is_symlink()
+        or not target.is_file()
+        or _exact_formal_sidecar_count(target) != 0
+    ):
+        return _formal_second_result(
+            "blocked_formal_second_target_profile_mismatch",
+            activation_hash=second_activation_binding_safe_hash,
+            blockers=["blocked_formal_second_target_profile_mismatch"],
+        )
+
+    access_count = 1
+    open_count = 0
+    writer_count = 0
+    insert_count = 0
+    mutation_count = 0
+    row_count_before: int | None = None
+    row_count_after: int | None = None
+    exact_schema: bool | None = None
+    integrity_result = "not_observed"
+    final_sidecar_count: int | None = None
+    formal_state_before = "not_observed"
+    formal_state_after = "not_changed"
+    decision: dict[str, Any] | None = None
+    receipt: dict[str, Any] | None = None
+    outcome = "bounded_formal_second_decision_failure"
+    blockers = [outcome]
+    try:
+        connection = _open_exact_formal_decision_ledger_connection(
+            target,
+            read_only=False,
+        )
+        open_count = 1
+    except sqlite3.Error:
+        return _formal_second_result(
+            outcome,
+            activation_hash=second_activation_binding_safe_hash,
+            formal_target_access_session_count=access_count,
+            blockers=blockers,
+        )
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        exact_schema = _exact_formal_schema_verified(connection)
+        integrity_rows = connection.execute("PRAGMA integrity_check").fetchall()
+        integrity_result = "ok" if integrity_rows == [("ok",)] else "failed"
+        row_count_before = _row_count(connection)
+        if (
+            not exact_schema
+            or integrity_result != "ok"
+            or row_count_before != 1
+        ):
+            outcome = "blocked_binding_or_snapshot_mismatch"
+            blockers = [outcome]
+            receipt = _receipt(
+                outcome,
+                identity={"decision_type": validated_request["decision_type"]},
+                row_count_before=row_count_before,
+                row_count_after=row_count_before,
+            )
+            connection.rollback()
+            row_count_after = row_count_before
+        else:
+            first_row = connection.execute(
+                f'SELECT * FROM "{FORMAL_PRIMARY_TABLE}" ORDER BY rowid'
+            ).fetchone()
+            if first_row is None:
+                raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+            first_decision = _accepted_first_formal_decision(first_row)
+            formal_state_before = "first_exact_decision_recorded"
+            if validated_request["decision_type"] == (
+                "keep_pending_human_review"
+            ):
+                decision = first_decision
+                row_count_after = 1
+                receipt = _receipt(
+                    "already_exists_same_human_review_decision",
+                    decision=decision,
+                    row_count_before=1,
+                    row_count_after=1,
+                )
+                outcome = "already_exists_same_human_review_decision"
+                blockers = []
+                formal_state_after = "first_exact_decision_reused_without_mutation"
+                connection.rollback()
+            else:
+                identity = _identity_for_context(
+                    "request_more_governance_review",
+                    second_context,
+                )
+                if (
+                    identity["idempotency_key"]
+                    == first_decision["idempotency_key"]
+                    or _select_by_identity(connection, identity) is not None
+                ):
+                    raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+                decision = _build_decision(identity, _utc_clock())
+                ledger = GovernedNonproductionHumanReviewDecisionLedger(
+                    target,
+                    enabled=True,
+                )
+                writer_count = 1
+                insert_count = 1
+                ledger._insert_record(connection, decision)
+                try:
+                    connection.commit()
+                except sqlite3.Error:
+                    if connection.in_transaction:
+                        try:
+                            connection.rollback()
+                        except sqlite3.Error:
+                            pass
+                    try:
+                        if not connection.in_transaction:
+                            connection.execute("PRAGMA query_only = ON")
+                            row_count_after = _row_count(connection)
+                    except sqlite3.Error:
+                        row_count_after = None
+                    outcome = (
+                        "paused_pending_read_only_idempotency_verification"
+                    )
+                    blockers = [outcome]
+                    receipt = _receipt(
+                        outcome,
+                        identity=identity,
+                        row_count_before=1,
+                        row_count_after=row_count_after,
+                    )
+                    formal_state_after = "ambiguous_requires_independent_audit"
+                else:
+                    row_count_after = _row_count(connection)
+                    rows = connection.execute(
+                        f'SELECT * FROM "{FORMAL_PRIMARY_TABLE}" ORDER BY rowid'
+                    ).fetchall()
+                    first_after = (
+                        _accepted_first_formal_decision(rows[0])
+                        if len(rows) >= 1
+                        else None
+                    )
+                    second_after = (
+                        _row_to_decision(rows[1]) if len(rows) >= 2 else None
+                    )
+                    exact_schema = _exact_formal_schema_verified(connection)
+                    integrity_rows = connection.execute(
+                        "PRAGMA integrity_check"
+                    ).fetchall()
+                    integrity_result = (
+                        "ok" if integrity_rows == [("ok",)] else "failed"
+                    )
+                    if (
+                        row_count_after == 2
+                        and first_after == first_decision
+                        and second_after == decision
+                        and exact_schema
+                        and integrity_result == "ok"
+                    ):
+                        mutation_count = 1
+                        receipt = _receipt(
+                            "created_exactly_one_human_review_decision",
+                            decision=decision,
+                            row_count_before=1,
+                            row_count_after=2,
+                        )
+                        outcome = "created_exactly_one_human_review_decision"
+                        blockers = []
+                        formal_state_after = "second_exact_decision_recorded"
+                    else:
+                        outcome = "blocked_binding_or_snapshot_mismatch"
+                        blockers = [outcome]
+                        receipt = _receipt(
+                            outcome,
+                            identity=identity,
+                            row_count_before=1,
+                            row_count_after=row_count_after,
+                        )
+    except (
+        GovernedNonproductionHumanReviewDecisionIntegrityError,
+        sqlite3.Error,
+        TypeError,
+        ValueError,
+    ):
+        try:
+            if connection.in_transaction:
+                connection.rollback()
+        except sqlite3.Error:
+            pass
+        outcome = "blocked_binding_or_snapshot_mismatch"
+        blockers = [outcome]
+        receipt = _receipt(
+            outcome,
+            identity={"decision_type": validated_request["decision_type"]},
+            row_count_before=row_count_before,
+            row_count_after=row_count_before,
+        )
+        row_count_after = row_count_before
+        decision = None
+        writer_count = 0 if insert_count == 0 else writer_count
+    finally:
+        try:
+            connection.close()
+        except sqlite3.Error:
+            outcome = "bounded_formal_second_decision_failure"
+            blockers = [outcome]
+    final_sidecar_count = _exact_formal_sidecar_count(target)
+    if outcome in (
+        "already_exists_same_human_review_decision",
+        "created_exactly_one_human_review_decision",
+    ) and final_sidecar_count != 0:
+        outcome = "bounded_formal_second_decision_failure"
+        blockers = [outcome]
+        receipt = _receipt(
+            "bounded_decision_ledger_failure",
+            identity={"decision_type": validated_request["decision_type"]},
+            row_count_before=row_count_before,
+            row_count_after=row_count_after,
+        )
+    return _formal_second_result(
+        outcome,
+        activation_hash=second_activation_binding_safe_hash,
+        formal_state_before=formal_state_before,
+        formal_state_after=formal_state_after,
+        formal_target_access_session_count=access_count,
+        sqlite_connection_open_count=open_count,
+        formal_writer_invocation_count=writer_count,
+        decision_insert_issued_count=insert_count,
+        mutation_count=mutation_count,
+        decision_row_count_before=row_count_before,
+        decision_row_count_after=row_count_after,
+        exact_schema_verified=exact_schema,
+        integrity_result=integrity_result,
+        final_sidecar_count=final_sidecar_count,
+        decision=decision if not blockers else None,
         receipt=receipt,
         blockers=blockers,
     )
