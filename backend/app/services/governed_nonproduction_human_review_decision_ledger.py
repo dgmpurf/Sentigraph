@@ -821,6 +821,42 @@ FORMAL_TARGET_AUTHORIZATION_CONTRACT_SAFE_HASH = (
     "de3cbfe49dfeb836f3bc8b95b5a46d51366892e2277f86402306edbfd543ea4d"
 )
 FORMAL_SCHEMA_VERSION = "0.1"
+FORMAL_STATE_PROJECTION_SCHEMA = (
+    "sentigraph_internal_alpha_governed_review_formal_state_projection_v0_1"
+)
+FORMAL_STATE_PROJECTION_VERSION = "0.1"
+FORMAL_STATE_PROJECTION_ROUTE_MODE = (
+    "internal_disabled_by_default_read_only_formal_human_review_"
+    "state_projection"
+)
+FORMAL_STATE_PROJECTION_FIELDS = (
+    "response_schema",
+    "response_version",
+    "route_mode",
+    "projection_status",
+    "projection_error_code",
+    "formal_first_decision_present",
+    "formal_second_decision_present",
+    "formal_second_decision_type",
+    "formal_decision_count",
+    "human_review_required",
+    "no_automatic_trust_upgrade",
+    "write_performed",
+    "production_object_enabled",
+    "review_queue_runtime_enabled",
+    "operator_runtime_ready",
+    "public_ready",
+    "production_ready",
+    "mutable_authority_granted",
+    "third_decision_allowed",
+)
+FORMAL_STATE_READY = "formal_state_ready"
+FORMAL_STATE_DISABLED = "formal_state_disabled"
+FORMAL_STATE_UNAVAILABLE = "formal_state_unavailable"
+FORMAL_STATE_INCONSISTENT = "formal_state_inconsistent"
+FORMAL_STATE_DISABLED_ERROR = "formal_state_projection_disabled"
+FORMAL_STATE_UNAVAILABLE_ERROR = "formal_state_target_unavailable"
+FORMAL_STATE_INCONSISTENT_ERROR = "formal_state_integrity_failure"
 INITIALIZATION_RECEIPT_SCHEMA = (
     "sentigraph_governed_nonproduction_human_review_decision_ledger_"
     "initialization_receipt_v0_1"
@@ -2642,3 +2678,168 @@ def record_second_exact_formal_human_review_decision(
         receipt=receipt,
         blockers=blockers,
     )
+
+
+def _formal_state_projection(
+    projection_status: str,
+    projection_error_code: str | None,
+    *,
+    formal_first_decision_present: bool = False,
+    formal_second_decision_present: bool = False,
+    formal_second_decision_type: str | None = None,
+    formal_decision_count: int = 0,
+) -> dict[str, Any]:
+    values = {
+        "response_schema": FORMAL_STATE_PROJECTION_SCHEMA,
+        "response_version": FORMAL_STATE_PROJECTION_VERSION,
+        "route_mode": FORMAL_STATE_PROJECTION_ROUTE_MODE,
+        "projection_status": projection_status,
+        "projection_error_code": projection_error_code,
+        "formal_first_decision_present": formal_first_decision_present,
+        "formal_second_decision_present": formal_second_decision_present,
+        "formal_second_decision_type": formal_second_decision_type,
+        "formal_decision_count": formal_decision_count,
+        "human_review_required": True,
+        "no_automatic_trust_upgrade": True,
+        "write_performed": False,
+        "production_object_enabled": False,
+        "review_queue_runtime_enabled": False,
+        "operator_runtime_ready": False,
+        "public_ready": False,
+        "production_ready": False,
+        "mutable_authority_granted": False,
+        "third_decision_allowed": False,
+    }
+    return {field: values[field] for field in FORMAL_STATE_PROJECTION_FIELDS}
+
+
+def _accepted_second_formal_decision(
+    row: tuple[Any, ...],
+) -> dict[str, Any]:
+    decision = _row_to_decision(row)
+    activation_hash = decision.get("activation_decision_safe_hash")
+    if not isinstance(activation_hash, str):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+    context = _formal_second_server_owned_context(activation_hash)
+    identity = _identity_for_context(
+        "request_more_governance_review",
+        context,
+    )
+    if (
+        decision["decision_type"] != "request_more_governance_review"
+        or not _identity_matches(decision, identity)
+        or decision["decision_id"] == FORMAL_SECOND_ACCEPTED_FIRST_DECISION_ID
+        or decision["idempotency_key"]
+        == FORMAL_SECOND_ACCEPTED_FIRST_IDEMPOTENCY_KEY
+        or decision["audit_receipt_reference"]
+        == FORMAL_SECOND_ACCEPTED_FIRST_AUDIT_RECEIPT_REFERENCE
+        or decision["decision_canonical_hash"]
+        == FORMAL_SECOND_ACCEPTED_FIRST_DECISION_CANONICAL_SHA256
+    ):
+        raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+    return decision
+
+
+def project_exact_formal_governed_nonproduction_human_review_decision_state(
+    *,
+    repository_root: str | Path,
+    enabled: bool = False,
+) -> dict[str, Any]:
+    """Return a bounded read-only projection of the exact formal ledger state."""
+
+    if not enabled:
+        return _formal_state_projection(
+            FORMAL_STATE_DISABLED,
+            FORMAL_STATE_DISABLED_ERROR,
+        )
+    try:
+        _root, target = _validate_exact_formal_decision_ledger_profile(
+            repository_root
+        )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return _formal_state_projection(
+            FORMAL_STATE_INCONSISTENT,
+            FORMAL_STATE_INCONSISTENT_ERROR,
+        )
+    if target.is_symlink():
+        return _formal_state_projection(
+            FORMAL_STATE_INCONSISTENT,
+            FORMAL_STATE_INCONSISTENT_ERROR,
+        )
+    if not target.is_file():
+        return _formal_state_projection(
+            FORMAL_STATE_UNAVAILABLE,
+            FORMAL_STATE_UNAVAILABLE_ERROR,
+        )
+    if _exact_formal_sidecar_count(target) != 0:
+        return _formal_state_projection(
+            FORMAL_STATE_INCONSISTENT,
+            FORMAL_STATE_INCONSISTENT_ERROR,
+        )
+    try:
+        connection = _open_exact_formal_decision_ledger_connection(
+            target,
+            read_only=True,
+        )
+    except sqlite3.Error:
+        return _formal_state_projection(
+            FORMAL_STATE_UNAVAILABLE,
+            FORMAL_STATE_UNAVAILABLE_ERROR,
+        )
+
+    projection: dict[str, Any]
+    try:
+        connection.execute("PRAGMA query_only = ON")
+        query_only = connection.execute("PRAGMA query_only").fetchone()
+        exact_schema = _exact_formal_schema_verified(connection)
+        integrity_rows = connection.execute("PRAGMA integrity_check").fetchall()
+        row_count = _row_count(connection)
+        if (
+            query_only != (1,)
+            or not exact_schema
+            or integrity_rows != [("ok",)]
+            or row_count not in (1, 2)
+        ):
+            raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+        rows = connection.execute(
+            f'SELECT * FROM "{FORMAL_PRIMARY_TABLE}" ORDER BY rowid'
+        ).fetchall()
+        if len(rows) != row_count:
+            raise GovernedNonproductionHumanReviewDecisionIntegrityError()
+        _accepted_first_formal_decision(rows[0])
+        if row_count == 2:
+            _accepted_second_formal_decision(rows[1])
+        projection = _formal_state_projection(
+            FORMAL_STATE_READY,
+            None,
+            formal_first_decision_present=True,
+            formal_second_decision_present=row_count == 2,
+            formal_second_decision_type=(
+                "request_more_governance_review" if row_count == 2 else None
+            ),
+            formal_decision_count=row_count,
+        )
+    except (
+        GovernedNonproductionHumanReviewDecisionIntegrityError,
+        sqlite3.Error,
+        TypeError,
+        ValueError,
+    ):
+        projection = _formal_state_projection(
+            FORMAL_STATE_INCONSISTENT,
+            FORMAL_STATE_INCONSISTENT_ERROR,
+        )
+    finally:
+        try:
+            connection.close()
+        except sqlite3.Error:
+            projection = _formal_state_projection(
+                FORMAL_STATE_UNAVAILABLE,
+                FORMAL_STATE_UNAVAILABLE_ERROR,
+            )
+    if _exact_formal_sidecar_count(target) != 0:
+        return _formal_state_projection(
+            FORMAL_STATE_INCONSISTENT,
+            FORMAL_STATE_INCONSISTENT_ERROR,
+        )
+    return projection

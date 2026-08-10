@@ -5,11 +5,13 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
+  apiClientGet: vi.fn(),
   apiClientPost: vi.fn(),
   getInternalAlphaReviewConsoleProjection: vi.fn(),
   getInternalAlphaLocalExchangeSampleCatalog: vi.fn(),
@@ -18,7 +20,7 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock('../api/client.js', () => ({
   apiClient: {
-    get: vi.fn(),
+    get: apiMocks.apiClientGet,
     post: apiMocks.apiClientPost,
   },
 }))
@@ -39,9 +41,12 @@ vi.mock('../api/sentigraphApi.js', async (importOriginal) => {
 import {
   INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
   INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
+  INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS,
+  getInternalAlphaGovernedReviewFormalState,
+  normalizeInternalAlphaGovernedReviewFormalStateProjection,
   normalizeInternalAlphaGovernedReviewDecisionPostResponse,
   normalizeInternalAlphaLocalExchangeProjection,
   normalizeInternalAlphaLocalExchangeSampleCatalog,
@@ -59,6 +64,7 @@ const RAW_ERROR_MARKER = 'synthetic_raw_exception_message'
 const RAW_RECEIPT_MARKER = 'synthetic_raw_receipt_private_marker'
 const RAW_CONFIGURATION_MARKER = 'synthetic_configuration_secret_marker'
 const GOVERNED_DECISION_ID = 'ghrd-0123456789abcdef0123456789abcdef'
+const FORMAL_STATE_PRIVATE_DECISION_ID = 'ghrd-fedcba9876543210fedcba9876543210'
 
 const SENSITIVE_MARKERS = Object.freeze([
   'synthetic_private_path_marker',
@@ -148,6 +154,49 @@ function createGovernedDecisionPostResponse(
       operator_runtime_ready: false,
       public_ready: false,
       production_ready: false,
+    },
+  }
+}
+
+function createGovernedFormalStateResponse({
+  status = 404,
+  count = 0,
+  extraFields = null,
+} = {}) {
+  const statusContract = {
+    200: ['formal_state_ready', null],
+    404: ['formal_state_disabled', 'formal_state_projection_disabled'],
+    409: ['formal_state_inconsistent', 'formal_state_integrity_failure'],
+    503: ['formal_state_unavailable', 'formal_state_target_unavailable'],
+  }[status]
+  const ready = status === 200
+  const values = {
+    response_schema: 'sentigraph_internal_alpha_governed_review_formal_state_projection_v0_1',
+    response_version: '0.1',
+    route_mode: 'internal_disabled_by_default_read_only_formal_human_review_state_projection',
+    projection_status: statusContract[0],
+    projection_error_code: statusContract[1],
+    formal_first_decision_present: ready,
+    formal_second_decision_present: ready && count === 2,
+    formal_second_decision_type:
+      ready && count === 2 ? 'request_more_governance_review' : null,
+    formal_decision_count: ready ? count : 0,
+    human_review_required: true,
+    no_automatic_trust_upgrade: true,
+    write_performed: false,
+    production_object_enabled: false,
+    review_queue_runtime_enabled: false,
+    operator_runtime_ready: false,
+    public_ready: false,
+    production_ready: false,
+    mutable_authority_granted: false,
+    third_decision_allowed: false,
+  }
+  return {
+    status,
+    data: {
+      ...orderedObject(INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS, values),
+      ...(extraFields || {}),
     },
   }
 }
@@ -399,10 +448,12 @@ function restoreDescriptors(descriptorStore) {
 }
 
 beforeEach(() => {
+  apiMocks.apiClientGet.mockReset()
   apiMocks.apiClientPost.mockReset()
   apiMocks.getInternalAlphaReviewConsoleProjection.mockReset()
   apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockReset()
   apiMocks.getInternalAlphaLocalExchangeProjection.mockReset()
+  apiMocks.apiClientGet.mockResolvedValue(createGovernedFormalStateResponse())
   apiMocks.getInternalAlphaReviewConsoleProjection.mockResolvedValue({ error: 'route_disabled' })
 
   consoleErrors = []
@@ -503,6 +554,161 @@ afterEach(() => {
   restoreDescriptors(networkDescriptors)
   restoreDescriptors(compatibilityDescriptors)
   vi.clearAllMocks()
+})
+
+describe('InternalAlphaReviewConsole bounded formal-state hydration contract', () => {
+  it.each([
+    [1, false, null],
+    [2, true, 'request_more_governance_review'],
+  ])('normalizes the exact 19-field ready projection for count=%s', (
+    count,
+    secondPresent,
+    secondType,
+  ) => {
+    const response = createGovernedFormalStateResponse({ status: 200, count })
+    const result = normalizeInternalAlphaGovernedReviewFormalStateProjection(
+      response.data,
+      response.status,
+    )
+
+    expect(Object.keys(result)).toEqual(INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS)
+    expect(result.formal_decision_count).toBe(count)
+    expect(result.formal_first_decision_present).toBe(true)
+    expect(result.formal_second_decision_present).toBe(secondPresent)
+    expect(result.formal_second_decision_type).toBe(secondType)
+    expect(result.write_performed).toBe(false)
+    expect(result.no_automatic_trust_upgrade).toBe(true)
+    expect(result.production_ready).toBe(false)
+    expect(result.mutable_authority_granted).toBe(false)
+  })
+
+  it.each([
+    [404, 'formal_state_disabled', 'formal_state_projection_disabled'],
+    [409, 'formal_state_inconsistent', 'formal_state_integrity_failure'],
+    [503, 'formal_state_unavailable', 'formal_state_target_unavailable'],
+  ])('maps HTTP %s to one bounded non-ready state', async (
+    status,
+    projectionStatus,
+    errorCode,
+  ) => {
+    const response = createGovernedFormalStateResponse({ status })
+    apiMocks.apiClientGet.mockRejectedValue({ response })
+
+    const result = await getInternalAlphaGovernedReviewFormalState()
+
+    expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+    expect(apiMocks.apiClientGet).toHaveBeenCalledWith(
+      '/api/v1/internal/alpha/governed-review-decisions/formal-state',
+    )
+    expect(result.projection_status).toBe(projectionStatus)
+    expect(result.projection_error_code).toBe(errorCode)
+    expect(result.formal_decision_count).toBe(0)
+    expect(result.formal_first_decision_present).toBe(false)
+    expect(result.formal_second_decision_present).toBe(false)
+  })
+
+  it('rejects an extra raw decision identity field', () => {
+    const response = createGovernedFormalStateResponse({
+      status: 200,
+      count: 2,
+      extraFields: { decision_id: FORMAL_STATE_PRIVATE_DECISION_ID },
+    })
+
+    expect(() =>
+      normalizeInternalAlphaGovernedReviewFormalStateProjection(
+        response.data,
+        response.status,
+      ),
+    ).toThrow('frontend_governed_review_formal_state_contract_mismatch')
+  })
+
+  it('performs exactly one bounded hydration GET per page mount', async () => {
+    apiMocks.apiClientGet.mockResolvedValue(
+      createGovernedFormalStateResponse({ status: 404 }),
+    )
+
+    await renderGovernedProjection()
+
+    expect(await screen.findByText('formal_state_disabled', { exact: true })).toBeTruthy()
+    expect(screen.getByText('formal_state_projection_disabled', { exact: true })).toBeTruthy()
+    expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+    expect(apiMocks.apiClientGet).toHaveBeenCalledWith(
+      '/api/v1/internal/alpha/governed-review-decisions/formal-state',
+    )
+  })
+
+  it.each([
+    [1, null],
+    [2, 'request_more_governance_review'],
+  ])('renders only the bounded ready summary for count=%s', async (
+    count,
+    secondType,
+  ) => {
+    apiMocks.apiClientGet.mockResolvedValue(
+      createGovernedFormalStateResponse({ status: 200, count }),
+    )
+
+    const { container } = await renderGovernedProjection()
+
+    expect(await screen.findByText('formal_state_ready', { exact: true })).toBeTruthy()
+    if (secondType) {
+      const secondDecisionTypeLabel = screen.getByText('formal_second_decision_type', { exact: true })
+      const secondDecisionTypeItem = secondDecisionTypeLabel.closest('tr')
+
+      expect(secondDecisionTypeItem).not.toBeNull()
+      expect(within(secondDecisionTypeItem).getByText(secondType, { exact: true })).toBeTruthy()
+    }
+    expect(container.textContent).not.toContain(FORMAL_STATE_PRIVATE_DECISION_ID)
+    expect(container.textContent).not.toContain('idempotency_key')
+    expect(container.textContent).not.toContain('recorded_at')
+    expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses no client persistence and performs no GET after the governed POST', async () => {
+    const localGet = vi.spyOn(Storage.prototype, 'getItem')
+    const localSet = vi.spyOn(Storage.prototype, 'setItem')
+    const localRemove = vi.spyOn(Storage.prototype, 'removeItem')
+    try {
+      apiMocks.apiClientGet.mockResolvedValue(
+        createGovernedFormalStateResponse({ status: 200, count: 2 }),
+      )
+      apiMocks.apiClientPost.mockResolvedValue(
+        createGovernedDecisionPostResponse('keep_pending_human_review'),
+      )
+      const { container } = await renderGovernedProjection()
+      await waitFor(() => {
+        expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+      })
+      await selectGovernedDecision('keep_pending_human_review')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm governed decision' }))
+
+      await waitFor(() => {
+        expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(1)
+      })
+      expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+      expect(localGet).toHaveBeenCalledTimes(0)
+      expect(localSet).toHaveBeenCalledTimes(0)
+      expect(localRemove).toHaveBeenCalledTimes(0)
+      expect(container.textContent).not.toContain(FORMAL_STATE_PRIVATE_DECISION_ID)
+    } finally {
+      localGet.mockRestore()
+      localSet.mockRestore()
+      localRemove.mockRestore()
+    }
+  })
+
+  it('maps an unbounded transport failure to a fixed frontend error surface', async () => {
+    apiMocks.apiClientGet.mockRejectedValue(new Error(RAW_ERROR_MARKER))
+
+    const { container } = await renderGovernedProjection()
+
+    expect(
+      await screen.findByText('Formal decision state failed closed', { exact: true }),
+    ).toBeTruthy()
+    expect(container.textContent).not.toContain(RAW_ERROR_MARKER)
+    expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('InternalAlphaReviewConsole governed human-review decision contract', () => {

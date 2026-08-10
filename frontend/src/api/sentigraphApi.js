@@ -23,6 +23,12 @@ const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_RESPONSE_SCHEMA =
   'sentigraph_internal_alpha_governed_review_decision_post_response_v0_1'
 const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_ROUTE_MODE =
   'internal_disabled_by_default_append_only_nonproduction_human_review_decision_ledger'
+const INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_RESPONSE_SCHEMA =
+  'sentigraph_internal_alpha_governed_review_formal_state_projection_v0_1'
+const INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_ROUTE_MODE =
+  'internal_disabled_by_default_read_only_formal_human_review_state_projection'
+const INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_CONTRACT_ERROR =
+  'frontend_governed_review_formal_state_contract_mismatch'
 
 export const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES = Object.freeze([
   'keep_pending_human_review',
@@ -60,6 +66,47 @@ const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_NESTED_FALSE_FLAGS = Object.freeze
   'correction_or_revocation_performed',
   'deleted_or_updated',
 ])
+
+export const INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS = Object.freeze([
+  'response_schema',
+  'response_version',
+  'route_mode',
+  'projection_status',
+  'projection_error_code',
+  'formal_first_decision_present',
+  'formal_second_decision_present',
+  'formal_second_decision_type',
+  'formal_decision_count',
+  'human_review_required',
+  'no_automatic_trust_upgrade',
+  'write_performed',
+  'production_object_enabled',
+  'review_queue_runtime_enabled',
+  'operator_runtime_ready',
+  'public_ready',
+  'production_ready',
+  'mutable_authority_granted',
+  'third_decision_allowed',
+])
+
+const INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_EXPECTED_BY_HTTP_STATUS = Object.freeze({
+  200: Object.freeze({
+    projectionStatus: 'formal_state_ready',
+    projectionErrorCode: null,
+  }),
+  404: Object.freeze({
+    projectionStatus: 'formal_state_disabled',
+    projectionErrorCode: 'formal_state_projection_disabled',
+  }),
+  409: Object.freeze({
+    projectionStatus: 'formal_state_inconsistent',
+    projectionErrorCode: 'formal_state_integrity_failure',
+  }),
+  503: Object.freeze({
+    projectionStatus: 'formal_state_unavailable',
+    projectionErrorCode: 'formal_state_target_unavailable',
+  }),
+})
 
 export const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS = Object.freeze([
   'schema',
@@ -422,6 +469,99 @@ export async function postInternalAlphaGovernedReviewDecision(decisionType) {
       )
     }
     throw new Error(INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR)
+  }
+}
+
+export function normalizeInternalAlphaGovernedReviewFormalStateProjection(
+  data,
+  httpStatus,
+) {
+  const contractError = () => {
+    throw new Error(INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_CONTRACT_ERROR)
+  }
+  if (!isPlainInternalAlphaProjectionObject(data)) contractError()
+  const keys = Object.keys(data)
+  if (
+    keys.length !== INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS.length ||
+    keys.some(
+      (field, index) => field !== INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS[index],
+    )
+  ) {
+    contractError()
+  }
+
+  const expected = INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_EXPECTED_BY_HTTP_STATUS[httpStatus]
+  if (
+    !expected ||
+    data.response_schema !== INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_RESPONSE_SCHEMA ||
+    data.response_version !== '0.1' ||
+    data.route_mode !== INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_ROUTE_MODE ||
+    data.projection_status !== expected.projectionStatus ||
+    data.projection_error_code !== expected.projectionErrorCode ||
+    data.human_review_required !== true ||
+    data.no_automatic_trust_upgrade !== true ||
+    data.write_performed !== false ||
+    data.production_object_enabled !== false ||
+    data.review_queue_runtime_enabled !== false ||
+    data.operator_runtime_ready !== false ||
+    data.public_ready !== false ||
+    data.production_ready !== false ||
+    data.mutable_authority_granted !== false ||
+    data.third_decision_allowed !== false
+  ) {
+    contractError()
+  }
+
+  const readyOne =
+    httpStatus === 200 &&
+    data.formal_first_decision_present === true &&
+    data.formal_second_decision_present === false &&
+    data.formal_second_decision_type === null &&
+    data.formal_decision_count === 1
+  const readyTwo =
+    httpStatus === 200 &&
+    data.formal_first_decision_present === true &&
+    data.formal_second_decision_present === true &&
+    data.formal_second_decision_type === 'request_more_governance_review' &&
+    data.formal_decision_count === 2
+  const boundedNonReady =
+    httpStatus !== 200 &&
+    data.formal_first_decision_present === false &&
+    data.formal_second_decision_present === false &&
+    data.formal_second_decision_type === null &&
+    data.formal_decision_count === 0
+  if (!readyOne && !readyTwo && !boundedNonReady) contractError()
+
+  return Object.freeze(
+    Object.fromEntries(
+      INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS.map((field) => [field, data[field]]),
+    ),
+  )
+}
+
+export async function getInternalAlphaGovernedReviewFormalState() {
+  const endpoint = `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_GOVERNED_REVIEW_DECISIONS_SEGMENT}/formal-state`
+  try {
+    const response = await apiClient.get(endpoint)
+    return normalizeInternalAlphaGovernedReviewFormalStateProjection(
+      response.data,
+      response.status,
+    )
+  } catch (error) {
+    const response = error?.response
+    if (
+      response &&
+      Object.hasOwn(
+        INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_EXPECTED_BY_HTTP_STATUS,
+        response.status,
+      )
+    ) {
+      return normalizeInternalAlphaGovernedReviewFormalStateProjection(
+        response.data,
+        response.status,
+      )
+    }
+    throw new Error(INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_CONTRACT_ERROR)
   }
 }
 

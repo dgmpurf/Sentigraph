@@ -3,6 +3,7 @@ import { Alert, Button, Card, Col, Descriptions, List, Row, Select, Space, Tag, 
 import { Eye, Lock, ShieldCheck, TriangleAlert } from 'lucide-react'
 
 import {
+  getInternalAlphaGovernedReviewFormalState,
   getInternalAlphaLocalExchangeProjection,
   getInternalAlphaLocalExchangeSampleCatalog,
   getInternalAlphaReviewConsoleProjection,
@@ -251,6 +252,10 @@ export function InternalAlphaReviewConsole() {
     phase: 'idle',
     result: null,
   })
+  const [governedFormalStateRequestState, setGovernedFormalStateRequestState] = useState({
+    phase: 'loading',
+    result: null,
+  })
   const [localExchangeCatalogState, setLocalExchangeCatalogState] = useState(
     INITIAL_LOCAL_EXCHANGE_CATALOG_STATE,
   )
@@ -259,6 +264,7 @@ export function InternalAlphaReviewConsole() {
   const requestedLocalExchangeHandles = useRef(new Set())
   const localExchangeCatalogRequestStarted = useRef(false)
   const governedDecisionPostAttemptStarted = useRef(false)
+  const governedFormalStateGetAttemptStarted = useRef(false)
   const pageIsMounted = useRef(true)
   const localExchangeCatalog = localExchangeCatalogState.catalog
   const catalogPhase = localExchangeCatalogState.catalogPhase
@@ -279,6 +285,27 @@ export function InternalAlphaReviewConsole() {
     return () => {
       pageIsMounted.current = false
     }
+  }, [])
+
+  useEffect(() => {
+    if (governedFormalStateGetAttemptStarted.current) return
+    governedFormalStateGetAttemptStarted.current = true
+
+    getInternalAlphaGovernedReviewFormalState()
+      .then((result) => {
+        if (!pageIsMounted.current) return
+        setGovernedFormalStateRequestState({
+          phase: 'bounded_result',
+          result,
+        })
+      })
+      .catch(() => {
+        if (!pageIsMounted.current) return
+        setGovernedFormalStateRequestState({
+          phase: 'bounded_error',
+          result: null,
+        })
+      })
   }, [])
 
   useEffect(() => {
@@ -628,6 +655,56 @@ export function InternalAlphaReviewConsole() {
   return (
     <div className="page-stack internal-alpha-review-shell-page">
       {reviewSurfaceSelector}
+
+      <Card className="panel-card internal-alpha-review-card">
+        <Space direction="vertical" size={12} className="full-width">
+          <Title level={4}>Formal decision state (read-only)</Title>
+          <Paragraph>
+            This separate, bounded projection may restore the established formal human-review state after reload.
+            It performs no write, creates no POST authority, and never exposes a decision identifier or raw ledger
+            row.
+          </Paragraph>
+          {governedFormalStateRequestState.phase === 'loading' && (
+            <Text type="secondary">Loading bounded formal state</Text>
+          )}
+          {governedFormalStateRequestState.phase === 'bounded_error' && (
+            <Alert
+              showIcon
+              type="warning"
+              message="Formal decision state failed closed"
+              description="Only a bounded frontend state is shown. No raw backend error or ledger identity is exposed."
+            />
+          )}
+          {governedFormalStateRequestState.phase === 'bounded_result' && (
+            <Descriptions column={1} size="small" title="Bounded formal-state projection">
+              <Descriptions.Item label="projection_status">
+                {governedFormalStateRequestState.result.projection_status}
+              </Descriptions.Item>
+              <Descriptions.Item label="projection_error_code">
+                {governedFormalStateRequestState.result.projection_error_code ?? 'none'}
+              </Descriptions.Item>
+              <Descriptions.Item label="formal_decision_count">
+                {governedFormalStateRequestState.result.formal_decision_count}
+              </Descriptions.Item>
+              <Descriptions.Item label="formal_first_decision_present">
+                {String(governedFormalStateRequestState.result.formal_first_decision_present)}
+              </Descriptions.Item>
+              <Descriptions.Item label="formal_second_decision_present">
+                {String(governedFormalStateRequestState.result.formal_second_decision_present)}
+              </Descriptions.Item>
+              <Descriptions.Item label="formal_second_decision_type">
+                {governedFormalStateRequestState.result.formal_second_decision_type ?? 'none'}
+              </Descriptions.Item>
+              <Descriptions.Item label="human_review_required">
+                {String(governedFormalStateRequestState.result.human_review_required)}
+              </Descriptions.Item>
+              <Descriptions.Item label="no_automatic_trust_upgrade">
+                {String(governedFormalStateRequestState.result.no_automatic_trust_upgrade)}
+              </Descriptions.Item>
+            </Descriptions>
+          )}
+        </Space>
+      </Card>
 
       <Card className="panel-card internal-alpha-review-card">
         <Space direction="vertical" size={12} className="full-width">

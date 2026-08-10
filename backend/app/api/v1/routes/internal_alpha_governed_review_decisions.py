@@ -11,10 +11,17 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, StrictStr
 
 from app.services.governed_nonproduction_human_review_decision_ledger import (
+    FORMAL_STATE_DISABLED,
+    FORMAL_STATE_INCONSISTENT,
+    FORMAL_STATE_READY,
+    FORMAL_STATE_UNAVAILABLE,
+    FORMAL_STATE_UNAVAILABLE_ERROR,
     GovernedNonproductionHumanReviewDecisionIntegrityError,
     GovernedNonproductionHumanReviewDecisionLedger,
     GovernedNonproductionHumanReviewDecisionLedgerUnavailable,
+    _formal_state_projection,
     get_governed_nonproduction_human_review_decision,
+    project_exact_formal_governed_nonproduction_human_review_decision_state,
     record_second_exact_formal_human_review_decision,
     record_governed_nonproduction_human_review_decision,
     validate_second_exact_formal_human_review_decision_activation,
@@ -24,6 +31,10 @@ from app.services.governed_nonproduction_human_review_decision_ledger import (
 GATE = "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_LEDGER_ENABLED"
 FORMAL_SECOND_GATE = (
     "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_FORMAL_SECOND_ENABLED"
+)
+FORMAL_STATE_PROJECTION_GATE = (
+    "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_"
+    "FORMAL_STATE_PROJECTION_ENABLED"
 )
 FORMAL_SECOND_ACTIVATION_JSON = (
     "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_"
@@ -52,6 +63,12 @@ OUTCOME_STATUS = {
     "paused_pending_read_only_idempotency_verification": 503,
     "bounded_decision_ledger_failure": 500,
 }
+FORMAL_STATE_STATUS_CODE = {
+    FORMAL_STATE_READY: 200,
+    FORMAL_STATE_DISABLED: 404,
+    FORMAL_STATE_INCONSISTENT: 409,
+    FORMAL_STATE_UNAVAILABLE: 503,
+}
 
 router = APIRouter()
 _formal_second_activation_consumed = False
@@ -75,6 +92,15 @@ def _gate_enabled() -> bool:
 
 def _formal_second_gate_enabled() -> bool:
     return os.getenv(FORMAL_SECOND_GATE, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _formal_state_projection_gate_enabled() -> bool:
+    return os.getenv(FORMAL_STATE_PROJECTION_GATE, "").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -257,6 +283,32 @@ def post_decision(
             decision=decision,
             receipt=receipt,
         ),
+    )
+
+
+@router.get("/formal-state")
+def get_formal_state() -> JSONResponse:
+    try:
+        projection = (
+            project_exact_formal_governed_nonproduction_human_review_decision_state(
+                repository_root=_repository_root(),
+                enabled=(
+                    _gate_enabled()
+                    and _formal_state_projection_gate_enabled()
+                ),
+            )
+        )
+    except Exception:
+        projection = _formal_state_projection(
+            FORMAL_STATE_UNAVAILABLE,
+            FORMAL_STATE_UNAVAILABLE_ERROR,
+        )
+    return JSONResponse(
+        status_code=FORMAL_STATE_STATUS_CODE.get(
+            projection.get("projection_status"),
+            503,
+        ),
+        content=projection,
     )
 
 
