@@ -16,6 +16,7 @@ const apiMocks = vi.hoisted(() => ({
   getInternalAlphaReviewConsoleProjection: vi.fn(),
   getInternalAlphaLocalExchangeSampleCatalog: vi.fn(),
   getInternalAlphaLocalExchangeProjection: vi.fn(),
+  getInternalAlphaLocalExchangeIdentityReadyV02Projection: vi.fn(),
 }))
 
 vi.mock('../api/client.js', () => ({
@@ -35,20 +36,26 @@ vi.mock('../api/sentigraphApi.js', async (importOriginal) => {
       apiMocks.getInternalAlphaLocalExchangeSampleCatalog,
     getInternalAlphaLocalExchangeProjection:
       apiMocks.getInternalAlphaLocalExchangeProjection,
+    getInternalAlphaLocalExchangeIdentityReadyV02Projection:
+      apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection,
   }
 })
 
 import {
+  B05_REVIEW_SUBJECT_IDENTITY_FIELDS,
   INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
   INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
   INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS,
+  INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_PROJECTION_FIELDS,
+  INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS,
   getInternalAlphaGovernedReviewFormalState,
   normalizeInternalAlphaGovernedReviewFormalStateProjection,
   normalizeInternalAlphaGovernedReviewDecisionPostResponse,
   normalizeInternalAlphaLocalExchangeProjection,
+  normalizeInternalAlphaLocalExchangeIdentityReadyV02Projection,
   normalizeInternalAlphaLocalExchangeSampleCatalog,
   postInternalAlphaGovernedReviewDecision,
 } from '../api/sentigraphApi.js'
@@ -65,6 +72,8 @@ const RAW_RECEIPT_MARKER = 'synthetic_raw_receipt_private_marker'
 const RAW_CONFIGURATION_MARKER = 'synthetic_configuration_secret_marker'
 const GOVERNED_DECISION_ID = 'ghrd-0123456789abcdef0123456789abcdef'
 const FORMAL_STATE_PRIVATE_DECISION_ID = 'ghrd-fedcba9876543210fedcba9876543210'
+const IDENTITY_READY_V02_BINDING_SAFE_HASH =
+  'fd1cc2237cade22be397c0007eb8706aa64dced9dbc941cef180aa312c324966'
 
 const SENSITIVE_MARKERS = Object.freeze([
   'synthetic_private_path_marker',
@@ -339,6 +348,34 @@ function createSyntheticProjection({
   )
 }
 
+function createSyntheticIdentityReadyV02ProjectionRaw() {
+  const legacyProjection = createSyntheticProjection({
+    status: 'ready_for_human_review',
+  })
+  const reviewSubjectIdentity = orderedObject(B05_REVIEW_SUBJECT_IDENTITY_FIELDS, {
+    identity_schema: 'sentigraph_b05_review_subject_identity_v0_1',
+    identity_version: '0.1',
+    identity_status: 'ready',
+    sample_handle: CURRENT_HANDLE,
+    result_file_name: legacyProjection.result_file_name,
+    package_name: legacyProjection.package_name,
+    provider_result_content_bytes: 1234,
+    provider_result_content_sha256: '1'.repeat(64),
+    metadata_profile: 'governed_b05_five_file',
+    metadata_entry_count: 5,
+    safe_metadata_bundle_sha256: '2'.repeat(64),
+    review_subject_content_safe_hash: '3'.repeat(64),
+    review_subject_binding_safe_hash: IDENTITY_READY_V02_BINDING_SAFE_HASH,
+  })
+  return orderedObject(INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_PROJECTION_FIELDS, {
+    ...legacyProjection,
+    projection_schema: 'sentigraph_local_exchange_review_only_candidate_projection_v0_2',
+    projection_version: '0.2',
+    review_status: 'ready_for_human_review',
+    review_subject_identity: reviewSubjectIdentity,
+  })
+}
+
 const SYNTHETIC_CATALOG = createSyntheticCatalog()
 const CURRENT_PROJECTION = createSyntheticProjection({
   status: 'ready_for_human_review',
@@ -348,6 +385,11 @@ const HISTORICAL_PROJECTION = createSyntheticProjection({
   status: 'manual_review_required',
   marker: HISTORICAL_MARKER,
 })
+const IDENTITY_READY_V02_PROJECTION_RAW = createSyntheticIdentityReadyV02ProjectionRaw()
+const IDENTITY_READY_V02_PROJECTION =
+  normalizeInternalAlphaLocalExchangeIdentityReadyV02Projection(
+    IDENTITY_READY_V02_PROJECTION_RAW,
+  )
 
 function deferred() {
   let resolve
@@ -388,6 +430,13 @@ async function openLocalExchangeReview() {
   await chooseAntDesignOption(
     'Read-only review surface',
     'Local-exchange projection review',
+  )
+}
+
+async function openIdentityReadyV02Review() {
+  await chooseAntDesignOption(
+    'Read-only review surface',
+    'Local-exchange identity-ready review v0.2',
   )
 }
 
@@ -453,6 +502,7 @@ beforeEach(() => {
   apiMocks.getInternalAlphaReviewConsoleProjection.mockReset()
   apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockReset()
   apiMocks.getInternalAlphaLocalExchangeProjection.mockReset()
+  apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection.mockReset()
   apiMocks.apiClientGet.mockResolvedValue(createGovernedFormalStateResponse())
   apiMocks.getInternalAlphaReviewConsoleProjection.mockResolvedValue({ error: 'route_disabled' })
 
@@ -1125,5 +1175,143 @@ describe('InternalAlphaReviewConsole synthetic local-exchange component contract
     expect(apiMocks.getInternalAlphaReviewConsoleProjection).toHaveBeenCalledTimes(1)
     expect(apiMocks.getInternalAlphaLocalExchangeSampleCatalog).toHaveBeenCalledTimes(1)
     expect(apiMocks.getInternalAlphaLocalExchangeProjection).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('InternalAlphaReviewConsole identity-ready v0.2 read-only surface', () => {
+  it('strictly normalizes the exact ordered 53/13-field contract and fails closed', () => {
+    const normalized = normalizeInternalAlphaLocalExchangeIdentityReadyV02Projection(
+      IDENTITY_READY_V02_PROJECTION_RAW,
+    )
+
+    expect(Object.keys(normalized)).toEqual(
+      INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_PROJECTION_FIELDS,
+    )
+    expect(Object.keys(normalized.review_subject_identity)).toEqual(
+      B05_REVIEW_SUBJECT_IDENTITY_FIELDS,
+    )
+    expect(normalized.projection_schema).toBe(
+      'sentigraph_local_exchange_review_only_candidate_projection_v0_2',
+    )
+    expect(normalized.projection_version).toBe('0.2')
+    expect(normalized.review_subject_identity.identity_status).toBe('ready')
+    expect(normalized.review_subject_identity.review_subject_binding_safe_hash).toBe(
+      IDENTITY_READY_V02_BINDING_SAFE_HASH,
+    )
+
+    expect(() =>
+      normalizeInternalAlphaLocalExchangeIdentityReadyV02Projection({
+        ...IDENTITY_READY_V02_PROJECTION_RAW,
+        unexpected_field: true,
+      }),
+    ).toThrow('frontend_identity_ready_v0_2_projection_contract_mismatch')
+
+    const mismatchedIdentity = orderedObject(B05_REVIEW_SUBJECT_IDENTITY_FIELDS, {
+      ...IDENTITY_READY_V02_PROJECTION_RAW.review_subject_identity,
+      review_subject_binding_safe_hash: '0'.repeat(64),
+    })
+    const mismatchedProjection = orderedObject(
+      INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_PROJECTION_FIELDS,
+      {
+        ...IDENTITY_READY_V02_PROJECTION_RAW,
+        review_subject_identity: mismatchedIdentity,
+      },
+    )
+    expect(() =>
+      normalizeInternalAlphaLocalExchangeIdentityReadyV02Projection(
+        mismatchedProjection,
+      ),
+    ).toThrow('frontend_identity_ready_v0_2_projection_contract_mismatch')
+  })
+
+  it('allows only the exact current handle and issues one GET to the exact v0.2 URL', async () => {
+    const actualApi = await vi.importActual('../api/sentigraphApi.js')
+    apiMocks.apiClientGet.mockResolvedValue({ data: IDENTITY_READY_V02_PROJECTION_RAW })
+
+    const projection =
+      await actualApi.getInternalAlphaLocalExchangeIdentityReadyV02Projection(
+        INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE,
+      )
+
+    expect(projection).toEqual(IDENTITY_READY_V02_PROJECTION)
+    expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+    expect(apiMocks.apiClientGet).toHaveBeenCalledWith(
+      '/api/v1/internal/alpha/review-console/v0.2/local-exchange-projections/helldivers2-psn-demo',
+    )
+    await expect(
+      actualApi.getInternalAlphaLocalExchangeIdentityReadyV02Projection(
+        HISTORICAL_HANDLE,
+      ),
+    ).rejects.toThrow('Unsupported internal alpha identity-ready v0.2 sample handle')
+    expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for explicit selection, requests once per mount, and keeps the panel display-only', async () => {
+    apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+    apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection.mockResolvedValue(
+      IDENTITY_READY_V02_PROJECTION,
+    )
+
+    const { container } = render(<InternalAlphaReviewConsole />)
+    await waitFor(() => {
+      expect(apiMocks.getInternalAlphaLocalExchangeSampleCatalog).toHaveBeenCalledTimes(1)
+    })
+    expect(apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection).toHaveBeenCalledTimes(0)
+
+    await openIdentityReadyV02Review()
+    await waitFor(() => {
+      expect(
+        apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection,
+      ).toHaveBeenCalledTimes(1)
+    })
+    expect(
+      apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection,
+    ).toHaveBeenCalledWith(CURRENT_HANDLE)
+    expect(await screen.findByText(IDENTITY_READY_V02_BINDING_SAFE_HASH, { exact: true })).toBeTruthy()
+
+    for (const visibleText of [
+      'Curated display label = Current curated sample',
+      'sample_handle = helldivers2-psn-demo',
+      'Human review required.',
+      'Metadata-only.',
+      'In-memory-only.',
+      'No automatic trust upgrade.',
+      'Not full-web coverage.',
+      'Not full-platform coverage.',
+      'Not official verification.',
+      'No decision has yet been made.',
+      'metadata_only = true',
+      'candidate_persistence = in_memory_only',
+    ]) {
+      expect(screen.getByText(visibleText, { exact: true })).toBeTruthy()
+    }
+
+    for (const role of ['button', 'link', 'menuitem', 'checkbox', 'radio', 'switch']) {
+      expect(
+        screen.queryByRole(role, {
+          name: /approve|reject|weak|source|merge|reset|promote|persist|analyze|report|publish|export|deliver|copy/i,
+        }),
+      ).toBeNull()
+    }
+    for (const sensitiveField of [
+      'result_file_name',
+      'package_name',
+      'provider_result_content_bytes',
+      'provider_result_content_sha256',
+      'safe_metadata_bundle_sha256',
+    ]) {
+      expect(container.textContent).not.toContain(sensitiveField)
+    }
+
+    await chooseAntDesignOption(
+      'Read-only review surface',
+      'Governed record review (default)',
+    )
+    await openIdentityReadyV02Review()
+    expect(
+      apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection,
+    ).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getInternalAlphaLocalExchangeProjection).toHaveBeenCalledTimes(0)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
   })
 })

@@ -5,6 +5,9 @@ from typing import Any, NamedTuple
 
 from fastapi import APIRouter
 
+from app.services.b05_review_subject_identity import (
+    build_unavailable_review_subject_identity,
+)
 from app.services.internal_alpha_review_console_safe_metadata_projection import (
     APPROVAL_PHRASE as PROJECTION_APPROVAL_PHRASE,
     build_internal_alpha_review_console_safe_metadata_projection,
@@ -14,7 +17,12 @@ from app.services.internal_alpha_local_exchange_sample_catalog import (
     build_unavailable_internal_alpha_local_exchange_sample_catalog,
 )
 from app.services.internal_alpha_local_exchange_review_projection import (
+    build_internal_alpha_local_exchange_identity_ready_review_projection,
     build_internal_alpha_local_exchange_review_projection,
+)
+from app.services.local_exchange_review_only_projection_bridge import (
+    VERSIONED_PROJECTION_FIELDS,
+    build_disabled_identity_ready_local_exchange_review_only_projection,
 )
 from app.services.governed_nonproduction_review_console_projection import (
     PROJECTION_FIELDS as GOVERNED_RECORD_PROJECTION_FIELDS,
@@ -25,6 +33,11 @@ from app.services.governed_nonproduction_review_console_projection import (
 router = APIRouter()
 
 ENV_FLAG = "SENTIGRAPH_INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_ENABLED"
+IDENTITY_READY_V02_ENV_FLAG = (
+    "SENTIGRAPH_INTERNAL_ALPHA_LOCAL_EXCHANGE_"
+    "IDENTITY_READY_REVIEW_PROJECTION_V0_2_ENABLED"
+)
+IDENTITY_READY_V02_ALLOWED_SAMPLE_HANDLES = frozenset({"helldivers2-psn-demo"})
 GOVERNED_RECORD_ENV_FLAG = (
     "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_ENABLED"
 )
@@ -51,6 +64,34 @@ def get_internal_alpha_local_exchange_review_projection(
     sample_handle: str,
 ) -> dict[str, Any]:
     return build_internal_alpha_local_exchange_review_projection(sample_handle)
+
+
+@router.get("/v0.2/local-exchange-projections/{sample_handle}")
+def get_internal_alpha_local_exchange_identity_ready_review_projection_v0_2(
+    sample_handle: str,
+) -> dict[str, Any]:
+    if not _route_enabled() or not _identity_ready_v02_route_enabled():
+        return _safe_identity_ready_v02_projection_error(
+            "b05_operator_surface_disabled"
+        )
+    if sample_handle not in IDENTITY_READY_V02_ALLOWED_SAMPLE_HANDLES:
+        return _safe_identity_ready_v02_projection_error("unknown_sample_handle")
+
+    try:
+        projection = (
+            build_internal_alpha_local_exchange_identity_ready_review_projection(
+                sample_handle
+            )
+        )
+    except Exception:
+        return _safe_identity_ready_v02_projection_error(
+            "b05_projection_contract_mismatch"
+        )
+    if tuple(projection) != VERSIONED_PROJECTION_FIELDS or len(projection) != 53:
+        return _safe_identity_ready_v02_projection_error(
+            "b05_projection_contract_mismatch"
+        )
+    return projection
 
 
 class _RouteEnabledMode(NamedTuple):
@@ -113,6 +154,12 @@ def _route_enabled() -> bool:
     return _resolve_internal_alpha_review_console_route_enabled_mode(os.environ.get(ENV_FLAG)).enabled
 
 
+def _identity_ready_v02_route_enabled() -> bool:
+    return _resolve_internal_alpha_review_console_route_enabled_mode(
+        os.environ.get(IDENTITY_READY_V02_ENV_FLAG)
+    ).enabled
+
+
 def _governed_record_projection_enabled() -> bool:
     return _resolve_internal_alpha_review_console_route_enabled_mode(
         os.environ.get(GOVERNED_RECORD_ENV_FLAG)
@@ -132,6 +179,21 @@ def _resolve_internal_alpha_review_console_route_enabled_mode(raw_env_value: str
         mode="disabled",
         disabled_reason="route_disabled",
     )
+
+
+def _safe_identity_ready_v02_projection_error(error_code: str) -> dict[str, Any]:
+    identity = build_unavailable_review_subject_identity(
+        "unavailable_identity_material"
+    )
+    projection = build_disabled_identity_ready_local_exchange_review_only_projection(
+        error_code,
+        review_subject_identity=identity,
+        sample_handle=None,
+        result_file_name=None,
+    )
+    if tuple(projection) == VERSIONED_PROJECTION_FIELDS and len(projection) == 53:
+        return projection
+    raise RuntimeError("bounded_v0_2_projection_builder_contract_mismatch")
 
 
 def _safe_error(error: str, *, projection_id: str | None) -> dict[str, Any]:

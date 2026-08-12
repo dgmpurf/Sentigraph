@@ -4,9 +4,11 @@ import { Eye, Lock, ShieldCheck, TriangleAlert } from 'lucide-react'
 
 import {
   getInternalAlphaGovernedReviewFormalState,
+  getInternalAlphaLocalExchangeIdentityReadyV02Projection,
   getInternalAlphaLocalExchangeProjection,
   getInternalAlphaLocalExchangeSampleCatalog,
   getInternalAlphaReviewConsoleProjection,
+  INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE,
   INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
   INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
   INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS,
@@ -23,6 +25,8 @@ const STATIC_SOURCE_CHAIN_BOUNDARY_LABEL =
   'source_chain_boundary = evidence_layer_write_candidate_boundary'
 const GOVERNED_RECORD_REVIEW_VIEW = 'governedRecordReview'
 const LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW = 'internalAlphaLocalExchangeProjectionReview'
+const LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW =
+  'internalAlphaLocalExchangeIdentityReadyV02Review'
 
 const INITIAL_LOCAL_EXCHANGE_CATALOG_STATE = Object.freeze({
   catalogPhase: 'loading',
@@ -35,6 +39,11 @@ const INITIAL_LOCAL_EXCHANGE_PROJECTION_STATE = Object.freeze({
   projectionPhase: null,
   projection: null,
   errorCode: null,
+})
+
+const INITIAL_LOCAL_EXCHANGE_IDENTITY_READY_V02_STATE = Object.freeze({
+  requestPhase: 'idle',
+  projection: null,
 })
 
 const LOCAL_EXCHANGE_PROJECTION_PHASES = Object.freeze([
@@ -52,6 +61,10 @@ const REVIEW_SURFACE_OPTIONS = Object.freeze([
   {
     value: LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW,
     label: 'Local-exchange projection review',
+  },
+  {
+    value: LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW,
+    label: 'Local-exchange identity-ready review v0.2',
   },
 ])
 
@@ -261,7 +274,11 @@ export function InternalAlphaReviewConsole() {
   )
   const [selectedLocalExchangeSampleHandle, setSelectedLocalExchangeSampleHandle] = useState(null)
   const [localExchangeProjectionStateByHandle, setLocalExchangeProjectionStateByHandle] = useState({})
+  const [localExchangeIdentityReadyV02State, setLocalExchangeIdentityReadyV02State] = useState(
+    INITIAL_LOCAL_EXCHANGE_IDENTITY_READY_V02_STATE,
+  )
   const requestedLocalExchangeHandles = useRef(new Set())
+  const localExchangeIdentityReadyV02RequestStarted = useRef(false)
   const localExchangeCatalogRequestStarted = useRef(false)
   const governedDecisionPostAttemptStarted = useRef(false)
   const governedFormalStateGetAttemptStarted = useRef(false)
@@ -270,6 +287,11 @@ export function InternalAlphaReviewConsole() {
   const catalogPhase = localExchangeCatalogState.catalogPhase
   const selectedLocalExchangeSample = localExchangeCatalog?.samples.find(
     (sample) => sample.sample_handle === selectedLocalExchangeSampleHandle,
+  )
+  const identityReadyV02Sample = localExchangeCatalog?.samples.find(
+    (sample) =>
+      sample.sample_handle ===
+      INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE,
   )
   const localExchangeSampleOptions = localExchangeCatalog
     ? localExchangeCatalog.samples.map((sample) => ({
@@ -412,6 +434,35 @@ export function InternalAlphaReviewConsole() {
     selectedReviewView,
   ])
 
+  useEffect(() => {
+    if (selectedReviewView !== LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW) return
+    if (catalogPhase !== 'loaded' || !identityReadyV02Sample?.enabled) return
+    if (localExchangeIdentityReadyV02RequestStarted.current) return
+
+    localExchangeIdentityReadyV02RequestStarted.current = true
+    setLocalExchangeIdentityReadyV02State({
+      requestPhase: 'loading',
+      projection: null,
+    })
+    getInternalAlphaLocalExchangeIdentityReadyV02Projection(
+      INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE,
+    )
+      .then((projection) => {
+        if (!pageIsMounted.current) return
+        setLocalExchangeIdentityReadyV02State({
+          requestPhase: 'loaded',
+          projection,
+        })
+      })
+      .catch(() => {
+        if (!pageIsMounted.current) return
+        setLocalExchangeIdentityReadyV02State({
+          requestPhase: 'bounded_unavailable',
+          projection: null,
+        })
+      })
+  }, [catalogPhase, identityReadyV02Sample?.enabled, selectedReviewView])
+
   const governedProjection = routeState.projection
   const governedAllowedActionsAreBounded = Array.isArray(governedProjection?.allowed_actions)
   const governedAllowedActions = governedAllowedActionsAreBounded
@@ -477,6 +528,106 @@ export function InternalAlphaReviewConsole() {
       </Space>
     </Card>
   )
+
+  if (selectedReviewView === LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW) {
+    const identityProjection = localExchangeIdentityReadyV02State.projection
+    const reviewSubjectIdentity = identityProjection?.review_subject_identity
+
+    return (
+      <div className="page-stack internal-alpha-review-shell-page">
+        {reviewSurfaceSelector}
+
+        <section className="internal-alpha-review-hero">
+          <div>
+            <Space wrap>
+              <Tag color="cyan">internal alpha</Tag>
+              <Tag color="cyan">B05 identity-ready v0.2</Tag>
+              <Tag color="default">display-only</Tag>
+              <Tag color="default">human review required</Tag>
+            </Space>
+            <Title level={1}>Local-exchange identity-ready review v0.2</Title>
+            <Paragraph>
+              This separately selected panel displays one bounded identity-ready projection in page-local memory.
+              It grants no review decision, persistence, analysis, publication, export, or delivery authority.
+            </Paragraph>
+            <Alert
+              className="internal-alpha-review-boundary-alert"
+              showIcon
+              type="info"
+              message="Identity-ready read-only boundary"
+              description={
+                <Space direction="vertical" size={2}>
+                  <Text>Human review required.</Text>
+                  <Text>Metadata-only.</Text>
+                  <Text>In-memory-only.</Text>
+                  <Text>No automatic trust upgrade.</Text>
+                  <Text>Not full-web coverage.</Text>
+                  <Text>Not full-platform coverage.</Text>
+                  <Text>Not official verification.</Text>
+                  <Text>No decision has yet been made.</Text>
+                </Space>
+              }
+            />
+          </div>
+
+          <Card className="panel-card internal-alpha-review-status-card">
+            <Space direction="vertical" size={12} className="full-width">
+              <Text type="secondary">Request phase</Text>
+              <Title level={2}>{localExchangeIdentityReadyV02State.requestPhase}</Title>
+              <Text>
+                Curated display label = {identityReadyV02Sample?.display_label ?? 'not available'}
+              </Text>
+              <Text>
+                sample_handle = {INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE}
+              </Text>
+            </Space>
+          </Card>
+        </section>
+
+        <Card className="panel-card internal-alpha-review-card">
+          <Descriptions column={1} size="small">
+            <Descriptions.Item label="projection_schema">
+              {identityProjection?.projection_schema ?? 'not loaded'}
+            </Descriptions.Item>
+            <Descriptions.Item label="projection_version">
+              {identityProjection?.projection_version ?? 'not loaded'}
+            </Descriptions.Item>
+            <Descriptions.Item label="projection_status">
+              {identityProjection?.projection_status ?? 'not loaded'}
+            </Descriptions.Item>
+            <Descriptions.Item label="review_status">
+              {identityProjection?.review_status ?? 'not loaded'}
+            </Descriptions.Item>
+            <Descriptions.Item label="identity_schema">
+              {reviewSubjectIdentity?.identity_schema ?? 'not loaded'}
+            </Descriptions.Item>
+            <Descriptions.Item label="identity_version">
+              {reviewSubjectIdentity?.identity_version ?? 'not loaded'}
+            </Descriptions.Item>
+            <Descriptions.Item label="identity_status">
+              {reviewSubjectIdentity?.identity_status ?? 'not loaded'}
+            </Descriptions.Item>
+            <Descriptions.Item label="review_subject_binding_safe_hash">
+              {reviewSubjectIdentity?.review_subject_binding_safe_hash ?? 'not loaded'}
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+
+        <Card className="panel-card internal-alpha-review-card">
+          <Space wrap>
+            <Tag color="cyan">metadata_only = true</Tag>
+            <Tag color="cyan">review_only = true</Tag>
+            <Tag color="cyan">human_review_required = true</Tag>
+            <Tag color="cyan">candidate_persistence = in_memory_only</Tag>
+            <Tag color="default">review_decision_write = false</Tag>
+            <Tag color="default">analysis_result_created = false</Tag>
+            <Tag color="default">public_output_enabled = false</Tag>
+            <Tag color="default">export_delivery_enabled = false</Tag>
+          </Space>
+        </Card>
+      </div>
+    )
+  }
 
   if (selectedReviewView === LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW) {
     const localExchangeProjectionState =

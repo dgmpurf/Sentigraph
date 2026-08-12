@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from app.api.v1.routes import internal_alpha_review_console as review_console_route
 from app.services.b05_review_subject_identity import (
     B05_REVIEW_SUBJECT_IDENTITY_FIELDS,
     GOVERNED_B05_IDENTITY_METADATA_FILES,
@@ -57,6 +58,10 @@ ALL_GATES = (
     B01_ROUTE_GATE_ENV,
     B01_LOCAL_EXCHANGE_GATE_ENV,
     B03_PROJECTION_GATE_ENV,
+)
+ROUTE_SOURCE_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "backend/app/api/v1/routes/internal_alpha_review_console.py"
 )
 
 
@@ -175,6 +180,40 @@ def _registry() -> Any:
                 capability_label=CAPABILITY_LABEL,
             ),
         )
+    )
+
+
+def _synthetic_route_projection() -> dict[str, Any]:
+    review_subject_identity = {
+        "identity_schema": "sentigraph_b05_review_subject_identity_v0_1",
+        "identity_version": "0.1",
+        "identity_status": "ready",
+        "sample_handle": SAFE_HANDLE,
+        "result_file_name": RESULT_FILE_NAME,
+        "package_name": PACKAGE_NAME,
+        "provider_result_content_bytes": 1,
+        "provider_result_content_sha256": "1" * 64,
+        "metadata_profile": GOVERNED_B05_METADATA_READ_PROFILE,
+        "metadata_entry_count": 5,
+        "safe_metadata_bundle_sha256": "2" * 64,
+        "review_subject_content_safe_hash": "3" * 64,
+        "review_subject_binding_safe_hash": "4" * 64,
+    }
+    upstream_response = {
+        "schema": "internal_operator_review_only_staging_local_exchange_response_v0_2",
+        "metadata_only": True,
+        "review_only": True,
+        "status": "manual_review_required",
+        "result_file_name": RESULT_FILE_NAME,
+        "staging_candidate": {"package_name": PACKAGE_NAME},
+        "path_exposed": False,
+        "raw_metadata_exposed": False,
+    }
+    return build_identity_ready_local_exchange_review_only_projection(
+        SAFE_HANDLE,
+        RESULT_FILE_NAME,
+        upstream_response,
+        review_subject_identity,
     )
 
 
@@ -412,3 +451,128 @@ def test_versioned_resolver_rejects_named_entry_reparse_before_content_read(
     assert result.identity_status == "blocked_package_name_provenance_mismatch"
     assert result.metadata_entry_count == 0
     assert result.safe_metadata_bundle_sha256 is None
+
+
+def test_v02_route_inventory_is_exactly_one_get_without_mutation_siblings() -> None:
+    source = ROUTE_SOURCE_PATH.read_text(encoding="utf-8")
+    v02_relative_path = "/v0.2/local-exchange-projections/{sample_handle}"
+
+    assert f'@router.get("{v02_relative_path}")' in source
+    assert source.count(f'"{v02_relative_path}"') == 1
+    for method in ("post", "put", "patch", "delete"):
+        assert f'@router.{method}("/v0.2/local-exchange-projections/' not in source
+
+    assert '@router.get("/local-exchange-projections/{sample_handle}")' in source
+    assert source.count('"/local-exchange-projections/{sample_handle}"') == 1
+
+
+def test_v02_route_gates_and_exact_allowlist_short_circuit_before_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def prohibited_service(_sample_handle: object) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("protected service must not run")
+
+    monkeypatch.setattr(
+        review_console_route,
+        "build_internal_alpha_local_exchange_identity_ready_review_projection",
+        prohibited_service,
+    )
+    monkeypatch.delenv(review_console_route.ENV_FLAG, raising=False)
+    monkeypatch.delenv(review_console_route.IDENTITY_READY_V02_ENV_FLAG, raising=False)
+    shared_gate_disabled = (
+        review_console_route.get_internal_alpha_local_exchange_identity_ready_review_projection_v0_2(
+            SAFE_HANDLE
+        )
+    )
+
+    monkeypatch.setenv(review_console_route.ENV_FLAG, "true")
+    v02_gate_disabled = (
+        review_console_route.get_internal_alpha_local_exchange_identity_ready_review_projection_v0_2(
+            SAFE_HANDLE
+        )
+    )
+
+    monkeypatch.setenv(review_console_route.IDENTITY_READY_V02_ENV_FLAG, "true")
+    nonallowlisted = (
+        review_console_route.get_internal_alpha_local_exchange_identity_ready_review_projection_v0_2(
+            "helldivers2-psn-demo-20260614"
+        )
+    )
+
+    assert calls == 0
+    for projection in (shared_gate_disabled, v02_gate_disabled, nonallowlisted):
+        assert tuple(projection) == VERSIONED_PROJECTION_FIELDS
+        assert len(projection) == 53
+        assert tuple(projection["review_subject_identity"]) == B05_REVIEW_SUBJECT_IDENTITY_FIELDS
+    assert shared_gate_disabled["projection_error_code"] == "b05_operator_surface_disabled"
+    assert v02_gate_disabled["projection_error_code"] == "b05_operator_surface_disabled"
+    assert nonallowlisted["projection_error_code"] == "unknown_sample_handle"
+
+
+def test_v02_route_calls_service_once_and_returns_exact_versioned_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ready_projection = _synthetic_route_projection()
+    calls = 0
+
+    def synthetic_service(sample_handle: object) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        assert sample_handle == SAFE_HANDLE
+        return ready_projection
+
+    monkeypatch.setenv(review_console_route.ENV_FLAG, "true")
+    monkeypatch.setenv(review_console_route.IDENTITY_READY_V02_ENV_FLAG, "true")
+    monkeypatch.setattr(
+        review_console_route,
+        "build_internal_alpha_local_exchange_identity_ready_review_projection",
+        synthetic_service,
+    )
+
+    projection = (
+        review_console_route.get_internal_alpha_local_exchange_identity_ready_review_projection_v0_2(
+            SAFE_HANDLE
+        )
+    )
+
+    assert calls == 1
+    assert projection is ready_projection
+    assert tuple(projection) == VERSIONED_PROJECTION_FIELDS
+    assert len(projection) == 53
+    assert tuple(projection["review_subject_identity"]) == B05_REVIEW_SUBJECT_IDENTITY_FIELDS
+
+
+def test_v02_route_contract_mismatch_fails_closed_after_one_service_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def malformed_service(_sample_handle: object) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"projection_schema": "malformed"}
+
+    monkeypatch.setenv(review_console_route.ENV_FLAG, "true")
+    monkeypatch.setenv(review_console_route.IDENTITY_READY_V02_ENV_FLAG, "true")
+    monkeypatch.setattr(
+        review_console_route,
+        "build_internal_alpha_local_exchange_identity_ready_review_projection",
+        malformed_service,
+    )
+
+    projection = (
+        review_console_route.get_internal_alpha_local_exchange_identity_ready_review_projection_v0_2(
+            SAFE_HANDLE
+        )
+    )
+
+    assert calls == 1
+    assert tuple(projection) == VERSIONED_PROJECTION_FIELDS
+    assert len(projection) == 53
+    assert projection["projection_schema"] == VERSIONED_PROJECTION_SCHEMA
+    assert projection["projection_version"] == VERSIONED_PROJECTION_VERSION
+    assert projection["projection_error_code"] == "b05_projection_contract_mismatch"

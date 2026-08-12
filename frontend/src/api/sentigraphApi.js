@@ -188,6 +188,28 @@ export const INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS = Object.freeze([
   'mutable_authority_granted',
 ])
 
+export const INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE =
+  ['helldivers2', 'psn', 'demo'].join('-')
+export const INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_PROJECTION_FIELDS = Object.freeze([
+  ...INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_FIELDS,
+  'review_subject_identity',
+])
+export const B05_REVIEW_SUBJECT_IDENTITY_FIELDS = Object.freeze([
+  'identity_schema',
+  'identity_version',
+  'identity_status',
+  'sample_handle',
+  'result_file_name',
+  'package_name',
+  'provider_result_content_bytes',
+  'provider_result_content_sha256',
+  'metadata_profile',
+  'metadata_entry_count',
+  'safe_metadata_bundle_sha256',
+  'review_subject_content_safe_hash',
+  'review_subject_binding_safe_hash',
+])
+
 const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_MAX_LENGTH = 64
 const INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_HANDLE_PATTERN =
   /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
@@ -223,6 +245,20 @@ const INTERNAL_ALPHA_LOCAL_EXCHANGE_FALSE_FLAGS = Object.freeze([
   'promotion_completed',
   'mutable_authority_granted',
 ])
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_BLOCKED_STATUSES = Object.freeze([
+  'blocked_provider_result_read_or_decode',
+  'blocked_provider_result_parse',
+  'blocked_metadata_member_missing_or_nonfile',
+  'blocked_metadata_read_or_decode',
+  'blocked_metadata_profile_or_order_mismatch',
+  'blocked_package_name_provenance_mismatch',
+  'blocked_sample_registry_binding_mismatch',
+  'blocked_digest_construction_mismatch',
+  'unavailable_identity_material',
+])
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_BINDING_SAFE_HASH =
+  'fd1cc2237cade22be397c0007eb8706aa64dced9dbc941cef180aa312c324966'
+const INTERNAL_ALPHA_LOCAL_EXCHANGE_LOWER_HEX_64_PATTERN = /^[0-9a-f]{64}$/
 
 export function normalizeInternalAlphaLocalExchangeSampleCatalog(data) {
   const contractError = () => {
@@ -612,6 +648,135 @@ export function normalizeInternalAlphaLocalExchangeProjection(data) {
     ]),
   )
   return Object.freeze(normalized)
+}
+
+export function normalizeInternalAlphaLocalExchangeIdentityReadyV02Projection(data) {
+  const contractError = () => {
+    throw new Error('frontend_identity_ready_v0_2_projection_contract_mismatch')
+  }
+  if (!isPlainInternalAlphaProjectionObject(data)) contractError()
+
+  const keys = Object.keys(data)
+  if (
+    keys.length !== INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_PROJECTION_FIELDS.length ||
+    keys.some(
+      (field, index) =>
+        field !== INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_PROJECTION_FIELDS[index],
+    )
+  ) {
+    contractError()
+  }
+  if (
+    data.projection_schema !== 'sentigraph_local_exchange_review_only_candidate_projection_v0_2' ||
+    data.projection_version !== '0.2' ||
+    !INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTION_STATUSES.includes(data.projection_status) ||
+    data.candidate_persistence !== 'in_memory_only'
+  ) {
+    contractError()
+  }
+  if (INTERNAL_ALPHA_LOCAL_EXCHANGE_TRUE_FLAGS.some((field) => data[field] !== true)) {
+    contractError()
+  }
+  if (INTERNAL_ALPHA_LOCAL_EXCHANGE_FALSE_FLAGS.some((field) => data[field] !== false)) {
+    contractError()
+  }
+  if (!Number.isInteger(data.candidate_count) || data.candidate_count < 0) contractError()
+  if (
+    data.result_file_name !== null &&
+    (typeof data.result_file_name !== 'string' ||
+      data.result_file_name.length > 160 ||
+      !INTERNAL_ALPHA_LOCAL_EXCHANGE_RESULT_BASENAME_PATTERN.test(data.result_file_name))
+  ) {
+    contractError()
+  }
+
+  const identity = data.review_subject_identity
+  if (!isPlainInternalAlphaProjectionObject(identity)) contractError()
+  const identityKeys = Object.keys(identity)
+  if (
+    identityKeys.length !== B05_REVIEW_SUBJECT_IDENTITY_FIELDS.length ||
+    identityKeys.some((field, index) => field !== B05_REVIEW_SUBJECT_IDENTITY_FIELDS[index]) ||
+    identity.identity_schema !== 'sentigraph_b05_review_subject_identity_v0_1' ||
+    identity.identity_version !== '0.1'
+  ) {
+    contractError()
+  }
+
+  if (identity.identity_status === 'ready') {
+    if (
+      data.projection_status !== 'ready_for_human_review' ||
+      data.projection_error_code !== null ||
+      data.candidate_count !== 1 ||
+      data.review_status !== 'ready_for_human_review' ||
+      identity.sample_handle !== INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE ||
+      identity.result_file_name !== data.result_file_name ||
+      identity.package_name !== data.package_name ||
+      !Number.isInteger(identity.provider_result_content_bytes) ||
+      identity.provider_result_content_bytes < 0 ||
+      identity.metadata_profile !== 'governed_b05_five_file' ||
+      identity.metadata_entry_count !== 5 ||
+      identity.review_subject_binding_safe_hash !==
+        INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_BINDING_SAFE_HASH
+    ) {
+      contractError()
+    }
+    for (const field of [
+      'provider_result_content_sha256',
+      'safe_metadata_bundle_sha256',
+      'review_subject_content_safe_hash',
+      'review_subject_binding_safe_hash',
+    ]) {
+      if (
+        typeof identity[field] !== 'string' ||
+        !INTERNAL_ALPHA_LOCAL_EXCHANGE_LOWER_HEX_64_PATTERN.test(identity[field])
+      ) {
+        contractError()
+      }
+    }
+  } else {
+    if (
+      !INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_BLOCKED_STATUSES.includes(
+        identity.identity_status,
+      ) ||
+      data.projection_status !== 'projection_unavailable' ||
+      identity.sample_handle !== null ||
+      identity.result_file_name !== null ||
+      identity.package_name !== null ||
+      identity.provider_result_content_bytes !== null ||
+      identity.provider_result_content_sha256 !== null ||
+      identity.metadata_profile !== null ||
+      identity.metadata_entry_count !== 0 ||
+      identity.safe_metadata_bundle_sha256 !== null ||
+      identity.review_subject_content_safe_hash !== null ||
+      identity.review_subject_binding_safe_hash !== null
+    ) {
+      contractError()
+    }
+  }
+
+  for (const field of INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_PROJECTION_FIELDS) {
+    if (!isBoundedInternalAlphaProjectionValue(data[field])) contractError()
+  }
+  return Object.freeze(
+    Object.fromEntries(
+      INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_PROJECTION_FIELDS.map((field) => [
+        field,
+        freezeInternalAlphaProjectionValue(data[field]),
+      ]),
+    ),
+  )
+}
+
+export async function getInternalAlphaLocalExchangeIdentityReadyV02Projection(sampleHandle) {
+  if (sampleHandle !== INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE) {
+    throw new Error('Unsupported internal alpha identity-ready v0.2 sample handle')
+  }
+
+  const encodedSampleHandle = encodeURIComponent(sampleHandle)
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT}/v0.2/${INTERNAL_ALPHA_LOCAL_EXCHANGE_PROJECTIONS_SEGMENT}/${encodedSampleHandle}`,
+  )
+  return normalizeInternalAlphaLocalExchangeIdentityReadyV02Projection(data)
 }
 
 export async function getInternalAlphaLocalExchangeProjection(sampleHandle) {
