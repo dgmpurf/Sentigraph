@@ -8,8 +8,14 @@ from pydantic import ValidationError
 
 from app.schemas.local_exchange import (
     LocalExchangeProviderResultMetadata,
+    LocalExchangeProviderResultContentIdentity,
     LocalExchangeReaderConfig,
     LocalExchangeReaderResult,
+    LocalExchangeVersionedReaderResult,
+)
+from app.services.b05_review_subject_identity import (
+    build_provider_result_content_identity,
+    text_from_same_read_raw_bytes,
 )
 
 
@@ -212,6 +218,156 @@ def read_provider_result_metadata(
         file_read_attempted=True,
         result_file_exists=True,
     )
+
+
+def read_provider_result_metadata_with_content_identity(
+    config: LocalExchangeReaderConfig,
+    result_file: str | Path | None = None,
+) -> LocalExchangeVersionedReaderResult:
+    """Read and identify one provider result from one immutable raw buffer."""
+
+    if not config.exchange_enabled:
+        return _versioned_reader_result(
+            "disabled",
+            "unavailable_identity_material",
+            warnings=["local exchange reader disabled by default"],
+        )
+    if result_file is None:
+        return _versioned_reader_result(
+            "blocked",
+            "unavailable_identity_material",
+            warnings=["result_file is required when local exchange reader is enabled"],
+        )
+    if not config.resultsDir.strip():
+        return _versioned_reader_result(
+            "blocked",
+            "unavailable_identity_material",
+            warnings=["resultsDir must be explicitly configured before reading metadata"],
+        )
+
+    path = Path(result_file)
+    results_dir = Path(config.resultsDir)
+    if not _is_path_within(path, results_dir):
+        return _versioned_reader_result(
+            "blocked",
+            "unavailable_identity_material",
+            warnings=["result_file must stay inside configured resultsDir"],
+        )
+    if not path.exists() or not path.is_file():
+        return _versioned_reader_result(
+            "not_found",
+            "unavailable_identity_material",
+            warnings=["provider result metadata file not found"],
+            result_file_exists=False,
+        )
+
+    try:
+        raw_bytes = path.read_bytes()
+        safe_identity = build_provider_result_content_identity(path.name, raw_bytes)
+        text = text_from_same_read_raw_bytes(raw_bytes)
+    except (OSError, UnicodeDecodeError, TypeError, ValueError):
+        return _versioned_reader_result(
+            "failed",
+            "blocked_provider_result_read_or_decode",
+            errors=["provider result metadata could not be read or decoded"],
+            file_read_attempted=True,
+            result_file_exists=True,
+        )
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return _versioned_reader_result(
+            "invalid_schema",
+            "blocked_provider_result_parse",
+            errors=["provider result metadata is not valid JSON"],
+            file_read_attempted=True,
+            result_file_exists=True,
+        )
+    if not isinstance(payload, dict):
+        return _versioned_reader_result(
+            "invalid_schema",
+            "blocked_provider_result_parse",
+            errors=["provider result metadata must be a JSON object"],
+            file_read_attempted=True,
+            result_file_exists=True,
+        )
+
+    forbidden_fields = sorted(_find_forbidden_fields(payload))
+    if forbidden_fields:
+        return _versioned_reader_result(
+            "blocked",
+            "unavailable_identity_material",
+            warnings=["provider result metadata contains forbidden fields"],
+            forbidden_fields=forbidden_fields,
+            file_read_attempted=True,
+            result_file_exists=True,
+        )
+    contract_status = _validate_contract(payload, config)
+    if contract_status is not None:
+        status, warnings = contract_status
+        return _versioned_reader_result(
+            status,
+            "unavailable_identity_material",
+            warnings=warnings,
+            file_read_attempted=True,
+            result_file_exists=True,
+        )
+    unknown_platforms = _unknown_future_platform_values(payload)
+    if unknown_platforms:
+        return _versioned_reader_result(
+            "manual_review_required",
+            "unavailable_identity_material",
+            warnings=["unknown future or unsupported platform metadata requires manual review"],
+            file_read_attempted=True,
+            result_file_exists=True,
+        )
+    try:
+        metadata = LocalExchangeProviderResultMetadata.model_validate(payload)
+        content_identity = LocalExchangeProviderResultContentIdentity.model_validate(safe_identity)
+    except ValidationError:
+        return _versioned_reader_result(
+            "invalid_schema",
+            "blocked_provider_result_parse",
+            errors=["provider result metadata failed schema validation"],
+            file_read_attempted=True,
+            result_file_exists=True,
+        )
+    return _versioned_reader_result(
+        "metadata_ready",
+        "ready",
+        metadata=metadata,
+        provider_result_content_identity=content_identity,
+        file_read_attempted=True,
+        result_file_exists=True,
+    )
+
+
+def _versioned_reader_result(
+    status: str,
+    identity_status: str,
+    *,
+    metadata: LocalExchangeProviderResultMetadata | None = None,
+    provider_result_content_identity: LocalExchangeProviderResultContentIdentity | None = None,
+    warnings: list[str] | None = None,
+    errors: list[str] | None = None,
+    forbidden_fields: list[str] | None = None,
+    file_read_attempted: bool = False,
+    result_file_exists: bool = False,
+) -> LocalExchangeVersionedReaderResult:
+    result = LocalExchangeVersionedReaderResult(
+        status=status,  # type: ignore[arg-type]
+        identity_status=identity_status,  # type: ignore[arg-type]
+        metadata=metadata,
+        provider_result_content_identity=provider_result_content_identity,
+        warnings=warnings or [],
+        errors=errors or [],
+        forbidden_fields=forbidden_fields or [],
+        file_read_attempted=file_read_attempted,
+        result_file_exists=result_file_exists,
+    )
+    result.safe_mode["file_read_attempted"] = file_read_attempted
+    return result
 
 
 def _reader_result(

@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import stat as stat_module
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from app.services.b05_review_subject_identity import (
+    GOVERNED_B05_IDENTITY_METADATA_FILES,
+    build_metadata_file_content_identity,
+    build_metadata_identity_bundle,
+    text_from_same_read_raw_bytes,
+)
 
 
 REQUIRED_PACKAGE_METADATA_FILES = (
@@ -97,6 +106,22 @@ class PrivateCollectorPackageMetadataSummary:
     forbidden_fields: list[str]
     warnings: list[str]
     safe_summary: dict[str, Any]
+
+
+@dataclass(slots=True)
+class VersionedPrivateCollectorPackageResolutionResult:
+    status: str
+    identity_status: str
+    package_name: str | None = None
+    locator_strategy: str | None = None
+    metadata_profile: str | None = None
+    metadata_entry_count: int = 0
+    safe_metadata_bundle_sha256: str | None = None
+    metadata_content_identities: tuple[dict[str, Any], ...] = ()
+    forbidden_fields: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    safe_mode: dict[str, bool] = field(default_factory=dict)
 
 
 def resolve_private_collector_package(
@@ -237,6 +262,180 @@ def resolve_private_collector_package(
     )
 
 
+def resolve_private_collector_package_with_identity(
+    export_root: str | Path,
+    package_entry: dict[str, Any],
+    *,
+    metadata_read_profile: str,
+) -> VersionedPrivateCollectorPackageResolutionResult:
+    """Resolve and identify one governed package without following entry aliases first."""
+
+    safe_mode = _safe_mode()
+    if metadata_read_profile != GOVERNED_B05_METADATA_READ_PROFILE:
+        return _versioned_result(
+            "needs_fix_metadata_contract",
+            "blocked_metadata_profile_or_order_mismatch",
+            errors=["versioned identity requires governed_b05_five_file profile"],
+            safe_mode=safe_mode,
+        )
+    if tuple(GOVERNED_B05_IDENTITY_METADATA_FILES) != tuple(GOVERNED_B05_READABLE_METADATA_FILES):
+        return _versioned_result(
+            "needs_fix_metadata_contract",
+            "blocked_metadata_profile_or_order_mismatch",
+            errors=["governed metadata profile order mismatch"],
+            safe_mode=safe_mode,
+        )
+
+    try:
+        resolved_root = Path(export_root).resolve(strict=False)
+    except OSError:
+        return _versioned_result(
+            "blocked_missing_package",
+            "blocked_package_name_provenance_mismatch",
+            errors=["configured export root could not be resolved"],
+            safe_mode=safe_mode,
+        )
+    if not resolved_root.exists() or not resolved_root.is_dir():
+        return _versioned_result(
+            "blocked_missing_package",
+            "blocked_package_name_provenance_mismatch",
+            errors=["configured export root is unavailable"],
+            safe_mode=safe_mode,
+        )
+
+    package_name = _clean_text(package_entry.get("package_name"))
+    if (
+        package_name is None
+        or _validate_package_name(package_name) is not None
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", package_name) is None
+    ):
+        return _versioned_result(
+            "needs_fix_metadata_contract",
+            "blocked_package_name_provenance_mismatch",
+            package_name=package_name,
+            warnings=["package_name must be one plain safe directory name"],
+            safe_mode=safe_mode,
+        )
+
+    candidate = resolved_root / package_name
+    if candidate.parent != resolved_root:
+        return _versioned_result(
+            "blocked_path_escape",
+            "blocked_package_name_provenance_mismatch",
+            package_name=package_name,
+            warnings=["package entry is not the exact lexical direct child"],
+            safe_mode=safe_mode,
+        )
+    if _nonfollowing_entry_kind(candidate) != "directory":
+        return _versioned_result(
+            "blocked_path_escape",
+            "blocked_package_name_provenance_mismatch",
+            package_name=package_name,
+            warnings=["package entry provenance is unavailable, non-directory, or reparse-based"],
+            safe_mode=safe_mode,
+        )
+    try:
+        resolved_candidate = candidate.resolve(strict=True)
+    except OSError:
+        return _versioned_result(
+            "blocked_path_escape",
+            "blocked_package_name_provenance_mismatch",
+            package_name=package_name,
+            errors=["package entry could not be resolved"],
+            safe_mode=safe_mode,
+        )
+    if resolved_candidate.parent != resolved_root or resolved_candidate.name != package_name:
+        return _versioned_result(
+            "blocked_path_escape",
+            "blocked_package_name_provenance_mismatch",
+            package_name=package_name,
+            warnings=["resolved package identity does not equal its exact configured child"],
+            safe_mode=safe_mode,
+        )
+
+    metadata_paths = tuple(
+        (name, resolved_candidate / name) for name in GOVERNED_B05_IDENTITY_METADATA_FILES
+    )
+    if any(_nonfollowing_entry_kind(path) != "file" for _, path in metadata_paths):
+        return _versioned_result(
+            "needs_fix_metadata_contract",
+            "blocked_metadata_member_missing_or_nonfile",
+            package_name=package_name,
+            locator_strategy="package_name_under_configured_export_root",
+            metadata_profile=metadata_read_profile,
+            warnings=["all governed metadata members must be existing regular files"],
+            safe_mode=safe_mode,
+        )
+
+    content_identities: list[dict[str, Any]] = []
+    forbidden_fields: set[str] = set()
+    for name, path in metadata_paths:
+        try:
+            raw_bytes = path.read_bytes()
+            text = text_from_same_read_raw_bytes(raw_bytes)
+        except (OSError, UnicodeDecodeError, TypeError, ValueError):
+            return _versioned_result(
+                "needs_fix_metadata_contract",
+                "blocked_metadata_read_or_decode",
+                package_name=package_name,
+                locator_strategy="package_name_under_configured_export_root",
+                metadata_profile=metadata_read_profile,
+                errors=["governed metadata member could not be read or decoded"],
+                safe_mode=safe_mode,
+            )
+        scan_result = _scan_decoded_metadata_text(name, text)
+        if scan_result is None:
+            return _versioned_result(
+                "needs_fix_metadata_contract",
+                "blocked_metadata_read_or_decode",
+                package_name=package_name,
+                locator_strategy="package_name_under_configured_export_root",
+                metadata_profile=metadata_read_profile,
+                errors=["governed metadata member could not be parsed"],
+                safe_mode=safe_mode,
+            )
+        forbidden_fields.update(scan_result)
+        content_identities.append(build_metadata_file_content_identity(name, raw_bytes))
+
+    if forbidden_fields:
+        return _versioned_result(
+            "blocked_privacy_issue",
+            "unavailable_identity_material",
+            package_name=package_name,
+            locator_strategy="package_name_under_configured_export_root",
+            metadata_profile=metadata_read_profile,
+            forbidden_fields=sorted(forbidden_fields),
+            warnings=["safe metadata files contain forbidden fields"],
+            safe_mode=safe_mode,
+        )
+    try:
+        _, bundle_hash = build_metadata_identity_bundle(
+            metadata_read_profile,
+            content_identities,
+        )
+    except (TypeError, ValueError):
+        return _versioned_result(
+            "needs_fix_metadata_contract",
+            "blocked_digest_construction_mismatch",
+            package_name=package_name,
+            locator_strategy="package_name_under_configured_export_root",
+            metadata_profile=metadata_read_profile,
+            errors=["safe metadata identity bundle could not be constructed"],
+            safe_mode=safe_mode,
+        )
+    return _versioned_result(
+        "accepted_metadata_only",
+        "ready",
+        package_name=package_name,
+        locator_strategy="package_name_under_configured_export_root",
+        metadata_profile=metadata_read_profile,
+        metadata_entry_count=len(content_identities),
+        safe_metadata_bundle_sha256=bundle_hash,
+        metadata_content_identities=tuple(content_identities),
+        safe_mode=safe_mode,
+    )
+
+
 def summarize_private_collector_package_metadata(
     resolved_package: PrivateCollectorPackageResolutionResult,
 ) -> PrivateCollectorPackageMetadataSummary:
@@ -336,6 +535,37 @@ def _result(
     )
 
 
+def _versioned_result(
+    status: str,
+    identity_status: str,
+    *,
+    package_name: str | None = None,
+    locator_strategy: str | None = None,
+    metadata_profile: str | None = None,
+    metadata_entry_count: int = 0,
+    safe_metadata_bundle_sha256: str | None = None,
+    metadata_content_identities: tuple[dict[str, Any], ...] = (),
+    forbidden_fields: list[str] | None = None,
+    warnings: list[str] | None = None,
+    errors: list[str] | None = None,
+    safe_mode: dict[str, bool] | None = None,
+) -> VersionedPrivateCollectorPackageResolutionResult:
+    return VersionedPrivateCollectorPackageResolutionResult(
+        status=status,
+        identity_status=identity_status,
+        package_name=package_name,
+        locator_strategy=locator_strategy,
+        metadata_profile=metadata_profile,
+        metadata_entry_count=metadata_entry_count,
+        safe_metadata_bundle_sha256=safe_metadata_bundle_sha256,
+        metadata_content_identities=metadata_content_identities,
+        forbidden_fields=forbidden_fields or [],
+        warnings=warnings or [],
+        errors=errors or [],
+        safe_mode=safe_mode or _safe_mode(),
+    )
+
+
 def _safe_mode() -> dict[str, bool]:
     return {
         "metadata_only": True,
@@ -426,6 +656,39 @@ def _scan_metadata_files_for_forbidden_fields(
         else:
             forbidden_fields.update(_find_forbidden_text_fields(text))
     return forbidden_fields
+
+
+def _scan_decoded_metadata_text(filename: str, text: str) -> set[str] | None:
+    if filename.endswith(".json"):
+        try:
+            payload = json.loads(text) if text.strip() else {}
+        except json.JSONDecodeError:
+            return None
+        return _find_forbidden_json_fields(payload)
+    return _find_forbidden_text_fields(text)
+
+
+def _nonfollowing_entry_kind(path: Path) -> str:
+    try:
+        entry = os.lstat(path)
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "indeterminate"
+    if stat_module.S_ISLNK(entry.st_mode):
+        return "reparse"
+    if os.name == "nt":
+        attributes = getattr(entry, "st_file_attributes", None)
+        if not isinstance(attributes, int):
+            return "indeterminate"
+        reparse_attribute = getattr(stat_module, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        if attributes & reparse_attribute:
+            return "reparse"
+    if stat_module.S_ISDIR(entry.st_mode):
+        return "directory"
+    if stat_module.S_ISREG(entry.st_mode):
+        return "file"
+    return "other"
 
 
 def _find_forbidden_json_fields(value: Any) -> set[str]:

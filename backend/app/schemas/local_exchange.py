@@ -16,6 +16,19 @@ LocalExchangeReadStatus = Literal[
     "failed",
 ]
 
+B05IdentityStatus = Literal[
+    "ready",
+    "blocked_provider_result_read_or_decode",
+    "blocked_provider_result_parse",
+    "blocked_metadata_member_missing_or_nonfile",
+    "blocked_metadata_read_or_decode",
+    "blocked_metadata_profile_or_order_mismatch",
+    "blocked_package_name_provenance_mismatch",
+    "blocked_sample_registry_binding_mismatch",
+    "blocked_digest_construction_mismatch",
+    "unavailable_identity_material",
+]
+
 
 class LocalExchangeReaderConfig(BaseModel):
     exchange_enabled: bool = False
@@ -103,6 +116,27 @@ def local_exchange_safe_mode() -> dict[str, bool]:
 class LocalExchangeReaderResult(BaseModel):
     status: LocalExchangeReadStatus
     metadata: LocalExchangeProviderResultMetadata | None = None
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    forbidden_fields: list[str] = Field(default_factory=list)
+    file_read_attempted: bool = False
+    result_file_exists: bool = False
+    safe_mode: dict[str, bool] = Field(default_factory=local_exchange_safe_mode)
+
+
+class LocalExchangeProviderResultContentIdentity(BaseModel):
+    identity_schema: str
+    identity_version: str
+    result_file_name: str
+    content_bytes: int = Field(ge=0)
+    content_sha256: str
+
+
+class LocalExchangeVersionedReaderResult(BaseModel):
+    status: LocalExchangeReadStatus
+    identity_status: B05IdentityStatus
+    metadata: LocalExchangeProviderResultMetadata | None = None
+    provider_result_content_identity: LocalExchangeProviderResultContentIdentity | None = None
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     forbidden_fields: list[str] = Field(default_factory=list)

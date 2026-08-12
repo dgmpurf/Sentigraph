@@ -7,14 +7,25 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final
 
+from app.services.b05_review_subject_identity import (
+    GOVERNED_B05_IDENTITY_METADATA_FILES,
+    IDENTITY_VERSION,
+    PROVIDER_RESULT_CONTENT_IDENTITY_SCHEMA,
+    build_ready_review_subject_identity,
+    build_unavailable_review_subject_identity,
+)
 from app.services.local_exchange_review_only_projection_bridge import (
     PROJECTION_FIELDS,
+    VERSIONED_PROJECTION_FIELDS,
+    build_disabled_identity_ready_local_exchange_review_only_projection,
     build_disabled_local_exchange_review_only_projection,
+    build_identity_ready_local_exchange_review_only_projection,
     build_local_exchange_review_only_projection,
 )
 from app.services.local_exchange_review_only_staging_bridge import (
     GOVERNED_B05_STAGING_METADATA_READ_PROFILE,
     LocalExchangeReviewOnlyStagingBridgeConfig,
+    build_identity_ready_local_exchange_review_only_staging_response,
     build_local_exchange_review_only_staging_response,
 )
 
@@ -57,6 +68,22 @@ StagingBuilder = Callable[
     dict[str, Any],
 ]
 ProjectionBuilder = Callable[[str, Mapping[str, Any] | object], dict[str, Any]]
+IdentityReadyProjectionBuilder = Callable[
+    [str, str, Mapping[str, Any] | object, Mapping[str, Any] | object],
+    dict[str, Any],
+]
+
+_VERSIONED_IDENTITY_MATERIAL_FIELDS: Final = (
+    "identity_status",
+    "result_file_name",
+    "package_name",
+    "provider_result_content_bytes",
+    "provider_result_content_sha256",
+    "metadata_profile",
+    "metadata_entry_count",
+    "safe_metadata_bundle_sha256",
+    "review_subject_content_safe_hash",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +155,59 @@ def build_internal_alpha_local_exchange_review_projection(
     return projection
 
 
+def build_internal_alpha_local_exchange_identity_ready_review_projection(
+    sample_handle: object,
+    *,
+    registry: Mapping[str, InternalAlphaLocalExchangeSampleRegistryEntry] | None = None,
+    environment: Mapping[str, str] | None = None,
+    staging_builder: StagingBuilder | None = None,
+    projection_builder: IdentityReadyProjectionBuilder | None = None,
+) -> dict[str, Any]:
+    """Build one service-only v0.2 projection without registering a new route."""
+
+    if not validate_internal_alpha_local_exchange_sample_handle(sample_handle):
+        return _disabled_identity_ready_projection("invalid_sample_handle")
+
+    active_environment: Mapping[str, str] = os.environ if environment is None else environment
+    if any(not _environment_gate_enabled(active_environment, gate) for gate in _REQUIRED_GATES):
+        return _disabled_identity_ready_projection("b05_operator_surface_disabled")
+
+    active_registry = DEFAULT_SAMPLE_REGISTRY if registry is None else registry
+    entry = active_registry.get(sample_handle)
+    if not isinstance(entry, InternalAlphaLocalExchangeSampleRegistryEntry) or not entry.enabled:
+        return _disabled_identity_ready_projection("unknown_sample_handle")
+    if entry.route_mode != ROUTE_MODE or entry.capability_label != CAPABILITY_LABEL:
+        return _disabled_identity_ready_projection("registry_route_mismatch")
+
+    config = _build_server_owned_configuration(active_environment)
+    if config is None:
+        return _disabled_identity_ready_projection("invalid_server_owned_configuration")
+
+    active_staging_builder = (
+        staging_builder or build_identity_ready_local_exchange_review_only_staging_response
+    )
+    upstream_response = active_staging_builder(entry.result_file_name, config)
+    review_subject_identity = _build_review_subject_identity(
+        str(sample_handle),
+        entry.result_file_name,
+        upstream_response,
+    )
+    projection_upstream = dict(upstream_response) if isinstance(upstream_response, Mapping) else {}
+    projection_upstream.pop("review_subject_identity_material", None)
+    active_projection_builder = (
+        projection_builder or build_identity_ready_local_exchange_review_only_projection
+    )
+    projection = active_projection_builder(
+        str(sample_handle),
+        entry.result_file_name,
+        projection_upstream,
+        review_subject_identity,
+    )
+    if tuple(projection) != VERSIONED_PROJECTION_FIELDS or len(projection) != 53:
+        return _disabled_identity_ready_projection("b05_projection_contract_mismatch")
+    return projection
+
+
 def _disabled_projection(error_code: str) -> dict[str, Any]:
     return build_disabled_local_exchange_review_only_projection(
         error_code,
@@ -158,6 +238,93 @@ def _build_server_owned_configuration(
         adapter_id=adapter_id,
         metadata_read_profile=GOVERNED_B05_STAGING_METADATA_READ_PROFILE,
     )
+
+
+def _disabled_identity_ready_projection(error_code: str) -> dict[str, Any]:
+    identity = build_unavailable_review_subject_identity("unavailable_identity_material")
+    return build_disabled_identity_ready_local_exchange_review_only_projection(
+        error_code,
+        review_subject_identity=identity,
+        sample_handle=None,
+        result_file_name=None,
+    )
+
+
+def _build_review_subject_identity(
+    sample_handle: str,
+    result_file_name: str,
+    upstream_response: Mapping[str, Any] | object,
+) -> dict[str, Any]:
+    if not isinstance(upstream_response, Mapping):
+        return build_unavailable_review_subject_identity(
+            "unavailable_identity_material",
+            sample_handle=sample_handle,
+            result_file_name=result_file_name,
+        )
+    material = upstream_response.get("review_subject_identity_material")
+    if not isinstance(material, Mapping) or tuple(material) != _VERSIONED_IDENTITY_MATERIAL_FIELDS:
+        return build_unavailable_review_subject_identity(
+            "unavailable_identity_material",
+            sample_handle=sample_handle,
+            result_file_name=result_file_name,
+        )
+    identity_status = material.get("identity_status")
+    package_name = material.get("package_name")
+    if identity_status != "ready":
+        return build_unavailable_review_subject_identity(
+            identity_status if isinstance(identity_status, str) else "unavailable_identity_material",
+            sample_handle=sample_handle,
+            result_file_name=result_file_name,
+            package_name=package_name if isinstance(package_name, str) else None,
+        )
+    staging_candidate = upstream_response.get("staging_candidate")
+    if (
+        material.get("result_file_name") != result_file_name
+        or not isinstance(package_name, str)
+        or not isinstance(staging_candidate, Mapping)
+        or staging_candidate.get("package_name") != package_name
+    ):
+        return build_unavailable_review_subject_identity(
+            "blocked_sample_registry_binding_mismatch",
+            sample_handle=sample_handle,
+            result_file_name=result_file_name,
+            package_name=package_name if isinstance(package_name, str) else None,
+        )
+    if (
+        material.get("metadata_profile") != "governed_b05_five_file"
+        or material.get("metadata_entry_count") != len(GOVERNED_B05_IDENTITY_METADATA_FILES)
+    ):
+        return build_unavailable_review_subject_identity(
+            "blocked_metadata_profile_or_order_mismatch",
+            sample_handle=sample_handle,
+            result_file_name=result_file_name,
+            package_name=package_name,
+        )
+    provider_identity = {
+        "identity_schema": PROVIDER_RESULT_CONTENT_IDENTITY_SCHEMA,
+        "identity_version": IDENTITY_VERSION,
+        "result_file_name": result_file_name,
+        "content_bytes": material.get("provider_result_content_bytes"),
+        "content_sha256": material.get("provider_result_content_sha256"),
+    }
+    try:
+        return build_ready_review_subject_identity(
+            sample_handle=sample_handle,
+            result_file_name=result_file_name,
+            package_name=package_name,
+            provider_result_identity=provider_identity,
+            metadata_profile=str(material["metadata_profile"]),
+            metadata_entry_count=int(material["metadata_entry_count"]),
+            safe_metadata_bundle_sha256=str(material["safe_metadata_bundle_sha256"]),
+            review_subject_content_safe_hash=str(material["review_subject_content_safe_hash"]),
+        )
+    except (TypeError, ValueError):
+        return build_unavailable_review_subject_identity(
+            "blocked_digest_construction_mismatch",
+            sample_handle=sample_handle,
+            result_file_name=result_file_name,
+            package_name=package_name,
+        )
 
 
 def _is_bounded_server_value(value: object, *, maximum: int) -> bool:

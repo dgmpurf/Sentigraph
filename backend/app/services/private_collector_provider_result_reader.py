@@ -5,10 +5,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.services.b05_review_subject_identity import (
+    PROVIDER_RESULT_CONTENT_IDENTITY_FIELDS,
+    build_review_subject_content_safe_hash,
+    is_lower_hex_sha256,
+)
 from app.services.private_collector_package_resolver import (
+    GOVERNED_B05_METADATA_READ_PROFILE,
     PrivateCollectorPackageResolutionResult,
+    VersionedPrivateCollectorPackageResolutionResult,
     build_safe_package_summary,
     resolve_private_collector_package,
+    resolve_private_collector_package_with_identity,
 )
 
 
@@ -119,6 +127,21 @@ class PrivateCollectorProviderResultReaderResult:
     safe_mode: dict[str, bool] = field(default_factory=dict)
 
 
+@dataclass(slots=True)
+class VersionedPrivateCollectorProviderResultReaderResult:
+    status: str
+    identity_status: str
+    provider_status: str | None = None
+    provider_result_id: str | None = None
+    resolver_result: VersionedPrivateCollectorPackageResolutionResult | None = None
+    safe_summary: dict[str, Any] = field(default_factory=dict)
+    safe_identity_material: dict[str, Any] = field(default_factory=dict)
+    forbidden_fields: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    safe_mode: dict[str, bool] = field(default_factory=dict)
+
+
 def read_provider_result_metadata(
     provider_result: dict[str, Any] | str | Path,
     export_root: str | Path,
@@ -179,6 +202,136 @@ def read_provider_result_metadata(
         warnings=warnings,
         errors=list(resolver_result.errors),
         safe_summary=safe_summary,
+    )
+
+
+def read_provider_result_metadata_with_identity(
+    provider_result: dict[str, Any],
+    export_root: str | Path,
+    *,
+    provider_result_content_identity: dict[str, Any],
+    metadata_read_profile: str = GOVERNED_B05_METADATA_READ_PROFILE,
+) -> VersionedPrivateCollectorProviderResultReaderResult:
+    """Validate an already parsed provider dict and derive safe package identity."""
+
+    if not isinstance(provider_result, dict):
+        return _versioned_reader_result(
+            "needs_fix_metadata_contract",
+            "blocked_provider_result_parse",
+            errors=["provider result metadata must be a JSON object"],
+        )
+    if not _is_provider_result_content_identity(provider_result_content_identity):
+        return _versioned_reader_result(
+            "needs_fix_metadata_contract",
+            "unavailable_identity_material",
+            errors=["provider result content identity is unavailable or malformed"],
+        )
+
+    validation = validate_provider_result_metadata(provider_result)
+    if validation.status != "valid":
+        return _versioned_reader_result(
+            validation.status,
+            "unavailable_identity_material",
+            provider_status=validation.provider_status,
+            provider_result_id=validation.provider_result_id,
+            forbidden_fields=list(validation.forbidden_fields),
+            warnings=list(validation.warnings),
+            errors=list(validation.errors),
+        )
+
+    provider_status = str(provider_result["status"])
+    provider_result_id = str(provider_result["provider_result_id"])
+    if provider_status in BLOCKED_PROVIDER_STATUSES:
+        return _versioned_reader_result(
+            provider_status,
+            "unavailable_identity_material",
+            provider_status=provider_status,
+            provider_result_id=provider_result_id,
+            warnings=["provider result status is blocked"],
+        )
+
+    package_reference = provider_result.get("package_reference")
+    if not isinstance(package_reference, dict):
+        return _versioned_reader_result(
+            "needs_fix_metadata_contract",
+            "blocked_package_name_provenance_mismatch",
+            provider_status=provider_status,
+            provider_result_id=provider_result_id,
+            errors=["package reference is unavailable"],
+        )
+    if package_reference.get("package_locator_strategy") != "package_name_under_configured_export_root":
+        return _versioned_reader_result(
+            "needs_fix_metadata_contract",
+            "blocked_package_name_provenance_mismatch",
+            provider_status=provider_status,
+            provider_result_id=provider_result_id,
+            warnings=["identity-ready path requires an exact package_name locator"],
+        )
+
+    resolver_result = resolve_private_collector_package_with_identity(
+        export_root,
+        {"package_name": package_reference.get("package_name")},
+        metadata_read_profile=metadata_read_profile,
+    )
+    final_status = _status_from_provider_and_resolver(provider_status, resolver_result.status)
+    if resolver_result.identity_status != "ready":
+        return _versioned_reader_result(
+            final_status,
+            resolver_result.identity_status,
+            provider_status=provider_status,
+            provider_result_id=provider_result_id,
+            resolver_result=resolver_result,
+            forbidden_fields=list(resolver_result.forbidden_fields),
+            warnings=list(resolver_result.warnings),
+            errors=list(resolver_result.errors),
+        )
+
+    try:
+        content_hash = build_review_subject_content_safe_hash(
+            provider_result_content_identity,
+            metadata_read_profile,
+            str(resolver_result.safe_metadata_bundle_sha256),
+        )
+    except (TypeError, ValueError):
+        return _versioned_reader_result(
+            "needs_fix_metadata_contract",
+            "blocked_digest_construction_mismatch",
+            provider_status=provider_status,
+            provider_result_id=provider_result_id,
+            resolver_result=resolver_result,
+            errors=["review subject content identity could not be constructed"],
+        )
+
+    safe_summary = build_provider_handoff_summary(provider_result, None, status=final_status)
+    safe_summary["package_summary"] = {
+        "status": resolver_result.status,
+        "package_name": resolver_result.package_name,
+        "locator_strategy": resolver_result.locator_strategy,
+        "path_exposed": False,
+        "path_reference": "configured_export_root package",
+    }
+    safe_identity_material = {
+        "identity_status": "ready",
+        "result_file_name": provider_result_content_identity["result_file_name"],
+        "package_name": resolver_result.package_name,
+        "provider_result_content_bytes": provider_result_content_identity["content_bytes"],
+        "provider_result_content_sha256": provider_result_content_identity["content_sha256"],
+        "metadata_profile": metadata_read_profile,
+        "metadata_entry_count": resolver_result.metadata_entry_count,
+        "safe_metadata_bundle_sha256": resolver_result.safe_metadata_bundle_sha256,
+        "review_subject_content_safe_hash": content_hash,
+    }
+    return _versioned_reader_result(
+        final_status,
+        "ready",
+        provider_status=provider_status,
+        provider_result_id=provider_result_id,
+        resolver_result=resolver_result,
+        safe_summary=safe_summary,
+        safe_identity_material=safe_identity_material,
+        forbidden_fields=list(resolver_result.forbidden_fields),
+        warnings=list(resolver_result.warnings),
+        errors=list(resolver_result.errors),
     )
 
 
@@ -352,6 +505,46 @@ def _reader_result(
         warnings=warnings or [],
         errors=errors or [],
         safe_mode=_safe_mode(),
+    )
+
+
+def _versioned_reader_result(
+    status: str,
+    identity_status: str,
+    *,
+    provider_status: str | None = None,
+    provider_result_id: str | None = None,
+    resolver_result: VersionedPrivateCollectorPackageResolutionResult | None = None,
+    safe_summary: dict[str, Any] | None = None,
+    safe_identity_material: dict[str, Any] | None = None,
+    forbidden_fields: list[str] | None = None,
+    warnings: list[str] | None = None,
+    errors: list[str] | None = None,
+) -> VersionedPrivateCollectorProviderResultReaderResult:
+    return VersionedPrivateCollectorProviderResultReaderResult(
+        status=status,
+        identity_status=identity_status,
+        provider_status=provider_status,
+        provider_result_id=provider_result_id,
+        resolver_result=resolver_result,
+        safe_summary=safe_summary or {},
+        safe_identity_material=safe_identity_material or {},
+        forbidden_fields=forbidden_fields or [],
+        warnings=warnings or [],
+        errors=errors or [],
+        safe_mode=_safe_mode(),
+    )
+
+
+def _is_provider_result_content_identity(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and tuple(value) == PROVIDER_RESULT_CONTENT_IDENTITY_FIELDS
+        and isinstance(value.get("result_file_name"), str)
+        and isinstance(value.get("content_bytes"), int)
+        and not isinstance(value.get("content_bytes"), bool)
+        and value["content_bytes"] >= 0
+        and is_lower_hex_sha256(value.get("content_sha256"))
     )
 
 

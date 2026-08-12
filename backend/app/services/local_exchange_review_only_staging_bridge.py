@@ -8,6 +8,7 @@ from typing import Any
 from app.schemas.local_exchange import LocalExchangeReaderConfig
 from app.services.local_exchange_reader import (
     read_provider_result_metadata as read_local_exchange_provider_result_metadata,
+    read_provider_result_metadata_with_content_identity,
 )
 from app.services.private_collector_package_resolver import (
     GOVERNED_B05_METADATA_READ_PROFILE as _RESOLVER_GOVERNED_B05_METADATA_READ_PROFILE,
@@ -15,6 +16,7 @@ from app.services.private_collector_package_resolver import (
 from app.services.private_collector_provider_result_reader import (
     PrivateCollectorProviderResultReaderResult,
     read_provider_result_metadata as read_private_collector_provider_result_metadata,
+    read_provider_result_metadata_with_identity,
 )
 from app.services.private_collector_review_only_staging import (
     build_review_only_staging_gate_result,
@@ -28,6 +30,7 @@ GOVERNED_B05_STAGING_METADATA_READ_PROFILE = (
 )
 
 RESPONSE_SCHEMA = "internal_operator_review_only_staging_local_exchange_response_v0_1"
+VERSIONED_RESPONSE_SCHEMA = "internal_operator_review_only_staging_local_exchange_response_v0_2"
 OUTPUT_PROVIDER_RESULT_SCHEMA = "sentigraph_provider_job_result_v0_1"
 OUTPUT_PROVIDER_RESULT_CONTRACT_VERSION = "0.1"
 MAX_RESULT_FILE_NAME_LENGTH = 160
@@ -302,6 +305,114 @@ def build_local_exchange_review_only_staging_response(
     return response
 
 
+def build_identity_ready_local_exchange_review_only_staging_response(
+    result_file_name: str,
+    config: LocalExchangeReviewOnlyStagingBridgeConfig,
+) -> dict[str, Any]:
+    """Build the parallel identity-ready handoff without changing B01 v0.1."""
+
+    response = _base_versioned_response(result_file_name if _is_valid_result_file_name(result_file_name) else None)
+    if not _is_valid_result_file_name(result_file_name):
+        response.update(
+            status="invalid_result_file_name",
+            error_code="invalid_result_file_name",
+            blockers=["invalid_result_file_name"],
+        )
+        return response
+    if not config.results_dir.strip() or not config.export_root.strip() or not config.adapter_id.strip():
+        response.update(
+            status="blocked_configuration",
+            blockers=["missing_server_owned_configuration"],
+        )
+        return response
+
+    local_reader_config = LocalExchangeReaderConfig(
+        exchange_enabled=True,
+        resultsDir=config.results_dir,
+        result_schema="sentigraph_provider_job_result_v1",
+        contract_version="1.0",
+        adapter_id=config.adapter_id,
+    )
+    result_path = Path(config.results_dir) / result_file_name
+    local_reader_result = read_provider_result_metadata_with_content_identity(
+        local_reader_config,
+        result_path,
+    )
+    response["reader_status"] = local_reader_result.status
+    if (
+        local_reader_result.status != "metadata_ready"
+        or local_reader_result.identity_status != "ready"
+        or local_reader_result.metadata is None
+        or local_reader_result.provider_result_content_identity is None
+    ):
+        response["status"] = local_reader_result.identity_status
+        response["blockers"] = [local_reader_result.identity_status]
+        response["review_subject_identity_material"] = _unavailable_identity_material(
+            local_reader_result.identity_status,
+            result_file_name=result_file_name,
+        )
+        return response
+
+    adapter_result = adapt_local_exchange_metadata_to_provider_result(
+        local_reader_result.metadata.model_dump(mode="python")
+    )
+    response["adapter_status"] = adapter_result.status
+    if adapter_result.status != "adapted" or adapter_result.provider_result is None:
+        response["status"] = "unavailable_identity_material"
+        response["blockers"] = list(adapter_result.blockers) or ["unavailable_identity_material"]
+        response["warnings"] = list(adapter_result.warnings)
+        return response
+
+    content_identity = local_reader_result.provider_result_content_identity.model_dump(mode="python")
+    provider_reader_result = read_provider_result_metadata_with_identity(
+        adapter_result.provider_result,
+        config.export_root,
+        provider_result_content_identity=content_identity,
+        metadata_read_profile=config.metadata_read_profile or GOVERNED_B05_STAGING_METADATA_READ_PROFILE,
+    )
+    response["provider_result_status"] = provider_reader_result.status
+    response["package_resolution_status"] = (
+        provider_reader_result.resolver_result.status
+        if provider_reader_result.resolver_result is not None
+        else None
+    )
+    if provider_reader_result.identity_status != "ready":
+        response["status"] = provider_reader_result.identity_status
+        response["blockers"] = [provider_reader_result.identity_status]
+        response["review_subject_identity_material"] = _unavailable_identity_material(
+            provider_reader_result.identity_status,
+            result_file_name=result_file_name,
+            package_name=(
+                provider_reader_result.resolver_result.package_name
+                if provider_reader_result.resolver_result is not None
+                else None
+            ),
+        )
+        return response
+
+    handoff_summary = _build_staging_handoff(provider_reader_result)  # type: ignore[arg-type]
+    handoff_summary["review_subject_content_identity"] = dict(
+        provider_reader_result.safe_identity_material
+    )
+    candidate = create_review_only_staging_candidate(
+        handoff_summary,
+        requested_by="post_p04_b05_identity_ready_bridge",
+    )
+    gate = build_review_only_staging_gate_result(handoff_summary, candidate)
+    staging_summary = build_safe_review_only_staging_summary(candidate, gate)
+
+    response["status"] = _bridge_status(provider_reader_result.status, staging_summary)
+    response["candidate_count"] = 1
+    response["staging_candidate"] = staging_summary
+    response["gate_summary"] = dict(staging_summary["gate_result"])
+    response["blockers"] = list(staging_summary["blockers"])
+    response["warnings"] = list(staging_summary["warnings"])
+    response["review_subject_identity_material"] = dict(
+        provider_reader_result.safe_identity_material
+    )
+    return response
+
+
 def build_disabled_local_exchange_response(error_code: str) -> dict[str, Any]:
     response = _base_response(None)
     response.update(
@@ -407,6 +518,35 @@ def _base_response(result_file_name: str | None) -> dict[str, Any]:
         "blockers": [],
         "warnings": [],
         "safety_flags": _safety_flags(),
+    }
+
+
+def _base_versioned_response(result_file_name: str | None) -> dict[str, Any]:
+    response = _base_response(result_file_name)
+    response["schema"] = VERSIONED_RESPONSE_SCHEMA
+    response["review_subject_identity_material"] = _unavailable_identity_material(
+        "unavailable_identity_material",
+        result_file_name=result_file_name,
+    )
+    return response
+
+
+def _unavailable_identity_material(
+    identity_status: str,
+    *,
+    result_file_name: str | None,
+    package_name: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "identity_status": identity_status,
+        "result_file_name": result_file_name,
+        "package_name": package_name,
+        "provider_result_content_bytes": None,
+        "provider_result_content_sha256": None,
+        "metadata_profile": None,
+        "metadata_entry_count": 0,
+        "safe_metadata_bundle_sha256": None,
+        "review_subject_content_safe_hash": None,
     }
 
 

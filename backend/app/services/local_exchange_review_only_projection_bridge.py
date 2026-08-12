@@ -4,9 +4,10 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-
 PROJECTION_SCHEMA: Final = "sentigraph_local_exchange_review_only_candidate_projection_v0_1"
 PROJECTION_VERSION: Final = "0.1"
+VERSIONED_PROJECTION_SCHEMA: Final = "sentigraph_local_exchange_review_only_candidate_projection_v0_2"
+VERSIONED_PROJECTION_VERSION: Final = "0.2"
 PROJECTION_MODE: Final = "internal_governed_read_only_review_projection"
 SOURCE_CHAIN_BOUNDARY: Final = "local_exchange_review_only_staging_candidate_boundary"
 UPSTREAM_SCHEMA: Final = "internal_operator_review_only_staging_local_exchange_response_v0_1"
@@ -65,9 +66,45 @@ PROJECTION_FIELDS: Final = (
     "promotion_completed",
     "mutable_authority_granted",
 )
+VERSIONED_PROJECTION_FIELDS: Final = (*PROJECTION_FIELDS, "review_subject_identity")
+VERSIONED_UPSTREAM_SCHEMA: Final = "internal_operator_review_only_staging_local_exchange_response_v0_2"
+REVIEW_SUBJECT_IDENTITY_FIELDS: Final = (
+    "identity_schema",
+    "identity_version",
+    "identity_status",
+    "sample_handle",
+    "result_file_name",
+    "package_name",
+    "provider_result_content_bytes",
+    "provider_result_content_sha256",
+    "metadata_profile",
+    "metadata_entry_count",
+    "safe_metadata_bundle_sha256",
+    "review_subject_content_safe_hash",
+    "review_subject_binding_safe_hash",
+)
+
+_REVIEW_SUBJECT_IDENTITY_SCHEMA: Final = "sentigraph_b05_review_subject_identity_v0_1"
+_REVIEW_SUBJECT_IDENTITY_VERSION: Final = "0.1"
+_GOVERNED_B05_METADATA_PROFILE: Final = "governed_b05_five_file"
+_GOVERNED_B05_METADATA_ENTRY_COUNT: Final = 5
+_BLOCKED_IDENTITY_STATUSES: Final = frozenset(
+    {
+        "blocked_provider_result_read_or_decode",
+        "blocked_provider_result_parse",
+        "blocked_metadata_member_missing_or_nonfile",
+        "blocked_metadata_read_or_decode",
+        "blocked_metadata_profile_or_order_mismatch",
+        "blocked_package_name_provenance_mismatch",
+        "blocked_sample_registry_binding_mismatch",
+        "blocked_digest_construction_mismatch",
+        "unavailable_identity_material",
+    }
+)
 
 _RESULT_BASENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.json")
 _SAFE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_LOWER_HEX_64 = re.compile(r"[0-9a-f]{64}")
 _READY_STATUS = "ready_for_human_review"
 _MANUAL_STATUS = "manual_review_required"
 _READY_PACKAGE_STATUSES = frozenset({"accepted_metadata_only", "package_ready"})
@@ -331,6 +368,176 @@ def build_local_exchange_review_only_projection(
         blocked_actions=blocked_actions,
     )
     return base
+
+
+def build_identity_ready_local_exchange_review_only_projection(
+    sample_handle: str,
+    result_file_name: str,
+    upstream_response: Mapping[str, Any] | object,
+    review_subject_identity: Mapping[str, Any] | object,
+) -> dict[str, Any]:
+    """Append one prebuilt bounded identity to the parallel 53-field projection."""
+
+    if not isinstance(upstream_response, Mapping):
+        return build_disabled_identity_ready_local_exchange_review_only_projection(
+            "invalid_upstream_response",
+            review_subject_identity=review_subject_identity,
+            sample_handle=sample_handle,
+            result_file_name=result_file_name,
+        )
+    legacy_upstream = dict(upstream_response)
+    if legacy_upstream.get("schema") == VERSIONED_UPSTREAM_SCHEMA:
+        legacy_upstream["schema"] = UPSTREAM_SCHEMA
+    legacy_projection = build_local_exchange_review_only_projection(
+        result_file_name,
+        legacy_upstream,
+    )
+    legacy_projection["projection_schema"] = VERSIONED_PROJECTION_SCHEMA
+    legacy_projection["projection_version"] = VERSIONED_PROJECTION_VERSION
+
+    identity_package_name = legacy_projection.get("package_name")
+    if (
+        isinstance(review_subject_identity, Mapping)
+        and review_subject_identity.get("identity_status") == "ready"
+        and not (
+            isinstance(identity_package_name, str)
+            and _SAFE_TOKEN.fullmatch(identity_package_name) is not None
+        )
+    ):
+        staging_candidate = upstream_response.get("staging_candidate")
+        staging_package_name = (
+            staging_candidate.get("package_name")
+            if isinstance(staging_candidate, Mapping)
+            else None
+        )
+        identity_package_name = (
+            staging_package_name
+            if isinstance(staging_package_name, str)
+            and _SAFE_TOKEN.fullmatch(staging_package_name) is not None
+            else None
+        )
+
+    identity = _validated_review_subject_identity(
+        review_subject_identity,
+        sample_handle=sample_handle,
+        result_file_name=result_file_name,
+        package_name=identity_package_name,
+    )
+    if identity is None:
+        return legacy_projection
+    identity_status = identity["identity_status"]
+    if identity_status != "ready":
+        return _with_versioned_identity_failure(
+            legacy_projection,
+            identity_status,
+            review_subject_identity=identity,
+        )
+    legacy_projection["review_subject_identity"] = identity
+    return legacy_projection
+
+
+def build_disabled_identity_ready_local_exchange_review_only_projection(
+    error_code: str,
+    *,
+    review_subject_identity: Mapping[str, Any] | object,
+    sample_handle: str | None = None,
+    result_file_name: str | None = None,
+) -> dict[str, Any]:
+    projection = build_disabled_local_exchange_review_only_projection(
+        error_code,
+        result_file_name=result_file_name,
+    )
+    projection["projection_schema"] = VERSIONED_PROJECTION_SCHEMA
+    projection["projection_version"] = VERSIONED_PROJECTION_VERSION
+    identity = _validated_review_subject_identity(
+        review_subject_identity,
+        sample_handle=sample_handle,
+        result_file_name=result_file_name,
+        package_name=None,
+    )
+    if identity is not None and identity["identity_status"] != "ready":
+        projection["review_subject_identity"] = identity
+    return projection
+
+
+def _with_versioned_identity_failure(
+    projection: dict[str, Any],
+    identity_status: str,
+    *,
+    review_subject_identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe_status = identity_status if isinstance(identity_status, str) else "unavailable_identity_material"
+    projection["projection_status"] = "projection_unavailable"
+    projection["projection_error_code"] = safe_status
+    projection["blockers"] = [safe_status]
+    projection["review_subject_identity"] = dict(review_subject_identity)
+    return projection
+
+
+def _validated_review_subject_identity(
+    value: Mapping[str, Any] | object,
+    *,
+    sample_handle: str | None,
+    result_file_name: str | None,
+    package_name: object,
+) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping) or tuple(value) != REVIEW_SUBJECT_IDENTITY_FIELDS:
+        return None
+    identity = dict(value)
+    if (
+        identity.get("identity_schema") != _REVIEW_SUBJECT_IDENTITY_SCHEMA
+        or identity.get("identity_version") != _REVIEW_SUBJECT_IDENTITY_VERSION
+        or identity.get("sample_handle") != sample_handle
+        or identity.get("result_file_name") != result_file_name
+    ):
+        return None
+    identity_status = identity.get("identity_status")
+    identity_package_name = identity.get("package_name")
+    if identity_status == "ready":
+        if (
+            not isinstance(sample_handle, str)
+            or not sample_handle
+            or not isinstance(result_file_name, str)
+            or not _is_result_basename(result_file_name)
+            or not isinstance(identity_package_name, str)
+            or identity_package_name != package_name
+            or not _SAFE_TOKEN.fullmatch(identity_package_name)
+            or not isinstance(identity.get("provider_result_content_bytes"), int)
+            or isinstance(identity.get("provider_result_content_bytes"), bool)
+            or identity["provider_result_content_bytes"] < 0
+            or identity.get("metadata_profile") != _GOVERNED_B05_METADATA_PROFILE
+            or identity.get("metadata_entry_count") != _GOVERNED_B05_METADATA_ENTRY_COUNT
+        ):
+            return None
+        for field in (
+            "provider_result_content_sha256",
+            "safe_metadata_bundle_sha256",
+            "review_subject_content_safe_hash",
+            "review_subject_binding_safe_hash",
+        ):
+            if not isinstance(identity.get(field), str) or _LOWER_HEX_64.fullmatch(identity[field]) is None:
+                return None
+        return identity
+    if identity_status not in _BLOCKED_IDENTITY_STATUSES:
+        return None
+    if identity_package_name is not None and (
+        not isinstance(identity_package_name, str)
+        or _SAFE_TOKEN.fullmatch(identity_package_name) is None
+    ):
+        return None
+    if package_name is not None and identity_package_name != package_name:
+        return None
+    if (
+        identity.get("provider_result_content_bytes") is not None
+        or identity.get("provider_result_content_sha256") is not None
+        or identity.get("metadata_profile") is not None
+        or identity.get("metadata_entry_count") != 0
+        or identity.get("safe_metadata_bundle_sha256") is not None
+        or identity.get("review_subject_content_safe_hash") is not None
+        or identity.get("review_subject_binding_safe_hash") is not None
+    ):
+        return None
+    return identity
 
 
 def build_disabled_local_exchange_review_only_projection(

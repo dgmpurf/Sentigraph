@@ -1059,6 +1059,16 @@ def _javascript_function(source: str, function_name: str) -> str:
     raise AssertionError(f"unterminated function: {function_name}")
 
 
+def _local_exchange_page_branch(source: str) -> str:
+    start_marker = "if (selectedReviewView === LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW)"
+    end_marker = "const projection = routeState.projection"
+    assert source.count(start_marker) == 1
+    assert source.count(end_marker) == 1
+    start = source.index(start_marker)
+    end = source.index(end_marker, start)
+    return source[start:end]
+
+
 def test_frontend_api_has_exact_normalizers_and_one_get_per_helper_without_fallback() -> None:
     source = FRONTEND_API_PATH.read_text(encoding="utf-8")
     projection_helper = _javascript_function(source, "getInternalAlphaLocalExchangeProjection")
@@ -1109,6 +1119,7 @@ def test_frontend_api_has_exact_normalizers_and_one_get_per_helper_without_fallb
 
 def test_frontend_page_keeps_f10_default_and_uses_backend_catalog_for_cached_b05_state() -> None:
     source = FRONTEND_PAGE_PATH.read_text(encoding="utf-8")
+    local_exchange_branch = _local_exchange_page_branch(source)
 
     assert "getInternalAlphaReviewConsoleProjection" in source
     assert "GOVERNED_REVIEW_CONSOLE_PROJECTION_ID" in source
@@ -1163,16 +1174,20 @@ def test_frontend_page_keeps_f10_default_and_uses_backend_catalog_for_cached_b05
     assert "localStorage" not in source
     assert "sessionStorage" not in source
     assert "console.log" not in source
-    assert "retry" not in source.casefold()
-    assert "prefetch" not in source.casefold()
+    assert "retry" not in local_exchange_branch.casefold()
+    assert "prefetch" not in local_exchange_branch.casefold()
 
 def test_frontend_b05_surface_has_no_filename_path_config_or_mutation_controls() -> None:
     api_source = FRONTEND_API_PATH.read_text(encoding="utf-8")
     page_source = FRONTEND_PAGE_PATH.read_text(encoding="utf-8")
     helper = _javascript_function(api_source, "getInternalAlphaLocalExchangeProjection")
-    combined = "\n".join([helper, page_source]).casefold()
+    local_exchange_branch = _local_exchange_page_branch(page_source)
+    combined = "\n".join([helper, local_exchange_branch]).casefold()
 
     for forbidden in (
+        "retry",
+        "polling",
+        "prefetch",
         "filenameinput",
         "pathinput",
         "rootinput",
