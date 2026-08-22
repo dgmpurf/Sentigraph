@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
+import os
 import re
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from app.schemas.evidence import EvidenceItem, EvidenceNormalizationMetadata
 from app.schemas.search_discovery import (
@@ -15,8 +16,11 @@ from app.schemas.search_discovery import (
 )
 from app.services.evidence_ingestion import enrich_and_deduplicate_evidence_items
 from app.services.crawling.youtube_adapter import (
+    ClosableYouTubeHttpClient,
     YouTubeCredentials,
     YouTubeHttpClient,
+    close_official_youtube_search_client,
+    create_official_youtube_search_client,
     parse_official_search_and_videos_responses,
     search_youtube_official_api_live_metadata,
 )
@@ -26,6 +30,18 @@ SECRET_TEXT_PATTERN = re.compile(
     r"\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|cookie|authorization)\b\s*[:=]\s*([^\s,;]+)",
     re.IGNORECASE,
 )
+
+YOUTUBE_LIVE_SEARCH_DISCOVERY_ROUTE_ENABLE_FLAG = (
+    "SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_ROUTE_ENABLED"
+)
+
+
+class YouTubeLiveSearchDiscoveryRouteDisabledError(RuntimeError):
+    """Raised before credential resolution when the hidden route is disabled."""
+
+
+class YouTubeLiveSearchDiscoveryCredentialMissingError(RuntimeError):
+    """Raised when the enabled route has no process credential."""
 
 
 def get_search_discovery_status() -> SearchDiscoveryStatusResponse:
@@ -280,6 +296,46 @@ def get_youtube_official_api_live_candidates(
             "third_party_crawler_integrated": False,
         },
     )
+
+
+def get_youtube_official_api_live_route_candidates(
+    query: str = "Tesla",
+    *,
+    max_candidates: int = 5,
+    credentials_loader: Callable[[], YouTubeCredentials | None] | None = None,
+    client_factory: Callable[
+        [YouTubeCredentials], ClosableYouTubeHttpClient
+    ] | None = None,
+    client_closer: Callable[[ClosableYouTubeHttpClient], None] | None = None,
+) -> SearchDiscoveryBatch:
+    """Resolve one enabled live batch through an explicitly closed client."""
+
+    if os.getenv(YOUTUBE_LIVE_SEARCH_DISCOVERY_ROUTE_ENABLE_FLAG, "") != "1":
+        raise YouTubeLiveSearchDiscoveryRouteDisabledError(
+            "youtube_live_search_discovery_route_disabled"
+        )
+
+    if credentials_loader is None:
+        credentials = YouTubeCredentials.from_env()
+    else:
+        credentials = credentials_loader()
+    if credentials is None:
+        raise YouTubeLiveSearchDiscoveryCredentialMissingError(
+            "youtube_live_search_discovery_credential_missing"
+        )
+
+    build_client = client_factory or create_official_youtube_search_client
+    close_client = client_closer or close_official_youtube_search_client
+    http_client = build_client(credentials)
+    try:
+        return get_youtube_official_api_live_candidates(
+            query,
+            credentials=credentials,
+            http_client=http_client,
+            max_candidates=max_candidates,
+        )
+    finally:
+        close_client(http_client)
 
 
 def _youtube_official_api_fixture_responses(

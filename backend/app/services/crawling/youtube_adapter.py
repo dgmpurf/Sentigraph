@@ -67,6 +67,11 @@ class YouTubeHttpClient(Protocol):
         ...
 
 
+class ClosableYouTubeHttpClient(YouTubeHttpClient, Protocol):
+    def close(self) -> None:
+        ...
+
+
 @dataclass(frozen=True)
 class YouTubeCredentials:
     api_key: str
@@ -554,6 +559,11 @@ class _OfficialYouTubeClient:
         self.credentials = credentials
         self.client = httpx.Client(timeout=10.0)
 
+    def close(self) -> None:
+        """Close only the internal HTTP client without issuing a request."""
+
+        self.client.close()
+
     def search_posts(
         self,
         keyword: str,
@@ -638,6 +648,24 @@ class _OfficialYouTubeClient:
             return payload
         except Exception as exc:
             raise _typed_youtube_exception(exc) from exc
+
+
+def create_official_youtube_search_client(
+    credentials: YouTubeCredentials,
+) -> ClosableYouTubeHttpClient:
+    """Construct the official client from explicit credentials only."""
+
+    if not isinstance(credentials, YouTubeCredentials) or not credentials.api_key.strip():
+        raise YouTubeAuthError("youtube_explicit_credentials_required")
+    return _OfficialYouTubeClient(credentials)
+
+
+def close_official_youtube_search_client(
+    http_client: ClosableYouTubeHttpClient,
+) -> None:
+    """Close a client produced by ``create_official_youtube_search_client``."""
+
+    http_client.close()
 
 
 def _mock_youtube_posts(
