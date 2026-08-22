@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import re
+from typing import Any, Mapping
 
 from app.schemas.evidence import EvidenceItem, EvidenceNormalizationMetadata
 from app.schemas.search_discovery import (
@@ -13,7 +14,12 @@ from app.schemas.search_discovery import (
     SearchDiscoveryStatusResponse,
 )
 from app.services.evidence_ingestion import enrich_and_deduplicate_evidence_items
-from app.services.crawling.youtube_adapter import parse_official_search_and_videos_responses
+from app.services.crawling.youtube_adapter import (
+    YouTubeCredentials,
+    YouTubeHttpClient,
+    parse_official_search_and_videos_responses,
+    search_youtube_official_api_live_metadata,
+)
 
 
 SECRET_TEXT_PATTERN = re.compile(
@@ -214,6 +220,68 @@ def get_youtube_official_api_mock_candidates(
     )
 
 
+def map_youtube_official_api_live_candidates(
+    query: str,
+    videos: list[Mapping[str, Any]],
+    *,
+    max_candidates: int = 5,
+) -> list[SearchDiscoveryCandidate]:
+    """Map bounded official video metadata to review-only discovery leads."""
+
+    safe_query = _safe_query(query)
+    bounded_count = max(1, min(int(max_candidates), 5))
+    return [
+        _youtube_official_api_live_candidate(safe_query, video)
+        for video in videos[:bounded_count]
+    ]
+
+
+def get_youtube_official_api_live_candidates(
+    query: str,
+    *,
+    credentials: YouTubeCredentials,
+    http_client: YouTubeHttpClient,
+    max_candidates: int = 5,
+) -> SearchDiscoveryBatch:
+    """Build a service-only live boundary batch without routes or URL fetches."""
+
+    safe_query = _safe_query(query)
+    bounded_count = max(1, min(int(max_candidates), 5))
+    metadata = search_youtube_official_api_live_metadata(
+        safe_query,
+        credentials=credentials,
+        http_client=http_client,
+        limit=bounded_count,
+    )
+    candidates = map_youtube_official_api_live_candidates(
+        safe_query,
+        metadata,
+        max_candidates=bounded_count,
+    )
+    return SearchDiscoveryBatch(
+        query=safe_query,
+        generated_at=datetime.now(timezone.utc),
+        candidates=candidates,
+        candidate_count=len(candidates),
+        provider_statuses=[],
+        safe_mode={
+            "static_metadata_only": False,
+            "mock_candidates_only": False,
+            "offline_mocked_official_response": False,
+            "real_search_api_calls": True,
+            "real_website_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "cookies_used": False,
+            "captcha_bypass": False,
+            "anti_bot_bypass": False,
+            "real_llm_calls": False,
+            "secrets_exposed": False,
+            "third_party_crawler_integrated": False,
+        },
+    )
+
+
 def _youtube_official_api_fixture_responses(
     safe_query: str,
     max_candidates: int,
@@ -257,9 +325,9 @@ def _youtube_official_api_fixture_responses(
 
 def _youtube_official_api_candidate(
     safe_query: str,
-    video: dict | object,
+    video: Mapping[str, Any],
 ) -> SearchDiscoveryCandidate:
-    payload = video if isinstance(video, dict) else dict(video)  # type: ignore[arg-type]
+    payload = dict(video)
     video_id = _safe_token(str(payload.get("id") or "synthetic_video"))
     snippet = payload.get("snippet") if isinstance(payload.get("snippet"), dict) else {}
     return SearchDiscoveryCandidate(
@@ -275,6 +343,41 @@ def _youtube_official_api_candidate(
         content_type_hint="video",
         confidence=0.61,
         safety_notes=_candidate_safety_notes("youtube_official_api"),
+    )
+
+
+def _youtube_official_api_live_candidate(
+    safe_query: str,
+    video: Mapping[str, Any],
+) -> SearchDiscoveryCandidate:
+    payload = dict(video)
+    video_id = _safe_token(str(payload.get("id") or "youtube_live_metadata"))
+    snippet = payload.get("snippet") if isinstance(payload.get("snippet"), dict) else {}
+    return SearchDiscoveryCandidate(
+        candidate_id=f"youtube_official_api_{video_id}",
+        query=safe_query,
+        provider="youtube_official_api",
+        platform_hint="youtube",
+        title=str(
+            snippet.get("title")
+            or f"{safe_query} YouTube Official API metadata candidate"
+        ),
+        snippet=str(
+            snippet.get("description")
+            or "YouTube Data API metadata lead only; URL content was not fetched."
+        ),
+        url=f"https://www.youtube.com/watch?v={video_id}",
+        published_at=str(snippet.get("publishedAt") or "") or None,
+        source_name=str(snippet.get("channelTitle") or "YouTube Official API"),
+        content_type_hint="video",
+        confidence=0.61,
+        safety_notes=[
+            "Official YouTube Data API metadata lead",
+            "URL was not fetched",
+            "Snippet is not full content",
+            "Human review required before attach",
+            "Official API transport provenance is not truth verification",
+        ],
     )
 
 

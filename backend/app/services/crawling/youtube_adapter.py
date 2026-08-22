@@ -79,6 +79,48 @@ class YouTubeCredentials:
         return cls(api_key=api_key)
 
 
+def search_youtube_official_api_live_metadata(
+    keyword: str,
+    *,
+    credentials: YouTubeCredentials,
+    http_client: YouTubeHttpClient,
+    limit: int = YOUTUBE_REAL_POST_LIMIT,
+) -> list[Mapping[str, Any]]:
+    """Return bounded official video metadata through an injected client.
+
+    This narrow Search Discovery boundary intentionally bypasses adapter mode,
+    environment, cache, comment, and mock-fallback behavior.  Callers must
+    resolve credentials and construct the official-search client explicitly.
+    """
+
+    if not isinstance(credentials, YouTubeCredentials) or not credentials.api_key.strip():
+        raise YouTubeAuthError("youtube_explicit_credentials_required")
+
+    safe_keyword = str(keyword).strip()
+    if not safe_keyword:
+        raise YouTubeParsingError("youtube_search_keyword_required")
+    try:
+        safe_limit = max(1, min(int(limit), YOUTUBE_REAL_POST_LIMIT))
+    except (TypeError, ValueError) as exc:
+        raise YouTubeParsingError("youtube_search_limit_invalid") from exc
+
+    try:
+        raw_posts = http_client.search_posts(
+            safe_keyword,
+            limit=safe_limit,
+            sort="relevance",
+            date_range=None,
+        )
+    except YouTubeRealModeError:
+        raise
+    except Exception as exc:
+        raise _typed_youtube_exception(exc) from exc
+
+    if not isinstance(raw_posts, list) or any(not isinstance(post, Mapping) for post in raw_posts):
+        raise YouTubeParsingError("youtube_search_result_not_metadata_list")
+    return list(raw_posts[:safe_limit])
+
+
 class YouTubeAdapter(BasePlatformAdapter):
     platform_id = "youtube"
     display_name = "YouTube"
