@@ -6,7 +6,6 @@ from typing import Any, Mapping, Protocol
 
 import httpx
 
-from app.core.environment import load_project_env
 from app.schemas.comment import RawComment, RawPost
 from app.services.crawling.base_adapter import (
     AdapterHealth,
@@ -16,8 +15,6 @@ from app.services.crawling.base_adapter import (
 )
 from app.services.crawling.youtube_cache import YouTubeAdapterConfig, YouTubeResponseCache
 
-
-load_project_env()
 
 YOUTUBE_REQUIRED_CREDENTIALS = ("YOUTUBE_API_KEY",)
 YOUTUBE_API_APPROVAL_STATUS = "api_key_configurable"
@@ -95,6 +92,9 @@ class YouTubeAdapter(BasePlatformAdapter):
         config: YouTubeAdapterConfig | None = None,
         cache: YouTubeResponseCache | None = None,
     ) -> None:
+        from app.core.environment import load_project_env
+
+        load_project_env()
         self.env_mode: AdapterMode = _adapter_mode_from_env()
         self.requested_mode: AdapterMode = self.env_mode if mode is None else _normalize_adapter_mode(mode)
         self.credentials = credentials or YouTubeCredentials.from_env()
@@ -543,25 +543,11 @@ class _OfficialYouTubeClient:
             ][:limit]
             if not video_ids:
                 return []
-            video_details = self._video_details(video_ids)
-            details_by_id = {self._video_id_from_detail(item): item for item in video_details}
-            normalized: list[Mapping[str, Any]] = []
-            for search_item in search_items:
-                video_id = _video_id_from_search_item(search_item)
-                if not video_id:
-                    continue
-                detail = details_by_id.get(video_id, {})
-                snippet = detail.get("snippet") if isinstance(detail.get("snippet"), Mapping) else search_item.get("snippet", {})
-                statistics = detail.get("statistics") if isinstance(detail.get("statistics"), Mapping) else {}
-                normalized.append(
-                    {
-                        "source_type": YOUTUBE_SOURCE_TYPE,
-                        "id": video_id,
-                        "snippet": snippet,
-                        "statistics": statistics,
-                    }
-                )
-            return normalized[:limit]
+            videos_response = self._video_details_response(video_ids)
+            return parse_official_search_and_videos_responses(
+                search_payload,
+                videos_response,
+            )[:limit]
         except Exception as exc:
             raise _typed_youtube_exception(exc) from exc
 
@@ -586,14 +572,16 @@ class _OfficialYouTubeClient:
             raise _typed_youtube_exception(exc) from exc
 
     def _video_details(self, video_ids: list[str]) -> list[Mapping[str, Any]]:
+        return _items(self._video_details_response(video_ids))
+
+    def _video_details_response(self, video_ids: list[str]) -> Mapping[str, Any]:
         params = {
             "part": "snippet,statistics",
             "id": ",".join(video_ids),
             "maxResults": min(len(video_ids), YOUTUBE_REAL_POST_LIMIT),
             "key": self.credentials.api_key,
         }
-        payload = self._get_json(YOUTUBE_VIDEOS_ENDPOINT, params=params)
-        return _items(payload)
+        return self._get_json(YOUTUBE_VIDEOS_ENDPOINT, params=params)
 
     def _video_id_from_detail(self, item: Mapping[str, Any]) -> str:
         return str(item.get("id") or "").strip()
@@ -750,6 +738,56 @@ def _items(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [item for item in items if isinstance(item, Mapping)]
 
 
+def parse_official_search_and_videos_responses(
+    search_response: Mapping[str, Any],
+    videos_response: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
+    """Merge official-shaped search and video payloads without I/O.
+
+    Search ordering is authoritative. Malformed identifiers are skipped and
+    video detail rows that were not selected by the search payload are ignored.
+    """
+
+    details_by_id: dict[str, Mapping[str, Any]] = {}
+    for detail in _items(videos_response):
+        video_id = str(detail.get("id") or "").strip()
+        if video_id and video_id not in details_by_id:
+            details_by_id[video_id] = detail
+
+    merged: list[Mapping[str, Any]] = []
+    seen_video_ids: set[str] = set()
+    for search_item in _items(search_response):
+        video_id = _video_id_from_search_item(search_item)
+        if not video_id or video_id in seen_video_ids:
+            continue
+        seen_video_ids.add(video_id)
+        detail = details_by_id.get(video_id, {})
+        search_snippet = (
+            search_item.get("snippet")
+            if isinstance(search_item.get("snippet"), Mapping)
+            else {}
+        )
+        detail_snippet = (
+            detail.get("snippet")
+            if isinstance(detail.get("snippet"), Mapping)
+            else {}
+        )
+        statistics = (
+            detail.get("statistics")
+            if isinstance(detail.get("statistics"), Mapping)
+            else {}
+        )
+        merged.append(
+            {
+                "source_type": YOUTUBE_SOURCE_TYPE,
+                "id": video_id,
+                "snippet": detail_snippet or search_snippet,
+                "statistics": statistics,
+            }
+        )
+    return merged
+
+
 def _video_id_from_search_item(item: Mapping[str, Any]) -> str:
     raw_id = item.get("id")
     if isinstance(raw_id, Mapping):
@@ -859,6 +897,8 @@ def _real_mode_blocked_reason(fallback_category: str | None, mode: AdapterMode) 
 
 
 def _credential_presence() -> dict[str, bool]:
+    from app.core.environment import load_project_env
+
     load_project_env()
     return {
         credential_name: bool(os.getenv(credential_name, "").strip())

@@ -13,6 +13,7 @@ SearchDiscoveryProviderType = Literal[
     "mock_static",
     "rss_mock",
     "gdelt_mock",
+    "youtube_official_api",
     "search_api_future",
     "user_url_list",
     "data_vendor_future",

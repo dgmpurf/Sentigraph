@@ -1,6 +1,9 @@
+import ast
 from pathlib import Path
+import socket
 import urllib.request
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -289,3 +292,239 @@ def _create_case() -> str:
     )
     assert response.status_code == 200
     return response.json()["case_id"]
+
+
+def test_youtube_official_response_parser_preserves_search_order_and_skips_invalid_items() -> None:
+    from app.services.crawling.youtube_adapter import (
+        parse_official_search_and_videos_responses,
+    )
+
+    search_response = {
+        "items": [
+            {"id": {"videoId": "synthetic_b"}, "snippet": {"title": "Search B"}},
+            {"id": {"videoId": ""}, "snippet": {"title": "Missing ID"}},
+            {"id": {"videoId": "synthetic_a"}, "snippet": {"title": "Search A"}},
+            "not-a-mapping",
+        ]
+    }
+    videos_response = {
+        "items": [
+            {
+                "id": "synthetic_a",
+                "snippet": {"title": "Detail A"},
+                "statistics": {"viewCount": "10"},
+            },
+            {
+                "id": "synthetic_b",
+                "snippet": {"title": "Detail B"},
+                "statistics": {"viewCount": "20"},
+            },
+            {
+                "id": "unselected_video",
+                "snippet": {"title": "Unselected"},
+                "statistics": {"viewCount": "999"},
+            },
+        ]
+    }
+
+    parsed = parse_official_search_and_videos_responses(search_response, videos_response)
+
+    assert [item["id"] for item in parsed] == ["synthetic_b", "synthetic_a"]
+    assert [item["snippet"]["title"] for item in parsed] == ["Detail B", "Detail A"]
+    assert [item["statistics"]["viewCount"] for item in parsed] == ["20", "10"]
+    assert all(item["source_type"] == "youtube_data_api_v3" for item in parsed)
+
+
+def test_youtube_official_api_mock_route_is_bounded_offline_and_credential_free(monkeypatch) -> None:
+    from app.services.crawling.youtube_adapter import YouTubeCredentials
+
+    credential_reads = 0
+    network_attempts = 0
+
+    def fail_credentials(cls):
+        nonlocal credential_reads
+        credential_reads += 1
+        raise AssertionError("Offline mocked official responses must not read credentials.")
+
+    def fail_network(*args, **kwargs):
+        nonlocal network_attempts
+        network_attempts += 1
+        raise AssertionError("Offline mocked official responses must not use real network primitives.")
+
+    monkeypatch.setattr(YouTubeCredentials, "from_env", classmethod(fail_credentials))
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fail_network)
+    monkeypatch.setattr(urllib.request, "urlopen", fail_network)
+    monkeypatch.setattr(socket, "create_connection", fail_network)
+
+    response = client.get(
+        "/api/v1/search-discovery/youtube-official-api/mock-candidates",
+        params={"query": "Synthetic launch", "max_candidates": 3},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["query"] == "Synthetic launch"
+    assert body["candidate_count"] == 3
+    assert body["safe_mode"]["mock_candidates_only"] is True
+    assert body["safe_mode"]["offline_mocked_official_response"] is True
+    assert body["safe_mode"]["real_search_api_calls"] is False
+    assert body["provider_statuses"][0]["provider_id"] == "youtube_official_api"
+    assert body["provider_statuses"][0]["live_fetch_enabled"] is False
+    assert body["provider_statuses"][0]["requires_api_key"] is False
+    assert body["provider_statuses"][0]["requires_network"] is False
+    assert body["provider_statuses"][0]["limits"]["max_candidates_per_query"] == 10
+    assert all(item["provider"] == "youtube_official_api" for item in body["candidates"])
+    assert all(item["platform_hint"] == "youtube" for item in body["candidates"])
+    assert all(item["content_type_hint"] == "video" for item in body["candidates"])
+    assert all(item["status"] == "pending_review" for item in body["candidates"])
+    assert all(item["url"].startswith("https://www.youtube.com/watch?v=synthetic_") for item in body["candidates"])
+
+    max_response = client.get(
+        "/api/v1/search-discovery/youtube-official-api/mock-candidates",
+        params={"query": "Synthetic launch", "max_candidates": 10},
+    )
+    assert max_response.status_code == 200
+    assert max_response.json()["candidate_count"] == 10
+
+    over_limit_response = client.get(
+        "/api/v1/search-discovery/youtube-official-api/mock-candidates",
+        params={"query": "Synthetic launch", "max_candidates": 11},
+    )
+    assert over_limit_response.status_code == 422
+    assert credential_reads == 0
+    assert network_attempts == 0
+
+
+def test_youtube_official_api_candidate_reuses_attach_and_analysis_flow(monkeypatch) -> None:
+    requested_paths: list[str] = []
+    original_request = client.request
+
+    def record_request(method, url, *args, **kwargs):
+        requested_paths.append(str(url))
+        return original_request(method, url, *args, **kwargs)
+
+    monkeypatch.setattr(client, "request", record_request)
+    case_id = _create_case()
+    candidates = client.get(
+        "/api/v1/search-discovery/youtube-official-api/mock-candidates",
+        params={"query": "Synthetic launch", "max_candidates": 2},
+    ).json()["candidates"]
+    candidates[0]["status"] = "accepted"
+    candidates[1]["status"] = "rejected"
+
+    attach_response = client.post(
+        f"/api/v1/cases/{case_id}/search-discovery/candidates/attach",
+        json={"candidates": candidates, "reviewer_label": "phase1_offline_reviewer"},
+    )
+
+    assert attach_response.status_code == 200
+    attach_body = attach_response.json()
+    assert attach_body["attached_candidate_count"] == 1
+    assert attach_body["rejected_candidate_count"] == 1
+    item = attach_body["attached_evidence_items"][0]
+    assert item["acquisition_mode"] == "search_discovery"
+    assert item["provenance_type"] == "search_discovery_candidate"
+    assert item["verification_status"] == "source_url_provided_unverified"
+    assert item["trust_score"] == 0.48
+    assert item["trust_label"] == "low"
+    assert item["review_status"] == "review_needed"
+    assert item["raw_data_safe"]["provider"] == "youtube_official_api"
+    assert item["raw_data_safe"]["url_fetched"] is False
+    assert item["raw_data_safe"]["scraping"] is False
+
+    run_response = client.post(f"/api/v1/cases/{case_id}/run")
+    assert run_response.status_code == 200
+    assert run_response.json()["analysis_input_source"] == "case_evidence_items"
+    assert not any("local-exchange-projections" in path for path in requested_paths)
+
+
+def test_youtube_official_api_candidate_secret_like_metadata_is_redacted() -> None:
+    case_id = _create_case()
+    candidate = client.get(
+        "/api/v1/search-discovery/youtube-official-api/mock-candidates",
+        params={"query": "Synthetic launch", "max_candidates": 1},
+    ).json()["candidates"][0]
+    candidate.update(
+        {
+            "status": "accepted",
+            "title": "api_key=synthetic-secret",
+            "snippet": "access_token=synthetic-secret",
+            "url": "https://www.youtube.com/watch?v=synthetic_001&client_secret=synthetic-secret",
+        }
+    )
+
+    response = client.post(
+        f"/api/v1/cases/{case_id}/search-discovery/candidates/attach",
+        json={"candidates": [candidate]},
+    )
+
+    assert response.status_code == 200
+    assert "synthetic-secret" not in response.text
+    attached = response.json()["attached_evidence_items"][0]
+    assert "[REDACTED]" in attached["title"]
+    assert "[REDACTED]" in attached["body_text"]
+    assert "[REDACTED]" in attached["url"]
+
+
+def test_youtube_adapter_project_env_loading_is_function_local_and_ordered() -> None:
+    adapter_path = Path(__file__).resolve().parents[1] / "services" / "crawling" / "youtube_adapter.py"
+    tree = ast.parse(adapter_path.read_text(encoding="utf-8"))
+
+    top_level_environment_imports = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module == "app.core.environment"
+    ]
+    top_level_load_calls = [
+        node
+        for statement in tree.body
+        if not isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "load_project_env"
+    ]
+
+    assert top_level_environment_imports == []
+    assert top_level_load_calls == []
+
+    adapter_class = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "YouTubeAdapter"
+    )
+    init_method = next(
+        node for node in adapter_class.body if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+    )
+
+    local_import_positions = [
+        index
+        for index, statement in enumerate(init_method.body)
+        if any(
+            isinstance(node, ast.ImportFrom)
+            and node.module == "app.core.environment"
+            and [alias.name for alias in node.names] == ["load_project_env"]
+            for node in ast.walk(statement)
+        )
+    ]
+
+    def call_positions(qualified_name: str) -> list[int]:
+        return [
+            index
+            for index, statement in enumerate(init_method.body)
+            if any(
+                isinstance(node, ast.Call) and ast.unparse(node.func) == qualified_name
+                for node in ast.walk(statement)
+            )
+        ]
+
+    load_positions = call_positions("load_project_env")
+    mode_positions = call_positions("_adapter_mode_from_env")
+    credential_positions = call_positions("YouTubeCredentials.from_env")
+    config_positions = call_positions("YouTubeAdapterConfig.from_env")
+
+    assert len(local_import_positions) == 1
+    assert len(load_positions) == 1
+    assert len(mode_positions) == 1
+    assert len(credential_positions) == 1
+    assert len(config_positions) == 1
+    assert load_positions[0] == local_import_positions[0] + 1
+    assert load_positions[0] < min(mode_positions + credential_positions + config_positions)

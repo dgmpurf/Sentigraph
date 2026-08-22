@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import re
 
 from app.schemas.evidence import EvidenceItem, EvidenceNormalizationMetadata
@@ -12,6 +13,7 @@ from app.schemas.search_discovery import (
     SearchDiscoveryStatusResponse,
 )
 from app.services.evidence_ingestion import enrich_and_deduplicate_evidence_items
+from app.services.crawling.youtube_adapter import parse_official_search_and_videos_responses
 
 
 SECRET_TEXT_PATTERN = re.compile(
@@ -93,6 +95,23 @@ def get_search_discovery_provider_statuses() -> list[SearchDiscoveryProviderStat
             ],
         ),
         _provider_status(
+            provider_id="youtube_official_api",
+            provider_type="youtube_official_api",
+            display_name="YouTube Official API — offline mocked response (Phase 1)",
+            status="mock_only",
+            provider_class="official_api_offline_mock_fixture",
+            allowed_use="Parse deterministic synthetic payloads shaped like official search.list and videos.list responses.",
+            forbidden_use="Do not present fixtures as live YouTube API results or read credentials during Phase 1.",
+            current_sentigraph_status="implemented_offline_mocked_official_response",
+            next_action="Use only for offline parser, review, attach, and analysis regression coverage.",
+            safety_notes=[
+                "Offline mocked official response only",
+                "No live YouTube API call",
+                "No API key or credential required for Phase 1",
+                "Candidate metadata requires human review",
+            ],
+        ),
+        _provider_status(
             provider_id="search_api_future",
             provider_type="search_api_future",
             display_name="Search API Future",
@@ -145,6 +164,117 @@ def get_mock_search_discovery_candidates(query: str = "Tesla", provider: str = "
         candidates=candidates,
         candidate_count=len(candidates),
         provider_statuses=[provider_status for provider_status in get_search_discovery_provider_statuses() if provider_status.provider_id == selected_provider],
+    )
+
+
+def get_youtube_official_api_mock_candidates(
+    query: str = "Tesla",
+    max_candidates: int = 5,
+) -> SearchDiscoveryBatch:
+    safe_query = _safe_query(query)
+    bounded_count = max(1, min(int(max_candidates), 10))
+    search_response, videos_response = _youtube_official_api_fixture_responses(
+        safe_query,
+        bounded_count,
+    )
+    merged_videos = parse_official_search_and_videos_responses(
+        search_response,
+        videos_response,
+    )
+    candidates = [
+        _youtube_official_api_candidate(safe_query, video)
+        for video in merged_videos[:bounded_count]
+    ]
+    provider_status = next(
+        status
+        for status in get_search_discovery_provider_statuses()
+        if status.provider_id == "youtube_official_api"
+    )
+    return SearchDiscoveryBatch(
+        query=safe_query,
+        generated_at=datetime.now(timezone.utc),
+        candidates=candidates,
+        candidate_count=len(candidates),
+        provider_statuses=[provider_status],
+        safe_mode={
+            "static_metadata_only": True,
+            "mock_candidates_only": True,
+            "offline_mocked_official_response": True,
+            "real_search_api_calls": False,
+            "real_website_api_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "cookies_used": False,
+            "captcha_bypass": False,
+            "anti_bot_bypass": False,
+            "real_llm_calls": False,
+            "secrets_exposed": False,
+            "third_party_crawler_integrated": False,
+        },
+    )
+
+
+def _youtube_official_api_fixture_responses(
+    safe_query: str,
+    max_candidates: int,
+) -> tuple[dict[str, list[dict]], dict[str, list[dict]]]:
+    digest = hashlib.sha256(safe_query.encode("utf-8")).hexdigest()[:8]
+    search_items: list[dict] = []
+    video_items: list[dict] = []
+    for index in range(max_candidates):
+        ordinal = index + 1
+        video_id = f"synthetic_{digest}_{ordinal:02d}"
+        published_at = f"2026-08-{min(ordinal, 28):02d}T0{index % 9}:00:00Z"
+        search_items.append(
+            {
+                "id": {"kind": "youtube#video", "videoId": video_id},
+                "snippet": {
+                    "title": f"{safe_query} synthetic official-shaped candidate {ordinal}",
+                    "description": "Synthetic search.list fixture metadata only.",
+                    "publishedAt": published_at,
+                    "channelTitle": "Synthetic YouTube Fixture Channel",
+                },
+            }
+        )
+        video_items.append(
+            {
+                "id": video_id,
+                "snippet": {
+                    "title": f"{safe_query} synthetic official-shaped video candidate {ordinal}",
+                    "description": "Synthetic offline fixture metadata only; no live API call or URL fetch occurred.",
+                    "publishedAt": published_at,
+                    "channelTitle": "Synthetic YouTube Official API Fixture",
+                },
+                "statistics": {
+                    "viewCount": str(1000 + ordinal),
+                    "likeCount": str(100 + ordinal),
+                    "commentCount": str(10 + ordinal),
+                },
+            }
+        )
+    return {"items": search_items}, {"items": list(reversed(video_items))}
+
+
+def _youtube_official_api_candidate(
+    safe_query: str,
+    video: dict | object,
+) -> SearchDiscoveryCandidate:
+    payload = video if isinstance(video, dict) else dict(video)  # type: ignore[arg-type]
+    video_id = _safe_token(str(payload.get("id") or "synthetic_video"))
+    snippet = payload.get("snippet") if isinstance(payload.get("snippet"), dict) else {}
+    return SearchDiscoveryCandidate(
+        candidate_id=f"youtube_official_api_{video_id}",
+        query=safe_query,
+        provider="youtube_official_api",
+        platform_hint="youtube",
+        title=str(snippet.get("title") or f"{safe_query} synthetic YouTube candidate"),
+        snippet=str(snippet.get("description") or "Synthetic offline fixture metadata only."),
+        url=f"https://www.youtube.com/watch?v={video_id}",
+        published_at=str(snippet.get("publishedAt") or "") or None,
+        source_name=str(snippet.get("channelTitle") or "Synthetic YouTube Official API Fixture"),
+        content_type_hint="video",
+        confidence=0.61,
+        safety_notes=_candidate_safety_notes("youtube_official_api"),
     )
 
 
@@ -471,6 +601,7 @@ def _candidate_safety_notes(provider: str = "mock_static") -> list[str]:
     provider_note = {
         "rss_mock": "RSS mock fixture only",
         "gdelt_mock": "GDELT mock fixture only",
+        "youtube_official_api": "Offline mocked official response only",
     }.get(provider, "mock fixture only")
     return [
         provider_note,

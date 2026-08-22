@@ -880,6 +880,13 @@ export async function getMockSearchDiscoveryCandidates(query = 'Tesla', provider
   return normalizeSearchDiscoveryBatch(data)
 }
 
+export async function getYouTubeOfficialApiMockCandidates(query = 'Tesla', maxCandidates = 5) {
+  const { data } = await apiClient.get(`${API_PREFIX}/search-discovery/youtube-official-api/mock-candidates`, {
+    params: { query, max_candidates: maxCandidates },
+  })
+  return normalizeSearchDiscoveryBatch(data)
+}
+
 export async function attachSearchDiscoveryCandidates(caseId, payload = {}) {
   const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/search-discovery/candidates/attach`, payload)
   return normalizeSearchDiscoveryAttachResult(data)

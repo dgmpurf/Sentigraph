@@ -7,6 +7,7 @@ import {
   getAnalysisCase,
   getMockSearchDiscoveryCandidates,
   getSearchDiscoveryProviders,
+  getYouTubeOfficialApiMockCandidates,
 } from '../api/sentigraphApi.js'
 
 const { Paragraph, Text, Title } = Typography
@@ -18,11 +19,12 @@ const STATUS_COLORS = {
   pending_review: 'gold',
 }
 
-const MOCK_PROVIDER_TYPES = ['mock_static', 'rss_mock', 'gdelt_mock']
+const MOCK_PROVIDER_TYPES = ['mock_static', 'rss_mock', 'gdelt_mock', 'youtube_official_api']
 const FALLBACK_PROVIDER_OPTIONS = [
   { value: 'mock_static', label: 'Mock Static' },
   { value: 'rss_mock', label: 'RSS Mock' },
   { value: 'gdelt_mock', label: 'GDELT Mock' },
+  { value: 'youtube_official_api', label: 'YouTube Official API — offline mocked response (Phase 1)' },
 ]
 
 export function SearchDiscovery({
@@ -111,7 +113,9 @@ export function SearchDiscovery({
     setError('')
     setAttachResult(null)
     try {
-      const result = await getMockSearchDiscoveryCandidates(query, provider)
+      const result = provider === 'youtube_official_api'
+        ? await getYouTubeOfficialApiMockCandidates(query, 5)
+        : await getMockSearchDiscoveryCandidates(query, provider)
       setBatch(result)
       setCandidateStatusById(
         Object.fromEntries((result.candidates || []).map((candidate) => [candidate.candidate_id, 'pending_review'])),
@@ -254,6 +258,7 @@ export function SearchDiscovery({
           <Space wrap>
             <Tag color="purple">Mock/static only</Tag>
             <Tag color="purple">RSS/GDELT fixtures</Tag>
+            <Tag color="purple">YouTube official-shaped offline fixture</Tag>
             <Tag color="green">No real search API</Tag>
             <Tag color="green">No URL fetch</Tag>
             <Tag color="green">No scraping</Tag>
@@ -341,7 +346,8 @@ export function SearchDiscovery({
           </Space>
         </div>
         <Paragraph type="secondary">
-          RSS/GDELT providers are currently mock fixtures. Future real providers may return URL/title/snippet
+          {selectedProviderStatus?.display_name || 'Selected provider'} · RSS/GDELT and the Phase-1 YouTube
+          official-shaped response are offline fixtures. Future real providers may return URL/title/snippet
           metadata only; full content extraction requires a separate reviewed public parser, official API route,
           licensed vendor payload, or user-provided text.
         </Paragraph>
