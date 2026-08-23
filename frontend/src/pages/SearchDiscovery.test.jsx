@@ -7,6 +7,7 @@ const apiMocks = vi.hoisted(() => ({
   getAnalysisCase: vi.fn(),
   getMockSearchDiscoveryCandidates: vi.fn(),
   getSearchDiscoveryProviders: vi.fn(),
+  getYouTubeOfficialApiLiveCandidates: vi.fn(),
   getYouTubeOfficialApiMockCandidates: vi.fn(),
 }))
 
@@ -44,6 +45,7 @@ vi.mock('../api/sentigraphApi.js', async (importOriginal) => {
     getAnalysisCase: apiMocks.getAnalysisCase,
     getMockSearchDiscoveryCandidates: apiMocks.getMockSearchDiscoveryCandidates,
     getSearchDiscoveryProviders: apiMocks.getSearchDiscoveryProviders,
+    getYouTubeOfficialApiLiveCandidates: apiMocks.getYouTubeOfficialApiLiveCandidates,
     getYouTubeOfficialApiMockCandidates: apiMocks.getYouTubeOfficialApiMockCandidates,
   }
 })
@@ -96,6 +98,38 @@ const OFFLINE_BATCH = {
   },
 }
 
+const LIVE_PROVIDER_LABEL = 'YouTube Official API — guarded live preview'
+
+const LIVE_BATCH = {
+  query: 'Current launch',
+  generated_at: '2026-08-23T00:00:00Z',
+  candidate_count: 1,
+  candidates: [
+    {
+      candidate_id: 'youtube_official_api_live_current_001',
+      query: 'Current launch',
+      provider: 'youtube_official_api_live',
+      platform_hint: 'youtube',
+      title: 'Current launch guarded live metadata candidate',
+      snippet: 'Official API metadata preview only.',
+      url: 'https://www.youtube.com/watch?v=current_001',
+      published_at: '2026-08-23T00:00:00Z',
+      source_name: 'YouTube Official API',
+      content_type_hint: 'video',
+      confidence: 0.72,
+      acquisition_mode: 'search_discovery',
+      status: 'pending_review',
+      safety_notes: ['Official API metadata only', 'URL content not fetched'],
+    },
+  ],
+  provider_statuses: [],
+  safe_mode: {
+    human_review_required: true,
+    url_fetching: false,
+    evidence_write: false,
+  },
+}
+
 const ATTACH_RESULT = {
   case_id: 'case_phase1',
   status: 'attached',
@@ -119,8 +153,9 @@ const ATTACH_RESULT = {
 function selectFirstComboboxOption(label) {
   const combobox = screen.getAllByRole('combobox')[0]
   fireEvent.mouseDown(combobox)
-  return screen.findByText(label, { exact: true }).then((option) => {
-    fireEvent.click(option)
+  return screen.findAllByText(label, { exact: true }).then((options) => {
+    expect(options).toHaveLength(1)
+    fireEvent.click(options[0])
   })
 }
 
@@ -128,6 +163,7 @@ beforeEach(() => {
   installFailClosedBrowserNetworkSentinels()
   Object.values(apiMocks).forEach((mock) => mock.mockReset())
   apiMocks.getSearchDiscoveryProviders.mockResolvedValue([OFFLINE_PROVIDER])
+  apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue(LIVE_BATCH)
   apiMocks.getYouTubeOfficialApiMockCandidates.mockResolvedValue(OFFLINE_BATCH)
   apiMocks.attachSearchDiscoveryCandidates.mockResolvedValue(ATTACH_RESULT)
   apiMocks.getAnalysisCase.mockResolvedValue({ case_id: 'case_phase1', title: 'Phase-1 case' })
@@ -234,5 +270,120 @@ describe('SearchDiscovery offline YouTube official API Phase 1', () => {
       expect(screen.queryByRole('button', { name: forbiddenControl })).toBeNull()
       expect(screen.queryByRole('switch', { name: forbiddenControl })).toBeNull()
     }
+  })
+})
+
+describe('SearchDiscovery guarded live preview Phase 2D3A', () => {
+  it('uses the exact guarded live helper route and existing batch normalizer', async () => {
+    const actualApi = await vi.importActual('../api/sentigraphApi.js')
+    expect(typeof actualApi.getYouTubeOfficialApiLiveCandidates).toBe('function')
+
+    const getSpy = vi.spyOn((await import('../api/client.js')).apiClient, 'get')
+      .mockResolvedValue({ data: LIVE_BATCH })
+    const result = await actualApi.getYouTubeOfficialApiLiveCandidates('Current launch', 1)
+
+    expect(getSpy).toHaveBeenCalledTimes(1)
+    expect(getSpy).toHaveBeenCalledWith(
+      '/api/v1/search-discovery/youtube-official-api/live-candidates',
+      { params: { query: 'Current launch', max_candidates: 1 } },
+    )
+    expect(result.candidates[0]).toEqual(expect.objectContaining({
+      provider: 'youtube_official_api_live',
+      title: LIVE_BATCH.candidates[0].title,
+    }))
+    expect(result.safe_mode).toEqual(expect.objectContaining({
+      human_review_required: true,
+      url_fetching: false,
+      evidence_write: false,
+    }))
+  })
+
+  it('keeps the guarded live provider absent and unreachable by default', async () => {
+    render(<SearchDiscovery />)
+
+    await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
+    const providerCombobox = screen.getAllByRole('combobox')[0]
+    fireEvent.mouseDown(providerCombobox)
+    expect(screen.queryByText(LIVE_PROVIDER_LABEL, { exact: true })).toBeNull()
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(0)
+  })
+
+  it('exposes one guarded preview option while keeping a generated live batch local-only', async () => {
+    const onRunCase = vi.fn()
+    render(
+      <SearchDiscovery
+        cases={[{ case_id: 'case_phase1', title: 'Phase-1 case' }]}
+        currentCase={{ case_id: 'case_phase1', title: 'Phase-1 case' }}
+        onRunCase={onRunCase}
+        liveRouteFrontendEnabled
+      />,
+    )
+
+    await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
+    await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+    fireEvent.click(screen.getByRole('button', { name: /Generate guarded live preview/ }))
+
+    await waitFor(() => {
+      expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledWith('Current launch', 1)
+    })
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getYouTubeOfficialApiMockCandidates).toHaveBeenCalledTimes(0)
+    expect(apiMocks.getMockSearchDiscoveryCandidates).toHaveBeenCalledTimes(0)
+    expect(await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })).toBeTruthy()
+
+    for (const text of [
+      'Guarded live metadata preview',
+      'Official API metadata only',
+      'URL content not fetched',
+      'Human review required',
+      'Attachment disabled in this phase',
+      'Backend route remains independently gated',
+    ]) {
+      expect(screen.getAllByText(text, { exact: true }).length).toBeGreaterThanOrEqual(1)
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    const attachButton = screen.getByRole('button', { name: /Attach accepted to case/ })
+    expect(attachButton.disabled).toBe(true)
+    fireEvent.click(attachButton)
+    expect(apiMocks.attachSearchDiscoveryCandidates).toHaveBeenCalledTimes(0)
+    expect(onRunCase).toHaveBeenCalledTimes(0)
+
+    for (const forbiddenControl of [/api key/i, /credential/i, /token/i, /cookie/i]) {
+      expect(screen.queryByRole('textbox', { name: forbiddenControl })).toBeNull()
+      expect(screen.queryByRole('button', { name: forbiddenControl })).toBeNull()
+      expect(screen.queryByRole('switch', { name: forbiddenControl })).toBeNull()
+    }
+  })
+
+  it('requires a fresh offline generation before attach resumes after a live batch', async () => {
+    render(
+      <SearchDiscovery
+        cases={[{ case_id: 'case_phase1', title: 'Phase-1 case' }]}
+        currentCase={{ case_id: 'case_phase1', title: 'Phase-1 case' }}
+        liveRouteFrontendEnabled
+      />,
+    )
+
+    await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
+    await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
+    fireEvent.click(screen.getByRole('button', { name: /Generate guarded live preview/ }))
+    await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+
+    await selectFirstComboboxOption(OFFLINE_PROVIDER.display_name)
+    expect(screen.getByRole('button', { name: /Attach accepted to case/ }).disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate mock candidates/ }))
+    await screen.findByText(OFFLINE_BATCH.candidates[0].title, { exact: true })
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    expect(screen.getByRole('button', { name: /Attach accepted to case/ }).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: /Attach accepted to case/ }))
+
+    await waitFor(() => expect(apiMocks.attachSearchDiscoveryCandidates).toHaveBeenCalledTimes(1))
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getYouTubeOfficialApiMockCandidates).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getMockSearchDiscoveryCandidates).toHaveBeenCalledTimes(0)
   })
 })

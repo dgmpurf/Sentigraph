@@ -7,6 +7,7 @@ import {
   getAnalysisCase,
   getMockSearchDiscoveryCandidates,
   getSearchDiscoveryProviders,
+  getYouTubeOfficialApiLiveCandidates,
   getYouTubeOfficialApiMockCandidates,
 } from '../api/sentigraphApi.js'
 
@@ -26,6 +27,23 @@ const FALLBACK_PROVIDER_OPTIONS = [
   { value: 'gdelt_mock', label: 'GDELT Mock' },
   { value: 'youtube_official_api', label: 'YouTube Official API — offline mocked response (Phase 1)' },
 ]
+const LIVE_PROVIDER_ID = 'youtube_official_api_live'
+const LIVE_PROVIDER_OPTION = Object.freeze({
+  value: LIVE_PROVIDER_ID,
+  label: 'YouTube Official API — guarded live preview',
+})
+const LIVE_PROVIDER_STATUS = Object.freeze({
+  provider_id: LIVE_PROVIDER_ID,
+  provider_type: LIVE_PROVIDER_ID,
+  display_name: LIVE_PROVIDER_OPTION.label,
+  status: 'guarded_live_preview',
+  safety_notes: Object.freeze([
+    'Official API metadata only',
+    'URL content not fetched',
+    'Human review required',
+    'Attachment disabled in this phase',
+  ]),
+})
 
 export function SearchDiscovery({
   cases = [],
@@ -33,12 +51,15 @@ export function SearchDiscovery({
   onCaseReady,
   onRefreshCases,
   onRunCase,
+  liveRouteFrontendEnabled =
+    import.meta.env.VITE_SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_ENABLED === '1',
 }) {
   const [query, setQuery] = useState('Tesla')
   const [provider, setProvider] = useState('mock_static')
   const [providers, setProviders] = useState([])
   const [targetCaseId, setTargetCaseId] = useState(currentCase?.case_id || '')
   const [batch, setBatch] = useState(null)
+  const [generatedProvider, setGeneratedProvider] = useState(null)
   const [candidateStatusById, setCandidateStatusById] = useState({})
   const [loading, setLoading] = useState(false)
   const [attaching, setAttaching] = useState(false)
@@ -84,13 +105,16 @@ export function SearchDiscovery({
         value: item.provider_id,
         label: item.display_name || item.provider_id,
       }))
-    return options.length ? options : FALLBACK_PROVIDER_OPTIONS
-  }, [providers])
+    const offlineOptions = options.length ? options : FALLBACK_PROVIDER_OPTIONS
+    return liveRouteFrontendEnabled
+      ? [...offlineOptions, LIVE_PROVIDER_OPTION]
+      : offlineOptions
+  }, [liveRouteFrontendEnabled, providers])
 
-  const selectedProviderStatus = useMemo(
-    () => providers.find((item) => item.provider_id === provider) || null,
-    [provider, providers],
-  )
+  const selectedProviderStatus = useMemo(() => {
+    if (provider === LIVE_PROVIDER_ID) return LIVE_PROVIDER_STATUS
+    return providers.find((item) => item.provider_id === provider) || null
+  }, [provider, providers])
 
   const candidates = useMemo(() => {
     const rawCandidates = Array.isArray(batch?.candidates) ? batch.candidates : []
@@ -107,16 +131,21 @@ export function SearchDiscovery({
 
   const acceptedCount = acceptedCandidates.length
   const rejectedCount = candidates.filter((candidate) => candidate.status === 'rejected').length
+  const liveBatchPreviewOnly = generatedProvider === LIVE_PROVIDER_ID
+  const generatedBatchMatchesProvider = Boolean(generatedProvider) && generatedProvider === provider
 
   async function handleGenerateCandidates() {
     setLoading(true)
     setError('')
     setAttachResult(null)
     try {
-      const result = provider === 'youtube_official_api'
-        ? await getYouTubeOfficialApiMockCandidates(query, 5)
-        : await getMockSearchDiscoveryCandidates(query, provider)
+      const result = provider === LIVE_PROVIDER_ID
+        ? await getYouTubeOfficialApiLiveCandidates(query, 1)
+        : provider === 'youtube_official_api'
+          ? await getYouTubeOfficialApiMockCandidates(query, 5)
+          : await getMockSearchDiscoveryCandidates(query, provider)
       setBatch(result)
+      setGeneratedProvider(provider)
       setCandidateStatusById(
         Object.fromEntries((result.candidates || []).map((candidate) => [candidate.candidate_id, 'pending_review'])),
       )
@@ -132,6 +161,14 @@ export function SearchDiscovery({
   }
 
   async function handleAttachAcceptedCandidates() {
+    if (liveBatchPreviewOnly) {
+      setError('Guarded live candidates are preview-only and cannot be attached in this phase.')
+      return
+    }
+    if (!generatedBatchMatchesProvider) {
+      setError('Generate a fresh offline candidate batch before attaching.')
+      return
+    }
     if (!targetCaseId) {
       setError('Select a target case before attaching candidates.')
       return
@@ -252,25 +289,50 @@ export function SearchDiscovery({
             <FileSearch size={20} />
             <div>
               <Title level={2}>Search Discovery / 搜索发现</Title>
-              <Text type="secondary">Mock-only candidate review for future all-web discovery workflows.</Text>
+              <Text type="secondary">
+                {liveRouteFrontendEnabled
+                  ? 'Offline review with a disabled-by-default guarded live metadata preview.'
+                  : 'Mock-only candidate review for future all-web discovery workflows.'}
+              </Text>
             </div>
           </Space>
           <Space wrap>
             <Tag color="purple">Mock/static only</Tag>
             <Tag color="purple">RSS/GDELT fixtures</Tag>
             <Tag color="purple">YouTube official-shaped offline fixture</Tag>
-            <Tag color="green">No real search API</Tag>
+            {liveRouteFrontendEnabled ? (
+              <Tag color="cyan">Guarded live preview option exposed</Tag>
+            ) : (
+              <Tag color="green">No real search API</Tag>
+            )}
             <Tag color="green">No URL fetch</Tag>
             <Tag color="green">No scraping</Tag>
             <Tag color="blue">Evidence metadata only</Tag>
           </Space>
         </div>
-        <Alert
-          type="info"
-          showIcon
-          message="Safe candidate-review scaffold"
-          description="当前为模拟搜索发现，不调用真实搜索 API。系统不会自动抓取候选 URL 内容；接受候选只会保存 URL、标题、摘要等元数据，候选证据默认需要人工复核。"
-        />
+        {provider === LIVE_PROVIDER_ID ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="Guarded live metadata preview"
+            description={(
+              <Space wrap size={6}>
+                <Tag>Official API metadata only</Tag>
+                <Tag>URL content not fetched</Tag>
+                <Tag>Human review required</Tag>
+                <Tag>Attachment disabled in this phase</Tag>
+                <Tag>Backend route remains independently gated</Tag>
+              </Space>
+            )}
+          />
+        ) : (
+          <Alert
+            type="info"
+            showIcon
+            message="Safe candidate-review scaffold"
+            description="当前为模拟搜索发现，不调用真实搜索 API。系统不会自动抓取候选 URL 内容；接受候选只会保存 URL、标题、摘要等元数据，候选证据默认需要人工复核。"
+          />
+        )}
       </Card>
 
       <Card className="panel-card">
@@ -308,19 +370,30 @@ export function SearchDiscovery({
               loading={loading}
               onClick={handleGenerateCandidates}
             >
-              Generate mock candidates / 生成模拟候选
+              {provider === LIVE_PROVIDER_ID
+                ? 'Generate guarded live preview / 生成受控实时预览'
+                : 'Generate mock candidates / 生成模拟候选'}
             </Button>
             <Button
               icon={<ShieldCheck size={16} />}
               loading={attaching}
-              disabled={!acceptedCount || !targetCaseId}
+              disabled={
+                liveBatchPreviewOnly ||
+                !generatedBatchMatchesProvider ||
+                !acceptedCount ||
+                !targetCaseId
+              }
               onClick={handleAttachAcceptedCandidates}
             >
               Attach accepted to case / 附加到案例
             </Button>
             <Button
               icon={<PlayCircle size={16} />}
-              disabled={!attachResult?.attached_candidate_count || !targetCaseId}
+              disabled={
+                liveBatchPreviewOnly ||
+                !attachResult?.attached_candidate_count ||
+                !targetCaseId
+              }
               onClick={() => onRunCase?.(targetCaseId, 'analysis')}
             >
               Run analysis after attach
@@ -339,17 +412,23 @@ export function SearchDiscovery({
           <Space wrap>
             <Tag color="purple">{selectedProviderStatus?.provider_type || provider}</Tag>
             <Tag color="blue">{selectedProviderStatus?.status || 'mock_only'}</Tag>
-            <Tag color="green">live_fetch_enabled=false</Tag>
+            {provider === LIVE_PROVIDER_ID ? (
+              <>
+                <Tag color="cyan">frontend_preview_option=true</Tag>
+                <Tag color="gold">backend_route_independently_gated=true</Tag>
+              </>
+            ) : (
+              <Tag color="green">live_fetch_enabled=false</Tag>
+            )}
             <Tag color="green">candidate metadata only</Tag>
             <Tag color="green">No URL content extraction</Tag>
             <Tag color="gold">full_content=false</Tag>
           </Space>
         </div>
         <Paragraph type="secondary">
-          {selectedProviderStatus?.display_name || 'Selected provider'} · RSS/GDELT and the Phase-1 YouTube
-          official-shaped response are offline fixtures. Future real providers may return URL/title/snippet
-          metadata only; full content extraction requires a separate reviewed public parser, official API route,
-          licensed vendor payload, or user-provided text.
+          {provider === LIVE_PROVIDER_ID
+            ? `${selectedProviderStatus.display_name} · This local UI choice can request one guarded metadata preview only when the independently gated backend route is available. It does not fetch URL content, attach Evidence, or start analysis.`
+            : `${selectedProviderStatus?.display_name || 'Selected provider'} · RSS/GDELT and the Phase-1 YouTube official-shaped response are offline fixtures. Future real providers may return URL/title/snippet metadata only; full content extraction requires a separate reviewed public parser, official API route, licensed vendor payload, or user-provided text.`}
         </Paragraph>
         <Space wrap size={6}>
           {(selectedProviderStatus?.safety_notes || [
