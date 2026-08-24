@@ -10,6 +10,7 @@ import {
   getYouTubeOfficialApiLiveCandidates,
   getYouTubeOfficialApiMockCandidates,
 } from '../api/sentigraphApi.js'
+import { PUBLIC_DISCUSSION_REVIEW_FIXTURE } from '../fixtures/publicDiscussionReviewFixture.js'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -53,6 +54,8 @@ export function SearchDiscovery({
   onRunCase,
   liveRouteFrontendEnabled =
     import.meta.env.VITE_SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_ENABLED === '1',
+  publicDiscussionReviewFrontendEnabled =
+    import.meta.env.VITE_SENTIGRAPH_SEARCH_DISCOVERY_PUBLIC_DISCUSSION_REVIEW_ENABLED === '1',
 }) {
   const [query, setQuery] = useState('Tesla')
   const [provider, setProvider] = useState('mock_static')
@@ -64,6 +67,8 @@ export function SearchDiscovery({
   const [loading, setLoading] = useState(false)
   const [attaching, setAttaching] = useState(false)
   const [attachResult, setAttachResult] = useState(null)
+  const [publicDiscussionBatch, setPublicDiscussionBatch] = useState(null)
+  const [publicDiscussionDecisionById, setPublicDiscussionDecisionById] = useState({})
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -158,6 +163,19 @@ export function SearchDiscovery({
 
   function setCandidateStatus(candidateId, status) {
     setCandidateStatusById((current) => ({ ...current, [candidateId]: status }))
+  }
+
+  function handleLoadPublicDiscussionFixture() {
+    setPublicDiscussionBatch(PUBLIC_DISCUSSION_REVIEW_FIXTURE)
+    setPublicDiscussionDecisionById(
+      Object.fromEntries(
+        PUBLIC_DISCUSSION_REVIEW_FIXTURE.items.map((item) => [item.discussion_id, 'pending_review']),
+      ),
+    )
+  }
+
+  function setPublicDiscussionDecision(discussionId, decision) {
+    setPublicDiscussionDecisionById((current) => ({ ...current, [discussionId]: decision }))
   }
 
   async function handleAttachAcceptedCandidates() {
@@ -441,6 +459,106 @@ export function SearchDiscovery({
           ))}
         </Space>
       </Card>
+
+      {publicDiscussionReviewFrontendEnabled ? (
+        <Card className="panel-card" data-testid="public-discussion-review-panel">
+          <div className="panel-heading">
+            <Space>
+              <FileSearch size={18} />
+              <div>
+                <Title level={4}>Public Discussion Review / 公开讨论复核</Title>
+                <Text type="secondary">
+                  Offline synthetic discussion records for transient human review only.
+                </Text>
+              </div>
+            </Space>
+            <Button type="primary" onClick={handleLoadPublicDiscussionFixture}>
+              Load synthetic public discussion fixture / 加载模拟讨论
+            </Button>
+          </div>
+
+          <Alert
+            className="section-alert"
+            type="warning"
+            showIcon
+            message="Synthetic fixture only"
+            description={(
+              <Space wrap size={6}>
+                <Tag>No provider request</Tag>
+                <Tag>Human review required</Tag>
+                <Tag>No Evidence persistence</Tag>
+                <Tag>No analysis run</Tag>
+              </Space>
+            )}
+          />
+
+          {publicDiscussionBatch ? (
+            <Space direction="vertical" size={12} className="full-width">
+              <Space wrap>
+                <Tag color="purple">items={publicDiscussionBatch.item_count}</Tag>
+                <Tag color="blue">video_id={publicDiscussionBatch.video_id}</Tag>
+                <Tag>generated_at={publicDiscussionBatch.generated_at}</Tag>
+                <Tag color="green">reply_content_acquired=false</Tag>
+              </Space>
+              {publicDiscussionBatch.items.map((item) => {
+                const localDecision = publicDiscussionDecisionById[item.discussion_id] || 'pending_review'
+                return (
+                  <Card
+                    key={item.discussion_id}
+                    size="small"
+                    data-testid="public-discussion-review-item"
+                  >
+                    <Space direction="vertical" size={8} className="full-width">
+                      <Text>{item.body_text}</Text>
+                      <Space wrap size={4}>
+                        <Tag>{item.provider}</Tag>
+                        <Tag color="cyan">{item.platform_hint}</Tag>
+                        <Tag>{item.comment_id}</Tag>
+                        <Tag>{item.published_at}</Tag>
+                        <Tag>likes={item.like_count}</Tag>
+                        <Tag>replies={item.reply_count}</Tag>
+                        <Tag color="gold">schema status={item.status}</Tag>
+                        <Tag
+                          color={STATUS_COLORS[localDecision] || 'default'}
+                          data-testid={`public-discussion-decision-${item.discussion_id}`}
+                        >
+                          local decision={localDecision}
+                        </Tag>
+                      </Space>
+                      <Space wrap size={4}>
+                        {item.safety_notes.map((note) => (
+                          <Tag key={note}>{note}</Tag>
+                        ))}
+                      </Space>
+                      <Space>
+                        <Button
+                          size="small"
+                          icon={<CheckCircle2 size={14} />}
+                          aria-label={`Accept ${item.discussion_id}`}
+                          onClick={() => setPublicDiscussionDecision(item.discussion_id, 'accepted')}
+                        >
+                          Accept / 接受
+                        </Button>
+                        <Button
+                          size="small"
+                          danger
+                          icon={<XCircle size={14} />}
+                          aria-label={`Reject ${item.discussion_id}`}
+                          onClick={() => setPublicDiscussionDecision(item.discussion_id, 'rejected')}
+                        >
+                          Reject / 拒绝
+                        </Button>
+                      </Space>
+                    </Space>
+                  </Card>
+                )
+              })}
+            </Space>
+          ) : (
+            <Empty description="Load the synthetic fixture to begin local review." />
+          )}
+        </Card>
+      ) : null}
 
       <div className="metric-grid">
         <Card className="metric-card">
