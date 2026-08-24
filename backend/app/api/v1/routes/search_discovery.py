@@ -2,20 +2,25 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas.search_discovery import (
     SearchDiscoveryBatch,
+    SearchDiscoveryDiscussionBatch,
     SearchDiscoveryProviderStatus,
     SearchDiscoveryStatusResponse,
 )
 from app.services.search_discovery import (
     YouTubeLiveSearchDiscoveryCredentialMissingError,
     YouTubeLiveSearchDiscoveryRouteDisabledError,
+    YouTubePublicDiscussionCredentialMissingError,
+    YouTubePublicDiscussionRouteDisabledError,
     get_mock_search_discovery_candidates,
     get_search_discovery_providers,
     get_search_discovery_status,
     get_youtube_official_api_mock_candidates,
+    get_youtube_official_api_live_public_discussion_route,
     get_youtube_official_api_live_route_candidates,
 )
 from app.services.crawling.youtube_adapter import (
     YouTubeAuthError,
+    YouTubeCommentsDisabledError,
     YouTubeNetworkError,
     YouTubeParsingError,
     YouTubeQuotaError,
@@ -102,4 +107,60 @@ def search_discovery_youtube_official_api_live_candidates(
         raise HTTPException(
             status_code=502,
             detail="youtube_live_search_discovery_provider_error",
+        ) from exc
+
+
+@router.get(
+    "/youtube-official-api/live-public-discussion/{video_id}",
+    response_model=SearchDiscoveryDiscussionBatch,
+    include_in_schema=False,
+)
+def search_discovery_youtube_official_api_live_public_discussion(
+    video_id: str,
+    max_items: int = Query(default=20, ge=1, le=20),
+) -> SearchDiscoveryDiscussionBatch:
+    try:
+        return get_youtube_official_api_live_public_discussion_route(
+            video_id,
+            max_items=max_items,
+        )
+    except YouTubePublicDiscussionRouteDisabledError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="youtube_public_discussion_route_disabled",
+        ) from exc
+    except YouTubePublicDiscussionCredentialMissingError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="youtube_public_discussion_credential_missing",
+        ) from exc
+    except YouTubeCommentsDisabledError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="youtube_public_discussion_comments_unavailable",
+        ) from exc
+    except YouTubeAuthError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="youtube_public_discussion_auth_error",
+        ) from exc
+    except YouTubeQuotaError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="youtube_public_discussion_quota_error",
+        ) from exc
+    except YouTubeNetworkError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="youtube_public_discussion_network_error",
+        ) from exc
+    except YouTubeParsingError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="youtube_public_discussion_parsing_error",
+        ) from exc
+    except YouTubeRealModeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="youtube_public_discussion_provider_error",
         ) from exc

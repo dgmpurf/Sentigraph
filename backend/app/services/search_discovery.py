@@ -40,6 +40,9 @@ SECRET_TEXT_PATTERN = re.compile(
 YOUTUBE_LIVE_SEARCH_DISCOVERY_ROUTE_ENABLE_FLAG = (
     "SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_ROUTE_ENABLED"
 )
+YOUTUBE_PUBLIC_DISCUSSION_ROUTE_ENABLE_FLAG = (
+    "SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_PUBLIC_DISCUSSION_ROUTE_ENABLED"
+)
 YOUTUBE_PUBLIC_DISCUSSION_SAFETY_NOTES = [
     "Official YouTube Data API public comment",
     "Top-level public comment text only",
@@ -69,6 +72,14 @@ class YouTubeLiveSearchDiscoveryRouteDisabledError(RuntimeError):
 
 class YouTubeLiveSearchDiscoveryCredentialMissingError(RuntimeError):
     """Raised when the enabled route has no process credential."""
+
+
+class YouTubePublicDiscussionRouteDisabledError(RuntimeError):
+    """Raised before credential resolution when the discussion route is disabled."""
+
+
+class YouTubePublicDiscussionCredentialMissingError(RuntimeError):
+    """Raised when the enabled discussion route has no process credential."""
 
 
 def get_search_discovery_status() -> SearchDiscoveryStatusResponse:
@@ -427,6 +438,47 @@ def get_youtube_official_api_live_public_discussion(
         items=items,
         safe_mode=dict(YOUTUBE_PUBLIC_DISCUSSION_SAFE_MODE),
     )
+
+
+def get_youtube_official_api_live_public_discussion_route(
+    video_id: str,
+    *,
+    max_items: int = 20,
+    credentials_loader: Callable[[], YouTubeCredentials | None] | None = None,
+    client_factory: Callable[[YouTubeCredentials], Any] | None = None,
+    client_closer: Callable[[Any], None] | None = None,
+) -> SearchDiscoveryDiscussionBatch:
+    """Resolve one enabled discussion batch through an explicitly closed client."""
+
+    if os.getenv(YOUTUBE_PUBLIC_DISCUSSION_ROUTE_ENABLE_FLAG, "") != "1":
+        raise YouTubePublicDiscussionRouteDisabledError(
+            "youtube_public_discussion_route_disabled"
+        )
+
+    if credentials_loader is None:
+        credentials = YouTubeCredentials.from_env()
+    else:
+        credentials = credentials_loader()
+    if (
+        not isinstance(credentials, YouTubeCredentials)
+        or not credentials.api_key.strip()
+    ):
+        raise YouTubePublicDiscussionCredentialMissingError(
+            "youtube_public_discussion_credential_missing"
+        )
+
+    build_client = client_factory or create_official_youtube_search_client
+    close_client = client_closer or close_official_youtube_search_client
+    http_client = build_client(credentials)
+    try:
+        return get_youtube_official_api_live_public_discussion(
+            video_id,
+            credentials=credentials,
+            http_client=http_client,
+            max_items=max_items,
+        )
+    finally:
+        close_client(http_client)
 
 
 def get_youtube_official_api_live_route_candidates(
