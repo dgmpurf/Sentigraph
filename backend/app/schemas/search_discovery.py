@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.evidence import EvidenceIngestionResult, EvidenceItem
 
@@ -48,6 +48,55 @@ class SearchDiscoveryCandidate(BaseModel):
     acquisition_mode: Literal["search_discovery"] = "search_discovery"
     status: SearchDiscoveryCandidateStatus = "pending_review"
     safety_notes: list[str] = Field(default_factory=list)
+
+
+class SearchDiscoveryDiscussionItem(BaseModel):
+    """Anonymous, review-only public discussion text from an official API."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    discussion_id: str
+    provider: Literal["youtube_official_api"] = "youtube_official_api"
+    platform_hint: Literal["youtube"] = "youtube"
+    video_id: str
+    comment_id: str
+    body_text: str = Field(min_length=1)
+    published_at: str | None = None
+    like_count: int = Field(default=0, ge=0)
+    reply_count: int = Field(default=0, ge=0)
+    source_url: str
+    content_type_hint: Literal["comment"] = "comment"
+    acquisition_mode: Literal["search_discovery_public_discussion"] = (
+        "search_discovery_public_discussion"
+    )
+    status: Literal["pending_review"] = "pending_review"
+    safety_notes: list[str] = Field(default_factory=list)
+
+
+class SearchDiscoveryDiscussionBatch(BaseModel):
+    """Bounded public discussion items that require human review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    video_id: str
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    item_count: int = Field(default=0, ge=0, le=20)
+    items: list[SearchDiscoveryDiscussionItem] = Field(default_factory=list)
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "public_discussion_text": True,
+            "top_level_comments_only": True,
+            "reply_content_acquired": False,
+            "pagination": False,
+            "url_fetching": False,
+            "scraping": False,
+            "cookies_used": False,
+            "secrets_exposed": False,
+            "evidence_write": False,
+            "analysis_run": False,
+            "human_review_required": True,
+        }
+    )
 
 
 class SearchDiscoveryProviderCapability(BaseModel):

@@ -5,11 +5,14 @@ import hashlib
 import os
 import re
 from typing import Any, Callable, Mapping
+from urllib.parse import quote
 
 from app.schemas.evidence import EvidenceItem, EvidenceNormalizationMetadata
 from app.schemas.search_discovery import (
     SearchDiscoveryBatch,
     SearchDiscoveryCandidate,
+    SearchDiscoveryDiscussionBatch,
+    SearchDiscoveryDiscussionItem,
     SearchDiscoveryProviderStatus,
     SearchDiscoveryProviderType,
     SearchDiscoveryStatusResponse,
@@ -19,8 +22,11 @@ from app.services.crawling.youtube_adapter import (
     ClosableYouTubeHttpClient,
     YouTubeCredentials,
     YouTubeHttpClient,
+    YouTubeParsingError,
+    YouTubePublicDiscussionHttpClient,
     close_official_youtube_search_client,
     create_official_youtube_search_client,
+    fetch_youtube_official_api_live_public_comments,
     parse_official_search_and_videos_responses,
     search_youtube_official_api_live_metadata,
 )
@@ -34,6 +40,27 @@ SECRET_TEXT_PATTERN = re.compile(
 YOUTUBE_LIVE_SEARCH_DISCOVERY_ROUTE_ENABLE_FLAG = (
     "SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_ROUTE_ENABLED"
 )
+YOUTUBE_PUBLIC_DISCUSSION_SAFETY_NOTES = [
+    "Official YouTube Data API public comment",
+    "Top-level public comment text only",
+    "Author identity omitted from this Search Discovery surface",
+    "Reply content was not acquired",
+    "Human review required before Evidence persistence",
+    "Official API transport provenance is not truth verification",
+]
+YOUTUBE_PUBLIC_DISCUSSION_SAFE_MODE = {
+    "public_discussion_text": True,
+    "top_level_comments_only": True,
+    "reply_content_acquired": False,
+    "pagination": False,
+    "url_fetching": False,
+    "scraping": False,
+    "cookies_used": False,
+    "secrets_exposed": False,
+    "evidence_write": False,
+    "analysis_run": False,
+    "human_review_required": True,
+}
 
 
 class YouTubeLiveSearchDiscoveryRouteDisabledError(RuntimeError):
@@ -295,6 +322,110 @@ def get_youtube_official_api_live_candidates(
             "secrets_exposed": False,
             "third_party_crawler_integrated": False,
         },
+    )
+
+
+def map_youtube_official_api_live_public_discussion(
+    video_id: str,
+    comments: list[Mapping[str, Any]],
+    *,
+    max_items: int = 20,
+) -> list[SearchDiscoveryDiscussionItem]:
+    """Map top-level comment metadata into an anonymous review surface."""
+
+    safe_video_id = _required_public_discussion_token(
+        video_id,
+        error_code="youtube_public_discussion_video_id_required",
+    )
+    bounded_count = _bounded_public_discussion_count(max_items)
+    items: list[SearchDiscoveryDiscussionItem] = []
+    for raw_comment in comments:
+        if not isinstance(raw_comment, Mapping):
+            continue
+        if str(raw_comment.get("parent_id") or raw_comment.get("parentId") or "").strip():
+            continue
+        raw_video_id = str(
+            raw_comment.get("post_id") or raw_comment.get("video_id") or ""
+        ).strip()
+        if raw_video_id != safe_video_id:
+            continue
+
+        comment_id = str(
+            raw_comment.get("comment_id") or raw_comment.get("id") or ""
+        ).strip()
+        body_text = _normalize_public_discussion_text(
+            raw_comment.get("body_text")
+            or raw_comment.get("content")
+            or raw_comment.get("textOriginal")
+            or raw_comment.get("textDisplay")
+        )
+        if not comment_id or not body_text:
+            continue
+
+        published_at = _normalize_public_discussion_text(
+            raw_comment.get("published_at") or raw_comment.get("publishedAt")
+        )
+        items.append(
+            SearchDiscoveryDiscussionItem(
+                discussion_id=(
+                    "youtube_official_api_"
+                    f"{_safe_token(safe_video_id)}_{_safe_token(comment_id)}"
+                ),
+                video_id=safe_video_id,
+                comment_id=comment_id,
+                body_text=body_text,
+                published_at=published_at or None,
+                like_count=_nonnegative_int(
+                    raw_comment.get("like_count") or raw_comment.get("likeCount")
+                ),
+                reply_count=_nonnegative_int(
+                    raw_comment.get("reply_count")
+                    or raw_comment.get("totalReplyCount")
+                ),
+                source_url=(
+                    "https://www.youtube.com/watch?"
+                    f"v={quote(safe_video_id, safe='_-')}&"
+                    f"lc={quote(comment_id, safe='_-')}"
+                ),
+                safety_notes=list(YOUTUBE_PUBLIC_DISCUSSION_SAFETY_NOTES),
+            )
+        )
+        if len(items) >= bounded_count:
+            break
+    return items
+
+
+def get_youtube_official_api_live_public_discussion(
+    video_id: str,
+    *,
+    credentials: YouTubeCredentials,
+    http_client: YouTubePublicDiscussionHttpClient,
+    max_items: int = 20,
+) -> SearchDiscoveryDiscussionBatch:
+    """Build one bounded, anonymous batch through the explicit comment seam."""
+
+    safe_video_id = _required_public_discussion_token(
+        video_id,
+        error_code="youtube_public_discussion_video_id_required",
+    )
+    bounded_count = _bounded_public_discussion_count(max_items)
+    comments = fetch_youtube_official_api_live_public_comments(
+        safe_video_id,
+        credentials=credentials,
+        http_client=http_client,
+        limit=bounded_count,
+    )
+    items = map_youtube_official_api_live_public_discussion(
+        safe_video_id,
+        comments,
+        max_items=bounded_count,
+    )
+    return SearchDiscoveryDiscussionBatch(
+        video_id=safe_video_id,
+        generated_at=datetime.now(timezone.utc),
+        item_count=len(items),
+        items=items,
+        safe_mode=dict(YOUTUBE_PUBLIC_DISCUSSION_SAFE_MODE),
     )
 
 
@@ -822,3 +953,28 @@ def _slugify(value: str) -> str:
 
 def _safe_token(value: str) -> str:
     return "".join(char.lower() if char.isalnum() else "_" for char in str(value or "")).strip("_") or "candidate"
+
+
+def _required_public_discussion_token(value: object, *, error_code: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise YouTubeParsingError(error_code)
+    return text
+
+
+def _bounded_public_discussion_count(value: object) -> int:
+    try:
+        return max(1, min(int(value), 20))
+    except (TypeError, ValueError) as exc:
+        raise YouTubeParsingError("youtube_public_discussion_limit_invalid") from exc
+
+
+def _normalize_public_discussion_text(value: object) -> str:
+    return " ".join(str(value or "").split()).strip()
+
+
+def _nonnegative_int(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0

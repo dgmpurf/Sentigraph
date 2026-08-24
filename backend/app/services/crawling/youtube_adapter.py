@@ -72,6 +72,18 @@ class ClosableYouTubeHttpClient(YouTubeHttpClient, Protocol):
         ...
 
 
+class YouTubePublicDiscussionHttpClient(Protocol):
+    """Injected client surface for top-level public comments only."""
+
+    def fetch_top_level_comments(
+        self,
+        post_id: str,
+        *,
+        limit: int,
+    ) -> list[Mapping[str, Any]]:
+        ...
+
+
 @dataclass(frozen=True)
 class YouTubeCredentials:
     api_key: str
@@ -124,6 +136,47 @@ def search_youtube_official_api_live_metadata(
     if not isinstance(raw_posts, list) or any(not isinstance(post, Mapping) for post in raw_posts):
         raise YouTubeParsingError("youtube_search_result_not_metadata_list")
     return list(raw_posts[:safe_limit])
+
+
+def fetch_youtube_official_api_live_public_comments(
+    video_id: str,
+    *,
+    credentials: YouTubeCredentials,
+    http_client: YouTubePublicDiscussionHttpClient,
+    limit: int = YOUTUBE_REAL_COMMENT_LIMIT,
+) -> list[Mapping[str, Any]]:
+    """Return bounded top-level public comments through an injected client.
+
+    This seam is intentionally independent of adapter mode, environment,
+    cache, search/video requests, and mock fallback behavior.
+    """
+
+    if not isinstance(credentials, YouTubeCredentials) or not credentials.api_key.strip():
+        raise YouTubeAuthError("youtube_explicit_credentials_required")
+
+    safe_video_id = str(video_id).strip()
+    if not safe_video_id:
+        raise YouTubeParsingError("youtube_public_discussion_video_id_required")
+    try:
+        safe_limit = max(1, min(int(limit), YOUTUBE_REAL_COMMENT_LIMIT))
+    except (TypeError, ValueError) as exc:
+        raise YouTubeParsingError("youtube_public_discussion_limit_invalid") from exc
+
+    try:
+        raw_comments = http_client.fetch_top_level_comments(
+            safe_video_id,
+            limit=safe_limit,
+        )
+    except YouTubeRealModeError:
+        raise
+    except Exception as exc:
+        raise _typed_youtube_exception(exc) from exc
+
+    if not isinstance(raw_comments, list) or any(
+        not isinstance(comment, Mapping) for comment in raw_comments
+    ):
+        raise YouTubeParsingError("youtube_public_discussion_result_not_mapping_list")
+    return list(raw_comments[:safe_limit])
 
 
 class YouTubeAdapter(BasePlatformAdapter):
@@ -623,6 +676,48 @@ class _OfficialYouTubeClient:
         except Exception as exc:
             raise _typed_youtube_exception(exc) from exc
 
+    def fetch_top_level_comments(
+        self,
+        post_id: str,
+        *,
+        limit: int,
+    ) -> list[Mapping[str, Any]]:
+        """Fetch one page of top-level comments without reply content."""
+
+        try:
+            safe_video_id = str(post_id).strip()
+            if not safe_video_id:
+                raise YouTubeParsingError("youtube_public_discussion_video_id_required")
+            safe_limit = max(1, min(int(limit), YOUTUBE_REAL_COMMENT_LIMIT))
+            params = {
+                "part": "snippet",
+                "videoId": safe_video_id,
+                "maxResults": safe_limit,
+                "order": "relevance",
+                "textFormat": "plainText",
+                "key": self.credentials.api_key,
+            }
+            payload = self._get_json(YOUTUBE_COMMENT_THREADS_ENDPOINT, params=params)
+            raw_items = payload.get("items")
+            if not isinstance(raw_items, list) or any(
+                not isinstance(item, Mapping) for item in raw_items
+            ):
+                raise YouTubeParsingError("youtube_comment_threads_items_not_mapping_list")
+
+            comments: list[Mapping[str, Any]] = []
+            for item in raw_items:
+                comment = _top_level_comment_thread_to_mapping(
+                    item,
+                    video_id=safe_video_id,
+                )
+                if comment is not None:
+                    comments.append(comment)
+                if len(comments) >= safe_limit:
+                    break
+            return comments
+        except Exception as exc:
+            raise _typed_youtube_exception(exc) from exc
+
     def _video_details(self, video_ids: list[str]) -> list[Mapping[str, Any]]:
         return _items(self._video_details_response(video_ids))
 
@@ -901,6 +996,41 @@ def _comment_thread_to_mappings(item: Mapping[str, Any], *, video_id: str) -> li
             )
             comments.append(reply_payload)
     return comments
+
+
+def _top_level_comment_thread_to_mapping(
+    item: Mapping[str, Any],
+    *,
+    video_id: str,
+) -> Mapping[str, Any] | None:
+    """Project one commentThread into an author-free top-level mapping."""
+
+    snippet = item.get("snippet") if isinstance(item.get("snippet"), Mapping) else {}
+    top_level = (
+        snippet.get("topLevelComment")
+        if isinstance(snippet.get("topLevelComment"), Mapping)
+        else None
+    )
+    if top_level is None:
+        return None
+    top_snippet = (
+        top_level.get("snippet")
+        if isinstance(top_level.get("snippet"), Mapping)
+        else {}
+    )
+    return {
+        "source_type": YOUTUBE_SOURCE_TYPE,
+        "comment_id": str(top_level.get("id") or "").strip(),
+        "post_id": str(
+            snippet.get("videoId") or top_snippet.get("videoId") or video_id
+        ).strip(),
+        "body_text": str(
+            top_snippet.get("textOriginal") or top_snippet.get("textDisplay") or ""
+        ),
+        "published_at": str(top_snippet.get("publishedAt") or "") or None,
+        "like_count": top_snippet.get("likeCount", 0),
+        "reply_count": snippet.get("totalReplyCount", 0),
+    }
 
 
 def _adapter_mode_from_env() -> AdapterMode:
