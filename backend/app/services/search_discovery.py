@@ -590,7 +590,10 @@ def _youtube_official_api_live_candidate(
     video: Mapping[str, Any],
 ) -> SearchDiscoveryCandidate:
     payload = dict(video)
-    video_id = _safe_token(str(payload.get("id") or "youtube_live_metadata"))
+    video_id = _required_youtube_video_id(
+        payload.get("id"),
+        error_code="youtube_live_search_discovery_video_id_invalid",
+    )
     snippet = payload.get("snippet") if isinstance(payload.get("snippet"), dict) else {}
     return SearchDiscoveryCandidate(
         candidate_id=f"youtube_official_api_{video_id}",
@@ -1005,6 +1008,13 @@ def _slugify(value: str) -> str:
 
 def _safe_token(value: str) -> str:
     return "".join(char.lower() if char.isalnum() else "_" for char in str(value or "")).strip("_") or "candidate"
+
+
+def _required_youtube_video_id(value: object, *, error_code: str) -> str:
+    text = str(value or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", text):
+        raise YouTubeParsingError(error_code)
+    return text
 
 
 def _required_public_discussion_token(value: object, *, error_code: str) -> str:

@@ -6,6 +6,7 @@ import socket
 import sys
 import textwrap
 import urllib.request
+from urllib.parse import parse_qs, urlparse
 from typing import Any, Mapping
 
 import httpx
@@ -60,7 +61,7 @@ class FakeOfficialSearchClient:
         return [
             {
                 "source_type": "youtube_data_api_v3",
-                "id": f"phase2b_video_{index}",
+                "id": f"AbC-d_EfG{index:02d}",
                 "snippet": {
                     "channelId": f"phase2b_channel_{index}",
                     "channelTitle": f"Phase 2B Channel {index}",
@@ -209,10 +210,10 @@ def test_injected_live_boundary_clamps_to_five_and_maps_review_candidates(
     assert all(value == 0 for value in hard_zero_guards.values())
 
 
-def test_live_mapping_uses_exact_neutral_fallbacks_and_provenance_notes() -> None:
+def test_live_mapping_uses_exact_neutral_metadata_fallbacks_and_provenance_notes() -> None:
     candidates = map_youtube_official_api_live_candidates(
         "Public event",
-        [{"id": "live_video_without_metadata", "snippet": {}}],
+        [{"id": "AbC-d_EfG77", "snippet": {}}],
         max_candidates=1,
     )
 
@@ -241,7 +242,7 @@ def test_live_mapping_preserves_genuine_provider_text() -> None:
         "Public event",
         [
             {
-                "id": "provider_text_video",
+                "id": "PrV-d_EfG88",
                 "snippet": {
                     "title": "Synthetic is part of the provider title",
                     "description": "Mock is part of the provider description",
@@ -274,13 +275,87 @@ def test_public_mapping_seam_is_metadata_only_and_limit_bounded() -> None:
 
     assert len(candidates) == 3
     assert [candidate.candidate_id for candidate in candidates] == [
-        "youtube_official_api_phase2b_video_0",
-        "youtube_official_api_phase2b_video_1",
-        "youtube_official_api_phase2b_video_2",
+        "youtube_official_api_AbC-d_EfG00",
+        "youtube_official_api_AbC-d_EfG01",
+        "youtube_official_api_AbC-d_EfG02",
+    ]
+    assert [candidate.url for candidate in candidates] == [
+        "https://www.youtube.com/watch?v=AbC-d_EfG00",
+        "https://www.youtube.com/watch?v=AbC-d_EfG01",
+        "https://www.youtube.com/watch?v=AbC-d_EfG02",
     ]
     assert all(candidate.status == "pending_review" for candidate in candidates)
     assert all(candidate.source_name.startswith("Phase 2B Channel") for candidate in candidates)
     assert all(candidate.published_at for candidate in candidates)
+
+
+@pytest.mark.parametrize(
+    "video_id",
+    [
+        "AbC-d_EfG12",
+        "-bCde_FgH12",
+        "_bCde-FgH12",
+        "AbCde_FgH1-",
+        "AbCde-FgH1_",
+    ],
+)
+def test_live_mapping_preserves_exact_valid_youtube_video_id(video_id: str) -> None:
+    candidate = map_youtube_official_api_live_candidates(
+        "Public event",
+        [{"id": video_id, "snippet": {}}],
+        max_candidates=1,
+    )[0]
+
+    assert candidate.candidate_id == f"youtube_official_api_{video_id}"
+    assert candidate.url == f"https://www.youtube.com/watch?v={video_id}"
+    parsed = urlparse(candidate.url)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "www.youtube.com"
+    assert parsed.path == "/watch"
+    assert parse_qs(parsed.query) == {"v": [video_id]}
+
+
+def test_live_mapping_keeps_case_variants_distinct() -> None:
+    candidates = map_youtube_official_api_live_candidates(
+        "Public event",
+        [
+            {"id": "AbC-d_EfG12", "snippet": {}},
+            {"id": "abc-d_EfG12", "snippet": {}},
+        ],
+        max_candidates=2,
+    )
+
+    assert [item.url for item in candidates] == [
+        "https://www.youtube.com/watch?v=AbC-d_EfG12",
+        "https://www.youtube.com/watch?v=abc-d_EfG12",
+    ]
+    assert candidates[0].candidate_id != candidates[1].candidate_id
+
+
+@pytest.mark.parametrize(
+    "video_id",
+    [
+        None,
+        "",
+        "AbC-d_EfG1",
+        "AbC-d_EfG123",
+        "AbC+d_EfG12",
+        "AbC d_EfG12",
+        "AbC/d_EfG12",
+    ],
+)
+def test_live_mapping_rejects_invalid_video_id_without_fallback(
+    video_id: object,
+) -> None:
+    with pytest.raises(
+        YouTubeParsingError,
+        match="youtube_live_search_discovery_video_id_invalid",
+    ):
+        map_youtube_official_api_live_candidates(
+            "Public event",
+            [{"id": video_id, "snippet": {}}],
+            max_candidates=1,
+        )
 
 
 def test_live_candidate_reuses_conservative_search_discovery_trust_lineage(

@@ -66,7 +66,7 @@ class FakeOfficialSearchClient:
             raise self.failure
         return [
             {
-                "id": f"phase2d1_video_{index}",
+                "id": f"RtE-d_EfG{index:02d}",
                 "snippet": {
                     "title": f"Phase 2D1 metadata candidate {index}",
                     "description": "Synthetic metadata for an offline route test.",
@@ -337,6 +337,10 @@ def test_enabled_success_reuses_one_credentials_object_clamps_and_closes(
     assert all(item.status == "pending_review" for item in batch.candidates)
     assert all(item.acquisition_mode == "search_discovery" for item in batch.candidates)
     assert all("URL was not fetched" in item.safety_notes for item in batch.candidates)
+    assert [item.url for item in batch.candidates] == [
+        f"https://www.youtube.com/watch?v=RtE-d_EfG{index:02d}"
+        for index in range(5)
+    ]
     assert SYNTHETIC_CREDENTIAL not in str(batch.model_dump(mode="json"))
 
 

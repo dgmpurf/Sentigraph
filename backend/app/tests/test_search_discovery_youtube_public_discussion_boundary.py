@@ -29,6 +29,7 @@ from app.services.crawling.youtube_adapter import (
 
 FAKE_API_KEY = "phase2e1-synthetic-youtube-key-marker"
 VIDEO_ID = "phase2e1_video"
+EXACT_PROVIDER_VIDEO_ID = "AbC-d_EfG12"
 EXPECTED_SAFETY_NOTES = [
     "Official YouTube Data API public comment",
     "Top-level public comment text only",
@@ -458,4 +459,28 @@ def test_service_batch_calls_one_seam_and_keeps_review_only_hard_zeroes(
     assert all(item.status == "pending_review" for item in batch.items)
     assert all(item.safety_notes == EXPECTED_SAFETY_NOTES for item in batch.items)
     assert FAKE_API_KEY not in str(batch.model_dump(mode="json"))
+    assert all(value == 0 for value in hard_zero_guards.values())
+
+def test_mixed_case_hyphen_underscore_discussion_target_propagates_exactly(
+    hard_zero_guards: dict[str, int],
+) -> None:
+    fake = FakePublicDiscussionClient(
+        [_raw_comment(0, video_id=EXACT_PROVIDER_VIDEO_ID)]
+    )
+
+    batch = search_discovery_service_module.get_youtube_official_api_live_public_discussion(
+        EXACT_PROVIDER_VIDEO_ID,
+        credentials=YouTubeCredentials(api_key=FAKE_API_KEY),
+        http_client=fake,
+        max_items=1,
+    )
+
+    assert fake.video_ids == [EXACT_PROVIDER_VIDEO_ID]
+    assert batch.video_id == EXACT_PROVIDER_VIDEO_ID
+    assert batch.item_count == 1
+    assert batch.items[0].video_id == EXACT_PROVIDER_VIDEO_ID
+    assert batch.items[0].source_url == (
+        "https://www.youtube.com/watch?"
+        f"v={EXACT_PROVIDER_VIDEO_ID}&lc=comment_0"
+    )
     assert all(value == 0 for value in hard_zero_guards.values())
