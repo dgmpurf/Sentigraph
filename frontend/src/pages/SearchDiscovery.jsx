@@ -8,6 +8,7 @@ import {
   getMockSearchDiscoveryCandidates,
   getSearchDiscoveryProviders,
   getYouTubeOfficialApiLiveCandidates,
+  getYouTubeOfficialApiLivePublicDiscussion,
   getYouTubeOfficialApiMockCandidates,
 } from '../api/sentigraphApi.js'
 import { PUBLIC_DISCUSSION_REVIEW_FIXTURE } from '../fixtures/publicDiscussionReviewFixture.js'
@@ -46,6 +47,24 @@ const LIVE_PROVIDER_STATUS = Object.freeze({
   ]),
 })
 
+function getYouTubeWatchVideoId(candidateUrl) {
+  try {
+    const parsed = new URL(String(candidateUrl || ''))
+    const host = parsed.hostname.toLowerCase()
+    if (
+      parsed.protocol !== 'https:' ||
+      !['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(host) ||
+      parsed.pathname !== '/watch'
+    ) {
+      return null
+    }
+    const videoId = parsed.searchParams.get('v') || ''
+    return /^[A-Za-z0-9_-]{11}$/.test(videoId) ? videoId : null
+  } catch {
+    return null
+  }
+}
+
 export function SearchDiscovery({
   cases = [],
   currentCase,
@@ -69,6 +88,8 @@ export function SearchDiscovery({
   const [attachResult, setAttachResult] = useState(null)
   const [publicDiscussionBatch, setPublicDiscussionBatch] = useState(null)
   const [publicDiscussionDecisionById, setPublicDiscussionDecisionById] = useState({})
+  const [publicDiscussionLoading, setPublicDiscussionLoading] = useState(false)
+  const [publicDiscussionSource, setPublicDiscussionSource] = useState(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -138,11 +159,24 @@ export function SearchDiscovery({
   const rejectedCount = candidates.filter((candidate) => candidate.status === 'rejected').length
   const liveBatchPreviewOnly = generatedProvider === LIVE_PROVIDER_ID
   const generatedBatchMatchesProvider = Boolean(generatedProvider) && generatedProvider === provider
+  const acceptedLiveCandidate = liveBatchPreviewOnly && generatedBatchMatchesProvider
+    ? acceptedCandidates[0] || null
+    : null
+  const acceptedLiveVideoId = getYouTubeWatchVideoId(acceptedLiveCandidate?.url)
+  const providerDiscussionLoadAvailable = Boolean(
+    liveRouteFrontendEnabled &&
+    publicDiscussionReviewFrontendEnabled &&
+    acceptedLiveCandidate &&
+    acceptedLiveVideoId,
+  )
 
   async function handleGenerateCandidates() {
     setLoading(true)
     setError('')
     setAttachResult(null)
+    setPublicDiscussionBatch(null)
+    setPublicDiscussionDecisionById({})
+    setPublicDiscussionSource(null)
     try {
       const result = provider === LIVE_PROVIDER_ID
         ? await getYouTubeOfficialApiLiveCandidates(query, 1)
@@ -162,16 +196,53 @@ export function SearchDiscovery({
   }
 
   function setCandidateStatus(candidateId, status) {
+    if (status === 'accepted' && generatedProvider === LIVE_PROVIDER_ID) {
+      const candidate = candidates.find((item) => item.candidate_id === candidateId)
+      if (!getYouTubeWatchVideoId(candidate?.url)) {
+        setError('Accepted live candidate does not contain a valid YouTube watch URL.')
+      } else {
+        setError('')
+      }
+    }
     setCandidateStatusById((current) => ({ ...current, [candidateId]: status }))
   }
 
   function handleLoadPublicDiscussionFixture() {
+    setError('')
     setPublicDiscussionBatch(PUBLIC_DISCUSSION_REVIEW_FIXTURE)
+    setPublicDiscussionSource('synthetic')
     setPublicDiscussionDecisionById(
       Object.fromEntries(
         PUBLIC_DISCUSSION_REVIEW_FIXTURE.items.map((item) => [item.discussion_id, 'pending_review']),
       ),
     )
+  }
+
+  async function handleLoadProviderPublicDiscussion() {
+    if (!providerDiscussionLoadAvailable || !acceptedLiveVideoId) {
+      setError('Accepted live candidate does not contain a valid YouTube watch URL.')
+      return
+    }
+
+    setPublicDiscussionLoading(true)
+    setError('')
+    setPublicDiscussionBatch(null)
+    setPublicDiscussionDecisionById({})
+    setPublicDiscussionSource(null)
+    try {
+      const result = await getYouTubeOfficialApiLivePublicDiscussion(acceptedLiveVideoId, 3)
+      setPublicDiscussionBatch(result)
+      setPublicDiscussionSource('provider-backed')
+      setPublicDiscussionDecisionById(
+        Object.fromEntries(
+          (result.items || []).map((item) => [item.discussion_id, 'pending_review']),
+        ),
+      )
+    } catch {
+      setError('Unable to load provider-backed public discussion.')
+    } finally {
+      setPublicDiscussionLoading(false)
+    }
   }
 
   function setPublicDiscussionDecision(discussionId, decision) {
@@ -468,29 +539,59 @@ export function SearchDiscovery({
               <div>
                 <Title level={4}>Public Discussion Review / 公开讨论复核</Title>
                 <Text type="secondary">
-                  Offline synthetic discussion records for transient human review only.
+                  Synthetic fixtures and gated provider-backed comments for transient human review only.
                 </Text>
               </div>
             </Space>
-            <Button type="primary" onClick={handleLoadPublicDiscussionFixture}>
-              Load synthetic public discussion fixture / 加载模拟讨论
-            </Button>
+            <Space wrap>
+              <Button type="primary" onClick={handleLoadPublicDiscussionFixture}>
+                Load synthetic public discussion fixture / 加载模拟讨论
+              </Button>
+              {providerDiscussionLoadAvailable ? (
+                <Button
+                  loading={publicDiscussionLoading}
+                  onClick={handleLoadProviderPublicDiscussion}
+                >
+                  Load provider-backed public discussion / 加载官方 API 公开讨论
+                </Button>
+              ) : null}
+            </Space>
           </div>
 
-          <Alert
-            className="section-alert"
-            type="warning"
-            showIcon
-            message="Synthetic fixture only"
-            description={(
-              <Space wrap size={6}>
-                <Tag>No provider request</Tag>
-                <Tag>Human review required</Tag>
-                <Tag>No Evidence persistence</Tag>
-                <Tag>No analysis run</Tag>
-              </Space>
-            )}
-          />
+          {publicDiscussionSource === 'provider-backed' ? (
+            <Alert
+              className="section-alert"
+              type="warning"
+              showIcon
+              message="Official API public comments / provider-backed review"
+              description={(
+                <Space wrap size={6}>
+                  <Tag>Top-level comments only</Tag>
+                  <Tag>Author identity omitted</Tag>
+                  <Tag>Reply content not acquired</Tag>
+                  <Tag>Human review required</Tag>
+                  <Tag>No Evidence persistence</Tag>
+                  <Tag>No analysis run</Tag>
+                  <Tag>Provider transport is not truth verification</Tag>
+                </Space>
+              )}
+            />
+          ) : (
+            <Alert
+              className="section-alert"
+              type="warning"
+              showIcon
+              message="Synthetic fixture only"
+              description={(
+                <Space wrap size={6}>
+                  <Tag>No provider request</Tag>
+                  <Tag>Human review required</Tag>
+                  <Tag>No Evidence persistence</Tag>
+                  <Tag>No analysis run</Tag>
+                </Space>
+              )}
+            />
+          )}
 
           {publicDiscussionBatch ? (
             <Space direction="vertical" size={12} className="full-width">
@@ -555,7 +656,7 @@ export function SearchDiscovery({
               })}
             </Space>
           ) : (
-            <Empty description="Load the synthetic fixture to begin local review." />
+            <Empty description="Use one explicit load action to begin local review." />
           )}
         </Card>
       ) : null}

@@ -894,6 +894,24 @@ export async function getYouTubeOfficialApiLiveCandidates(query = 'Tesla', maxCa
   return normalizeSearchDiscoveryBatch(data)
 }
 
+export async function getYouTubeOfficialApiLivePublicDiscussion(videoId, maxItems = 3) {
+  const safeVideoId = String(videoId || '').trim()
+  const safeMaxItems = Number(maxItems)
+  if (!/^[A-Za-z0-9_-]{11}$/.test(safeVideoId)) {
+    throw new Error('youtube_public_discussion_video_id_invalid')
+  }
+  if (!Number.isInteger(safeMaxItems) || safeMaxItems < 1 || safeMaxItems > 3) {
+    throw new Error('youtube_public_discussion_max_items_invalid')
+  }
+
+  const encodedVideoId = encodeURIComponent(safeVideoId)
+  const { data } = await apiClient.get(
+    `${API_PREFIX}/search-discovery/youtube-official-api/live-public-discussion/${encodedVideoId}`,
+    { params: { max_items: safeMaxItems } },
+  )
+  return normalizeSearchDiscoveryDiscussionBatch(data)
+}
+
 export async function attachSearchDiscoveryCandidates(caseId, payload = {}) {
   const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/search-discovery/candidates/attach`, payload)
   return normalizeSearchDiscoveryAttachResult(data)
@@ -4631,6 +4649,55 @@ function normalizeSearchDiscoveryCandidate(candidate) {
     acquisition_mode: String(candidate.acquisition_mode || 'search_discovery'),
     status: String(candidate.status || 'pending_review'),
     safety_notes: Array.isArray(candidate.safety_notes) ? candidate.safety_notes.map((item) => String(item)) : [],
+  }
+}
+
+function normalizeSearchDiscoveryDiscussionBatch(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return {
+      video_id: '',
+      generated_at: '',
+      item_count: 0,
+      items: [],
+      safe_mode: {},
+    }
+  }
+
+  const items = Array.isArray(data.items)
+    ? data.items.map(normalizeSearchDiscoveryDiscussionItem).filter(Boolean)
+    : []
+  return {
+    video_id: String(data.video_id || ''),
+    generated_at: String(data.generated_at || ''),
+    item_count: items.length,
+    items,
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object'
+      ? normalizeBooleanMap(data.safe_mode)
+      : {},
+  }
+}
+
+function normalizeSearchDiscoveryDiscussionItem(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+  const likeCount = Number(item.like_count)
+  const replyCount = Number(item.reply_count)
+  return {
+    discussion_id: String(item.discussion_id || ''),
+    provider: String(item.provider || 'youtube_official_api'),
+    platform_hint: String(item.platform_hint || 'youtube'),
+    video_id: String(item.video_id || ''),
+    comment_id: String(item.comment_id || ''),
+    body_text: String(item.body_text || ''),
+    published_at: item.published_at ? String(item.published_at) : '',
+    like_count: Number.isInteger(likeCount) && likeCount >= 0 ? likeCount : 0,
+    reply_count: Number.isInteger(replyCount) && replyCount >= 0 ? replyCount : 0,
+    source_url: String(item.source_url || ''),
+    content_type_hint: String(item.content_type_hint || 'comment'),
+    acquisition_mode: String(item.acquisition_mode || 'search_discovery_public_discussion'),
+    status: 'pending_review',
+    safety_notes: Array.isArray(item.safety_notes)
+      ? item.safety_notes.map((note) => String(note))
+      : [],
   }
 }
 
