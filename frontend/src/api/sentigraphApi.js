@@ -67,6 +67,56 @@ const INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_NESTED_FALSE_FLAGS = Object.freeze
   'deleted_or_updated',
 ])
 
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR =
+  'frontend_identity_ready_governed_review_decision_contract_mismatch'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_REQUEST_SCHEMA =
+  'sentigraph_internal_alpha_identity_ready_governed_review_decision_binding_request_v0_1'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_RESPONSE_SCHEMA =
+  'sentigraph_internal_alpha_identity_ready_governed_review_decision_binding_response_v0_1'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ROUTE_MODE =
+  'internal_disabled_by_default_append_only_nonproduction_identity_ready_human_review_decision_ledger'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ENDPOINT =
+  `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_GOVERNED_REVIEW_DECISIONS_SEGMENT}/identity-ready/v0.1/decisions`
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_CANDIDATE_FIELDS =
+  Object.freeze([
+    'schema',
+    'mode',
+    'identity_schema',
+    'identity_version',
+    'identity_status',
+    'sample_handle',
+    'review_subject_binding_safe_hash',
+    'decision_type',
+    'candidate_only',
+    'persisted',
+    'trust_upgraded',
+    'production_object',
+    'human_review_required',
+    'no_automatic_trust_upgrade',
+  ])
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_RESPONSE_FIELDS =
+  Object.freeze([
+    'response_schema',
+    'response_version',
+    'route_mode',
+    'request_status',
+    'decision_id',
+    'audit_receipt_reference',
+    'decision_type',
+    'sample_handle',
+    'review_subject_binding_safe_hash',
+    'decision_status',
+    'outcome',
+    'decision_ledger_write_performed',
+    'human_review_required',
+    'no_automatic_trust_upgrade',
+    'production_object_enabled',
+    'analysis_triggered',
+    'report_triggered',
+  ])
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_FAILURE_STATUSES =
+  Object.freeze([404, 409, 422, 500, 503])
+
 export const INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS = Object.freeze([
   'response_schema',
   'response_version',
@@ -892,6 +942,171 @@ export async function getYouTubeOfficialApiLiveCandidates(query = 'Tesla', maxCa
     params: { query, max_candidates: maxCandidates },
   })
   return normalizeSearchDiscoveryBatch(data)
+}
+
+function hasExactInternalAlphaFieldSet(value, fields) {
+  if (!isPlainInternalAlphaProjectionObject(value)) return false
+  const keys = Object.keys(value)
+  return keys.length === fields.length && keys.every((field) => fields.includes(field))
+}
+
+function validateInternalAlphaIdentityReadyGovernedDecisionCandidate(candidate) {
+  const contractError = () => {
+    throw new Error(INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR)
+  }
+  if (
+    !hasExactInternalAlphaFieldSet(
+      candidate,
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_CANDIDATE_FIELDS,
+    ) ||
+    candidate.schema !==
+      'sentigraph_internal_alpha_identity_ready_review_decision_candidate_v0_1' ||
+    candidate.mode !==
+      'frontend_local_nonpersistent_governed_human_review_decision_candidate' ||
+    candidate.identity_schema !== 'sentigraph_b05_review_subject_identity_v0_1' ||
+    candidate.identity_version !== '0.1' ||
+    candidate.identity_status !== 'ready' ||
+    candidate.sample_handle !== INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE ||
+    typeof candidate.review_subject_binding_safe_hash !== 'string' ||
+    !INTERNAL_ALPHA_LOCAL_EXCHANGE_LOWER_HEX_64_PATTERN.test(
+      candidate.review_subject_binding_safe_hash,
+    ) ||
+    !INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES.includes(candidate.decision_type) ||
+    candidate.candidate_only !== true ||
+    candidate.persisted !== false ||
+    candidate.trust_upgraded !== false ||
+    candidate.production_object !== false ||
+    candidate.human_review_required !== true ||
+    candidate.no_automatic_trust_upgrade !== true
+  ) {
+    contractError()
+  }
+  return Object.freeze(
+    Object.fromEntries(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_CANDIDATE_FIELDS.map(
+        (field) => [field, candidate[field]],
+      ),
+    ),
+  )
+}
+
+export function normalizeInternalAlphaIdentityReadyGovernedReviewDecisionResponse(
+  data,
+  httpStatus,
+  requestedCandidate,
+) {
+  const contractError = () => {
+    throw new Error(INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR)
+  }
+  const candidate = validateInternalAlphaIdentityReadyGovernedDecisionCandidate(
+    requestedCandidate,
+  )
+  if (
+    !hasExactInternalAlphaFieldSet(
+      data,
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_RESPONSE_FIELDS,
+    ) ||
+    data.response_schema !==
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_RESPONSE_SCHEMA ||
+    data.response_version !== '0.1' ||
+    data.route_mode !== INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ROUTE_MODE ||
+    data.human_review_required !== true ||
+    data.no_automatic_trust_upgrade !== true ||
+    data.production_object_enabled !== false ||
+    data.analysis_triggered !== false ||
+    data.report_triggered !== false ||
+    typeof data.decision_ledger_write_performed !== 'boolean'
+  ) {
+    contractError()
+  }
+
+  if (
+    INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_FAILURE_STATUSES.includes(
+      httpStatus,
+    )
+  ) {
+    if (data.decision_ledger_write_performed !== false) contractError()
+    return Object.freeze({
+      request_status: `blocked_http_${httpStatus}`,
+      decision_ledger_write_performed: false,
+      human_review_required: true,
+      no_automatic_trust_upgrade: true,
+      production_object_enabled: false,
+      analysis_triggered: false,
+      report_triggered: false,
+    })
+  }
+
+  if (httpStatus !== 200 && httpStatus !== 201) contractError()
+  const expectedCreated = httpStatus === 201
+  const expectedRequestStatus = expectedCreated ? 'created' : 'already_exists'
+  const expectedOutcome = expectedCreated
+    ? 'created_exactly_one_identity_ready_human_review_decision'
+    : 'already_exists_same_identity_ready_human_review_decision'
+  if (
+    data.request_status !== expectedRequestStatus ||
+    typeof data.decision_id !== 'string' ||
+    !/^irghrd-[0-9a-f]{32}$/.test(data.decision_id) ||
+    typeof data.audit_receipt_reference !== 'string' ||
+    !/^irghrd-receipt-[0-9a-f]{32}$/.test(data.audit_receipt_reference) ||
+    data.decision_type !== candidate.decision_type ||
+    data.sample_handle !== candidate.sample_handle ||
+    data.review_subject_binding_safe_hash !== candidate.review_subject_binding_safe_hash ||
+    data.decision_status !== 'recorded_append_only_nonproduction_identity_ready' ||
+    data.outcome !== expectedOutcome ||
+    data.decision_ledger_write_performed !== expectedCreated
+  ) {
+    contractError()
+  }
+
+  return Object.freeze({
+    request_status: data.request_status,
+    decision_id: data.decision_id,
+    audit_receipt_reference: data.audit_receipt_reference,
+    decision_type: data.decision_type,
+    sample_handle: data.sample_handle,
+    review_subject_binding_safe_hash: data.review_subject_binding_safe_hash,
+    decision_status: data.decision_status,
+    outcome: data.outcome,
+    decision_ledger_write_performed: data.decision_ledger_write_performed,
+    human_review_required: data.human_review_required,
+    no_automatic_trust_upgrade: data.no_automatic_trust_upgrade,
+    production_object_enabled: data.production_object_enabled,
+    analysis_triggered: data.analysis_triggered,
+    report_triggered: data.report_triggered,
+  })
+}
+
+export async function postInternalAlphaIdentityReadyGovernedReviewDecision(candidate) {
+  const validatedCandidate = validateInternalAlphaIdentityReadyGovernedDecisionCandidate(candidate)
+  const payload = {
+    request_schema: INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_REQUEST_SCHEMA,
+    request_version: '0.1',
+    candidate: validatedCandidate,
+  }
+  try {
+    const response = await apiClient.post(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ENDPOINT,
+      payload,
+    )
+    return normalizeInternalAlphaIdentityReadyGovernedReviewDecisionResponse(
+      response.data,
+      response.status,
+      validatedCandidate,
+    )
+  } catch (error) {
+    const status = error?.response?.status
+    if (
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_FAILURE_STATUSES.includes(status)
+    ) {
+      return normalizeInternalAlphaIdentityReadyGovernedReviewDecisionResponse(
+        error.response.data,
+        status,
+        validatedCandidate,
+      )
+    }
+    throw new Error(INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR)
+  }
 }
 
 export async function getYouTubeOfficialApiLivePublicDiscussion(videoId, maxItems = 3) {

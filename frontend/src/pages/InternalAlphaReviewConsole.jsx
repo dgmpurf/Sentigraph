@@ -12,6 +12,7 @@ import {
   INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
   INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
   INTERNAL_ALPHA_REVIEW_CONSOLE_SAFE_PROJECTION_IDS,
+  postInternalAlphaIdentityReadyGovernedReviewDecision,
   postInternalAlphaGovernedReviewDecision,
 } from '../api/sentigraphApi.js'
 import { INTERNAL_ALPHA_REVIEW_CONSOLE_STATIC_FIXTURE } from '../data/internalAlphaReviewConsoleStaticFixture.js'
@@ -298,9 +299,12 @@ export function InternalAlphaReviewConsole() {
     useState(null)
   const [identityReadyDecisionCandidateState, setIdentityReadyDecisionCandidateState] =
     useState({ phase: 'idle', candidate: null })
+  const [identityReadyDecisionPersistenceState, setIdentityReadyDecisionPersistenceState] =
+    useState({ phase: 'idle', result: null })
   const requestedLocalExchangeHandles = useRef(new Set())
   const localExchangeIdentityReadyV02RequestStarted = useRef(false)
   const identityReadyDecisionCandidateBuildStarted = useRef(false)
+  const identityReadyDecisionPersistencePostStarted = useRef(false)
   const localExchangeCatalogRequestStarted = useRef(false)
   const governedDecisionPostAttemptStarted = useRef(false)
   const governedFormalStateGetAttemptStarted = useRef(false)
@@ -531,6 +535,7 @@ export function InternalAlphaReviewConsole() {
     }
     setSelectedIdentityReadyDecisionType(decisionType)
     setIdentityReadyDecisionCandidateState({ phase: 'idle', candidate: null })
+    setIdentityReadyDecisionPersistenceState({ phase: 'idle', result: null })
   }
 
   const handleIdentityReadyDecisionConfirmation = () => {
@@ -551,6 +556,32 @@ export function InternalAlphaReviewConsole() {
       setIdentityReadyDecisionCandidateState({ phase: 'candidate_ready', candidate })
     } catch {
       setIdentityReadyDecisionCandidateState({ phase: 'bounded_error', candidate: null })
+    }
+  }
+
+  const handleIdentityReadyDecisionPersistenceConfirmation = async () => {
+    const candidate = identityReadyDecisionCandidateState.candidate
+    if (
+      identityReadyDecisionCandidateState.phase !== 'candidate_ready' ||
+      candidate === null ||
+      identityReadyDecisionPersistencePostStarted.current
+    ) {
+      return
+    }
+
+    identityReadyDecisionPersistencePostStarted.current = true
+    setIdentityReadyDecisionPersistenceState({ phase: 'posting', result: null })
+    try {
+      const result = await postInternalAlphaIdentityReadyGovernedReviewDecision(candidate)
+      if (!pageIsMounted.current) return
+      const success = ['created', 'already_exists'].includes(result.request_status)
+      setIdentityReadyDecisionPersistenceState({
+        phase: success ? 'bounded_success' : 'bounded_unavailable',
+        result: success ? result : null,
+      })
+    } catch {
+      if (!pageIsMounted.current) return
+      setIdentityReadyDecisionPersistenceState({ phase: 'bounded_error', result: null })
     }
   }
 
@@ -767,6 +798,70 @@ export function InternalAlphaReviewConsole() {
                 <Tag color="cyan">human_review_required = true</Tag>
                 <Tag color="cyan">no_automatic_trust_upgrade = true</Tag>
               </Space>
+              <Paragraph type="secondary">
+                The local candidate remains nonpersistent until a second explicit action requests one
+                append-only nonproduction auditable decision record.
+              </Paragraph>
+              <Button
+                type="primary"
+                onClick={handleIdentityReadyDecisionPersistenceConfirmation}
+                disabled={identityReadyDecisionPersistencePostStarted.current}
+                loading={identityReadyDecisionPersistenceState.phase === 'posting'}
+              >
+                Record auditable nonproduction decision
+              </Button>
+              {identityReadyDecisionPersistenceState.phase === 'bounded_unavailable' && (
+                <Alert
+                  showIcon
+                  type="warning"
+                  message="Auditable decision request unavailable"
+                  description="The bounded request was not accepted. No retry, candidate mutation, analysis, or report action was performed."
+                />
+              )}
+              {identityReadyDecisionPersistenceState.phase === 'bounded_error' && (
+                <Alert
+                  showIcon
+                  type="error"
+                  message="Auditable decision request failed closed"
+                  description="Only a bounded frontend state is shown. The local candidate remains unchanged and no raw backend error is exposed."
+                />
+              )}
+              {identityReadyDecisionPersistenceState.phase === 'bounded_success' && (
+                <Descriptions column={1} size="small" title="Bounded auditable decision receipt">
+                  <Descriptions.Item label="request_status">
+                    {identityReadyDecisionPersistenceState.result.request_status}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="decision_id">
+                    {identityReadyDecisionPersistenceState.result.decision_id}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="audit_receipt_reference">
+                    {identityReadyDecisionPersistenceState.result.audit_receipt_reference}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="decision_status">
+                    {identityReadyDecisionPersistenceState.result.decision_status}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="outcome">
+                    {identityReadyDecisionPersistenceState.result.outcome}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="decision_ledger_write_performed">
+                    {String(
+                      identityReadyDecisionPersistenceState.result
+                        .decision_ledger_write_performed,
+                    )}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="production_object_enabled">
+                    {String(
+                      identityReadyDecisionPersistenceState.result.production_object_enabled,
+                    )}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="analysis_triggered">
+                    {String(identityReadyDecisionPersistenceState.result.analysis_triggered)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="report_triggered">
+                    {String(identityReadyDecisionPersistenceState.result.report_triggered)}
+                  </Descriptions.Item>
+                </Descriptions>
+              )}
             </>
           )}
         </Card>
@@ -777,7 +872,15 @@ export function InternalAlphaReviewConsole() {
             <Tag color="cyan">review_only = true</Tag>
             <Tag color="cyan">human_review_required = true</Tag>
             <Tag color="cyan">candidate_persistence = in_memory_only</Tag>
-            <Tag color="default">review_decision_write = false</Tag>
+            <Tag color="default">
+              review_decision_write ={' '}
+              {identityReadyDecisionPersistenceState.phase === 'bounded_success'
+                ? String(
+                    identityReadyDecisionPersistenceState.result
+                      .decision_ledger_write_performed,
+                  )
+                : 'false'}
+            </Tag>
             <Tag color="default">analysis_result_created = false</Tag>
             <Tag color="default">public_output_enabled = false</Tag>
             <Tag color="default">export_delivery_enabled = false</Tag>

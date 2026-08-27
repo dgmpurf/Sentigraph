@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
 
 from app.services.governed_nonproduction_human_review_decision_ledger import (
     FORMAL_STATE_DISABLED,
@@ -25,6 +25,11 @@ from app.services.governed_nonproduction_human_review_decision_ledger import (
     record_second_exact_formal_human_review_decision,
     record_governed_nonproduction_human_review_decision,
     validate_second_exact_formal_human_review_decision_activation,
+)
+from app.services.identity_ready_governed_nonproduction_human_review_decision_ledger import (
+    LOGICAL_TARGET_LABEL as IDENTITY_READY_LOGICAL_TARGET_LABEL,
+    IdentityReadyGovernedNonproductionHumanReviewDecisionLedger,
+    record_identity_ready_governed_nonproduction_human_review_decision,
 )
 
 
@@ -44,9 +49,44 @@ FORMAL_SECOND_ACTIVATION_SHA256 = (
     "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_"
     "FORMAL_SECOND_ACTIVATION_SHA256"
 )
+IDENTITY_READY_GATE = (
+    "SENTIGRAPH_INTERNAL_ALPHA_IDENTITY_READY_"
+    "GOVERNED_REVIEW_DECISION_LEDGER_ENABLED"
+)
+IDENTITY_READY_BINDING_SAFE_HASH = (
+    "SENTIGRAPH_INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_"
+    "REVIEW_SUBJECT_BINDING_SAFE_HASH"
+)
 ROUTE_MODE = (
     "internal_disabled_by_default_append_only_nonproduction_"
     "human_review_decision_ledger"
+)
+IDENTITY_READY_ROUTE_MODE = (
+    "internal_disabled_by_default_append_only_nonproduction_"
+    "identity_ready_human_review_decision_ledger"
+)
+IDENTITY_READY_POST_RESPONSE_SCHEMA = (
+    "sentigraph_internal_alpha_identity_ready_governed_"
+    "review_decision_binding_response_v0_1"
+)
+IDENTITY_READY_POST_RESPONSE_FIELDS = (
+    "response_schema",
+    "response_version",
+    "route_mode",
+    "request_status",
+    "decision_id",
+    "audit_receipt_reference",
+    "decision_type",
+    "sample_handle",
+    "review_subject_binding_safe_hash",
+    "decision_status",
+    "outcome",
+    "decision_ledger_write_performed",
+    "human_review_required",
+    "no_automatic_trust_upgrade",
+    "production_object_enabled",
+    "analysis_triggered",
+    "report_triggered",
 )
 POST_RESPONSE_SCHEMA = (
     "sentigraph_internal_alpha_governed_review_decision_post_response_v0_1"
@@ -62,6 +102,17 @@ OUTCOME_STATUS = {
     "blocked_idempotency_conflict": 409,
     "paused_pending_read_only_idempotency_verification": 503,
     "bounded_decision_ledger_failure": 500,
+}
+IDENTITY_READY_OUTCOME_STATUS = {
+    "created_exactly_one_identity_ready_human_review_decision": 201,
+    "already_exists_same_identity_ready_human_review_decision": 200,
+    "blocked_request_contract_mismatch": 409,
+    "blocked_candidate_contract_mismatch": 409,
+    "blocked_server_owned_binding_mismatch": 409,
+    "blocked_unsupported_decision_type": 422,
+    "blocked_idempotency_conflict": 409,
+    "paused_identity_ready_decision_commit_ambiguity": 503,
+    "bounded_identity_ready_decision_ledger_failure": 500,
 }
 FORMAL_STATE_STATUS_CODE = {
     FORMAL_STATE_READY: 200,
@@ -82,12 +133,56 @@ class GovernedNonproductionHumanReviewDecisionRequest(BaseModel):
     decision_type: StrictStr
 
 
+class IdentityReadyGovernedReviewDecisionCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    candidate_schema: StrictStr = Field(alias="schema")
+    mode: StrictStr
+    identity_schema: StrictStr
+    identity_version: StrictStr
+    identity_status: StrictStr
+    sample_handle: StrictStr
+    review_subject_binding_safe_hash: StrictStr
+    decision_type: StrictStr
+    candidate_only: StrictBool
+    persisted: StrictBool
+    trust_upgraded: StrictBool
+    production_object: StrictBool
+    human_review_required: StrictBool
+    no_automatic_trust_upgrade: StrictBool
+
+
+class IdentityReadyGovernedReviewDecisionBindingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    request_schema: StrictStr
+    request_version: StrictStr
+    candidate: IdentityReadyGovernedReviewDecisionCandidate
+
+
 def _ledger_factory() -> GovernedNonproductionHumanReviewDecisionLedger:
     return GovernedNonproductionHumanReviewDecisionLedger()
 
 
+def _identity_ready_ledger_factory(
+) -> IdentityReadyGovernedNonproductionHumanReviewDecisionLedger:
+    return IdentityReadyGovernedNonproductionHumanReviewDecisionLedger(
+        database_path=_repository_root() / Path(IDENTITY_READY_LOGICAL_TARGET_LABEL),
+        enabled=True,
+    )
+
+
 def _gate_enabled() -> bool:
     return os.getenv(GATE, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _identity_ready_gate_enabled() -> bool:
+    return os.getenv(IDENTITY_READY_GATE, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _formal_second_gate_enabled() -> bool:
@@ -181,6 +276,46 @@ def _post_response(
         "public_ready": False,
         "production_ready": False,
     }
+
+
+def _identity_ready_post_response(
+    *,
+    request_status: str,
+    decision: dict[str, Any] | None,
+    receipt: dict[str, Any] | None,
+) -> dict[str, Any]:
+    source = decision or receipt or {}
+    write_performed = bool(
+        receipt is not None
+        and receipt.get("outcome")
+        == "created_exactly_one_identity_ready_human_review_decision"
+        and receipt.get("mutation_count") == 1
+    )
+    values = {
+        "response_schema": IDENTITY_READY_POST_RESPONSE_SCHEMA,
+        "response_version": "0.1",
+        "route_mode": IDENTITY_READY_ROUTE_MODE,
+        "request_status": request_status,
+        "decision_id": source.get("decision_id"),
+        "audit_receipt_reference": source.get("audit_receipt_reference"),
+        "decision_type": source.get("decision_type"),
+        "sample_handle": source.get("sample_handle"),
+        "review_subject_binding_safe_hash": source.get(
+            "review_subject_binding_safe_hash"
+        ),
+        "decision_status": source.get(
+            "decision_status",
+            "decision_not_recorded",
+        ),
+        "outcome": receipt.get("outcome") if receipt is not None else request_status,
+        "decision_ledger_write_performed": write_performed,
+        "human_review_required": True,
+        "no_automatic_trust_upgrade": True,
+        "production_object_enabled": False,
+        "analysis_triggered": False,
+        "report_triggered": False,
+    }
+    return {field: values[field] for field in IDENTITY_READY_POST_RESPONSE_FIELDS}
 
 
 def _get_response(
@@ -280,6 +415,57 @@ def post_decision(
     return JSONResponse(
         status_code=OUTCOME_STATUS[outcome],
         content=_post_response(
+            decision=decision,
+            receipt=receipt,
+        ),
+    )
+
+
+@router.post("/identity-ready/v0.1/decisions")
+def post_identity_ready_decision(
+    request: IdentityReadyGovernedReviewDecisionBindingRequest,
+) -> JSONResponse:
+    if not _identity_ready_gate_enabled():
+        return JSONResponse(
+            status_code=404,
+            content=_identity_ready_post_response(
+                request_status="blocked_route_disabled",
+                decision=None,
+                receipt=None,
+            ),
+        )
+
+    server_binding_safe_hash = os.getenv(IDENTITY_READY_BINDING_SAFE_HASH, "")
+    if re.fullmatch(r"[0-9a-f]{64}", server_binding_safe_hash) is None:
+        return JSONResponse(
+            status_code=503,
+            content=_identity_ready_post_response(
+                request_status="blocked_server_owned_binding_unavailable",
+                decision=None,
+                receipt=None,
+            ),
+        )
+
+    ledger = _identity_ready_ledger_factory()
+    decision, receipt = (
+        record_identity_ready_governed_nonproduction_human_review_decision(
+            ledger,
+            request.model_dump(by_alias=True),
+            server_binding_safe_hash=server_binding_safe_hash,
+        )
+    )
+    outcome = receipt["outcome"]
+    status_code = IDENTITY_READY_OUTCOME_STATUS.get(outcome, 503)
+    if outcome == "created_exactly_one_identity_ready_human_review_decision":
+        request_status = "created"
+    elif outcome == "already_exists_same_identity_ready_human_review_decision":
+        request_status = "already_exists"
+    else:
+        request_status = outcome
+    return JSONResponse(
+        status_code=status_code,
+        content=_identity_ready_post_response(
+            request_status=request_status,
             decision=decision,
             receipt=receipt,
         ),

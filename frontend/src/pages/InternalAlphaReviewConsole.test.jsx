@@ -73,6 +73,7 @@ import {
   normalizeInternalAlphaLocalExchangeProjection,
   normalizeInternalAlphaLocalExchangeIdentityReadyV02Projection,
   normalizeInternalAlphaLocalExchangeSampleCatalog,
+  postInternalAlphaIdentityReadyGovernedReviewDecision,
   postInternalAlphaGovernedReviewDecision,
 } from '../api/sentigraphApi.js'
 import { InternalAlphaReviewConsole } from './InternalAlphaReviewConsole.jsx'
@@ -87,6 +88,8 @@ const RAW_ERROR_MARKER = 'synthetic_raw_exception_message'
 const RAW_RECEIPT_MARKER = 'synthetic_raw_receipt_private_marker'
 const RAW_CONFIGURATION_MARKER = 'synthetic_configuration_secret_marker'
 const GOVERNED_DECISION_ID = 'ghrd-0123456789abcdef0123456789abcdef'
+const IDENTITY_READY_DECISION_ID = 'irghrd-0123456789abcdef0123456789abcdef'
+const IDENTITY_READY_AUDIT_REFERENCE = 'irghrd-receipt-0123456789abcdef0123456789abcdef'
 const FORMAL_STATE_PRIVATE_DECISION_ID = 'ghrd-fedcba9876543210fedcba9876543210'
 const IDENTITY_READY_V02_BINDING_SAFE_HASH =
   'fd1cc2237cade22be397c0007eb8706aa64dced9dbc941cef180aa312c324966'
@@ -222,6 +225,40 @@ function createGovernedFormalStateResponse({
     data: {
       ...orderedObject(INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS, values),
       ...(extraFields || {}),
+    },
+  }
+}
+
+function createIdentityReadyDecisionBindingResponse(
+  decisionType = 'keep_pending_human_review',
+  { status = 201, malformed = false } = {},
+) {
+  return {
+    status,
+    data: {
+      response_schema: malformed
+        ? 'synthetic_malformed_schema'
+        : 'sentigraph_internal_alpha_identity_ready_governed_review_decision_binding_response_v0_1',
+      response_version: '0.1',
+      route_mode:
+        'internal_disabled_by_default_append_only_nonproduction_identity_ready_human_review_decision_ledger',
+      request_status: status === 201 ? 'created' : 'already_exists',
+      decision_id: IDENTITY_READY_DECISION_ID,
+      audit_receipt_reference: IDENTITY_READY_AUDIT_REFERENCE,
+      decision_type: decisionType,
+      sample_handle: CURRENT_HANDLE,
+      review_subject_binding_safe_hash: IDENTITY_READY_V02_BINDING_SAFE_HASH,
+      decision_status: 'recorded_append_only_nonproduction_identity_ready',
+      outcome:
+        status === 201
+          ? 'created_exactly_one_identity_ready_human_review_decision'
+          : 'already_exists_same_identity_ready_human_review_decision',
+      decision_ledger_write_performed: status === 201,
+      human_review_required: true,
+      no_automatic_trust_upgrade: true,
+      production_object_enabled: false,
+      analysis_triggered: false,
+      report_triggered: false,
     },
   }
 }
@@ -1462,4 +1499,111 @@ describe('InternalAlphaReviewConsole identity-ready governed decision candidate 
       }
     },
   )
+
+  it('keeps persistence separate, then performs exactly one explicit auditable-decision POST', async () => {
+    const localSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+    apiMocks.apiClientPost.mockResolvedValue(createIdentityReadyDecisionBindingResponse())
+    try {
+      await renderIdentityReadyDecisionCandidateSurface()
+      await chooseAntDesignOption(
+        'Identity-ready human-review decision candidate action',
+        'Keep pending human review',
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm local decision candidate' }))
+
+      const persistButton = screen.getByRole('button', {
+        name: 'Record auditable nonproduction decision',
+      })
+      expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+      expect(persistButton.disabled).toBe(false)
+
+      fireEvent.click(persistButton)
+      fireEvent.click(persistButton)
+
+      await waitFor(() => expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(1))
+      const [endpoint, payload] = apiMocks.apiClientPost.mock.calls[0]
+      expect(endpoint).toBe(
+        '/api/v1/internal/alpha/governed-review-decisions/identity-ready/v0.1/decisions',
+      )
+      expect(payload.request_schema).toBe(
+        'sentigraph_internal_alpha_identity_ready_governed_review_decision_binding_request_v0_1',
+      )
+      expect(payload.request_version).toBe('0.1')
+      expect(payload.candidate).toEqual(
+        expect.objectContaining({
+          schema: 'sentigraph_internal_alpha_identity_ready_review_decision_candidate_v0_1',
+          sample_handle: CURRENT_HANDLE,
+          review_subject_binding_safe_hash: IDENTITY_READY_V02_BINDING_SAFE_HASH,
+          decision_type: 'keep_pending_human_review',
+          candidate_only: true,
+          persisted: false,
+        }),
+      )
+      expect(await screen.findByText(IDENTITY_READY_DECISION_ID, { exact: true })).toBeTruthy()
+      expect(screen.getByText(IDENTITY_READY_AUDIT_REFERENCE, { exact: true })).toBeTruthy()
+      expect(
+        screen.getByText('recorded_append_only_nonproduction_identity_ready', { exact: true }),
+      ).toBeTruthy()
+      expect(screen.getAllByText('false', { exact: true }).length).toBeGreaterThanOrEqual(3)
+      expect(localSetItemSpy).toHaveBeenCalledTimes(0)
+    } finally {
+      localSetItemSpy.mockRestore()
+    }
+  })
+
+  it('fails closed on a malformed persistence response without retrying or mutating the candidate', async () => {
+    apiMocks.apiClientPost.mockResolvedValue(
+      createIdentityReadyDecisionBindingResponse('request_more_governance_review', {
+        malformed: true,
+      }),
+    )
+    await renderIdentityReadyDecisionCandidateSurface()
+    await chooseAntDesignOption(
+      'Identity-ready human-review decision candidate action',
+      'Request more governance review',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm local decision candidate' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Record auditable nonproduction decision' }),
+    )
+
+    expect(
+      await screen.findByText('Auditable decision request failed closed', { exact: true }),
+    ).toBeTruthy()
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(1)
+    expect(
+      screen.getByText(
+        'sentigraph_internal_alpha_identity_ready_review_decision_candidate_v0_1',
+        { exact: true },
+      ),
+    ).toBeTruthy()
+    expect(screen.queryByText(RAW_CONFIGURATION_MARKER, { exact: false })).toBeNull()
+  })
+
+  it('normalizes only the bounded identity-ready receipt subset', async () => {
+    apiMocks.apiClientPost.mockResolvedValue(createIdentityReadyDecisionBindingResponse())
+    const candidate = identityReadyDecisionCandidateMocks.build(
+      IDENTITY_READY_V02_PROJECTION.review_subject_identity,
+      'keep_pending_human_review',
+    )
+
+    const result = await postInternalAlphaIdentityReadyGovernedReviewDecision(candidate)
+
+    expect(result).toEqual({
+      request_status: 'created',
+      decision_id: IDENTITY_READY_DECISION_ID,
+      audit_receipt_reference: IDENTITY_READY_AUDIT_REFERENCE,
+      decision_type: 'keep_pending_human_review',
+      sample_handle: CURRENT_HANDLE,
+      review_subject_binding_safe_hash: IDENTITY_READY_V02_BINDING_SAFE_HASH,
+      decision_status: 'recorded_append_only_nonproduction_identity_ready',
+      outcome: 'created_exactly_one_identity_ready_human_review_decision',
+      decision_ledger_write_performed: true,
+      human_review_required: true,
+      no_automatic_trust_upgrade: true,
+      production_object_enabled: false,
+      analysis_triggered: false,
+      report_triggered: false,
+    })
+  })
 })
