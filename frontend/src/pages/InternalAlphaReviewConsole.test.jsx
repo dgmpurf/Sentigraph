@@ -483,6 +483,24 @@ async function selectGovernedDecision(decisionType) {
   await chooseAntDesignOption('Governed human-review decision type', decisionType)
 }
 
+describe('InternalAlphaReviewConsole StrictMode hydration', () => {
+  it('requests the governed projection once and applies the retained first result', async () => {
+    apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+
+    render(
+      <React.StrictMode>
+        <InternalAlphaReviewConsole />
+      </React.StrictMode>,
+    )
+
+    expect(await screen.findByText('disabled', { exact: true })).toBeTruthy()
+    expect(screen.getByText('backend route disabled', { exact: true })).toBeTruthy()
+    expect(apiMocks.getInternalAlphaReviewConsoleProjection).toHaveBeenCalledTimes(1)
+    expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getInternalAlphaLocalExchangeSampleCatalog).toHaveBeenCalledTimes(1)
+  })
+})
+
 const compatibilityDescriptors = new Map()
 const networkDescriptors = new Map()
 let consoleErrors

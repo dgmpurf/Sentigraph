@@ -304,6 +304,7 @@ export function InternalAlphaReviewConsole() {
   const localExchangeCatalogRequestStarted = useRef(false)
   const governedDecisionPostAttemptStarted = useRef(false)
   const governedFormalStateGetAttemptStarted = useRef(false)
+  const governedProjectionGetAttemptStarted = useRef(false)
   const pageIsMounted = useRef(true)
   const localExchangeCatalog = localExchangeCatalogState.catalog
   const catalogPhase = localExchangeCatalogState.catalogPhase
@@ -388,15 +389,16 @@ export function InternalAlphaReviewConsole() {
   }, [])
 
   useEffect(() => {
-    let isMounted = true
+    if (governedProjectionGetAttemptStarted.current) return
+    governedProjectionGetAttemptStarted.current = true
 
     getInternalAlphaReviewConsoleProjection(GOVERNED_REVIEW_CONSOLE_PROJECTION_ID)
       .then((payload) => {
-        if (!isMounted) return
+        if (!pageIsMounted.current) return
         setRouteState(describeRouteState(payload))
       })
       .catch(() => {
-        if (!isMounted) return
+        if (!pageIsMounted.current) return
         setRouteState(
           staticRouteState({
             status: 'unavailable',
@@ -407,10 +409,6 @@ export function InternalAlphaReviewConsole() {
           }),
         )
       })
-
-    return () => {
-      isMounted = false
-    }
   }, [])
 
   useEffect(() => {
