@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, Col, Descriptions, List, Row, Select, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Col, Descriptions, Input, List, Row, Select, Space, Tag, Typography } from 'antd'
 import { Eye, Lock, ShieldCheck, TriangleAlert } from 'lucide-react'
 
 import {
   getInternalAlphaGovernedReviewFormalState,
+  getInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
   getInternalAlphaLocalExchangeIdentityReadyV02Projection,
   getInternalAlphaLocalExchangeProjection,
   getInternalAlphaLocalExchangeSampleCatalog,
@@ -32,6 +33,8 @@ const GOVERNED_RECORD_REVIEW_VIEW = 'governedRecordReview'
 const LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW = 'internalAlphaLocalExchangeProjectionReview'
 const LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW =
   'internalAlphaLocalExchangeIdentityReadyV02Review'
+const IDENTITY_READY_DURABLE_DECISION_AUDIT_READBACK_VIEW =
+  'identityReadyDurableDecisionAuditReadback'
 
 const INITIAL_LOCAL_EXCHANGE_CATALOG_STATE = Object.freeze({
   catalogPhase: 'loading',
@@ -70,6 +73,10 @@ const REVIEW_SURFACE_OPTIONS = Object.freeze([
   {
     value: LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW,
     label: 'Local-exchange identity-ready review v0.2',
+  },
+  {
+    value: IDENTITY_READY_DURABLE_DECISION_AUDIT_READBACK_VIEW,
+    label: 'Identity-ready durable decision audit readback',
   },
 ])
 
@@ -301,10 +308,15 @@ export function InternalAlphaReviewConsole() {
     useState({ phase: 'idle', candidate: null })
   const [identityReadyDecisionPersistenceState, setIdentityReadyDecisionPersistenceState] =
     useState({ phase: 'idle', result: null })
+  const [identityReadyAuditDecisionIdInput, setIdentityReadyAuditDecisionIdInput] =
+    useState('')
+  const [identityReadyDecisionAuditState, setIdentityReadyDecisionAuditState] =
+    useState({ phase: 'idle', result: null })
   const requestedLocalExchangeHandles = useRef(new Set())
   const localExchangeIdentityReadyV02RequestStarted = useRef(false)
   const identityReadyDecisionCandidateBuildStarted = useRef(false)
   const identityReadyDecisionPersistencePostStarted = useRef(false)
+  const identityReadyDecisionAuditGetStarted = useRef(false)
   const localExchangeCatalogRequestStarted = useRef(false)
   const governedDecisionPostAttemptStarted = useRef(false)
   const governedFormalStateGetAttemptStarted = useRef(false)
@@ -585,6 +597,54 @@ export function InternalAlphaReviewConsole() {
     }
   }
 
+  const boundedReceiptDecisionId =
+    identityReadyDecisionPersistenceState.phase === 'bounded_success'
+      ? identityReadyDecisionPersistenceState.result?.decision_id
+      : null
+  const identityReadyAuditDecisionId = identityReadyAuditDecisionIdInput.trim()
+  const identityReadyAuditDecisionIdIsValid =
+    /^irghrd-[0-9a-f]{32}$/.test(identityReadyAuditDecisionId)
+
+  const handleUseBoundedReceiptDecisionId = () => {
+    if (
+      identityReadyDecisionAuditGetStarted.current ||
+      typeof boundedReceiptDecisionId !== 'string' ||
+      !/^irghrd-[0-9a-f]{32}$/.test(boundedReceiptDecisionId)
+    ) {
+      return
+    }
+    setIdentityReadyAuditDecisionIdInput(boundedReceiptDecisionId)
+    setIdentityReadyDecisionAuditState({ phase: 'idle', result: null })
+  }
+
+  const handleIdentityReadyDecisionAuditReadback = async () => {
+    if (
+      !identityReadyAuditDecisionIdIsValid ||
+      identityReadyDecisionAuditGetStarted.current
+    ) {
+      return
+    }
+    identityReadyDecisionAuditGetStarted.current = true
+    setIdentityReadyDecisionAuditState({ phase: 'loading', result: null })
+    try {
+      const result =
+        await getInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection(
+          identityReadyAuditDecisionId,
+        )
+      if (!pageIsMounted.current) return
+      setIdentityReadyDecisionAuditState({
+        phase:
+          result.readback_status === 'decision_audit_ready'
+            ? 'bounded_success'
+            : 'bounded_result',
+        result,
+      })
+    } catch {
+      if (!pageIsMounted.current) return
+      setIdentityReadyDecisionAuditState({ phase: 'bounded_error', result: null })
+    }
+  }
+
   const handleGovernedDecisionSelection = (decisionType) => {
     if (governedDecisionPostAttemptStarted.current) return
     setSelectedGovernedDecisionType(decisionType)
@@ -632,6 +692,160 @@ export function InternalAlphaReviewConsole() {
       </Space>
     </Card>
   )
+
+  if (selectedReviewView === IDENTITY_READY_DURABLE_DECISION_AUDIT_READBACK_VIEW) {
+    return (
+      <div className="page-stack internal-alpha-review-shell-page">
+        {reviewSurfaceSelector}
+
+        <section className="internal-alpha-review-hero">
+          <div>
+            <Space wrap>
+              <Tag color="cyan">internal alpha</Tag>
+              <Tag color="cyan">exact decision-id read-only audit</Tag>
+              <Tag color="default">disabled by default</Tag>
+              <Tag color="default">explicit action only</Tag>
+            </Space>
+            <Title level={1}>Identity-ready durable decision audit readback</Title>
+            <Paragraph>
+              This independent surface performs one bounded read-only audit projection for one exact
+              identity-ready decision identifier. Selecting this view performs no request.
+            </Paragraph>
+          </div>
+          <Card className="panel-card internal-alpha-review-status-card">
+            <Space direction="vertical" size={12} className="full-width">
+              <Text type="secondary">Readback phase</Text>
+              <Title level={2}>{identityReadyDecisionAuditState.phase}</Title>
+              <Text>GET is permitted only by the explicit readback action below.</Text>
+            </Space>
+          </Card>
+        </section>
+
+        <Card className="panel-card internal-alpha-review-card">
+          <Title level={4}>Exact durable decision identifier</Title>
+          <Paragraph>
+            Enter one exact identity-ready decision identifier or copy it from the bounded receipt retained
+            in this page mount. No sample lookup, list, history, fallback, or POST is performed.
+          </Paragraph>
+          <Space wrap align="center">
+            <Input
+              aria-label="Identity-ready durable decision audit identifier"
+              value={identityReadyAuditDecisionIdInput}
+              onChange={(event) => {
+                if (identityReadyDecisionAuditGetStarted.current) return
+                setIdentityReadyAuditDecisionIdInput(event.target.value)
+                setIdentityReadyDecisionAuditState({ phase: 'idle', result: null })
+              }}
+              disabled={identityReadyDecisionAuditGetStarted.current}
+              placeholder="irghrd-0123456789abcdef0123456789abcdef"
+              style={{ minWidth: 420 }}
+            />
+            {typeof boundedReceiptDecisionId === 'string' && (
+              <Button
+                onClick={handleUseBoundedReceiptDecisionId}
+                disabled={identityReadyDecisionAuditGetStarted.current}
+              >
+                Use bounded receipt decision ID
+              </Button>
+            )}
+            <Button
+              type="primary"
+              onClick={handleIdentityReadyDecisionAuditReadback}
+              disabled={
+                !identityReadyAuditDecisionIdIsValid ||
+                identityReadyDecisionAuditGetStarted.current
+              }
+              loading={identityReadyDecisionAuditState.phase === 'loading'}
+            >
+              Read exact audit projection
+            </Button>
+          </Space>
+          {!identityReadyAuditDecisionIdIsValid && (
+            <Paragraph type="secondary">
+              A lowercase identifier matching irghrd plus 32 hexadecimal characters is required.
+            </Paragraph>
+          )}
+
+          {identityReadyDecisionAuditState.phase === 'bounded_error' && (
+            <Alert
+              showIcon
+              type="error"
+              message="Durable decision audit readback failed closed"
+              description="No retry, fallback, POST, raw error, database path, or protected value is exposed."
+            />
+          )}
+          {identityReadyDecisionAuditState.phase === 'bounded_result' && (
+            <Alert
+              showIcon
+              type="warning"
+              message="Durable decision audit readback unavailable"
+              description={`readback_status = ${identityReadyDecisionAuditState.result.readback_status}`}
+            />
+          )}
+          {identityReadyDecisionAuditState.phase === 'bounded_success' && (
+            <Descriptions column={1} size="small" title="Safe durable decision audit projection">
+              <Descriptions.Item label="readback_status">
+                {identityReadyDecisionAuditState.result.readback_status}
+              </Descriptions.Item>
+              <Descriptions.Item label="decision_id">
+                {identityReadyDecisionAuditState.result.decision_id}
+              </Descriptions.Item>
+              <Descriptions.Item label="audit_receipt_reference">
+                {identityReadyDecisionAuditState.result.audit_receipt_reference}
+              </Descriptions.Item>
+              <Descriptions.Item label="sample_handle">
+                {identityReadyDecisionAuditState.result.sample_handle}
+              </Descriptions.Item>
+              <Descriptions.Item label="decision_type">
+                {identityReadyDecisionAuditState.result.decision_type}
+              </Descriptions.Item>
+              <Descriptions.Item label="decision_status">
+                {identityReadyDecisionAuditState.result.decision_status}
+              </Descriptions.Item>
+              <Descriptions.Item label="recorded_at">
+                {identityReadyDecisionAuditState.result.recorded_at}
+              </Descriptions.Item>
+              <Descriptions.Item label="human_review_required">
+                {String(identityReadyDecisionAuditState.result.human_review_required)}
+              </Descriptions.Item>
+              <Descriptions.Item label="no_automatic_trust_upgrade">
+                {String(identityReadyDecisionAuditState.result.no_automatic_trust_upgrade)}
+              </Descriptions.Item>
+              <Descriptions.Item label="production_object_enabled">
+                {String(identityReadyDecisionAuditState.result.production_object_enabled)}
+              </Descriptions.Item>
+              <Descriptions.Item label="review_queue_runtime_enabled">
+                {String(identityReadyDecisionAuditState.result.review_queue_runtime_enabled)}
+              </Descriptions.Item>
+              <Descriptions.Item label="evidence_layer_write_performed">
+                {String(identityReadyDecisionAuditState.result.evidence_layer_write_performed)}
+              </Descriptions.Item>
+              <Descriptions.Item label="provider_or_b05_called">
+                {String(identityReadyDecisionAuditState.result.provider_or_b05_called)}
+              </Descriptions.Item>
+              <Descriptions.Item label="analysis_triggered">
+                {String(identityReadyDecisionAuditState.result.analysis_triggered)}
+              </Descriptions.Item>
+              <Descriptions.Item label="report_triggered">
+                {String(identityReadyDecisionAuditState.result.report_triggered)}
+              </Descriptions.Item>
+            </Descriptions>
+          )}
+        </Card>
+
+        <Card className="panel-card internal-alpha-review-card">
+          <Space wrap>
+            <Tag color="cyan">read_only = true</Tag>
+            <Tag color="cyan">exact_decision_id_only = true</Tag>
+            <Tag color="default">mount_get = 0</Tag>
+            <Tag color="default">selection_get = 0</Tag>
+            <Tag color="default">post = 0</Tag>
+            <Tag color="default">fallback = 0</Tag>
+          </Space>
+        </Card>
+      </div>
+    )
+  }
 
   if (selectedReviewView === LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW) {
     const identityProjection = identityReadyProjection

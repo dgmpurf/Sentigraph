@@ -31,6 +31,9 @@ from app.services.identity_ready_governed_nonproduction_human_review_decision_le
     IdentityReadyGovernedNonproductionHumanReviewDecisionLedger,
     record_identity_ready_governed_nonproduction_human_review_decision,
 )
+from app.services.identity_ready_governed_nonproduction_human_review_decision_audit_projection import (
+    project_identity_ready_governed_nonproduction_human_review_decision_audit,
+)
 
 
 GATE = "SENTIGRAPH_INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_LEDGER_ENABLED"
@@ -56,6 +59,10 @@ IDENTITY_READY_GATE = (
 IDENTITY_READY_BINDING_SAFE_HASH = (
     "SENTIGRAPH_INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_"
     "REVIEW_SUBJECT_BINDING_SAFE_HASH"
+)
+IDENTITY_READY_AUDIT_PROJECTION_GATE = (
+    "SENTIGRAPH_INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_"
+    "REVIEW_DECISION_AUDIT_PROJECTION_ENABLED"
 )
 ROUTE_MODE = (
     "internal_disabled_by_default_append_only_nonproduction_"
@@ -113,6 +120,16 @@ IDENTITY_READY_OUTCOME_STATUS = {
     "blocked_idempotency_conflict": 409,
     "paused_identity_ready_decision_commit_ambiguity": 503,
     "bounded_identity_ready_decision_ledger_failure": 500,
+}
+IDENTITY_READY_AUDIT_STATUS_CODE = {
+    "decision_audit_ready": 200,
+    "audit_target_absent": 404,
+    "decision_not_found": 404,
+    "audit_schema_inconsistent": 409,
+    "decision_integrity_mismatch": 409,
+    "sidecar_present_read_prohibited": 409,
+    "target_identity_or_metadata_blocked": 409,
+    "bounded_read_only_unavailable": 503,
 }
 FORMAL_STATE_STATUS_CODE = {
     FORMAL_STATE_READY: 200,
@@ -178,6 +195,15 @@ def _gate_enabled() -> bool:
 
 def _identity_ready_gate_enabled() -> bool:
     return os.getenv(IDENTITY_READY_GATE, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _identity_ready_audit_projection_gate_enabled() -> bool:
+    return os.getenv(IDENTITY_READY_AUDIT_PROJECTION_GATE, "").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -469,6 +495,71 @@ def post_identity_ready_decision(
             decision=decision,
             receipt=receipt,
         ),
+    )
+
+
+@router.get(
+    "/identity-ready/v0.1/decisions/{decision_id}/audit-projection"
+)
+def get_identity_ready_decision_audit_projection(decision_id: str) -> JSONResponse:
+    if not _identity_ready_audit_projection_gate_enabled():
+        projection = {
+            "response_schema": (
+                "sentigraph_internal_alpha_identity_ready_governed_review_"
+                "decision_audit_projection_response_v0_1"
+            ),
+            "response_version": "0.1",
+            "route_mode": (
+                "internal_disabled_by_default_read_only_identity_ready_"
+                "human_review_decision_audit_projection"
+            ),
+            "readback_status": "audit_target_absent",
+        }
+    elif re.fullmatch(r"irghrd-[0-9a-f]{32}", decision_id) is None:
+        projection = {
+            "response_schema": (
+                "sentigraph_internal_alpha_identity_ready_governed_review_"
+                "decision_audit_projection_response_v0_1"
+            ),
+            "response_version": "0.1",
+            "route_mode": (
+                "internal_disabled_by_default_read_only_identity_ready_"
+                "human_review_decision_audit_projection"
+            ),
+            "readback_status": "decision_not_found",
+        }
+    else:
+        try:
+            repository_root = _repository_root()
+            projection = (
+                project_identity_ready_governed_nonproduction_human_review_decision_audit(
+                    authorized_root_path=repository_root,
+                    database_path=(
+                        repository_root / Path(IDENTITY_READY_LOGICAL_TARGET_LABEL)
+                    ),
+                    target_logical_label=IDENTITY_READY_LOGICAL_TARGET_LABEL,
+                    decision_id=decision_id,
+                )
+            )
+        except Exception:
+            projection = {
+                "response_schema": (
+                    "sentigraph_internal_alpha_identity_ready_governed_review_"
+                    "decision_audit_projection_response_v0_1"
+                ),
+                "response_version": "0.1",
+                "route_mode": (
+                    "internal_disabled_by_default_read_only_identity_ready_"
+                    "human_review_decision_audit_projection"
+                ),
+                "readback_status": "bounded_read_only_unavailable",
+            }
+    return JSONResponse(
+        status_code=IDENTITY_READY_AUDIT_STATUS_CODE.get(
+            projection.get("readback_status"),
+            503,
+        ),
+        content=projection,
     )
 
 

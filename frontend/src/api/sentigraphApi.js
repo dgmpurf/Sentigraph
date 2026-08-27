@@ -117,6 +117,54 @@ const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_RESPONSE_FIELDS =
 const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_FAILURE_STATUSES =
   Object.freeze([404, 409, 422, 500, 503])
 
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_CONTRACT_ERROR =
+  'frontend_identity_ready_governed_review_decision_audit_projection_contract_mismatch'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_RESPONSE_SCHEMA =
+  'sentigraph_internal_alpha_identity_ready_governed_review_decision_audit_projection_response_v0_1'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_ROUTE_MODE =
+  'internal_disabled_by_default_read_only_identity_ready_human_review_decision_audit_projection'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ID_PATTERN =
+  /^irghrd-[0-9a-f]{32}$/
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_REFERENCE_PATTERN =
+  /^irghrd-receipt-[0-9a-f]{32}$/
+export const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_ERROR_FIELDS =
+  Object.freeze([
+    'response_schema',
+    'response_version',
+    'route_mode',
+    'readback_status',
+  ])
+export const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_SUCCESS_FIELDS =
+  Object.freeze([
+    ...INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_ERROR_FIELDS,
+    'decision_id',
+    'audit_receipt_reference',
+    'sample_handle',
+    'decision_type',
+    'decision_status',
+    'recorded_at',
+    'human_review_required',
+    'no_automatic_trust_upgrade',
+    'production_object_enabled',
+    'review_queue_runtime_enabled',
+    'evidence_layer_write_performed',
+    'provider_or_b05_called',
+    'analysis_triggered',
+    'report_triggered',
+  ])
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_STATUS_BY_HTTP =
+  Object.freeze({
+    200: Object.freeze(['decision_audit_ready']),
+    404: Object.freeze(['audit_target_absent', 'decision_not_found']),
+    409: Object.freeze([
+      'audit_schema_inconsistent',
+      'decision_integrity_mismatch',
+      'sidecar_present_read_prohibited',
+      'target_identity_or_metadata_blocked',
+    ]),
+    503: Object.freeze(['bounded_read_only_unavailable']),
+  })
+
 export const INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS = Object.freeze([
   'response_schema',
   'response_version',
@@ -1106,6 +1154,111 @@ export async function postInternalAlphaIdentityReadyGovernedReviewDecision(candi
       )
     }
     throw new Error(INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_CONTRACT_ERROR)
+  }
+}
+
+export function normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection(
+  data,
+  httpStatus,
+  requestedDecisionId,
+) {
+  const contractError = () => {
+    throw new Error(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_CONTRACT_ERROR,
+    )
+  }
+  if (
+    typeof requestedDecisionId !== 'string' ||
+    !INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ID_PATTERN.test(
+      requestedDecisionId,
+    )
+  ) {
+    contractError()
+  }
+  const allowedStatuses =
+    INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_STATUS_BY_HTTP[httpStatus]
+  if (!allowedStatuses) contractError()
+  const expectedFields =
+    httpStatus === 200
+      ? INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_SUCCESS_FIELDS
+      : INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_ERROR_FIELDS
+  if (
+    !hasExactInternalAlphaFieldSet(data, expectedFields) ||
+    data.response_schema !==
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_RESPONSE_SCHEMA ||
+    data.response_version !== '0.1' ||
+    data.route_mode !==
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_ROUTE_MODE ||
+    !allowedStatuses.includes(data.readback_status)
+  ) {
+    contractError()
+  }
+
+  if (httpStatus === 200) {
+    const suffix = requestedDecisionId.replace('irghrd-', '')
+    if (
+      data.decision_id !== requestedDecisionId ||
+      !INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ID_PATTERN.test(
+        data.decision_id,
+      ) ||
+      data.audit_receipt_reference !== `irghrd-receipt-${suffix}` ||
+      !INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_REFERENCE_PATTERN.test(
+        data.audit_receipt_reference,
+      ) ||
+      data.sample_handle !== INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE ||
+      !INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES.includes(data.decision_type) ||
+      data.decision_status !== 'recorded_append_only_nonproduction_identity_ready' ||
+      typeof data.recorded_at !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(data.recorded_at) ||
+      data.human_review_required !== true ||
+      data.no_automatic_trust_upgrade !== true ||
+      data.production_object_enabled !== false ||
+      data.review_queue_runtime_enabled !== false ||
+      data.evidence_layer_write_performed !== false ||
+      data.provider_or_b05_called !== false ||
+      data.analysis_triggered !== false ||
+      data.report_triggered !== false
+    ) {
+      contractError()
+    }
+  }
+
+  return Object.freeze(Object.fromEntries(expectedFields.map((field) => [field, data[field]])))
+}
+
+export async function getInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection(
+  decisionId,
+) {
+  const safeDecisionId = String(decisionId ?? '').trim()
+  if (
+    !INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ID_PATTERN.test(safeDecisionId)
+  ) {
+    throw new Error(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_CONTRACT_ERROR,
+    )
+  }
+  const endpoint =
+    `${INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ENDPOINT}/` +
+    `${encodeURIComponent(safeDecisionId)}/audit-projection`
+  try {
+    const response = await apiClient.get(endpoint)
+    return normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection(
+      response.data,
+      response.status,
+      safeDecisionId,
+    )
+  } catch (error) {
+    const status = error?.response?.status
+    if ([404, 409, 503].includes(status)) {
+      return normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection(
+        error.response.data,
+        status,
+        safeDecisionId,
+      )
+    }
+    throw new Error(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_CONTRACT_ERROR,
+    )
   }
 }
 

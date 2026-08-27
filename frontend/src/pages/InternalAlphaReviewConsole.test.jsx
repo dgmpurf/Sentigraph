@@ -59,6 +59,8 @@ vi.mock('../utils/internalAlphaIdentityReadyReviewDecisionCandidate.js', async (
 
 import {
   B05_REVIEW_SUBJECT_IDENTITY_FIELDS,
+  INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_ERROR_FIELDS,
+  INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_SUCCESS_FIELDS,
   INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
   INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
   INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS,
@@ -68,6 +70,8 @@ import {
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS,
   getInternalAlphaGovernedReviewFormalState,
+  getInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
+  normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
   normalizeInternalAlphaGovernedReviewFormalStateProjection,
   normalizeInternalAlphaGovernedReviewDecisionPostResponse,
   normalizeInternalAlphaLocalExchangeProjection,
@@ -259,6 +263,52 @@ function createIdentityReadyDecisionBindingResponse(
       production_object_enabled: false,
       analysis_triggered: false,
       report_triggered: false,
+    },
+  }
+}
+
+function createIdentityReadyDecisionAuditResponse({
+  status = 200,
+  readbackStatus = status === 200 ? 'decision_audit_ready' : 'decision_not_found',
+  extraFields = null,
+} = {}) {
+  const base = {
+    response_schema:
+      'sentigraph_internal_alpha_identity_ready_governed_review_decision_audit_projection_response_v0_1',
+    response_version: '0.1',
+    route_mode:
+      'internal_disabled_by_default_read_only_identity_ready_human_review_decision_audit_projection',
+    readback_status: readbackStatus,
+  }
+  const values =
+    status === 200
+      ? {
+          ...base,
+          decision_id: IDENTITY_READY_DECISION_ID,
+          audit_receipt_reference: IDENTITY_READY_AUDIT_REFERENCE,
+          sample_handle: CURRENT_HANDLE,
+          decision_type: 'keep_pending_human_review',
+          decision_status: 'recorded_append_only_nonproduction_identity_ready',
+          recorded_at: '2026-08-27T00:00:00Z',
+          human_review_required: true,
+          no_automatic_trust_upgrade: true,
+          production_object_enabled: false,
+          review_queue_runtime_enabled: false,
+          evidence_layer_write_performed: false,
+          provider_or_b05_called: false,
+          analysis_triggered: false,
+          report_triggered: false,
+        }
+      : base
+  const fields =
+    status === 200
+      ? INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_SUCCESS_FIELDS
+      : INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_ERROR_FIELDS
+  return {
+    status,
+    data: {
+      ...orderedObject(fields, values),
+      ...(extraFields || {}),
     },
   }
 }
@@ -490,6 +540,13 @@ async function openIdentityReadyV02Review() {
   await chooseAntDesignOption(
     'Read-only review surface',
     'Local-exchange identity-ready review v0.2',
+  )
+}
+
+async function openIdentityReadyDurableDecisionAuditReadback() {
+  await chooseAntDesignOption(
+    'Read-only review surface',
+    'Identity-ready durable decision audit readback',
   )
 }
 
@@ -1605,5 +1662,132 @@ describe('InternalAlphaReviewConsole identity-ready governed decision candidate 
       analysis_triggered: false,
       report_triggered: false,
     })
+  })
+})
+
+describe('InternalAlphaReviewConsole identity-ready durable decision audit readback', () => {
+  const auditEndpoint =
+    '/api/v1/internal/alpha/governed-review-decisions/identity-ready/v0.1/decisions/' +
+    `${IDENTITY_READY_DECISION_ID}/audit-projection`
+
+  function auditGetCalls() {
+    return apiMocks.apiClientGet.mock.calls.filter(([url]) =>
+      String(url).endsWith('/audit-projection'),
+    )
+  }
+
+  it('performs zero audit GETs on mount and selection, then one GET on explicit action only', async () => {
+    apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+    apiMocks.apiClientGet.mockImplementation((url) => {
+      if (url === auditEndpoint) {
+        return Promise.resolve(createIdentityReadyDecisionAuditResponse())
+      }
+      return Promise.resolve(createGovernedFormalStateResponse())
+    })
+
+    render(<InternalAlphaReviewConsole />)
+    expect(auditGetCalls()).toHaveLength(0)
+    await openIdentityReadyDurableDecisionAuditReadback()
+    expect(auditGetCalls()).toHaveLength(0)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+    expect(
+      apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection,
+    ).toHaveBeenCalledTimes(0)
+
+    const input = screen.getByRole('textbox', {
+      name: 'Identity-ready durable decision audit identifier',
+    })
+    const readButton = screen.getByRole('button', {
+      name: 'Read exact audit projection',
+    })
+    expect(readButton.disabled).toBe(true)
+    fireEvent.change(input, { target: { value: IDENTITY_READY_DECISION_ID } })
+    expect(readButton.disabled).toBe(false)
+
+    fireEvent.click(readButton)
+    fireEvent.click(readButton)
+
+    await screen.findByText('Safe durable decision audit projection', { exact: true })
+    expect(auditGetCalls()).toHaveLength(1)
+    expect(auditGetCalls()[0][0]).toBe(auditEndpoint)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+    expect(screen.getByText(IDENTITY_READY_AUDIT_REFERENCE, { exact: true })).toBeTruthy()
+    expect(screen.getByText('decision_audit_ready', { exact: true })).toBeTruthy()
+    expect(screen.queryByText(RAW_CONFIGURATION_MARKER, { exact: false })).toBeNull()
+  })
+
+  it('accepts a validated identifier retained from the bounded persistence receipt without GET on copy', async () => {
+    apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+    apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection.mockResolvedValue(
+      IDENTITY_READY_V02_PROJECTION,
+    )
+    apiMocks.apiClientPost.mockResolvedValue(createIdentityReadyDecisionBindingResponse())
+
+    render(<InternalAlphaReviewConsole />)
+    await openIdentityReadyV02Review()
+    await screen.findByText(IDENTITY_READY_V02_BINDING_SAFE_HASH, { exact: true })
+    await chooseAntDesignOption(
+      'Identity-ready human-review decision candidate action',
+      'Keep pending human review',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm local decision candidate' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Record auditable nonproduction decision' }),
+    )
+    await screen.findByText(IDENTITY_READY_AUDIT_REFERENCE, { exact: true })
+
+    await openIdentityReadyDurableDecisionAuditReadback()
+    expect(auditGetCalls()).toHaveLength(0)
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Use bounded receipt decision ID' }),
+    )
+    expect(
+      screen.getByRole('textbox', {
+        name: 'Identity-ready durable decision audit identifier',
+      }).value,
+    ).toBe(IDENTITY_READY_DECISION_ID)
+    expect(auditGetCalls()).toHaveLength(0)
+  })
+
+  it('normalizes only the exact safe success and bounded error field sets', () => {
+    const success = createIdentityReadyDecisionAuditResponse()
+    expect(
+      normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection(
+        success.data,
+        success.status,
+        IDENTITY_READY_DECISION_ID,
+      ),
+    ).toEqual(success.data)
+
+    const bounded404 = createIdentityReadyDecisionAuditResponse({ status: 404 })
+    expect(
+      normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection(
+        bounded404.data,
+        bounded404.status,
+        IDENTITY_READY_DECISION_ID,
+      ),
+    ).toEqual(bounded404.data)
+
+    const extra = createIdentityReadyDecisionAuditResponse({
+      extraFields: { decision_canonical_hash: RAW_CONFIGURATION_MARKER },
+    })
+    expect(() =>
+      normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection(
+        extra.data,
+        extra.status,
+        IDENTITY_READY_DECISION_ID,
+      ),
+    ).toThrow(
+      'frontend_identity_ready_governed_review_decision_audit_projection_contract_mismatch',
+    )
+  })
+
+  it('rejects an invalid identifier before any API GET', async () => {
+    await expect(
+      getInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection('not-an-id'),
+    ).rejects.toThrow(
+      'frontend_identity_ready_governed_review_decision_audit_projection_contract_mismatch',
+    )
+    expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(0)
   })
 })
