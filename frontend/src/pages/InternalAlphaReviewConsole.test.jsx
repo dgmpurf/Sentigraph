@@ -19,6 +19,10 @@ const apiMocks = vi.hoisted(() => ({
   getInternalAlphaLocalExchangeIdentityReadyV02Projection: vi.fn(),
 }))
 
+const identityReadyDecisionCandidateMocks = vi.hoisted(() => ({
+  build: vi.fn(),
+}))
+
 vi.mock('../api/client.js', () => ({
   apiClient: {
     get: apiMocks.apiClientGet,
@@ -38,6 +42,18 @@ vi.mock('../api/sentigraphApi.js', async (importOriginal) => {
       apiMocks.getInternalAlphaLocalExchangeProjection,
     getInternalAlphaLocalExchangeIdentityReadyV02Projection:
       apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection,
+  }
+})
+
+vi.mock('../utils/internalAlphaIdentityReadyReviewDecisionCandidate.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  identityReadyDecisionCandidateMocks.build.mockImplementation(
+    actual.buildInternalAlphaIdentityReadyReviewDecisionCandidate,
+  )
+  return {
+    ...actual,
+    buildInternalAlphaIdentityReadyReviewDecisionCandidate:
+      identityReadyDecisionCandidateMocks.build,
   }
 })
 
@@ -497,6 +513,7 @@ function restoreDescriptors(descriptorStore) {
 }
 
 beforeEach(() => {
+  identityReadyDecisionCandidateMocks.build.mockClear()
   apiMocks.apiClientGet.mockReset()
   apiMocks.apiClientPost.mockReset()
   apiMocks.getInternalAlphaReviewConsoleProjection.mockReset()
@@ -1314,4 +1331,117 @@ describe('InternalAlphaReviewConsole identity-ready v0.2 read-only surface', () 
     expect(apiMocks.getInternalAlphaLocalExchangeProjection).toHaveBeenCalledTimes(0)
     expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
   })
+})
+
+describe('InternalAlphaReviewConsole identity-ready governed decision candidate surface', () => {
+  async function renderIdentityReadyDecisionCandidateSurface() {
+    apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+    apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection.mockResolvedValue(
+      IDENTITY_READY_V02_PROJECTION,
+    )
+
+    const renderResult = render(<InternalAlphaReviewConsole />)
+    await openIdentityReadyV02Review()
+    await waitFor(() => {
+      expect(
+        apiMocks.getInternalAlphaLocalExchangeIdentityReadyV02Projection,
+      ).toHaveBeenCalledTimes(1)
+    })
+    await screen.findByText(IDENTITY_READY_V02_BINDING_SAFE_HASH, { exact: true })
+    return renderResult
+  }
+
+  it('starts without an action or candidate and exposes only the two safe actions', async () => {
+    await renderIdentityReadyDecisionCandidateSurface()
+
+    const selector = screen.getByRole('combobox', {
+      name: 'Identity-ready human-review decision candidate action',
+    })
+    const confirmButton = screen.getByRole('button', {
+      name: 'Confirm local decision candidate',
+    })
+    expect(selector).toBeTruthy()
+    expect(confirmButton.disabled).toBe(true)
+    expect(
+      screen.queryByText(
+        'sentigraph_internal_alpha_identity_ready_review_decision_candidate_v0_1',
+        { exact: true },
+      ),
+    ).toBeNull()
+
+    fireEvent.mouseDown(selector)
+    expect(await screen.findByText('Keep pending human review', { exact: true })).toBeTruthy()
+    expect(
+      await screen.findByText('Request more governance review', { exact: true }),
+    ).toBeTruthy()
+    expect(screen.queryByText('Approve trust', { exact: true })).toBeNull()
+    expect(screen.queryByText('Reject identity', { exact: true })).toBeNull()
+    expect(identityReadyDecisionCandidateMocks.build).toHaveBeenCalledTimes(0)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it.each([
+    ['Keep pending human review', 'keep_pending_human_review'],
+    ['Request more governance review', 'request_more_governance_review'],
+  ])(
+    'requires explicit confirmation for %s and creates one immutable page-local candidate',
+    async (actionLabel, decisionType) => {
+      const storageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+      try {
+        await renderIdentityReadyDecisionCandidateSurface()
+
+        await chooseAntDesignOption(
+          'Identity-ready human-review decision candidate action',
+          actionLabel,
+        )
+        expect(identityReadyDecisionCandidateMocks.build).toHaveBeenCalledTimes(0)
+        expect(
+          screen.queryByText(
+            'sentigraph_internal_alpha_identity_ready_review_decision_candidate_v0_1',
+            { exact: true },
+          ),
+        ).toBeNull()
+
+        const confirmButton = screen.getByRole('button', {
+          name: 'Confirm local decision candidate',
+        })
+        expect(confirmButton.disabled).toBe(false)
+        fireEvent.click(confirmButton)
+
+        expect(identityReadyDecisionCandidateMocks.build).toHaveBeenCalledTimes(1)
+        expect(identityReadyDecisionCandidateMocks.build).toHaveBeenCalledWith(
+          IDENTITY_READY_V02_PROJECTION.review_subject_identity,
+          decisionType,
+        )
+        expect(
+          screen.getByText(
+            'sentigraph_internal_alpha_identity_ready_review_decision_candidate_v0_1',
+            { exact: true },
+          ),
+        ).toBeTruthy()
+        const decisionTypeRow = screen.getByText('decision_type', { exact: true }).closest('tr')
+        expect(within(decisionTypeRow).getByText(decisionType, { exact: true })).toBeTruthy()
+        expect(
+          screen.getAllByText(IDENTITY_READY_V02_BINDING_SAFE_HASH, { exact: true }),
+        ).toHaveLength(2)
+        expect(screen.getByText('candidate_only = true', { exact: true })).toBeTruthy()
+        expect(screen.getByText('persisted = false', { exact: true })).toBeTruthy()
+        expect(screen.getByText('trust_upgraded = false', { exact: true })).toBeTruthy()
+        expect(screen.getByText('production_object = false', { exact: true })).toBeTruthy()
+        expect(confirmButton.disabled).toBe(true)
+        fireEvent.click(confirmButton)
+        expect(identityReadyDecisionCandidateMocks.build).toHaveBeenCalledTimes(1)
+        expect(
+          screen.getAllByText(
+            'sentigraph_internal_alpha_identity_ready_review_decision_candidate_v0_1',
+            { exact: true },
+          ),
+        ).toHaveLength(1)
+        expect(storageSetItemSpy).toHaveBeenCalledTimes(0)
+        expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+      } finally {
+        storageSetItemSpy.mockRestore()
+      }
+    },
+  )
 })

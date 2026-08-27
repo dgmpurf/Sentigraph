@@ -15,6 +15,10 @@ import {
   postInternalAlphaGovernedReviewDecision,
 } from '../api/sentigraphApi.js'
 import { INTERNAL_ALPHA_REVIEW_CONSOLE_STATIC_FIXTURE } from '../data/internalAlphaReviewConsoleStaticFixture.js'
+import {
+  buildInternalAlphaIdentityReadyReviewDecisionCandidate,
+  INTERNAL_ALPHA_IDENTITY_READY_REVIEW_DECISION_TYPES,
+} from '../utils/internalAlphaIdentityReadyReviewDecisionCandidate.js'
 
 const { Paragraph, Text, Title } = Typography
 const GOVERNED_REVIEW_CONSOLE_PROJECTION_ID = INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID
@@ -74,6 +78,19 @@ const GOVERNED_REVIEW_DECISION_OPTIONS = Object.freeze(
     label: decisionType,
   })),
 )
+
+const IDENTITY_READY_REVIEW_DECISION_OPTIONS = Object.freeze([
+  {
+    value: 'keep_pending_human_review',
+    label: 'Keep pending human review',
+  },
+  {
+    value: 'request_more_governance_review',
+    label: 'Request more governance review',
+  },
+])
+
+const LOWER_HEX_64_PATTERN = /^[0-9a-f]{64}$/
 
 
 const SAFE_METADATA_FIELDS = Object.freeze([
@@ -277,8 +294,13 @@ export function InternalAlphaReviewConsole() {
   const [localExchangeIdentityReadyV02State, setLocalExchangeIdentityReadyV02State] = useState(
     INITIAL_LOCAL_EXCHANGE_IDENTITY_READY_V02_STATE,
   )
+  const [selectedIdentityReadyDecisionType, setSelectedIdentityReadyDecisionType] =
+    useState(null)
+  const [identityReadyDecisionCandidateState, setIdentityReadyDecisionCandidateState] =
+    useState({ phase: 'idle', candidate: null })
   const requestedLocalExchangeHandles = useRef(new Set())
   const localExchangeIdentityReadyV02RequestStarted = useRef(false)
+  const identityReadyDecisionCandidateBuildStarted = useRef(false)
   const localExchangeCatalogRequestStarted = useRef(false)
   const governedDecisionPostAttemptStarted = useRef(false)
   const governedFormalStateGetAttemptStarted = useRef(false)
@@ -480,6 +502,59 @@ export function InternalAlphaReviewConsole() {
     governedDecisionSurfaceReady &&
     INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES.includes(selectedGovernedDecisionType) &&
     governedAllowedActions.includes(selectedGovernedDecisionType)
+  const identityReadyProjection = localExchangeIdentityReadyV02State.projection
+  const identityReadyReviewSubjectIdentity = identityReadyProjection?.review_subject_identity
+  const identityReadyDecisionSurfaceReady =
+    selectedReviewView === LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW &&
+    localExchangeIdentityReadyV02State.requestPhase === 'loaded' &&
+    identityReadyProjection?.projection_status === 'ready_for_human_review' &&
+    identityReadyProjection?.review_status === 'ready_for_human_review' &&
+    identityReadyReviewSubjectIdentity?.identity_schema ===
+      'sentigraph_b05_review_subject_identity_v0_1' &&
+    identityReadyReviewSubjectIdentity?.identity_version === '0.1' &&
+    identityReadyReviewSubjectIdentity?.identity_status === 'ready' &&
+    identityReadyReviewSubjectIdentity?.sample_handle ===
+      INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE &&
+    LOWER_HEX_64_PATTERN.test(
+      identityReadyReviewSubjectIdentity?.review_subject_binding_safe_hash ?? '',
+    )
+  const selectedIdentityReadyDecisionIsAllowed =
+    identityReadyDecisionSurfaceReady &&
+    INTERNAL_ALPHA_IDENTITY_READY_REVIEW_DECISION_TYPES.includes(
+      selectedIdentityReadyDecisionType,
+    )
+
+  const handleIdentityReadyDecisionSelection = (decisionType) => {
+    if (
+      identityReadyDecisionCandidateBuildStarted.current ||
+      !INTERNAL_ALPHA_IDENTITY_READY_REVIEW_DECISION_TYPES.includes(decisionType)
+    ) {
+      return
+    }
+    setSelectedIdentityReadyDecisionType(decisionType)
+    setIdentityReadyDecisionCandidateState({ phase: 'idle', candidate: null })
+  }
+
+  const handleIdentityReadyDecisionConfirmation = () => {
+    if (
+      !selectedIdentityReadyDecisionIsAllowed ||
+      identityReadyDecisionCandidateBuildStarted.current
+    ) {
+      return
+    }
+
+    identityReadyDecisionCandidateBuildStarted.current = true
+    setIdentityReadyDecisionCandidateState({ phase: 'building', candidate: null })
+    try {
+      const candidate = buildInternalAlphaIdentityReadyReviewDecisionCandidate(
+        identityReadyReviewSubjectIdentity,
+        selectedIdentityReadyDecisionType,
+      )
+      setIdentityReadyDecisionCandidateState({ phase: 'candidate_ready', candidate })
+    } catch {
+      setIdentityReadyDecisionCandidateState({ phase: 'bounded_error', candidate: null })
+    }
+  }
 
   const handleGovernedDecisionSelection = (decisionType) => {
     if (governedDecisionPostAttemptStarted.current) return
@@ -530,7 +605,7 @@ export function InternalAlphaReviewConsole() {
   )
 
   if (selectedReviewView === LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW) {
-    const identityProjection = localExchangeIdentityReadyV02State.projection
+    const identityProjection = identityReadyProjection
     const reviewSubjectIdentity = identityProjection?.review_subject_identity
 
     return (
@@ -611,6 +686,91 @@ export function InternalAlphaReviewConsole() {
               {reviewSubjectIdentity?.review_subject_binding_safe_hash ?? 'not loaded'}
             </Descriptions.Item>
           </Descriptions>
+        </Card>
+
+        <Card className="panel-card internal-alpha-review-card">
+          <Title level={4}>Governed human-review decision candidate</Title>
+          <Paragraph>
+            This explicit confirmation creates one deterministic, immutable candidate in page-local memory only.
+            It performs no backend write, persistence, trust upgrade, analysis, publication, export, or delivery.
+          </Paragraph>
+          <Space wrap align="center">
+            <Select
+              aria-label="Identity-ready human-review decision candidate action"
+              value={selectedIdentityReadyDecisionType ?? undefined}
+              options={IDENTITY_READY_REVIEW_DECISION_OPTIONS}
+              onChange={handleIdentityReadyDecisionSelection}
+              disabled={
+                !identityReadyDecisionSurfaceReady ||
+                identityReadyDecisionCandidateBuildStarted.current
+              }
+              placeholder="Select one bounded action"
+              style={{ minWidth: 320 }}
+            />
+            <Button
+              type="primary"
+              onClick={handleIdentityReadyDecisionConfirmation}
+              disabled={
+                !selectedIdentityReadyDecisionIsAllowed ||
+                identityReadyDecisionCandidateBuildStarted.current
+              }
+            >
+              Confirm local decision candidate
+            </Button>
+          </Space>
+          <Paragraph type="secondary">
+            Selecting an action does not create a candidate. Confirmation is explicit and limited to one candidate
+            per page mount.
+          </Paragraph>
+
+          {!identityReadyDecisionSurfaceReady && (
+            <Alert
+              showIcon
+              type="warning"
+              message="Decision candidate control unavailable"
+              description="The control remains inactive unless the exact identity-ready projection and safe binding are valid."
+            />
+          )}
+          {identityReadyDecisionCandidateState.phase === 'bounded_error' && (
+            <Alert
+              showIcon
+              type="error"
+              message="Decision candidate creation failed closed"
+              description="No candidate was retained and no persistence or backend action was attempted."
+            />
+          )}
+          {identityReadyDecisionCandidateState.phase === 'candidate_ready' && (
+            <>
+              <Descriptions column={1} size="small" title="Local decision candidate">
+                <Descriptions.Item label="schema">
+                  {identityReadyDecisionCandidateState.candidate.schema}
+                </Descriptions.Item>
+                <Descriptions.Item label="mode">
+                  {identityReadyDecisionCandidateState.candidate.mode}
+                </Descriptions.Item>
+                <Descriptions.Item label="decision_type">
+                  {identityReadyDecisionCandidateState.candidate.decision_type}
+                </Descriptions.Item>
+                <Descriptions.Item label="sample_handle">
+                  {identityReadyDecisionCandidateState.candidate.sample_handle}
+                </Descriptions.Item>
+                <Descriptions.Item label="review_subject_binding_safe_hash">
+                  {
+                    identityReadyDecisionCandidateState.candidate
+                      .review_subject_binding_safe_hash
+                  }
+                </Descriptions.Item>
+              </Descriptions>
+              <Space wrap>
+                <Tag color="cyan">candidate_only = true</Tag>
+                <Tag color="default">persisted = false</Tag>
+                <Tag color="default">trust_upgraded = false</Tag>
+                <Tag color="default">production_object = false</Tag>
+                <Tag color="cyan">human_review_required = true</Tag>
+                <Tag color="cyan">no_automatic_trust_upgrade = true</Tag>
+              </Space>
+            </>
+          )}
         </Card>
 
         <Card className="panel-card internal-alpha-review-card">
