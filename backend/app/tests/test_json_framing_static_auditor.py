@@ -102,6 +102,111 @@ SG1_NEGATIVE_FIXTURES = (
 )
 
 
+SAFE_SG2_ORIGIN_PROVENANCE_SOURCE = '''
+def sanitize_host_attestation(raw_host_attestation):
+    return raw_host_attestation
+
+def verify_manifest_and_sha256sums(manifest, sha256sums):
+    return manifest, sha256sums
+
+def validate_sanitized_host_attestation(raw_host_attestation):
+    return sanitize_host_attestation(raw_host_attestation)
+
+def build_outer_identity(validated_host_attestation):
+    return {
+        "origin_class": "host_attested_pre_runtime",
+        "host_attestation": validated_host_attestation,
+    }
+
+def validate_package_members(manifest, sha256sums):
+    return verify_manifest_and_sha256sums(manifest, sha256sums)
+
+def build_package_member_validation(validated_package_members):
+    return {
+        "origin_class": "package_validated",
+        "package_validation": validated_package_members,
+    }
+
+def assert_distinct_provenance(outer_identity, package_member_validation):
+    if outer_identity is package_member_validation:
+        raise ValueError("provenance_object_alias")
+    if outer_identity["origin_class"] == package_member_validation["origin_class"]:
+        raise ValueError("provenance_origin_class_collapse")
+
+def build_accepted_package_identity(raw_host_attestation, manifest, sha256sums):
+    validated_host_attestation = validate_sanitized_host_attestation(raw_host_attestation)
+    outer_identity = build_outer_identity(validated_host_attestation)
+    validated_package_members = validate_package_members(manifest, sha256sums)
+    package_member_validation = build_package_member_validation(validated_package_members)
+    assert_distinct_provenance(outer_identity, package_member_validation)
+    accepted_package_identity = {
+        "outer_identity": outer_identity,
+        "package_member_validation": package_member_validation,
+    }
+    return accepted_package_identity
+'''
+
+
+SG2_NEGATIVE_FIXTURES = (
+    (
+        "OUTER_LITERAL_RETAINED_HOST_GATE_BROKEN",
+        "outer_origin_host_attested",
+        SAFE_SG2_ORIGIN_PROVENANCE_SOURCE.replace(
+            "    return sanitize_host_attestation(raw_host_attestation)\n",
+            "    return raw_host_attestation\n",
+        ),
+    ),
+    (
+        "OUTER_WRONG_BUILDER_PROVENANCE",
+        "outer_origin_host_attested",
+        SAFE_SG2_ORIGIN_PROVENANCE_SOURCE.replace(
+            "    outer_identity = build_outer_identity(validated_host_attestation)\n",
+            "    outer_identity = build_package_member_validation(validated_host_attestation)\n",
+        ),
+    ),
+    (
+        "PACKAGE_LITERAL_RETAINED_VALIDATION_GATE_BROKEN",
+        "package_origin_validated",
+        SAFE_SG2_ORIGIN_PROVENANCE_SOURCE.replace(
+            "    return verify_manifest_and_sha256sums(manifest, sha256sums)\n",
+            "    return manifest\n",
+        ),
+    ),
+    (
+        "PACKAGE_WRONG_OR_ALIASED_PROVENANCE",
+        "package_origin_validated",
+        SAFE_SG2_ORIGIN_PROVENANCE_SOURCE.replace(
+            "    package_member_validation = build_package_member_validation(validated_package_members)\n",
+            "    package_member_validation = outer_identity\n",
+        ),
+    ),
+    (
+        "PROVENANCE_SHARED_BUILDER_COLLAPSE",
+        "provenance_not_collapsed",
+        SAFE_SG2_ORIGIN_PROVENANCE_SOURCE.replace(
+            "    package_member_validation = build_package_member_validation(validated_package_members)\n",
+            "    package_member_validation = build_outer_identity(validated_package_members)\n",
+        ),
+    ),
+    (
+        "PROVENANCE_RESULT_OBJECT_ALIAS_COLLAPSE",
+        "provenance_not_collapsed",
+        SAFE_SG2_ORIGIN_PROVENANCE_SOURCE.replace(
+            '        "package_member_validation": package_member_validation,\n',
+            '        "package_member_validation": outer_identity,\n',
+        ),
+    ),
+    (
+        "PROVENANCE_NON_COLLAPSE_GUARD_REMOVED",
+        "provenance_not_collapsed",
+        SAFE_SG2_ORIGIN_PROVENANCE_SOURCE.replace(
+            "    assert_distinct_provenance(outer_identity, package_member_validation)\n",
+            "    pass\n",
+        ),
+    ),
+)
+
+
 def test_static_auditor_self_test_passes_bounded_fixtures() -> None:
     result = auditor.run_self_test()
 
@@ -154,6 +259,36 @@ def test_sg1_formal_auditor_self_emission_negative_fixtures_fail_closed(
     fixture_source: str,
 ) -> None:
     result = auditor.audit_formal_auditor_self_emission_source(fixture_source)
+
+    assert semantic_label
+    assert result["status"] == "fail"
+    assert result["checks"][target_assertion] is False
+    assert result["target_executed"] is False
+
+
+def test_sg2_origin_and_provenance_bindings_positive() -> None:
+    result = auditor.audit_origin_and_provenance_bindings_source(SAFE_SG2_ORIGIN_PROVENANCE_SOURCE)
+
+    assert result["status"] == "pass"
+    assert result["checks"] == {
+        "outer_origin_host_attested": True,
+        "package_origin_validated": True,
+        "provenance_not_collapsed": True,
+    }
+    assert result["target_executed"] is False
+
+
+@pytest.mark.parametrize(
+    ("semantic_label", "target_assertion", "fixture_source"),
+    SG2_NEGATIVE_FIXTURES,
+    ids=[fixture[0] for fixture in SG2_NEGATIVE_FIXTURES],
+)
+def test_sg2_origin_and_provenance_negative_fixtures_fail_closed(
+    semantic_label: str,
+    target_assertion: str,
+    fixture_source: str,
+) -> None:
+    result = auditor.audit_origin_and_provenance_bindings_source(fixture_source)
 
     assert semantic_label
     assert result["status"] == "fail"
