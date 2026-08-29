@@ -32,6 +32,15 @@ CHECK_NAMES = (
     "NARROW_IO_BYTESIO_POLICY",
     "TARGET_EXECUTION_FORBIDDEN",
 )
+SG1_CHECK_NAMES = (
+    "auditor_single_output_target",
+    "sanitizer_present",
+)
+
+_FORMAL_AUDIT_ENTRY_FUNCTION = "run_formal_audit"
+_FORMAL_AUDIT_WRITER_FUNCTION = "write_result"
+_FORMAL_AUDIT_SANITIZER_FUNCTION = "sanitize_bounded_disclosure"
+_FORMAL_AUDIT_RESULT_MEMBER = "09_STATIC_AUDIT_RESULT.json"
 
 _ALLOWED_SHARED_IMPORT_ROOTS = {
     "__future__",
@@ -129,6 +138,241 @@ def _function_call_count(tree: ast.AST, function_name: str, call_name: str) -> i
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
             return sum(1 for name in _call_names(node) if name == call_name)
     return 0
+
+
+def _function_node(tree: ast.AST, function_name: str) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+            return node
+    return None
+
+
+def _assigns_name(nodes: list[ast.stmt], name: str) -> bool:
+    for statement in nodes:
+        for node in ast.walk(statement):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(target, ast.Name) and target.id == name for target in targets):
+                return True
+    return False
+
+
+def _contains_early_exit(nodes: list[ast.stmt]) -> bool:
+    return any(isinstance(node, (ast.Return, ast.Raise)) for statement in nodes for node in ast.walk(statement))
+
+
+def _write_calls(tree: ast.AST) -> list[ast.Call]:
+    calls: list[ast.Call] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        call_name = _call_name(node.func)
+        if call_name == "open" or (call_name and call_name.split(".")[-1] in {"write_text", "write_bytes"}):
+            calls.append(node)
+    return calls
+
+
+def _statement_index_containing_call(
+    statements: list[ast.stmt],
+    target_call: ast.Call,
+) -> int | None:
+    for index, statement in enumerate(statements):
+        if any(node is target_call for node in ast.walk(statement)):
+            return index
+    return None
+
+
+def _call_contains_name(call: ast.Call, name: str) -> bool:
+    return any(isinstance(node, ast.Name) and node.id == name for node in ast.walk(call))
+
+
+def _member_09_assignments(tree: ast.AST) -> list[ast.Assign]:
+    assignments: list[ast.Assign] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Subscript):
+                continue
+            index = target.slice
+            if isinstance(index, ast.Constant) and index.value == _FORMAL_AUDIT_RESULT_MEMBER:
+                assignments.append(node)
+    return assignments
+
+
+def audit_formal_auditor_self_emission_source(source: str) -> dict[str, Any]:
+    """Prove SG1 output convergence and sanitizer ordering without executing the target."""
+
+    tree = ast.parse(source)
+    entry = _function_node(tree, _FORMAL_AUDIT_ENTRY_FUNCTION)
+    writer = _function_node(tree, _FORMAL_AUDIT_WRITER_FUNCTION)
+
+    evidence: dict[str, Any] = {
+        "entry_function_found": entry is not None,
+        "writer_function_found": writer is not None,
+        "entry_output_parameter_found": False,
+        "entry_try_count": 0,
+        "normal_result_assignment": False,
+        "failure_result_assignment": False,
+        "failure_safe_early_exit_count": 0,
+        "shared_writer_call_count": 0,
+        "shared_writer_target_matches": False,
+        "shared_writer_after_branch_convergence": False,
+        "global_writable_call_count": len(_write_calls(tree)),
+        "member_09_binding_count": len(_member_09_assignments(tree)),
+        "member_09_target_matches": False,
+        "member_09_binding_after_shared_write": False,
+        "writer_sanitizer_call_count": 0,
+        "writer_write_call_count": 0,
+        "writer_target_matches": False,
+        "sanitizer_before_write": False,
+        "write_uses_sanitized_result": False,
+    }
+
+    if entry is not None:
+        evidence["entry_output_parameter_found"] = any(
+            argument.arg == "output_target"
+            for argument in (*entry.args.posonlyargs, *entry.args.args, *entry.args.kwonlyargs)
+        )
+        top_level_tries = [statement for statement in entry.body if isinstance(statement, ast.Try)]
+        evidence["entry_try_count"] = len(top_level_tries)
+        if len(top_level_tries) == 1:
+            guarded = top_level_tries[0]
+            evidence["normal_result_assignment"] = _assigns_name(guarded.body, "result")
+            evidence["failure_result_assignment"] = bool(guarded.handlers) and all(
+                _assigns_name(handler.body, "result") for handler in guarded.handlers
+            )
+            evidence["failure_safe_early_exit_count"] = sum(
+                int(_contains_early_exit(handler.body)) for handler in guarded.handlers
+            )
+
+        shared_calls = [
+            node
+            for node in ast.walk(entry)
+            if isinstance(node, ast.Call) and _call_name(node.func) == _FORMAL_AUDIT_WRITER_FUNCTION
+        ]
+        evidence["shared_writer_call_count"] = len(shared_calls)
+        shared_call = shared_calls[0] if len(shared_calls) == 1 else None
+        if shared_call is not None:
+            evidence["shared_writer_target_matches"] = (
+                len(shared_call.args) >= 2
+                and isinstance(shared_call.args[1], ast.Name)
+                and shared_call.args[1].id == "output_target"
+            )
+            shared_index = _statement_index_containing_call(entry.body, shared_call)
+            try_index = next(
+                (index for index, statement in enumerate(entry.body) if isinstance(statement, ast.Try)),
+                None,
+            )
+            evidence["shared_writer_after_branch_convergence"] = (
+                shared_index is not None and try_index is not None and shared_index > try_index
+            )
+
+        member_assignments = _member_09_assignments(entry)
+        if len(member_assignments) == 1:
+            member_assignment = member_assignments[0]
+            evidence["member_09_target_matches"] = (
+                isinstance(member_assignment.value, ast.Name)
+                and member_assignment.value.id == "output_target"
+            )
+            member_index = next(
+                (
+                    index
+                    for index, statement in enumerate(entry.body)
+                    if any(node is member_assignment for node in ast.walk(statement))
+                ),
+                None,
+            )
+            shared_index = (
+                _statement_index_containing_call(entry.body, shared_calls[0])
+                if len(shared_calls) == 1
+                else None
+            )
+            evidence["member_09_binding_after_shared_write"] = (
+                member_index is not None and shared_index is not None and member_index > shared_index
+            )
+
+    if writer is not None:
+        writer_args = {
+            argument.arg
+            for argument in (*writer.args.posonlyargs, *writer.args.args, *writer.args.kwonlyargs)
+        }
+        sanitizer_assignments = [
+            node
+            for node in ast.walk(writer)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "sanitized_result" for target in node.targets)
+            and isinstance(node.value, ast.Call)
+            and _call_name(node.value.func) == _FORMAL_AUDIT_SANITIZER_FUNCTION
+            and len(node.value.args) == 1
+            and isinstance(node.value.args[0], ast.Name)
+            and node.value.args[0].id == "result"
+        ]
+        writer_calls = _write_calls(writer)
+        evidence["writer_sanitizer_call_count"] = len(sanitizer_assignments)
+        evidence["writer_write_call_count"] = len(writer_calls)
+        if len(writer_calls) == 1:
+            write_call = writer_calls[0]
+            evidence["writer_target_matches"] = (
+                "output_target" in writer_args
+                and isinstance(write_call.func, ast.Attribute)
+                and isinstance(write_call.func.value, ast.Name)
+                and write_call.func.value.id == "output_target"
+            )
+            evidence["write_uses_sanitized_result"] = _call_contains_name(write_call, "sanitized_result")
+            if len(sanitizer_assignments) == 1:
+                evidence["sanitizer_before_write"] = (
+                    sanitizer_assignments[0].lineno < write_call.lineno
+                )
+
+    output_check = all(
+        (
+            evidence["entry_function_found"],
+            evidence["writer_function_found"],
+            evidence["entry_output_parameter_found"],
+            evidence["entry_try_count"] == 1,
+            evidence["normal_result_assignment"],
+            evidence["failure_result_assignment"],
+            evidence["failure_safe_early_exit_count"] == 0,
+            evidence["shared_writer_call_count"] == 1,
+            evidence["shared_writer_target_matches"],
+            evidence["shared_writer_after_branch_convergence"],
+            evidence["global_writable_call_count"] == 1,
+            evidence["member_09_binding_count"] == 1,
+            evidence["member_09_target_matches"],
+            evidence["member_09_binding_after_shared_write"],
+        )
+    )
+    sanitizer_check = all(
+        (
+            evidence["entry_function_found"],
+            evidence["writer_function_found"],
+            evidence["entry_try_count"] == 1,
+            evidence["normal_result_assignment"],
+            evidence["failure_result_assignment"],
+            evidence["failure_safe_early_exit_count"] == 0,
+            evidence["shared_writer_call_count"] == 1,
+            evidence["shared_writer_after_branch_convergence"],
+            evidence["global_writable_call_count"] == 1,
+            evidence["writer_sanitizer_call_count"] == 1,
+            evidence["writer_write_call_count"] == 1,
+            evidence["writer_target_matches"],
+            evidence["sanitizer_before_write"],
+            evidence["write_uses_sanitized_result"],
+        )
+    )
+    checks = {
+        "auditor_single_output_target": output_check,
+        "sanitizer_present": sanitizer_check,
+    }
+    return {
+        "schema": "sentigraph_formal_auditor_self_emission_bindings_static_proof_v0_1",
+        "status": "pass" if all(checks.values()) else "fail",
+        "checks": checks,
+        "evidence": evidence,
+        "target_executed": False,
+    }
 
 
 def audit_source_texts(
