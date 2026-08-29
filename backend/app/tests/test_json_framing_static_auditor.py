@@ -207,6 +207,130 @@ SG2_NEGATIVE_FIXTURES = (
 )
 
 
+SAFE_SG3_PREINTERACTION_FIXTURE_SOURCE = '''
+def build_preinteraction_fixture_evidence(controller_raw):
+    fixture_formal_state = {
+        "identity": "fixture_formal_state",
+        "method": "GET",
+        "route": "/api/v1/internal/alpha/governed-review-decisions/formal-state",
+        "request_counter": "/base/controller_raw/fixture_formal_state_request_count",
+        "fulfill_counter": "/base/controller_raw/fixture_formal_state_fulfill_count",
+        "request_count": controller_raw["fixture_formal_state_request_count"],
+        "fulfill_count": controller_raw["fixture_formal_state_fulfill_count"],
+    }
+    fixture_local_exchange_samples = {
+        "identity": "fixture_local_exchange_samples",
+        "method": "GET",
+        "route": "/api/v1/internal/alpha/review-console/local-exchange-samples",
+        "request_counter": "/base/controller_raw/fixture_local_exchange_samples_request_count",
+        "fulfill_counter": "/base/controller_raw/fixture_local_exchange_samples_fulfill_count",
+        "request_count": controller_raw["fixture_local_exchange_samples_request_count"],
+        "fulfill_count": controller_raw["fixture_local_exchange_samples_fulfill_count"],
+    }
+    fixture_governed_review_projection = {
+        "identity": "fixture_governed_review_projection",
+        "method": "GET",
+        "route": "/api/v1/internal/alpha/review-console/projections/governed-nonproduction-record-review-v0-1",
+        "request_counter": "/base/controller_raw/fixture_governed_review_projection_request_count",
+        "fulfill_counter": "/base/controller_raw/fixture_governed_review_projection_fulfill_count",
+        "request_count": controller_raw["fixture_governed_review_projection_request_count"],
+        "fulfill_count": controller_raw["fixture_governed_review_projection_fulfill_count"],
+    }
+    expected = 3
+    completed = 3
+    fulfilled = 3
+    unexpected_api_request_count = controller_raw["unexpected_api_request_count"]
+    exact_fixture_contract = (
+        fixture_formal_state["request_count"] == 1
+        and fixture_formal_state["fulfill_count"] == 1
+        and fixture_local_exchange_samples["request_count"] == 1
+        and fixture_local_exchange_samples["fulfill_count"] == 1
+        and fixture_governed_review_projection["request_count"] == 1
+        and fixture_governed_review_projection["fulfill_count"] == 1
+    )
+    broad_api_fail_closed = (
+        exact_fixture_contract
+        and expected == 3
+        and completed == 3
+        and fulfilled == 3
+        and unexpected_api_request_count == 0
+    )
+    if not broad_api_fail_closed:
+        raise ValueError("preinteraction_fixture_contract_failed")
+    return {
+        "preinteraction_fixtures": [
+            fixture_formal_state,
+            fixture_local_exchange_samples,
+            fixture_governed_review_projection,
+        ],
+        "expected": expected,
+        "completed": completed,
+        "fulfilled": fulfilled,
+        "unexpected_api_request_count": unexpected_api_request_count,
+        "broad_api_fail_closed": broad_api_fail_closed,
+    }
+'''
+
+
+SG3_NEGATIVE_FIXTURES = (
+    (
+        "CANONICAL_ROUTE_REPLACED",
+        SAFE_SG3_PREINTERACTION_FIXTURE_SOURCE.replace(
+            '"route": "/api/v1/internal/alpha/governed-review-decisions/formal-state"',
+            '"route": "/api/v1/internal/alpha/governed-review-decisions/replaced-formal-state"',
+        ),
+    ),
+    (
+        "DUPLICATE_ROUTE_SUBSTITUTION",
+        SAFE_SG3_PREINTERACTION_FIXTURE_SOURCE.replace(
+            '"route": "/api/v1/internal/alpha/review-console/local-exchange-samples"',
+            '"route": "/api/v1/internal/alpha/governed-review-decisions/formal-state"',
+        ),
+    ),
+    (
+        "REQUEST_COUNTER_WRONG_ROUTE_PAIR",
+        SAFE_SG3_PREINTERACTION_FIXTURE_SOURCE.replace(
+            '"request_counter": "/base/controller_raw/fixture_formal_state_request_count"',
+            '"request_counter": "/base/controller_raw/fixture_local_exchange_samples_request_count"',
+        ).replace(
+            '"request_count": controller_raw["fixture_formal_state_request_count"]',
+            '"request_count": controller_raw["fixture_local_exchange_samples_request_count"]',
+        ),
+    ),
+    (
+        "FULFILL_COUNTER_WRONG_ROUTE_PAIR",
+        SAFE_SG3_PREINTERACTION_FIXTURE_SOURCE.replace(
+            '"fulfill_counter": "/base/controller_raw/fixture_formal_state_fulfill_count"',
+            '"fulfill_counter": "/base/controller_raw/fixture_local_exchange_samples_fulfill_count"',
+        ).replace(
+            '"fulfill_count": controller_raw["fixture_formal_state_fulfill_count"]',
+            '"fulfill_count": controller_raw["fixture_local_exchange_samples_fulfill_count"]',
+        ),
+    ),
+    (
+        "REQUEST_COUNTER_NOT_ONE",
+        SAFE_SG3_PREINTERACTION_FIXTURE_SOURCE.replace(
+            'fixture_formal_state["request_count"] == 1',
+            'fixture_formal_state["request_count"] == 2',
+        ),
+    ),
+    (
+        "FULFILL_COUNTER_NOT_ONE",
+        SAFE_SG3_PREINTERACTION_FIXTURE_SOURCE.replace(
+            'fixture_formal_state["fulfill_count"] == 1',
+            'fixture_formal_state["fulfill_count"] == 2',
+        ),
+    ),
+    (
+        "AGGREGATE_THREE_OF_THREE_BUT_PER_FIXTURE_BINDING_WRONG",
+        SAFE_SG3_PREINTERACTION_FIXTURE_SOURCE.replace(
+            'fixture_formal_state["request_count"] == 1',
+            'fixture_local_exchange_samples["request_count"] == 1',
+        ),
+    ),
+)
+
+
 def test_static_auditor_self_test_passes_bounded_fixtures() -> None:
     result = auditor.run_self_test()
 
@@ -293,4 +417,29 @@ def test_sg2_origin_and_provenance_negative_fixtures_fail_closed(
     assert semantic_label
     assert result["status"] == "fail"
     assert result["checks"][target_assertion] is False
+    assert result["target_executed"] is False
+
+
+def test_sg3_preinteraction_fixture_bindings_positive() -> None:
+    result = auditor.audit_preinteraction_fixture_bindings_source(SAFE_SG3_PREINTERACTION_FIXTURE_SOURCE)
+
+    assert result["status"] == "pass"
+    assert result["checks"] == {"preinteraction_fixtures_three": True}
+    assert result["target_executed"] is False
+
+
+@pytest.mark.parametrize(
+    ("semantic_label", "fixture_source"),
+    SG3_NEGATIVE_FIXTURES,
+    ids=[fixture[0] for fixture in SG3_NEGATIVE_FIXTURES],
+)
+def test_sg3_preinteraction_fixture_negative_fixtures_fail_closed(
+    semantic_label: str,
+    fixture_source: str,
+) -> None:
+    result = auditor.audit_preinteraction_fixture_bindings_source(fixture_source)
+
+    assert semantic_label
+    assert result["status"] == "fail"
+    assert result["checks"]["preinteraction_fixtures_three"] is False
     assert result["target_executed"] is False

@@ -41,6 +41,36 @@ SG2_CHECK_NAMES = (
     "package_origin_validated",
     "provenance_not_collapsed",
 )
+SG3_CHECK_NAMES = (
+    "preinteraction_fixtures_three",
+)
+
+_SG3_FIXTURE_CONTRACTS = (
+    (
+        "fixture_formal_state",
+        "/api/v1/internal/alpha/governed-review-decisions/formal-state",
+        "/base/controller_raw/fixture_formal_state_request_count",
+        "/base/controller_raw/fixture_formal_state_fulfill_count",
+        "fixture_formal_state_request_count",
+        "fixture_formal_state_fulfill_count",
+    ),
+    (
+        "fixture_local_exchange_samples",
+        "/api/v1/internal/alpha/review-console/local-exchange-samples",
+        "/base/controller_raw/fixture_local_exchange_samples_request_count",
+        "/base/controller_raw/fixture_local_exchange_samples_fulfill_count",
+        "fixture_local_exchange_samples_request_count",
+        "fixture_local_exchange_samples_fulfill_count",
+    ),
+    (
+        "fixture_governed_review_projection",
+        "/api/v1/internal/alpha/review-console/projections/governed-nonproduction-record-review-v0-1",
+        "/base/controller_raw/fixture_governed_review_projection_request_count",
+        "/base/controller_raw/fixture_governed_review_projection_fulfill_count",
+        "fixture_governed_review_projection_request_count",
+        "fixture_governed_review_projection_fulfill_count",
+    ),
+)
 
 _FORMAL_AUDIT_ENTRY_FUNCTION = "run_formal_audit"
 _FORMAL_AUDIT_WRITER_FUNCTION = "write_result"
@@ -706,6 +736,245 @@ def audit_origin_and_provenance_bindings_source(source: str) -> dict[str, Any]:
     return {
         "schema": "sentigraph_origin_and_provenance_bindings_static_proof_v0_1",
         "status": "pass" if all(checks.values()) else "fail",
+        "checks": checks,
+        "evidence": evidence,
+        "target_executed": False,
+    }
+
+
+def _is_exact_integer(node: ast.AST | None, value: int) -> bool:
+    return isinstance(node, ast.Constant) and type(node.value) is int and node.value == value
+
+
+def _controller_counter_source(node: ast.AST | None, counter_key: str) -> bool:
+    return (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "controller_raw"
+        and isinstance(node.slice, ast.Constant)
+        and node.slice.value == counter_key
+    )
+
+
+def _fixture_record_contract(
+    node: ast.AST | None,
+    identity: str,
+    route: str,
+    request_pointer: str,
+    fulfill_pointer: str,
+    request_key: str,
+    fulfill_key: str,
+) -> bool:
+    return (
+        _dict_constant_binding(node, "identity", identity)
+        and _dict_constant_binding(node, "method", "GET")
+        and _dict_constant_binding(node, "route", route)
+        and _dict_constant_binding(node, "request_counter", request_pointer)
+        and _dict_constant_binding(node, "fulfill_counter", fulfill_pointer)
+        and _controller_counter_source(_dict_binding(node, "request_count"), request_key)
+        and _controller_counter_source(_dict_binding(node, "fulfill_count"), fulfill_key)
+    )
+
+
+def _and_terms(node: ast.AST | None) -> list[ast.AST]:
+    return list(node.values) if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And) else []
+
+
+def _fixture_count_comparison(node: ast.AST, fixture_name: str, count_key: str, value: int) -> bool:
+    return (
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], ast.Eq)
+        and len(node.comparators) == 1
+        and _subscript_matches(node.left, fixture_name, count_key)
+        and _is_exact_integer(node.comparators[0], value)
+    )
+
+
+def _name_integer_comparison(node: ast.AST, name: str, value: int) -> bool:
+    return (
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], ast.Eq)
+        and len(node.comparators) == 1
+        and isinstance(node.left, ast.Name)
+        and node.left.id == name
+        and _is_exact_integer(node.comparators[0], value)
+    )
+
+
+def _has_exact_fixture_count_terms(node: ast.AST | None) -> bool:
+    terms = _and_terms(node)
+    required = [
+        (identity, count_key)
+        for identity, *_ in _SG3_FIXTURE_CONTRACTS
+        for count_key in ("request_count", "fulfill_count")
+    ]
+    return len(terms) == len(required) and all(
+        sum(int(_fixture_count_comparison(term, identity, count_key, 1)) for term in terms) == 1
+        for identity, count_key in required
+    )
+
+
+def _has_exact_broad_fail_closed_terms(node: ast.AST | None) -> bool:
+    terms = _and_terms(node)
+    return (
+        len(terms) == 5
+        and sum(int(isinstance(term, ast.Name) and term.id == "exact_fixture_contract") for term in terms) == 1
+        and sum(int(_name_integer_comparison(term, "expected", 3)) for term in terms) == 1
+        and sum(int(_name_integer_comparison(term, "completed", 3)) for term in terms) == 1
+        and sum(int(_name_integer_comparison(term, "fulfilled", 3)) for term in terms) == 1
+        and sum(int(_name_integer_comparison(term, "unexpected_api_request_count", 0)) for term in terms) == 1
+    )
+
+
+def _raising_not_name_guard_index(
+    function: ast.FunctionDef | ast.AsyncFunctionDef | None,
+    name: str,
+) -> int | None:
+    if function is None:
+        return None
+    matches: list[int] = []
+    for index, statement in enumerate(function.body):
+        if not isinstance(statement, ast.If):
+            continue
+        test = statement.test
+        if (
+            isinstance(test, ast.UnaryOp)
+            and isinstance(test.op, ast.Not)
+            and isinstance(test.operand, ast.Name)
+            and test.operand.id == name
+            and any(isinstance(node, ast.Raise) for node in ast.walk(statement))
+        ):
+            matches.append(index)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _fixture_result_list_contract(node: ast.AST | None) -> bool:
+    fixtures = _dict_binding(node, "preinteraction_fixtures")
+    expected_names = tuple(identity for identity, *_ in _SG3_FIXTURE_CONTRACTS)
+    return (
+        isinstance(fixtures, ast.List)
+        and len(fixtures.elts) == len(expected_names)
+        and all(
+            isinstance(element, ast.Name) and element.id == expected
+            for element, expected in zip(fixtures.elts, expected_names)
+        )
+    )
+
+
+def audit_preinteraction_fixture_bindings_source(source: str) -> dict[str, Any]:
+    """Prove the frozen three-fixture SG3 bindings without executing their producer."""
+
+    tree = ast.parse(source)
+    entry = _function_node(tree, "build_preinteraction_fixture_evidence")
+    fixture_records = {
+        identity: _single_assignment_value(entry, identity)
+        for identity, *_ in _SG3_FIXTURE_CONTRACTS
+    }
+    fixture_contracts = {
+        identity: _fixture_record_contract(fixture_records[identity], *contract)
+        for contract in _SG3_FIXTURE_CONTRACTS
+        for identity in (contract[0],)
+    }
+
+    route_values = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("/api/v1/internal/alpha/")
+    ]
+    expected_routes = [contract[1] for contract in _SG3_FIXTURE_CONTRACTS]
+    request_fulfill_pointers = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("/base/controller_raw/fixture_")
+    ]
+    expected_pointers = [value for contract in _SG3_FIXTURE_CONTRACTS for value in contract[2:4]]
+    fixture_identity_values = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and node.value in {contract[0] for contract in _SG3_FIXTURE_CONTRACTS}
+    ]
+    get_literal_count = sum(
+        1 for node in ast.walk(tree) if isinstance(node, ast.Constant) and node.value == "GET"
+    )
+
+    exact_contract_value = _single_assignment_value(entry, "exact_fixture_contract")
+    expected_value = _single_assignment_value(entry, "expected")
+    completed_value = _single_assignment_value(entry, "completed")
+    fulfilled_value = _single_assignment_value(entry, "fulfilled")
+    unexpected_value = _single_assignment_value(entry, "unexpected_api_request_count")
+    broad_value = _single_assignment_value(entry, "broad_api_fail_closed")
+    returned = _direct_return_value(entry)
+    guard_index = _raising_not_name_guard_index(entry, "broad_api_fail_closed")
+    return_index = next(
+        (index for index, statement in enumerate(entry.body if entry is not None else []) if isinstance(statement, ast.Return)),
+        None,
+    )
+
+    exact_routes = len(route_values) == 3 and sorted(route_values) == sorted(expected_routes)
+    exact_pointers = len(request_fulfill_pointers) == 6 and sorted(request_fulfill_pointers) == sorted(expected_pointers)
+    exact_identities = (
+        len(fixture_identity_values) == 3
+        and sorted(fixture_identity_values) == sorted(contract[0] for contract in _SG3_FIXTURE_CONTRACTS)
+    )
+    exact_fixture_counts = _has_exact_fixture_count_terms(exact_contract_value)
+    aggregate_three = all(
+        _is_exact_integer(value, 3) for value in (expected_value, completed_value, fulfilled_value)
+    )
+    unexpected_zero_source = _controller_counter_source(unexpected_value, "unexpected_api_request_count")
+    broad_fail_closed_contract = _has_exact_broad_fail_closed_terms(broad_value)
+    guard_before_return = (
+        guard_index is not None and return_index is not None and guard_index < return_index
+    )
+    final_evidence_contract = (
+        _fixture_result_list_contract(returned)
+        and _dict_name_binding(returned, "expected", "expected")
+        and _dict_name_binding(returned, "completed", "completed")
+        and _dict_name_binding(returned, "fulfilled", "fulfilled")
+        and _dict_name_binding(returned, "unexpected_api_request_count", "unexpected_api_request_count")
+        and _dict_name_binding(returned, "broad_api_fail_closed", "broad_api_fail_closed")
+    )
+
+    evidence = {
+        "entry_function_found": entry is not None,
+        "fixture_record_contracts": fixture_contracts,
+        "all_fixture_record_contracts": all(fixture_contracts.values()),
+        "exact_three_distinct_canonical_routes": exact_routes,
+        "exact_three_get_literals": get_literal_count == 3,
+        "exact_three_fixture_identities": exact_identities,
+        "exact_six_counter_pointers": exact_pointers,
+        "exact_six_per_fixture_one_comparisons": exact_fixture_counts,
+        "aggregate_expected_completed_fulfilled_three": aggregate_three,
+        "unexpected_api_request_count_source_bound": unexpected_zero_source,
+        "broad_fail_closed_contract": broad_fail_closed_contract,
+        "broad_fail_closed_guard_before_return": guard_before_return,
+        "final_evidence_contract": final_evidence_contract,
+    }
+    check = all(
+        (
+            evidence["entry_function_found"],
+            evidence["all_fixture_record_contracts"],
+            evidence["exact_three_distinct_canonical_routes"],
+            evidence["exact_three_get_literals"],
+            evidence["exact_three_fixture_identities"],
+            evidence["exact_six_counter_pointers"],
+            evidence["exact_six_per_fixture_one_comparisons"],
+            evidence["aggregate_expected_completed_fulfilled_three"],
+            evidence["unexpected_api_request_count_source_bound"],
+            evidence["broad_fail_closed_contract"],
+            evidence["broad_fail_closed_guard_before_return"],
+            evidence["final_evidence_contract"],
+        )
+    )
+    checks = {"preinteraction_fixtures_three": check}
+    return {
+        "schema": "sentigraph_preinteraction_fixture_bindings_static_proof_v0_1",
+        "status": "pass" if check else "fail",
         "checks": checks,
         "evidence": evidence,
         "target_executed": False,
