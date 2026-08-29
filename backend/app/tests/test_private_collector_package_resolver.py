@@ -149,13 +149,20 @@ def test_evidence_item_files_are_not_parsed_or_opened(tmp_path: Path, monkeypatc
     export_root = tmp_path / "exports"
     _write_package(export_root, "safe_package")
     original_read_text = Path.read_text
+    original_read_bytes = Path.read_bytes
 
     def guarded_read_text(self: Path, *args, **kwargs):
         if self.name in {"evidence_items.jsonl", "evidence_items.csv"}:
             raise AssertionError(f"{self.name} must not be parsed")
         return original_read_text(self, *args, **kwargs)
 
+    def guarded_read_bytes(self: Path, *args, **kwargs):
+        if self.name in {"evidence_items.jsonl", "evidence_items.csv"}:
+            raise AssertionError(f"{self.name} must not be parsed")
+        return original_read_bytes(self, *args, **kwargs)
+
     monkeypatch.setattr(Path, "read_text", guarded_read_text)
+    monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
 
     result = resolve_private_collector_package(export_root, {"package_name": "safe_package"})
     summary = summarize_private_collector_package_metadata(result)
@@ -182,6 +189,28 @@ def test_default_profile_still_scans_package_index_json(tmp_path: Path) -> None:
     assert "token" in result.forbidden_fields
 
 
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("manifest.json", '{"value":1,"value":2}'),
+        ("validation_report.json", ""),
+    ],
+)
+def test_governed_json_metadata_rejects_duplicate_keys_and_empty_documents(
+    tmp_path: Path,
+    filename: str,
+    content: str,
+) -> None:
+    export_root = tmp_path / "exports"
+    package_dir = _write_package(export_root, "invalid_json_package")
+    (package_dir / filename).write_text(content, encoding="utf-8")
+
+    result = resolve_private_collector_package(export_root, {"package_name": "invalid_json_package"})
+
+    assert result.status == "blocked_privacy_issue"
+    assert f"{filename}:invalid_json" in result.forbidden_fields
+
+
 def test_governed_b05_profile_reads_exact_five_files_without_package_index(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -193,17 +222,17 @@ def test_governed_b05_profile_reads_exact_five_files_without_package_index(
         "package_index.json",
         {"token": "governed-profile-must-not-open-this-file"},
     )
-    original_read_text = Path.read_text
+    original_read_bytes = Path.read_bytes
     opened_files: list[str] = []
 
-    def guarded_read_text(self: Path, *args, **kwargs):
+    def guarded_read_bytes(self: Path, *args, **kwargs):
         if self.parent == package_dir:
             if self.name == "package_index.json":
                 raise AssertionError("governed B05 profile must not open package_index.json")
             opened_files.append(self.name)
-        return original_read_text(self, *args, **kwargs)
+        return original_read_bytes(self, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+    monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
 
     result = resolve_private_collector_package(
         export_root,

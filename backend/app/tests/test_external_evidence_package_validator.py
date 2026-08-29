@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
+
+from scripts import validate_external_evidence_package as validator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -17,11 +20,40 @@ SAMPLE_PACKAGE = (
 
 
 def load_validator():
-    spec = importlib.util.spec_from_file_location("validate_external_evidence_package", VALIDATOR_PATH)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return validator
+
+
+def test_validator_uses_canonical_repository_root_module_identity() -> None:
+    assert validator.__name__ == "scripts.validate_external_evidence_package"
+
+
+def test_canonical_module_invocation_help_succeeds_without_package_access() -> None:
+    completed = subprocess.run(
+        [sys.executable, "-m", "scripts.validate_external_evidence_package", "--help"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert "package_folder" in completed.stdout
+    assert "Traceback" not in completed.stderr
+
+
+def test_legacy_direct_script_invocation_has_bounded_migration_marker() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(VALIDATOR_PATH), "--help"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr.strip() == validator.LEGACY_DIRECT_INVOCATION_MARKER
+    assert "Traceback" not in completed.stderr
+    assert str(REPO_ROOT) not in completed.stderr
 
 
 def test_external_evidence_validator_accepts_helldivers_sample_with_expected_warnings() -> None:
@@ -145,3 +177,26 @@ def test_external_evidence_validator_blocks_forbidden_identity_keys(tmp_path: Pa
 
     assert result["status"] == "fail"
     assert any(error["code"] == "FORBIDDEN_EVIDENCE_KEY" for error in result["errors"])
+
+
+def test_external_evidence_validator_rejects_duplicate_manifest_keys(tmp_path: Path) -> None:
+    package_dir = tmp_path / "package"
+    package_dir.mkdir()
+    (package_dir / "manifest.json").write_bytes(b'{"case_id":"one","case_id":"two"}')
+
+    result = validator.validate_package(package_dir)
+
+    assert result["status"] == "fail"
+    parse_error = next(error for error in result["errors"] if error["code"] == "JSON_PARSE_FAILED")
+    assert parse_error["detail"]["reason_code"] == "DUPLICATE_OBJECT_KEY"
+
+
+def test_external_evidence_validator_rejects_array_manifest_root(tmp_path: Path) -> None:
+    package_dir = tmp_path / "package"
+    package_dir.mkdir()
+    (package_dir / "manifest.json").write_bytes(b"[]")
+
+    result = validator.validate_package(package_dir)
+
+    parse_error = next(error for error in result["errors"] if error["code"] == "JSON_PARSE_FAILED")
+    assert parse_error["detail"]["reason_code"] == "ROOT_SHAPE_OBJECT_REQUIRED"

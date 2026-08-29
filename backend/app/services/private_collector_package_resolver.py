@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import stat as stat_module
@@ -13,6 +12,14 @@ from app.services.b05_review_subject_identity import (
     build_metadata_file_content_identity,
     build_metadata_identity_bundle,
     text_from_same_read_raw_bytes,
+)
+from sentigraph_shared.json_framing import (
+    DuplicateKeyPolicy,
+    JsonFramingError,
+    JsonFramingType,
+    JsonInputDescriptor,
+    JsonRootShape,
+    parse_single_json_document,
 )
 
 
@@ -46,6 +53,13 @@ GOVERNED_B05_READABLE_METADATA_FILES = (
     "validation_report.json",
     "validation_report.md",
 )
+
+PRIVATE_COLLECTOR_CONTAINER_ROLE = "private_collector_package"
+JSON_METADATA_MEMBER_ROLES = {
+    "manifest.json": "private_collector_manifest",
+    "validation_report.json": "private_collector_validation_report",
+    "package_index.json": "private_collector_package_index",
+}
 
 FORBIDDEN_METADATA_FIELDS = {
     "cookie",
@@ -383,7 +397,7 @@ def resolve_private_collector_package_with_identity(
                 errors=["governed metadata member could not be read or decoded"],
                 safe_mode=safe_mode,
             )
-        scan_result = _scan_decoded_metadata_text(name, text)
+        scan_result = _scan_decoded_metadata_text(name, text, raw_bytes)
         if scan_result is None:
             return _versioned_result(
                 "needs_fix_metadata_contract",
@@ -639,30 +653,46 @@ def _scan_metadata_files_for_forbidden_fields(
         if not path.exists() or not path.is_file():
             continue
         try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
+            raw_bytes = path.read_bytes()
+            text = text_from_same_read_raw_bytes(raw_bytes)
+        except (UnicodeDecodeError, TypeError, ValueError):
             forbidden_fields.add(f"{filename}:unreadable_text")
             continue
         except OSError:
             forbidden_fields.add(f"{filename}:read_error")
             continue
-        if filename.endswith(".json"):
-            try:
-                payload = json.loads(text) if text.strip() else {}
-            except json.JSONDecodeError:
-                forbidden_fields.add(f"{filename}:invalid_json")
-                continue
-            forbidden_fields.update(_find_forbidden_json_fields(payload))
-        else:
-            forbidden_fields.update(_find_forbidden_text_fields(text))
+        scan_result = _scan_decoded_metadata_text(filename, text, raw_bytes)
+        if scan_result is None:
+            forbidden_fields.add(f"{filename}:invalid_json")
+            continue
+        forbidden_fields.update(scan_result)
     return forbidden_fields
 
 
-def _scan_decoded_metadata_text(filename: str, text: str) -> set[str] | None:
+def _scan_decoded_metadata_text(filename: str, text: str, raw_bytes: bytes) -> set[str] | None:
     if filename.endswith(".json"):
+        source_role = JSON_METADATA_MEMBER_ROLES.get(filename)
+        if source_role is None:
+            return None
+        descriptor = JsonInputDescriptor.from_bytes(
+            raw_bytes,
+            source_role=source_role,
+            framing_type=JsonFramingType.SINGLE_JSON,
+            encoding="utf-8-sig",
+            container_role=PRIVATE_COLLECTOR_CONTAINER_ROLE,
+            member_role=filename,
+            root_shape=JsonRootShape.OBJECT_ONLY,
+            duplicate_key_policy=DuplicateKeyPolicy.REJECT_DUPLICATE_KEYS,
+        )
         try:
-            payload = json.loads(text) if text.strip() else {}
-        except json.JSONDecodeError:
+            payload = parse_single_json_document(
+                raw_bytes,
+                descriptor,
+                expected_source_role=source_role,
+                expected_container_role=PRIVATE_COLLECTOR_CONTAINER_ROLE,
+                expected_member_role=filename,
+            )
+        except JsonFramingError:
             return None
         return _find_forbidden_json_fields(payload)
     return _find_forbidden_text_fields(text)

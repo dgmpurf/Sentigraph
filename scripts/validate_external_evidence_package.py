@@ -1,11 +1,32 @@
 from __future__ import annotations
 
+import sys
+
+
+LEGACY_DIRECT_INVOCATION_MARKER = (
+    "SENTIGRAPH_VALIDATOR_INVOCATION_MIGRATED="
+    "USE_PYTHON_M_SCRIPTS_VALIDATE_EXTERNAL_EVIDENCE_PACKAGE_FROM_REPOSITORY_ROOT"
+)
+
+if __name__ == "__main__" and not __package__:
+    sys.stderr.write(LEGACY_DIRECT_INVOCATION_MARKER + "\n")
+    raise SystemExit(2)
+
 import argparse
 import json
-import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+from sentigraph_shared.json_framing import (
+    DuplicateKeyPolicy,
+    JsonFramingError,
+    JsonFramingType,
+    JsonInputDescriptor,
+    JsonRootShape,
+    parse_jsonl_records,
+    parse_single_json_document,
+)
 
 
 REQUIRED_PACKAGE_FILES = [
@@ -107,40 +128,110 @@ COVERAGE_PHRASES = {
     "not_causal_proof": ["not causal proof"],
 }
 
+PACKAGE_CONTAINER_ROLE = "external_evidence_package"
+MEMBER_CONTRACTS = {
+    "manifest.json": ("external_evidence_manifest", JsonFramingType.SINGLE_JSON),
+    "validation_report.json": ("external_evidence_validation_report", JsonFramingType.SINGLE_JSON),
+    "source_manifest.jsonl": ("external_evidence_source_manifest", JsonFramingType.JSONL),
+    "evidence_items.jsonl": ("external_evidence_items", JsonFramingType.JSONL),
+    "collection_log.jsonl": ("external_evidence_collection_log", JsonFramingType.JSONL),
+}
+
 
 def issue(code: str, message: str, *, detail: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"code": code, "message": message, "detail": detail or {}}
 
 
-def read_json(path: Path, errors: list[dict[str, Any]]) -> dict[str, Any]:
+def _framing_error_detail(path: Path, error: JsonFramingError) -> dict[str, Any]:
+    return {
+        "file": path.name,
+        "error_type": type(error).__name__,
+        **error.as_dict(),
+    }
+
+
+def _descriptor_for_member(
+    raw_bytes: bytes,
+    *,
+    source_role: str,
+    framing_type: JsonFramingType,
+    member_role: str,
+) -> JsonInputDescriptor:
+    return JsonInputDescriptor.from_bytes(
+        raw_bytes,
+        source_role=source_role,
+        framing_type=framing_type,
+        encoding="utf-8-sig",
+        container_role=PACKAGE_CONTAINER_ROLE,
+        member_role=member_role,
+        root_shape=JsonRootShape.OBJECT_ONLY,
+        duplicate_key_policy=DuplicateKeyPolicy.REJECT_DUPLICATE_KEYS,
+    )
+
+
+def read_json(
+    path: Path,
+    errors: list[dict[str, Any]],
+    *,
+    source_role: str,
+    member_role: str,
+) -> dict[str, Any]:
     try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
-    except Exception as exc:  # noqa: BLE001 - CLI validator should report parse failures.
+        raw_bytes = path.read_bytes()
+        descriptor = _descriptor_for_member(
+            raw_bytes,
+            source_role=source_role,
+            framing_type=JsonFramingType.SINGLE_JSON,
+            member_role=member_role,
+        )
+        return parse_single_json_document(
+            raw_bytes,
+            descriptor,
+            expected_source_role=source_role,
+            expected_container_role=PACKAGE_CONTAINER_ROLE,
+            expected_member_role=member_role,
+        )
+    except JsonFramingError as exc:
+        errors.append(issue("JSON_PARSE_FAILED", f"Could not parse {path.name}", detail=_framing_error_detail(path, exc)))
+        return {}
+    except OSError as exc:
         errors.append(issue("JSON_PARSE_FAILED", f"Could not parse {path.name}", detail={"file": path.name, "error_type": type(exc).__name__}))
         return {}
 
 
-def read_jsonl(path: Path, errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+def read_jsonl(
+    path: Path,
+    errors: list[dict[str, Any]],
+    *,
+    source_role: str,
+    member_role: str,
+) -> list[dict[str, Any]]:
     try:
-        content = path.read_text(encoding="utf-8-sig")
-    except Exception as exc:  # noqa: BLE001
+        raw_bytes = path.read_bytes()
+    except OSError as exc:
         errors.append(issue("FILE_READ_FAILED", f"Could not read {path.name}", detail={"file": path.name, "error_type": type(exc).__name__}))
-        return rows
-    for line_number, raw_line in enumerate(content.splitlines(), start=1):
-        line = raw_line.strip()
-        if not line:
-            continue
-        try:
-            parsed = json.loads(line)
-        except Exception as exc:  # noqa: BLE001
-            errors.append(issue("JSONL_PARSE_FAILED", f"Could not parse {path.name}:{line_number}", detail={"file": path.name, "line": line_number, "error_type": type(exc).__name__}))
-            continue
-        if not isinstance(parsed, dict):
-            errors.append(issue("JSONL_ROW_NOT_OBJECT", f"{path.name}:{line_number} is not a JSON object", detail={"file": path.name, "line": line_number}))
-            continue
-        rows.append(parsed)
-    return rows
+        return []
+    descriptor = _descriptor_for_member(
+        raw_bytes,
+        source_role=source_role,
+        framing_type=JsonFramingType.JSONL,
+        member_role=member_role,
+    )
+    try:
+        return parse_jsonl_records(
+            raw_bytes,
+            descriptor,
+            expected_source_role=source_role,
+            expected_container_role=PACKAGE_CONTAINER_ROLE,
+            expected_member_role=member_role,
+            allow_blank_lines=True,
+        )
+    except JsonFramingError as exc:
+        detail = _framing_error_detail(path, exc)
+        line_number = detail.get("line_number")
+        location = f":{line_number}" if line_number is not None else ""
+        errors.append(issue("JSONL_PARSE_FAILED", f"Could not parse {path.name}{location}", detail=detail))
+        return []
 
 
 def nested_keys(value: Any) -> list[str]:
@@ -351,11 +442,36 @@ def validate_package(package_path: str | Path, case_keywords: list[str] | None =
     for file_name in missing_files:
         errors.append(issue("MISSING_REQUIRED_FILE", "Required package file is missing", detail={"file": file_name}))
 
-    manifest = read_json(package_dir / "manifest.json", errors) if (package_dir / "manifest.json").exists() else {}
-    validation_report = read_json(package_dir / "validation_report.json", errors) if (package_dir / "validation_report.json").exists() else {}
-    sources = read_jsonl(package_dir / "source_manifest.jsonl", errors) if (package_dir / "source_manifest.jsonl").exists() else []
-    evidence = read_jsonl(package_dir / "evidence_items.jsonl", errors) if (package_dir / "evidence_items.jsonl").exists() else []
-    collection_log = read_jsonl(package_dir / "collection_log.jsonl", errors) if (package_dir / "collection_log.jsonl").exists() else []
+    manifest = read_json(
+        package_dir / "manifest.json",
+        errors,
+        source_role=MEMBER_CONTRACTS["manifest.json"][0],
+        member_role="manifest.json",
+    ) if (package_dir / "manifest.json").exists() else {}
+    validation_report = read_json(
+        package_dir / "validation_report.json",
+        errors,
+        source_role=MEMBER_CONTRACTS["validation_report.json"][0],
+        member_role="validation_report.json",
+    ) if (package_dir / "validation_report.json").exists() else {}
+    sources = read_jsonl(
+        package_dir / "source_manifest.jsonl",
+        errors,
+        source_role=MEMBER_CONTRACTS["source_manifest.jsonl"][0],
+        member_role="source_manifest.jsonl",
+    ) if (package_dir / "source_manifest.jsonl").exists() else []
+    evidence = read_jsonl(
+        package_dir / "evidence_items.jsonl",
+        errors,
+        source_role=MEMBER_CONTRACTS["evidence_items.jsonl"][0],
+        member_role="evidence_items.jsonl",
+    ) if (package_dir / "evidence_items.jsonl").exists() else []
+    collection_log = read_jsonl(
+        package_dir / "collection_log.jsonl",
+        errors,
+        source_role=MEMBER_CONTRACTS["collection_log.jsonl"][0],
+        member_role="collection_log.jsonl",
+    ) if (package_dir / "collection_log.jsonl").exists() else []
 
     add_validation_report_issues(validation_report, warnings, errors)
     if manifest:
