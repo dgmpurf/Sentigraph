@@ -236,7 +236,7 @@ def _member_09_assignments(tree: ast.AST) -> list[ast.Assign]:
     return assignments
 
 
-def audit_formal_auditor_self_emission_source(source: str) -> dict[str, Any]:
+def _legacy_audit_formal_auditor_self_emission_source(source: str) -> dict[str, Any]:
     """Prove SG1 output convergence and sanitizer ordering without executing the target."""
 
     tree = ast.parse(source)
@@ -551,7 +551,7 @@ def _guard_contract(function: ast.FunctionDef | ast.AsyncFunctionDef | None) -> 
     return identity_guard and origin_guard
 
 
-def audit_origin_and_provenance_bindings_source(source: str) -> dict[str, Any]:
+def _legacy_audit_origin_and_provenance_bindings_source(source: str) -> dict[str, Any]:
     """Prove SG2 host/package origin data flows and non-collapse without target execution."""
 
     tree = ast.parse(source)
@@ -863,7 +863,7 @@ def _fixture_result_list_contract(node: ast.AST | None) -> bool:
     )
 
 
-def audit_preinteraction_fixture_bindings_source(source: str) -> dict[str, Any]:
+def _legacy_audit_preinteraction_fixture_bindings_source(source: str) -> dict[str, Any]:
     """Prove the frozen three-fixture SG3 bindings without executing their producer."""
 
     tree = ast.parse(source)
@@ -977,6 +977,259 @@ def audit_preinteraction_fixture_bindings_source(source: str) -> dict[str, Any]:
         "status": "pass" if check else "fail",
         "checks": checks,
         "evidence": evidence,
+        "target_executed": False,
+    }
+
+
+def _r4_group(topology: Any, name: str) -> dict[str, Any]:
+    if not isinstance(topology, dict):
+        return {}
+    value = topology.get(name)
+    return value if isinstance(value, dict) else {}
+
+
+def _r4_exact_int(value: Any, expected: int) -> bool:
+    return type(value) is int and value == expected
+
+
+def _r4_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return []
+    return value
+
+
+def audit_formal_auditor_self_emission_source(topology: Any) -> dict[str, Any]:
+    """Bind SG1 to accepted R4 output and sanitizer topology, not synthetic helper names."""
+
+    if isinstance(topology, str):
+        return _legacy_audit_formal_auditor_self_emission_source(topology)
+
+    formal = _r4_group(topology, "formal_auditor")
+    output = _r4_group(formal, "output")
+    member_09 = _r4_group(formal, "member_09")
+    sanitizer = _r4_group(formal, "sanitizer")
+
+    output_target = output.get("argument_target")
+    shared_output_target = (
+        isinstance(output_target, str)
+        and output_target
+        and output.get("normal_target") == output_target
+        and output.get("failure_target") == output_target
+        and output.get("write_target") == output_target
+        and member_09.get("source_target") == output_target
+    )
+    output_check = all(
+        (
+            formal.get("member") == "05_STATIC_AUDITOR.py",
+            output.get("writer") == "create_only_json",
+            _r4_exact_int(output.get("write_count"), 1),
+            output.get("result_object") == output.get("writer_payload_source"),
+            output.get("normal_and_failure_share_result_object") is True,
+            shared_output_target,
+            member_09.get("derives_only_from_output") is True,
+            member_09.get("binding_after_final_write") is True,
+        )
+    )
+    sanitized_value = sanitizer.get("sanitized_value")
+    sanitizer_check = all(
+        (
+            formal.get("member") == "05_STATIC_AUDITOR.py",
+            sanitizer.get("present") is True,
+            sanitizer.get("covers_normal_result") is True,
+            sanitizer.get("covers_failure_safe_result") is True,
+            sanitizer.get("before_final_write") is True,
+            isinstance(sanitized_value, str),
+            bool(sanitized_value),
+            output.get("writer_payload") == sanitized_value,
+            sanitizer.get("writer_consumes") == sanitized_value,
+            _r4_exact_int(output.get("write_count"), 1),
+        )
+    )
+    checks = {
+        "auditor_single_output_target": output_check,
+        "sanitizer_present": sanitizer_check,
+    }
+    return {
+        "schema": "sentigraph_r4_formal_auditor_self_emission_topology_static_proof_v0_1",
+        "status": "pass" if all(checks.values()) else "fail",
+        "checks": checks,
+        "evidence": {
+            "member_05_bound": formal.get("member") == "05_STATIC_AUDITOR.py",
+            "shared_output_target": shared_output_target,
+            "single_create_only_final_write": output.get("writer") == "create_only_json"
+            and _r4_exact_int(output.get("write_count"), 1),
+            "member_09_derives_only_from_output": member_09.get("derives_only_from_output") is True,
+            "sanitizer_before_final_write": sanitizer.get("before_final_write") is True,
+            "writer_consumes_sanitized_output": output.get("writer_payload") == sanitized_value
+            and sanitizer.get("writer_consumes") == sanitized_value,
+            "later_synthetic_helper_shapes_required": False,
+        },
+        "target_executed": False,
+    }
+
+
+def audit_origin_and_provenance_bindings_source(topology: Any) -> dict[str, Any]:
+    """Bind SG2 to accepted R4 origin/provenance topology, not named helper pipelines."""
+
+    if isinstance(topology, str):
+        return _legacy_audit_origin_and_provenance_bindings_source(topology)
+
+    orchestrator = _r4_group(topology, "orchestrator")
+    host = _r4_group(orchestrator, "host_attestation")
+    package = _r4_group(orchestrator, "package_validation")
+    provenance = _r4_group(orchestrator, "provenance")
+
+    outer_check = all(
+        (
+            orchestrator.get("member") == "01_RUNTIME_CANARY_ORCHESTRATOR.py",
+            host.get("validated") is True,
+            host.get("sanitized") is True,
+            host.get("allowed_origin_mapping_validated") is True,
+            host.get("validated_before_runtime_admission") is True,
+            host.get("origin") == "host_attested_pre_runtime",
+            host.get("receipt_path") == "/planned_final_receipt/accepted_package_identity/outer_identity",
+            host.get("builder_role") == "host_attestation_outer_identity",
+        )
+    )
+    package_check = all(
+        (
+            orchestrator.get("member") == "01_RUNTIME_CANARY_ORCHESTRATOR.py",
+            package.get("validated") is True,
+            package.get("manifest_and_sha256sums_verified") is True,
+            package.get("independent_from_host_attestation") is True,
+            package.get("origin") == "package_validated",
+            package.get("receipt_path") == "/planned_final_receipt/package_member_validation",
+            package.get("builder_role") == "package_member_validation",
+        )
+    )
+    guard_inputs = _r4_string_list(provenance.get("guard_inputs"))
+    provenance_check = all(
+        (
+            outer_check,
+            package_check,
+            host.get("evidence_object") != package.get("evidence_object"),
+            host.get("origin") != package.get("origin"),
+            host.get("builder_role") != package.get("builder_role"),
+            host.get("receipt_path") != package.get("receipt_path"),
+            provenance.get("distinct_objects") is True,
+            provenance.get("distinct_origin_classes") is True,
+            provenance.get("distinct_builder_roles") is True,
+            provenance.get("guard_present") is True,
+            provenance.get("guard_effective") is True,
+            guard_inputs == [host.get("evidence_object"), package.get("evidence_object")],
+        )
+    )
+    checks = {
+        "outer_origin_host_attested": outer_check,
+        "package_origin_validated": package_check,
+        "provenance_not_collapsed": provenance_check,
+    }
+    return {
+        "schema": "sentigraph_r4_origin_and_provenance_topology_static_proof_v0_1",
+        "status": "pass" if all(checks.values()) else "fail",
+        "checks": checks,
+        "evidence": {
+            "member_01_bound": orchestrator.get("member") == "01_RUNTIME_CANARY_ORCHESTRATOR.py",
+            "host_gate_to_origin_flow": outer_check,
+            "package_gate_to_origin_flow": package_check,
+            "provenance_guard_effective": provenance.get("guard_present") is True
+            and provenance.get("guard_effective") is True,
+            "later_synthetic_helper_shapes_required": False,
+        },
+        "target_executed": False,
+    }
+
+
+def audit_preinteraction_fixture_bindings_source(topology: Any) -> dict[str, Any]:
+    """Bind SG3 to accepted cross-member R4 topology, not a synthetic member-05 helper."""
+
+    if isinstance(topology, str):
+        return _legacy_audit_preinteraction_fixture_bindings_source(topology)
+
+    preinteraction = _r4_group(topology, "preinteraction")
+    aggregate = _r4_group(preinteraction, "aggregate")
+    fixture_values = preinteraction.get("fixtures")
+    fixtures = fixture_values if isinstance(fixture_values, list) else []
+    fixture_by_identity = {
+        item.get("identity"): item
+        for item in fixtures
+        if isinstance(item, dict) and isinstance(item.get("identity"), str)
+    }
+    contracts: list[bool] = []
+    for identity, route, request_pointer, fulfill_pointer, request_key, fulfill_key in _SG3_FIXTURE_CONTRACTS:
+        fixture = fixture_by_identity.get(identity, {})
+        contracts.append(
+            all(
+                (
+                    fixture.get("identity") == identity,
+                    fixture.get("method") == "GET",
+                    fixture.get("route") == route,
+                    fixture.get("request_counter") == request_pointer,
+                    fixture.get("fulfill_counter") == fulfill_pointer,
+                    fixture.get("request_key") == request_key,
+                    fixture.get("fulfill_key") == fulfill_key,
+                    _r4_exact_int(fixture.get("request_count"), 1),
+                    _r4_exact_int(fixture.get("fulfill_count"), 1),
+                )
+            )
+        )
+    exact_fixture_identities = len(fixtures) == 3 and len(fixture_by_identity) == 3 and all(contracts)
+    aggregate_three = all(
+        _r4_exact_int(aggregate.get(key), 3)
+        for key in ("expected", "completed", "fulfilled")
+    )
+    check = all(
+        (
+            preinteraction.get("controller_member") == "02_RUNTIME_CANARY_CONTROLLER.cjs",
+            preinteraction.get("fixture_member") == "06_PUBLIC_END_TO_END_FIXTURES.json",
+            preinteraction.get("consumer_member") == "05_STATIC_AUDITOR.py",
+            exact_fixture_identities,
+            aggregate_three,
+            _r4_exact_int(preinteraction.get("unexpected_api_request_count"), 0),
+            preinteraction.get("gate_uses_exact_fixture_pairs") is True,
+            preinteraction.get("broad_api_fail_closed_before_interaction") is True,
+        )
+    )
+    checks = {"preinteraction_fixtures_three": check}
+    return {
+        "schema": "sentigraph_r4_preinteraction_cross_member_topology_static_proof_v0_1",
+        "status": "pass" if check else "fail",
+        "checks": checks,
+        "evidence": {
+            "exact_three_cross_member_fixture_contracts": exact_fixture_identities,
+            "aggregate_expected_completed_fulfilled_three": aggregate_three,
+            "unexpected_api_zero": _r4_exact_int(preinteraction.get("unexpected_api_request_count"), 0),
+            "broad_api_fail_closed_before_interaction": preinteraction.get(
+                "broad_api_fail_closed_before_interaction"
+            )
+            is True,
+            "later_synthetic_helper_shapes_required": False,
+        },
+        "target_executed": False,
+    }
+
+
+def audit_existing_r4_evidence_topology(topology: Any) -> dict[str, Any]:
+    """Evaluate exactly six semantic invariants from the accepted immutable R4 topology."""
+
+    sg1 = audit_formal_auditor_self_emission_source(topology)
+    sg2 = audit_origin_and_provenance_bindings_source(topology)
+    sg3 = audit_preinteraction_fixture_bindings_source(topology)
+    checks = {
+        **sg1["checks"],
+        **sg2["checks"],
+        **sg3["checks"],
+    }
+    expected = set((*SG1_CHECK_NAMES, *SG2_CHECK_NAMES, *SG3_CHECK_NAMES))
+    exact_check_set = set(checks) == expected and len(checks) == 6
+    return {
+        "schema": "sentigraph_existing_r4_six_gap_topology_static_proof_v0_1",
+        "status": "pass" if exact_check_set and all(checks.values()) else "fail",
+        "checks": checks,
+        "check_count": len(checks),
+        "exact_check_set": exact_check_set,
+        "later_synthetic_helper_shapes_required": False,
+        "package_regeneration_or_materialization_required": False,
         "target_executed": False,
     }
 

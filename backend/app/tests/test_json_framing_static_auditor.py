@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,244 @@ from scripts.governance import sentigraph_json_framing_static_auditor_v0_1 as au
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+SAFE_R4_EVIDENCE_TOPOLOGY = {
+    "formal_auditor": {
+        "member": "05_STATIC_AUDITOR.py",
+        "output": {
+            "argument_target": "output",
+            "normal_target": "output",
+            "failure_target": "output",
+            "write_target": "output",
+            "writer": "create_only_json",
+            "write_count": 1,
+            "result_object": "result",
+            "writer_payload_source": "result",
+            "normal_and_failure_share_result_object": True,
+            "writer_payload": "sanitized_result",
+        },
+        "member_09": {
+            "source_target": "output",
+            "derives_only_from_output": True,
+            "binding_after_final_write": True,
+        },
+        "sanitizer": {
+            "present": True,
+            "covers_normal_result": True,
+            "covers_failure_safe_result": True,
+            "before_final_write": True,
+            "sanitized_value": "sanitized_result",
+            "writer_consumes": "sanitized_result",
+        },
+    },
+    "orchestrator": {
+        "member": "01_RUNTIME_CANARY_ORCHESTRATOR.py",
+        "host_attestation": {
+            "validated": True,
+            "sanitized": True,
+            "allowed_origin_mapping_validated": True,
+            "validated_before_runtime_admission": True,
+            "origin": "host_attested_pre_runtime",
+            "receipt_path": "/planned_final_receipt/accepted_package_identity/outer_identity",
+            "builder_role": "host_attestation_outer_identity",
+            "evidence_object": "outer_identity",
+        },
+        "package_validation": {
+            "validated": True,
+            "manifest_and_sha256sums_verified": True,
+            "independent_from_host_attestation": True,
+            "origin": "package_validated",
+            "receipt_path": "/planned_final_receipt/package_member_validation",
+            "builder_role": "package_member_validation",
+            "evidence_object": "package_member_validation",
+        },
+        "provenance": {
+            "distinct_objects": True,
+            "distinct_origin_classes": True,
+            "distinct_builder_roles": True,
+            "guard_present": True,
+            "guard_effective": True,
+            "guard_inputs": ["outer_identity", "package_member_validation"],
+        },
+    },
+    "preinteraction": {
+        "controller_member": "02_RUNTIME_CANARY_CONTROLLER.cjs",
+        "fixture_member": "06_PUBLIC_END_TO_END_FIXTURES.json",
+        "consumer_member": "05_STATIC_AUDITOR.py",
+        "fixtures": [
+            {
+                "identity": "fixture_formal_state",
+                "method": "GET",
+                "route": "/api/v1/internal/alpha/governed-review-decisions/formal-state",
+                "request_counter": "/base/controller_raw/fixture_formal_state_request_count",
+                "fulfill_counter": "/base/controller_raw/fixture_formal_state_fulfill_count",
+                "request_key": "fixture_formal_state_request_count",
+                "fulfill_key": "fixture_formal_state_fulfill_count",
+                "request_count": 1,
+                "fulfill_count": 1,
+            },
+            {
+                "identity": "fixture_local_exchange_samples",
+                "method": "GET",
+                "route": "/api/v1/internal/alpha/review-console/local-exchange-samples",
+                "request_counter": "/base/controller_raw/fixture_local_exchange_samples_request_count",
+                "fulfill_counter": "/base/controller_raw/fixture_local_exchange_samples_fulfill_count",
+                "request_key": "fixture_local_exchange_samples_request_count",
+                "fulfill_key": "fixture_local_exchange_samples_fulfill_count",
+                "request_count": 1,
+                "fulfill_count": 1,
+            },
+            {
+                "identity": "fixture_governed_review_projection",
+                "method": "GET",
+                "route": "/api/v1/internal/alpha/review-console/projections/governed-nonproduction-record-review-v0-1",
+                "request_counter": "/base/controller_raw/fixture_governed_review_projection_request_count",
+                "fulfill_counter": "/base/controller_raw/fixture_governed_review_projection_fulfill_count",
+                "request_key": "fixture_governed_review_projection_request_count",
+                "fulfill_key": "fixture_governed_review_projection_fulfill_count",
+                "request_count": 1,
+                "fulfill_count": 1,
+            },
+        ],
+        "aggregate": {"expected": 3, "completed": 3, "fulfilled": 3},
+        "unexpected_api_request_count": 0,
+        "gate_uses_exact_fixture_pairs": True,
+        "broad_api_fail_closed_before_interaction": True,
+    },
+}
+
+
+def _mutated_r4_topology(path: tuple[str | int, ...], value: object) -> dict[str, object]:
+    topology = copy.deepcopy(SAFE_R4_EVIDENCE_TOPOLOGY)
+    cursor: object = topology
+    for part in path[:-1]:
+        cursor = cursor[part]  # type: ignore[index]
+    cursor[path[-1]] = value  # type: ignore[index]
+    return topology
+
+
+R4_TOPOLOGY_NEGATIVE_FIXTURES = (
+    (
+        "R4_SG1_SECOND_OUTPUT_WRITER",
+        "auditor_single_output_target",
+        ("formal_auditor", "output", "write_count"),
+        2,
+    ),
+    (
+        "R4_SG1_FAILURE_TARGET_NOT_SHARED",
+        "auditor_single_output_target",
+        ("formal_auditor", "output", "failure_target"),
+        "alternate_output",
+    ),
+    (
+        "R4_SG1_MEMBER09_ALTERNATE_TARGET",
+        "auditor_single_output_target",
+        ("formal_auditor", "member_09", "source_target"),
+        "alternate_output",
+    ),
+    (
+        "R4_SG1_SANITIZER_REMOVED",
+        "sanitizer_present",
+        ("formal_auditor", "sanitizer", "present"),
+        False,
+    ),
+    (
+        "R4_SG1_SANITIZER_AFTER_WRITE",
+        "sanitizer_present",
+        ("formal_auditor", "sanitizer", "before_final_write"),
+        False,
+    ),
+    (
+        "R4_SG1_WRITER_CONSUMES_UNSANITIZED_RESULT",
+        "sanitizer_present",
+        ("formal_auditor", "output", "writer_payload"),
+        "result",
+    ),
+    (
+        "R4_SG2_HOST_GATE_TO_ORIGIN_FLOW_BROKEN",
+        "outer_origin_host_attested",
+        ("orchestrator", "host_attestation", "validated"),
+        False,
+    ),
+    (
+        "R4_SG2_HOST_ORIGIN_REPLACED",
+        "outer_origin_host_attested",
+        ("orchestrator", "host_attestation", "origin"),
+        "package_validated",
+    ),
+    (
+        "R4_SG2_PACKAGE_GATE_TO_ORIGIN_FLOW_BROKEN",
+        "package_origin_validated",
+        ("orchestrator", "package_validation", "manifest_and_sha256sums_verified"),
+        False,
+    ),
+    (
+        "R4_SG2_PACKAGE_NOT_INDEPENDENT",
+        "package_origin_validated",
+        ("orchestrator", "package_validation", "independent_from_host_attestation"),
+        False,
+    ),
+    (
+        "R4_SG2_PROVENANCE_OBJECT_ALIAS",
+        "provenance_not_collapsed",
+        ("orchestrator", "package_validation", "evidence_object"),
+        "outer_identity",
+    ),
+    (
+        "R4_SG2_PROVENANCE_BUILDER_ROLE_COLLAPSE",
+        "provenance_not_collapsed",
+        ("orchestrator", "package_validation", "builder_role"),
+        "host_attestation_outer_identity",
+    ),
+    (
+        "R4_SG2_NON_COLLAPSE_GUARD_INEFFECTIVE",
+        "provenance_not_collapsed",
+        ("orchestrator", "provenance", "guard_effective"),
+        False,
+    ),
+    (
+        "R4_SG3_CANONICAL_ROUTE_REPLACED",
+        "preinteraction_fixtures_three",
+        ("preinteraction", "fixtures", 0, "route"),
+        "/api/v1/internal/alpha/governed-review-decisions/replaced-formal-state",
+    ),
+    (
+        "R4_SG3_DUPLICATE_ROUTE_SUBSTITUTION",
+        "preinteraction_fixtures_three",
+        ("preinteraction", "fixtures", 1, "route"),
+        "/api/v1/internal/alpha/governed-review-decisions/formal-state",
+    ),
+    (
+        "R4_SG3_REQUEST_COUNTER_WRONG_ROUTE_PAIR",
+        "preinteraction_fixtures_three",
+        ("preinteraction", "fixtures", 0, "request_key"),
+        "fixture_local_exchange_samples_request_count",
+    ),
+    (
+        "R4_SG3_FULFILL_COUNTER_WRONG_ROUTE_PAIR",
+        "preinteraction_fixtures_three",
+        ("preinteraction", "fixtures", 0, "fulfill_key"),
+        "fixture_local_exchange_samples_fulfill_count",
+    ),
+    (
+        "R4_SG3_REQUEST_COUNTER_NOT_ONE",
+        "preinteraction_fixtures_three",
+        ("preinteraction", "fixtures", 0, "request_count"),
+        2,
+    ),
+    (
+        "R4_SG3_FULFILL_COUNTER_NOT_ONE",
+        "preinteraction_fixtures_three",
+        ("preinteraction", "fixtures", 0, "fulfill_count"),
+        2,
+    ),
+    (
+        "R4_SG3_AGGREGATE_THREE_BUT_PER_FIXTURE_BINDING_WRONG",
+        "preinteraction_fixtures_three",
+        ("preinteraction", "fixtures", 0, "request_counter"),
+        "/base/controller_raw/fixture_local_exchange_samples_request_count",
+    ),
+)
 
 SAFE_FORMAL_AUDITOR_SOURCE = '''
 from pathlib import Path
@@ -442,4 +681,44 @@ def test_sg3_preinteraction_fixture_negative_fixtures_fail_closed(
     assert semantic_label
     assert result["status"] == "fail"
     assert result["checks"]["preinteraction_fixtures_three"] is False
+    assert result["target_executed"] is False
+
+
+def test_accepted_r4_evidence_topology_proves_exactly_six_semantic_invariants() -> None:
+    result = auditor.audit_existing_r4_evidence_topology(SAFE_R4_EVIDENCE_TOPOLOGY)
+
+    assert result["status"] == "pass"
+    assert result["check_count"] == 6
+    assert result["exact_check_set"] is True
+    assert result["checks"] == {
+        "auditor_single_output_target": True,
+        "sanitizer_present": True,
+        "outer_origin_host_attested": True,
+        "package_origin_validated": True,
+        "provenance_not_collapsed": True,
+        "preinteraction_fixtures_three": True,
+    }
+    assert result["later_synthetic_helper_shapes_required"] is False
+    assert result["package_regeneration_or_materialization_required"] is False
+    assert result["target_executed"] is False
+
+
+@pytest.mark.parametrize(
+    ("semantic_label", "target_assertion", "path", "replacement"),
+    R4_TOPOLOGY_NEGATIVE_FIXTURES,
+    ids=[fixture[0] for fixture in R4_TOPOLOGY_NEGATIVE_FIXTURES],
+)
+def test_accepted_r4_topology_semantic_edges_fail_closed(
+    semantic_label: str,
+    target_assertion: str,
+    path: tuple[str | int, ...],
+    replacement: object,
+) -> None:
+    topology = _mutated_r4_topology(path, replacement)
+    result = auditor.audit_existing_r4_evidence_topology(topology)
+
+    assert semantic_label
+    assert result["status"] == "fail"
+    assert result["checks"][target_assertion] is False
+    assert result["later_synthetic_helper_shapes_required"] is False
     assert result["target_executed"] is False
