@@ -943,6 +943,12 @@ export function InternalAlphaReviewConsole() {
                         <Descriptions.Item label="production_object_enabled">
                           {String(decision.production_object_enabled)}
                         </Descriptions.Item>
+                        <Descriptions.Item label="review_queue_runtime_enabled">
+                          {String(decision.review_queue_runtime_enabled)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="evidence_layer_write_performed">
+                          {String(decision.evidence_layer_write_performed)}
+                        </Descriptions.Item>
                         <Descriptions.Item label="provider_or_b05_called">
                           {String(decision.provider_or_b05_called)}
                         </Descriptions.Item>

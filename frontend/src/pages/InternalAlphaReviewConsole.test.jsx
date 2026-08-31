@@ -1891,6 +1891,24 @@ describe('InternalAlphaReviewConsole bounded decision audit history', () => {
       }),
       createIdentityReadyDecisionAuditHistoryRow(),
     ]
+    const canonicalSafeHistoryFields = [
+      'decision_id',
+      'audit_receipt_reference',
+      'sample_handle',
+      'decision_type',
+      'decision_status',
+      'recorded_at',
+      'human_review_required',
+      'no_automatic_trust_upgrade',
+      'production_object_enabled',
+      'review_queue_runtime_enabled',
+      'evidence_layer_write_performed',
+      'provider_or_b05_called',
+      'analysis_triggered',
+      'report_triggered',
+    ]
+    expect(Object.keys(orderedRows[0])).toEqual(canonicalSafeHistoryFields)
+    expect(Object.keys(orderedRows[1])).toEqual(canonicalSafeHistoryFields)
     apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
     apiMocks.apiClientGet.mockImplementation((url) => {
       if (url === historyEndpoint) return pending.promise
@@ -1923,6 +1941,11 @@ describe('InternalAlphaReviewConsole bounded decision audit history', () => {
     expect(renderedText.indexOf(secondDecisionId)).toBeLessThan(
       renderedText.indexOf(IDENTITY_READY_DECISION_ID),
     )
+    canonicalSafeHistoryFields.forEach((field) => {
+      expect(within(historyList).getAllByText(field, { exact: true })).toHaveLength(2)
+    })
+    expect(renderedText).toMatch(/review_queue_runtime_enabled\s*false/)
+    expect(renderedText).toMatch(/evidence_layer_write_performed\s*false/)
     expect(pointAuditGetCalls()).toHaveLength(0)
     expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
     expect(renderedText).not.toContain('decision_canonical_hash')
