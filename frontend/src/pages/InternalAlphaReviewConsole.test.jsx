@@ -61,6 +61,9 @@ import {
   B05_REVIEW_SUBJECT_IDENTITY_FIELDS,
   INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_ERROR_FIELDS,
   INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_SUCCESS_FIELDS,
+  INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ERROR_FIELDS,
+  INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ROW_FIELDS,
+  INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_SUCCESS_FIELDS,
   INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
   INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
   INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS,
@@ -70,7 +73,9 @@ import {
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS,
   getInternalAlphaGovernedReviewFormalState,
+  getInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory,
   getInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
+  normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory,
   normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
   normalizeInternalAlphaGovernedReviewFormalStateProjection,
   normalizeInternalAlphaGovernedReviewDecisionPostResponse,
@@ -304,6 +309,75 @@ function createIdentityReadyDecisionAuditResponse({
     status === 200
       ? INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_SUCCESS_FIELDS
       : INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_ERROR_FIELDS
+  return {
+    status,
+    data: {
+      ...orderedObject(fields, values),
+      ...(extraFields || {}),
+    },
+  }
+}
+
+function createIdentityReadyDecisionAuditHistoryRow({
+  decisionId = IDENTITY_READY_DECISION_ID,
+  recordedAt = '2026-08-27T00:00:00Z',
+  decisionType = 'keep_pending_human_review',
+  extraFields = null,
+} = {}) {
+  const suffix = decisionId.replace('irghrd-', '')
+  return {
+    ...orderedObject(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ROW_FIELDS,
+      {
+        decision_id: decisionId,
+        audit_receipt_reference: `irghrd-receipt-${suffix}`,
+        sample_handle: CURRENT_HANDLE,
+        decision_type: decisionType,
+        decision_status: 'recorded_append_only_nonproduction_identity_ready',
+        recorded_at: recordedAt,
+        human_review_required: true,
+        no_automatic_trust_upgrade: true,
+        production_object_enabled: false,
+        review_queue_runtime_enabled: false,
+        evidence_layer_write_performed: false,
+        provider_or_b05_called: false,
+        analysis_triggered: false,
+        report_triggered: false,
+      },
+    ),
+    ...(extraFields || {}),
+  }
+}
+
+function createIdentityReadyDecisionAuditHistoryResponse({
+  status = 200,
+  historyStatus = status === 200 ? 'decision_history_ready' : 'audit_target_absent',
+  decisions = [createIdentityReadyDecisionAuditHistoryRow()],
+  requestedLimit = 20,
+  extraFields = null,
+} = {}) {
+  const base = {
+    response_schema:
+      'sentigraph_internal_alpha_identity_ready_governed_review_decision_audit_history_response_v0_1',
+    response_version: '0.1',
+    route_mode:
+      'internal_disabled_by_default_bounded_read_only_identity_ready_human_review_decision_audit_history',
+    history_status: historyStatus,
+  }
+  const values =
+    status === 200
+      ? {
+          ...base,
+          requested_limit: requestedLimit,
+          returned_count: decisions.length,
+          ordering: 'recorded_at_desc_decision_id_desc',
+          decisions,
+        }
+      : base
+  const fields =
+    status === 200
+      ? INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_SUCCESS_FIELDS
+      : INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ERROR_FIELDS
   return {
     status,
     data: {
@@ -1789,5 +1863,170 @@ describe('InternalAlphaReviewConsole identity-ready durable decision audit readb
       'frontend_identity_ready_governed_review_decision_audit_projection_contract_mismatch',
     )
     expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(0)
+  })
+})
+
+describe('InternalAlphaReviewConsole bounded decision audit history', () => {
+  const historyEndpoint =
+    '/api/v1/internal/alpha/governed-review-decisions/identity-ready/v0.1/decisions/audit-projections'
+
+  function historyGetCalls() {
+    return apiMocks.apiClientGet.mock.calls.filter(([url]) => url === historyEndpoint)
+  }
+
+  function pointAuditGetCalls() {
+    return apiMocks.apiClientGet.mock.calls.filter(([url]) =>
+      String(url).endsWith('/audit-projection'),
+    )
+  }
+
+  it('loads at most twenty ordered safe rows only after one explicit action', async () => {
+    const pending = deferred()
+    const secondDecisionId = 'irghrd-fedcba9876543210fedcba9876543210'
+    const orderedRows = [
+      createIdentityReadyDecisionAuditHistoryRow({
+        decisionId: secondDecisionId,
+        recordedAt: '2026-08-28T00:00:00Z',
+        decisionType: 'request_more_governance_review',
+      }),
+      createIdentityReadyDecisionAuditHistoryRow(),
+    ]
+    apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+    apiMocks.apiClientGet.mockImplementation((url) => {
+      if (url === historyEndpoint) return pending.promise
+      return Promise.resolve(createGovernedFormalStateResponse())
+    })
+
+    render(<InternalAlphaReviewConsole />)
+    expect(historyGetCalls()).toHaveLength(0)
+    await openIdentityReadyDurableDecisionAuditReadback()
+    expect(historyGetCalls()).toHaveLength(0)
+    expect(screen.getByText('history_state = not_loaded', { exact: true })).toBeTruthy()
+
+    const loadButton = screen.getByRole('button', {
+      name: 'Load recent auditable decisions',
+    })
+    fireEvent.click(loadButton)
+    fireEvent.click(loadButton)
+    expect(historyGetCalls()).toHaveLength(1)
+    expect(historyGetCalls()[0][1]).toEqual({ params: { limit: 20 } })
+
+    await act(async () => {
+      pending.resolve(
+        createIdentityReadyDecisionAuditHistoryResponse({ decisions: orderedRows }),
+      )
+      await pending.promise
+    })
+    await screen.findByText('history_state = bounded_success', { exact: true })
+    const historyList = screen.getByLabelText('Recent auditable decision history')
+    const renderedText = historyList.textContent
+    expect(renderedText.indexOf(secondDecisionId)).toBeLessThan(
+      renderedText.indexOf(IDENTITY_READY_DECISION_ID),
+    )
+    expect(pointAuditGetCalls()).toHaveLength(0)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+    expect(renderedText).not.toContain('decision_canonical_hash')
+    expect(renderedText).not.toContain('review_subject_binding_safe_hash')
+  })
+
+  it('renders a bounded empty state', async () => {
+    apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+    apiMocks.apiClientGet.mockImplementation((url) => {
+      if (url === historyEndpoint) {
+        return Promise.resolve(
+          createIdentityReadyDecisionAuditHistoryResponse({ decisions: [] }),
+        )
+      }
+      return Promise.resolve(createGovernedFormalStateResponse())
+    })
+    render(<InternalAlphaReviewConsole />)
+    await openIdentityReadyDurableDecisionAuditReadback()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Load recent auditable decisions' }),
+    )
+    await screen.findByText('No recent auditable decisions', { exact: true })
+    expect(historyGetCalls()).toHaveLength(1)
+    expect(pointAuditGetCalls()).toHaveLength(0)
+  })
+
+  it('rejects unsafe extra top-level and row fields and invalid limits before GET', async () => {
+    const safe = createIdentityReadyDecisionAuditHistoryResponse()
+    expect(
+      normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(
+        safe.data,
+        safe.status,
+        20,
+      ),
+    ).toEqual(safe.data)
+
+    const extraTop = createIdentityReadyDecisionAuditHistoryResponse({
+      extraFields: { decision_canonical_hash: RAW_CONFIGURATION_MARKER },
+    })
+    expect(() =>
+      normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(
+        extraTop.data,
+        extraTop.status,
+        20,
+      ),
+    ).toThrow(
+      'frontend_identity_ready_governed_review_decision_audit_history_contract_mismatch',
+    )
+
+    const extraRow = createIdentityReadyDecisionAuditHistoryResponse({
+      decisions: [
+        createIdentityReadyDecisionAuditHistoryRow({
+          extraFields: { review_subject_binding_safe_hash: RAW_CONFIGURATION_MARKER },
+        }),
+      ],
+    })
+    expect(() =>
+      normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(
+        extraRow.data,
+        extraRow.status,
+        20,
+      ),
+    ).toThrow(
+      'frontend_identity_ready_governed_review_decision_audit_history_contract_mismatch',
+    )
+
+    const twentyRows = Array.from({ length: 20 }, (_value, index) =>
+      createIdentityReadyDecisionAuditHistoryRow({
+        decisionId: `irghrd-${index.toString(16).padStart(32, '0')}`,
+      }),
+    )
+    const boundedTwenty = createIdentityReadyDecisionAuditHistoryResponse({
+      decisions: twentyRows,
+    })
+    expect(
+      normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(
+        boundedTwenty.data,
+        boundedTwenty.status,
+        20,
+      ).decisions,
+    ).toHaveLength(20)
+    const overLimit = createIdentityReadyDecisionAuditHistoryResponse({
+      decisions: [...twentyRows, createIdentityReadyDecisionAuditHistoryRow()],
+    })
+    expect(() =>
+      normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(
+        overLimit.data,
+        overLimit.status,
+        20,
+      ),
+    ).toThrow(
+      'frontend_identity_ready_governed_review_decision_audit_history_contract_mismatch',
+    )
+
+    await expect(
+      getInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(0),
+    ).rejects.toThrow(
+      'frontend_identity_ready_governed_review_decision_audit_history_contract_mismatch',
+    )
+    await expect(
+      getInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(21),
+    ).rejects.toThrow(
+      'frontend_identity_ready_governed_review_decision_audit_history_contract_mismatch',
+    )
+    expect(historyGetCalls()).toHaveLength(0)
   })
 })

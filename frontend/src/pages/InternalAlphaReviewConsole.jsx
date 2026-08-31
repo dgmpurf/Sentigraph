@@ -4,6 +4,7 @@ import { Eye, Lock, ShieldCheck, TriangleAlert } from 'lucide-react'
 
 import {
   getInternalAlphaGovernedReviewFormalState,
+  getInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory,
   getInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
   getInternalAlphaLocalExchangeIdentityReadyV02Projection,
   getInternalAlphaLocalExchangeProjection,
@@ -312,11 +313,14 @@ export function InternalAlphaReviewConsole() {
     useState('')
   const [identityReadyDecisionAuditState, setIdentityReadyDecisionAuditState] =
     useState({ phase: 'idle', result: null })
+  const [identityReadyDecisionHistoryState, setIdentityReadyDecisionHistoryState] =
+    useState({ phase: 'not_loaded', result: null })
   const requestedLocalExchangeHandles = useRef(new Set())
   const localExchangeIdentityReadyV02RequestStarted = useRef(false)
   const identityReadyDecisionCandidateBuildStarted = useRef(false)
   const identityReadyDecisionPersistencePostStarted = useRef(false)
   const identityReadyDecisionAuditGetStarted = useRef(false)
+  const identityReadyDecisionHistoryGetStarted = useRef(false)
   const localExchangeCatalogRequestStarted = useRef(false)
   const governedDecisionPostAttemptStarted = useRef(false)
   const governedFormalStateGetAttemptStarted = useRef(false)
@@ -645,6 +649,27 @@ export function InternalAlphaReviewConsole() {
     }
   }
 
+  const handleIdentityReadyDecisionHistoryLoad = async () => {
+    if (identityReadyDecisionHistoryGetStarted.current) return
+    identityReadyDecisionHistoryGetStarted.current = true
+    setIdentityReadyDecisionHistoryState({ phase: 'loading', result: null })
+    try {
+      const result =
+        await getInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(20)
+      if (!pageIsMounted.current) return
+      setIdentityReadyDecisionHistoryState({
+        phase:
+          result.history_status === 'decision_history_ready'
+            ? 'bounded_success'
+            : 'bounded_result',
+        result,
+      })
+    } catch {
+      if (!pageIsMounted.current) return
+      setIdentityReadyDecisionHistoryState({ phase: 'bounded_error', result: null })
+    }
+  }
+
   const handleGovernedDecisionSelection = (decisionType) => {
     if (governedDecisionPostAttemptStarted.current) return
     setSelectedGovernedDecisionType(decisionType)
@@ -831,6 +856,108 @@ export function InternalAlphaReviewConsole() {
               </Descriptions.Item>
             </Descriptions>
           )}
+        </Card>
+
+        <Card className="panel-card internal-alpha-review-card">
+          <Space direction="vertical" size={12} className="full-width">
+            <Space wrap align="center">
+              <Title level={4} style={{ margin: 0 }}>Recent auditable decisions</Title>
+              <Tag color="cyan">internal only</Tag>
+              <Tag color="default">bounded to 20</Tag>
+              <Tag color="default">read only</Tag>
+            </Space>
+            <Paragraph>
+              Load a deterministic safe history projection only after explicit action. This control
+              performs no point-lookup fan-out, persistence, trust upgrade, analysis, or report action.
+            </Paragraph>
+            <Space wrap align="center">
+              <Button
+                onClick={handleIdentityReadyDecisionHistoryLoad}
+                disabled={identityReadyDecisionHistoryGetStarted.current}
+                loading={identityReadyDecisionHistoryState.phase === 'loading'}
+              >
+                Load recent auditable decisions
+              </Button>
+              <Text type="secondary">
+                history_state = {identityReadyDecisionHistoryState.phase}
+              </Text>
+            </Space>
+
+            {identityReadyDecisionHistoryState.phase === 'bounded_error' && (
+              <Alert
+                showIcon
+                type="error"
+                message="Decision history read failed closed"
+                description="No retry, fallback, point-lookup fan-out, raw row, or protected value is exposed."
+              />
+            )}
+            {identityReadyDecisionHistoryState.phase === 'bounded_result' && (
+              <Alert
+                showIcon
+                type="warning"
+                message="Decision history unavailable"
+                description={`history_status = ${identityReadyDecisionHistoryState.result.history_status}`}
+              />
+            )}
+            {identityReadyDecisionHistoryState.phase === 'bounded_success' &&
+              identityReadyDecisionHistoryState.result.returned_count === 0 && (
+                <Alert
+                  showIcon
+                  type="info"
+                  message="No recent auditable decisions"
+                  description="The bounded read-only history contains zero safe rows."
+                />
+              )}
+            {identityReadyDecisionHistoryState.phase === 'bounded_success' &&
+              identityReadyDecisionHistoryState.result.returned_count > 0 && (
+                <List
+                  aria-label="Recent auditable decision history"
+                  dataSource={identityReadyDecisionHistoryState.result.decisions}
+                  renderItem={(decision) => (
+                    <List.Item key={decision.decision_id}>
+                      <Descriptions column={1} size="small">
+                        <Descriptions.Item label="decision_id">
+                          {decision.decision_id}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="audit_receipt_reference">
+                          {decision.audit_receipt_reference}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="sample_handle">
+                          {decision.sample_handle}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="decision_type">
+                          {decision.decision_type}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="decision_status">
+                          {decision.decision_status}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="recorded_at">
+                          {decision.recorded_at}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="human_review_required">
+                          {String(decision.human_review_required)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="no_automatic_trust_upgrade">
+                          {String(decision.no_automatic_trust_upgrade)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="production_object_enabled">
+                          {String(decision.production_object_enabled)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="provider_or_b05_called">
+                          {String(decision.provider_or_b05_called)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="analysis_triggered">
+                          {String(decision.analysis_triggered)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="report_triggered">
+                          {String(decision.report_triggered)}
+                        </Descriptions.Item>
+                      </Descriptions>
+                    </List.Item>
+                  )}
+                />
+              )}
+          </Space>
         </Card>
 
         <Card className="panel-card internal-alpha-review-card">

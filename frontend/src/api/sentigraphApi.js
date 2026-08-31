@@ -164,6 +164,59 @@ const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_STATUS_BY_HTT
     ]),
     503: Object.freeze(['bounded_read_only_unavailable']),
   })
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_CONTRACT_ERROR =
+  'frontend_identity_ready_governed_review_decision_audit_history_contract_mismatch'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_RESPONSE_SCHEMA =
+  'sentigraph_internal_alpha_identity_ready_governed_review_decision_audit_history_response_v0_1'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ROUTE_MODE =
+  'internal_disabled_by_default_bounded_read_only_identity_ready_human_review_decision_audit_history'
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ENDPOINT =
+  `${INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ENDPOINT}/audit-projections`
+export const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ERROR_FIELDS =
+  Object.freeze([
+    'response_schema',
+    'response_version',
+    'route_mode',
+    'history_status',
+  ])
+export const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_SUCCESS_FIELDS =
+  Object.freeze([
+    ...INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ERROR_FIELDS,
+    'requested_limit',
+    'returned_count',
+    'ordering',
+    'decisions',
+  ])
+export const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ROW_FIELDS =
+  Object.freeze([
+    'decision_id',
+    'audit_receipt_reference',
+    'sample_handle',
+    'decision_type',
+    'decision_status',
+    'recorded_at',
+    'human_review_required',
+    'no_automatic_trust_upgrade',
+    'production_object_enabled',
+    'review_queue_runtime_enabled',
+    'evidence_layer_write_performed',
+    'provider_or_b05_called',
+    'analysis_triggered',
+    'report_triggered',
+  ])
+const INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_STATUS_BY_HTTP =
+  Object.freeze({
+    200: Object.freeze(['decision_history_ready']),
+    404: Object.freeze(['audit_target_absent']),
+    409: Object.freeze([
+      'audit_schema_inconsistent',
+      'decision_integrity_mismatch',
+      'sidecar_present_read_prohibited',
+      'target_identity_or_metadata_blocked',
+    ]),
+    422: Object.freeze(['history_limit_invalid']),
+    503: Object.freeze(['bounded_read_only_unavailable']),
+  })
 
 export const INTERNAL_ALPHA_GOVERNED_REVIEW_FORMAL_STATE_FIELDS = Object.freeze([
   'response_schema',
@@ -1258,6 +1311,149 @@ export async function getInternalAlphaIdentityReadyGovernedReviewDecisionAuditPr
     }
     throw new Error(
       INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_CONTRACT_ERROR,
+    )
+  }
+}
+
+function normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistoryRow(row) {
+  const contractError = () => {
+    throw new Error(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_CONTRACT_ERROR,
+    )
+  }
+  if (
+    !hasExactInternalAlphaFieldSet(
+      row,
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ROW_FIELDS,
+    ) ||
+    !INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_ID_PATTERN.test(row.decision_id)
+  ) {
+    contractError()
+  }
+  const suffix = row.decision_id.replace('irghrd-', '')
+  if (
+    row.audit_receipt_reference !== `irghrd-receipt-${suffix}` ||
+    !INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_AUDIT_REFERENCE_PATTERN.test(
+      row.audit_receipt_reference,
+    ) ||
+    row.sample_handle !== INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE ||
+    !INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES.includes(row.decision_type) ||
+    row.decision_status !== 'recorded_append_only_nonproduction_identity_ready' ||
+    typeof row.recorded_at !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(row.recorded_at) ||
+    row.human_review_required !== true ||
+    row.no_automatic_trust_upgrade !== true ||
+    row.production_object_enabled !== false ||
+    row.review_queue_runtime_enabled !== false ||
+    row.evidence_layer_write_performed !== false ||
+    row.provider_or_b05_called !== false ||
+    row.analysis_triggered !== false ||
+    row.report_triggered !== false
+  ) {
+    contractError()
+  }
+  return Object.freeze(
+    Object.fromEntries(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ROW_FIELDS.map(
+        (field) => [field, row[field]],
+      ),
+    ),
+  )
+}
+
+export function normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(
+  data,
+  httpStatus,
+  requestedLimit,
+) {
+  const contractError = () => {
+    throw new Error(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_CONTRACT_ERROR,
+    )
+  }
+  if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 20) {
+    contractError()
+  }
+  const allowedStatuses =
+    INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_STATUS_BY_HTTP[
+      httpStatus
+    ]
+  if (!allowedStatuses) contractError()
+  const expectedFields =
+    httpStatus === 200
+      ? INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_SUCCESS_FIELDS
+      : INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ERROR_FIELDS
+  if (
+    !hasExactInternalAlphaFieldSet(data, expectedFields) ||
+    data.response_schema !==
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_RESPONSE_SCHEMA ||
+    data.response_version !== '0.1' ||
+    data.route_mode !==
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ROUTE_MODE ||
+    !allowedStatuses.includes(data.history_status)
+  ) {
+    contractError()
+  }
+  if (httpStatus !== 200) {
+    return Object.freeze(
+      Object.fromEntries(expectedFields.map((field) => [field, data[field]])),
+    )
+  }
+  if (
+    data.requested_limit !== requestedLimit ||
+    !Number.isInteger(data.returned_count) ||
+    data.returned_count < 0 ||
+    data.returned_count > requestedLimit ||
+    data.ordering !== 'recorded_at_desc_decision_id_desc' ||
+    !Array.isArray(data.decisions) ||
+    data.decisions.length !== data.returned_count ||
+    data.decisions.length > 20
+  ) {
+    contractError()
+  }
+  const decisions = data.decisions.map(
+    normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistoryRow,
+  )
+  return Object.freeze({
+    ...Object.fromEntries(
+      expectedFields
+        .filter((field) => field !== 'decisions')
+        .map((field) => [field, data[field]]),
+    ),
+    decisions: Object.freeze(decisions),
+  })
+}
+
+export async function getInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(
+  limit = 20,
+) {
+  const safeLimit = Number(limit)
+  if (!Number.isInteger(safeLimit) || safeLimit < 1 || safeLimit > 20) {
+    throw new Error(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_CONTRACT_ERROR,
+    )
+  }
+  try {
+    const response = await apiClient.get(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_ENDPOINT,
+      { params: { limit: safeLimit } },
+    )
+    return normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(
+      response.data,
+      response.status,
+      safeLimit,
+    )
+  } catch (error) {
+    const status = error?.response?.status
+    if ([404, 409, 422, 503].includes(status)) {
+      return normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory(
+        error.response.data,
+        status,
+        safeLimit,
+      )
+    }
+    throw new Error(
+      INTERNAL_ALPHA_IDENTITY_READY_GOVERNED_REVIEW_DECISION_HISTORY_CONTRACT_ERROR,
     )
   }
 }

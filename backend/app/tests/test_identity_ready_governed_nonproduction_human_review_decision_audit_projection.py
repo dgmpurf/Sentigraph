@@ -21,7 +21,11 @@ SAFE_BINDING_HASH = "a" * 64
 DECISION_ID = "irghrd-1660440e30c13429998b8c5b6ae14052"
 
 
-def _request() -> dict[str, object]:
+def _request(
+    *,
+    safe_binding_hash: str = SAFE_BINDING_HASH,
+    decision_type: str = "keep_pending_human_review",
+) -> dict[str, object]:
     return {
         "request_schema": writer_contract.REQUEST_SCHEMA,
         "request_version": writer_contract.REQUEST_VERSION,
@@ -32,8 +36,8 @@ def _request() -> dict[str, object]:
             "identity_version": writer_contract.IDENTITY_VERSION,
             "identity_status": writer_contract.IDENTITY_STATUS,
             "sample_handle": writer_contract.SERVER_SAMPLE_HANDLE,
-            "review_subject_binding_safe_hash": SAFE_BINDING_HASH,
-            "decision_type": "keep_pending_human_review",
+            "review_subject_binding_safe_hash": safe_binding_hash,
+            "decision_type": decision_type,
             "candidate_only": True,
             "persisted": False,
             "trust_upgraded": False,
@@ -54,6 +58,24 @@ def _valid_decision() -> dict[str, object]:
     return writer_contract._build_decision(identity, "2026-08-27T00:00:00Z")
 
 
+def _decision_for(
+    safe_binding_hash: str,
+    decision_type: str,
+    recorded_at: str,
+) -> dict[str, object]:
+    validated = writer_contract.validate_identity_ready_governed_review_decision_request(
+        _request(
+            safe_binding_hash=safe_binding_hash,
+            decision_type=decision_type,
+        ),
+        server_binding_safe_hash=safe_binding_hash,
+    )
+    return writer_contract._build_decision(
+        writer_contract._identity_for(validated),
+        recorded_at,
+    )
+
+
 def _target(root: Path) -> Path:
     return root.joinpath(*writer_contract.LOGICAL_TARGET_LABEL.split("/"))
 
@@ -62,6 +84,7 @@ def _write_fixture(
     root: Path,
     *,
     decision: dict[str, object] | None = None,
+    decisions: list[dict[str, object]] | None = None,
     wrong_schema: bool = False,
 ) -> Path:
     database = _target(root)
@@ -73,7 +96,8 @@ def _write_fixture(
             )
         else:
             connection.execute(writer_contract.CREATE_TABLE_STATEMENT)
-            if decision is not None:
+            rows = decisions if decisions is not None else ([decision] if decision else [])
+            for item in rows:
                 connection.execute(
                     f"""
                     INSERT INTO {writer_contract.PRIMARY_TABLE} (
@@ -88,15 +112,15 @@ def _write_fixture(
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """.strip(),
                     (
-                        decision["decision_id"],
-                        decision["idempotency_key"],
-                        decision["audit_receipt_reference"],
-                        decision["sample_handle"],
-                        decision["review_subject_binding_safe_hash"],
-                        decision["decision_type"],
-                        decision["decision_canonical_hash"],
+                        item["decision_id"],
+                        item["idempotency_key"],
+                        item["audit_receipt_reference"],
+                        item["sample_handle"],
+                        item["review_subject_binding_safe_hash"],
+                        item["decision_type"],
+                        item["decision_canonical_hash"],
                         json.dumps(
-                            decision,
+                            item,
                             ensure_ascii=False,
                             allow_nan=False,
                             separators=(",", ":"),
@@ -113,6 +137,15 @@ def _project(root: Path, decision_id: str = DECISION_ID) -> dict[str, object]:
         database_path=_target(root),
         target_logical_label=writer_contract.LOGICAL_TARGET_LABEL,
         decision_id=decision_id,
+    )
+
+
+def _history(root: Path, limit: int = 20) -> dict[str, object]:
+    return service.list_identity_ready_governed_nonproduction_human_review_decision_audit_projections(
+        authorized_root_path=root,
+        database_path=_target(root),
+        target_logical_label=writer_contract.LOGICAL_TARGET_LABEL,
+        limit=limit,
     )
 
 
@@ -343,3 +376,130 @@ def test_reader_source_has_no_writer_factory_mutation_or_network_surface() -> No
     upper_source = source.upper()
     for forbidden_sql in ("INSERT ", "UPDATE ", "DELETE ", "REPLACE ", "CREATE TABLE"):
         assert forbidden_sql not in upper_source
+
+
+def test_history_limit_is_validated_before_sqlite_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "limit"
+    root.mkdir()
+    open_calls = 0
+
+    def fail_connect(*_args, **_kwargs):
+        nonlocal open_calls
+        open_calls += 1
+        raise AssertionError("invalid limit must not open sqlite")
+
+    monkeypatch.setattr(service.sqlite3, "connect", fail_connect)
+    assert _history(root, 0) == service._history_bounded_result(
+        "history_limit_invalid"
+    )
+    assert _history(root, 21) == service._history_bounded_result(
+        "history_limit_invalid"
+    )
+    assert open_calls == 0
+
+
+def test_history_returns_empty_and_one_safe_row_without_changing_bytes(
+    tmp_path: Path,
+) -> None:
+    empty_root = tmp_path / "empty"
+    empty_root.mkdir()
+    empty_database = _write_fixture(empty_root)
+    empty_before = empty_database.read_bytes()
+    assert _history(empty_root, 1) == service._history_success_result(
+        [],
+        requested_limit=1,
+    )
+    assert empty_database.read_bytes() == empty_before
+
+    one_root = tmp_path / "one"
+    one_root.mkdir()
+    one_database = _write_fixture(one_root, decision=_valid_decision())
+    one_before = one_database.read_bytes()
+    result = _history(one_root, 20)
+    assert tuple(result) == service.HISTORY_SUCCESS_FIELDS
+    assert result["history_status"] == "decision_history_ready"
+    assert result["requested_limit"] == 20
+    assert result["returned_count"] == 1
+    assert result["ordering"] == "recorded_at_desc_decision_id_desc"
+    assert tuple(result["decisions"][0]) == service.HISTORY_ROW_FIELDS
+    assert result["decisions"][0]["decision_id"] == DECISION_ID
+    assert not {
+        "review_subject_binding_safe_hash",
+        "decision_canonical_hash",
+        "input_safe_hash",
+        "decision_json",
+    }.intersection(result["decisions"][0])
+    assert result["decisions"][0]["provider_or_b05_called"] is False
+    assert result["decisions"][0]["human_review_required"] is True
+    assert result["decisions"][0]["no_automatic_trust_upgrade"] is True
+    assert one_database.read_bytes() == one_before
+
+
+def test_history_is_deterministically_ordered_and_bounded_by_requested_limit(
+    tmp_path: Path,
+) -> None:
+    decisions = [
+        _decision_for("b" * 64, "keep_pending_human_review", "2026-08-27T00:00:00Z"),
+        _decision_for("c" * 64, "request_more_governance_review", "2026-08-28T00:00:00Z"),
+        _decision_for("d" * 64, "keep_pending_human_review", "2026-08-28T00:00:00Z"),
+    ]
+    root = tmp_path / "ordered"
+    root.mkdir()
+    _write_fixture(root, decisions=decisions)
+
+    result = _history(root, 2)
+    expected = sorted(
+        decisions,
+        key=lambda item: (item["recorded_at"], item["decision_id"]),
+        reverse=True,
+    )[:2]
+    assert result["returned_count"] == 2
+    assert [item["decision_id"] for item in result["decisions"]] == [
+        item["decision_id"] for item in expected
+    ]
+
+
+def test_history_route_reuses_gate_and_rejects_invalid_limit_without_reader_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+
+    def history_reader(**kwargs):
+        calls.append(kwargs["limit"])
+        return service._history_success_result([], requested_limit=kwargs["limit"])
+
+    monkeypatch.setattr(
+        route_module,
+        "list_identity_ready_governed_nonproduction_human_review_decision_audit_projections",
+        history_reader,
+    )
+    monkeypatch.delenv(route_module.IDENTITY_READY_AUDIT_PROJECTION_GATE, raising=False)
+    disabled = route_module.get_identity_ready_decision_audit_history(20)
+    assert disabled.status_code == 404
+    assert calls == []
+
+    monkeypatch.setenv(route_module.IDENTITY_READY_AUDIT_PROJECTION_GATE, "1")
+    for invalid in (0, 21, True):
+        response = route_module.get_identity_ready_decision_audit_history(invalid)
+        assert response.status_code == 422
+    assert calls == []
+
+    for allowed in (1, 20):
+        response = route_module.get_identity_ready_decision_audit_history(allowed)
+        assert response.status_code == 200
+    assert calls == [1, 20]
+
+
+def test_history_source_preserves_read_only_ordering_and_bounded_query_contract() -> None:
+    source = inspect.getsource(
+        service.list_identity_ready_governed_nonproduction_human_review_decision_audit_projections
+    )
+    assert "?mode=ro" in source
+    assert "PRAGMA query_only = ON" in source
+    assert "json_extract(decision_json, '$.recorded_at') DESC" in source
+    assert "decision_id DESC LIMIT ?" in source
+    assert "COUNT(*)" not in source
+    assert "OFFSET" not in source.upper()

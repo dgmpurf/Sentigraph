@@ -32,6 +32,8 @@ from app.services.identity_ready_governed_nonproduction_human_review_decision_le
     record_identity_ready_governed_nonproduction_human_review_decision,
 )
 from app.services.identity_ready_governed_nonproduction_human_review_decision_audit_projection import (
+    _history_bounded_result,
+    list_identity_ready_governed_nonproduction_human_review_decision_audit_projections,
     project_identity_ready_governed_nonproduction_human_review_decision_audit,
 )
 
@@ -125,6 +127,16 @@ IDENTITY_READY_AUDIT_STATUS_CODE = {
     "decision_audit_ready": 200,
     "audit_target_absent": 404,
     "decision_not_found": 404,
+    "audit_schema_inconsistent": 409,
+    "decision_integrity_mismatch": 409,
+    "sidecar_present_read_prohibited": 409,
+    "target_identity_or_metadata_blocked": 409,
+    "bounded_read_only_unavailable": 503,
+}
+IDENTITY_READY_AUDIT_HISTORY_STATUS_CODE = {
+    "decision_history_ready": 200,
+    "history_limit_invalid": 422,
+    "audit_target_absent": 404,
     "audit_schema_inconsistent": 409,
     "decision_integrity_mismatch": 409,
     "sidecar_present_read_prohibited": 409,
@@ -495,6 +507,36 @@ def post_identity_ready_decision(
             decision=decision,
             receipt=receipt,
         ),
+    )
+
+
+@router.get("/identity-ready/v0.1/decisions/audit-projections")
+def get_identity_ready_decision_audit_history(limit: int = 20) -> JSONResponse:
+    if not _identity_ready_audit_projection_gate_enabled():
+        projection = _history_bounded_result("audit_target_absent")
+    elif type(limit) is not int or not 1 <= limit <= 20:
+        projection = _history_bounded_result("history_limit_invalid")
+    else:
+        try:
+            repository_root = _repository_root()
+            projection = (
+                list_identity_ready_governed_nonproduction_human_review_decision_audit_projections(
+                    authorized_root_path=repository_root,
+                    database_path=(
+                        repository_root / Path(IDENTITY_READY_LOGICAL_TARGET_LABEL)
+                    ),
+                    target_logical_label=IDENTITY_READY_LOGICAL_TARGET_LABEL,
+                    limit=limit,
+                )
+            )
+        except Exception:
+            projection = _history_bounded_result("bounded_read_only_unavailable")
+    return JSONResponse(
+        status_code=IDENTITY_READY_AUDIT_HISTORY_STATUS_CODE.get(
+            projection.get("history_status"),
+            503,
+        ),
+        content=projection,
     )
 
 
