@@ -29,6 +29,8 @@ from app.schemas.evidence import (
 from app.schemas.search_discovery import (
     SearchDiscoveryCandidateAttachRequest,
     SearchDiscoveryCandidateAttachResult,
+    YouTubeReviewedPublicDiscussionAttachRequest,
+    YouTubeReviewedPublicDiscussionAttachResult,
 )
 from app.services.evidence_import import EvidenceImportError
 from app.services.evidence_ingestion import EvidenceValidationError
@@ -41,8 +43,11 @@ from app.services.simulation.case_initializer import (
 )
 from app.services.simulation.schemas import CaseSimulationInitializationResult
 from app.services.case_store import (
+    YouTubeReviewedPublicDiscussionBatchMismatchError,
+    YouTubeReviewedPublicDiscussionSelectionError,
     attach_case_evidence,
     attach_search_discovery_candidates,
+    attach_youtube_reviewed_public_discussion,
     commit_case_evidence_import,
     create_case,
     export_case_markdown,
@@ -64,6 +69,19 @@ from app.services.case_store import (
     run_case,
     run_case_crawl,
     run_monitoring_check,
+)
+from app.services.crawling.youtube_adapter import (
+    YouTubeAuthError,
+    YouTubeCommentsDisabledError,
+    YouTubeNetworkError,
+    YouTubeParsingError,
+    YouTubeQuotaError,
+    YouTubeRealModeError,
+)
+from app.services.search_discovery import (
+    YouTubePublicDiscussionCredentialMissingError,
+    YouTubePublicDiscussionRouteDisabledError,
+    YouTubeReviewedPublicDiscussionAttachDisabledError,
 )
 from app.services.monitoring.scheduler_service import (
     disable_case_monitoring,
@@ -217,6 +235,82 @@ def attach_search_discovery_candidates_to_case(
     payload: SearchDiscoveryCandidateAttachRequest,
 ) -> SearchDiscoveryCandidateAttachResult:
     result = attach_search_discovery_candidates(case_id, payload)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis case not found.")
+    return result
+
+
+@router.post(
+    "/{case_id}/search-discovery/youtube-official-api/live-public-discussion/{video_id}/attach-reviewed",
+    response_model=YouTubeReviewedPublicDiscussionAttachResult,
+    include_in_schema=False,
+)
+def attach_youtube_reviewed_public_discussion_to_case(
+    case_id: str,
+    video_id: str,
+    payload: YouTubeReviewedPublicDiscussionAttachRequest,
+) -> YouTubeReviewedPublicDiscussionAttachResult:
+    try:
+        result = attach_youtube_reviewed_public_discussion(
+            case_id,
+            video_id,
+            payload,
+        )
+    except YouTubeReviewedPublicDiscussionAttachDisabledError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="youtube_reviewed_public_discussion_attach_disabled",
+        ) from exc
+    except YouTubePublicDiscussionRouteDisabledError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="youtube_public_discussion_route_disabled",
+        ) from exc
+    except YouTubePublicDiscussionCredentialMissingError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="youtube_public_discussion_credential_missing",
+        ) from exc
+    except YouTubeReviewedPublicDiscussionBatchMismatchError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="youtube_reviewed_public_discussion_batch_mismatch",
+        ) from exc
+    except YouTubeReviewedPublicDiscussionSelectionError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="youtube_reviewed_public_discussion_selection_missing",
+        ) from exc
+    except YouTubeCommentsDisabledError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="youtube_public_discussion_comments_unavailable",
+        ) from exc
+    except YouTubeAuthError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="youtube_public_discussion_auth_error",
+        ) from exc
+    except YouTubeQuotaError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="youtube_public_discussion_quota_error",
+        ) from exc
+    except YouTubeNetworkError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="youtube_public_discussion_network_error",
+        ) from exc
+    except YouTubeParsingError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="youtube_public_discussion_parsing_error",
+        ) from exc
+    except YouTubeRealModeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="youtube_public_discussion_provider_error",
+        ) from exc
     if not result:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
     return result

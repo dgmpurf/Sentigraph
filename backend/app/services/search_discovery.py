@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
+import json
 import os
 import re
 from typing import Any, Callable, Mapping
@@ -43,6 +44,9 @@ YOUTUBE_LIVE_SEARCH_DISCOVERY_ROUTE_ENABLE_FLAG = (
 YOUTUBE_PUBLIC_DISCUSSION_ROUTE_ENABLE_FLAG = (
     "SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_PUBLIC_DISCUSSION_ROUTE_ENABLED"
 )
+YOUTUBE_REVIEWED_PUBLIC_DISCUSSION_ATTACH_ENABLE_FLAG = (
+    "SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_REVIEWED_EVIDENCE_ATTACH_ENABLED"
+)
 YOUTUBE_PUBLIC_DISCUSSION_SAFETY_NOTES = [
     "Official YouTube Data API public comment",
     "Top-level public comment text only",
@@ -80,6 +84,10 @@ class YouTubePublicDiscussionRouteDisabledError(RuntimeError):
 
 class YouTubePublicDiscussionCredentialMissingError(RuntimeError):
     """Raised when the enabled discussion route has no process credential."""
+
+
+class YouTubeReviewedPublicDiscussionAttachDisabledError(RuntimeError):
+    """Raised before credential resolution when reviewed attach is disabled."""
 
 
 def get_search_discovery_status() -> SearchDiscoveryStatusResponse:
@@ -431,13 +439,138 @@ def get_youtube_official_api_live_public_discussion(
         comments,
         max_items=bounded_count,
     )
+    review_batch_safe_hash = calculate_youtube_public_discussion_review_batch_safe_hash(
+        safe_video_id,
+        items,
+    )
     return SearchDiscoveryDiscussionBatch(
         video_id=safe_video_id,
         generated_at=datetime.now(timezone.utc),
         item_count=len(items),
         items=items,
+        review_batch_safe_hash=review_batch_safe_hash,
         safe_mode=dict(YOUTUBE_PUBLIC_DISCUSSION_SAFE_MODE),
     )
+
+
+def calculate_youtube_public_discussion_review_batch_safe_hash(
+    video_id: str,
+    items: list[SearchDiscoveryDiscussionItem],
+) -> str:
+    """Hash only canonical, public, author-free discussion review content."""
+
+    safe_video_id = _required_public_discussion_token(
+        video_id,
+        error_code="youtube_public_discussion_video_id_required",
+    )
+    canonical_payload = {
+        "video_id": safe_video_id,
+        "items": [
+            {
+                "discussion_id": item.discussion_id,
+                "video_id": item.video_id,
+                "comment_id": item.comment_id,
+                "body_text": item.body_text,
+                "published_at": item.published_at,
+                "like_count": item.like_count,
+                "reply_count": item.reply_count,
+                "source_url": item.source_url,
+            }
+            for item in items
+        ],
+    }
+    canonical_bytes = json.dumps(
+        canonical_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical_bytes).hexdigest()
+
+
+def require_youtube_reviewed_public_discussion_attach_enabled() -> None:
+    """Fail closed before credentials or provider access for the attach lane."""
+
+    if os.getenv(YOUTUBE_REVIEWED_PUBLIC_DISCUSSION_ATTACH_ENABLE_FLAG, "") != "1":
+        raise YouTubeReviewedPublicDiscussionAttachDisabledError(
+            "youtube_reviewed_public_discussion_attach_disabled"
+        )
+
+
+def youtube_public_discussion_items_to_evidence_items(
+    *,
+    case_id: str,
+    review_batch_safe_hash: str,
+    items: list[SearchDiscoveryDiscussionItem],
+) -> list[EvidenceItem]:
+    """Map server-refetched selected comments into bounded case EvidenceItems."""
+
+    evidence_items = [
+        EvidenceItem(
+            evidence_id=(
+                "evidence_youtube_official_api_"
+                f"{_safe_token(item.video_id)}_{_safe_token(item.comment_id)}"
+            ),
+            case_id=case_id,
+            platform="youtube",
+            source_type="youtube",
+            acquisition_mode="official_api_public",
+            evidence_type="comment",
+            comment_text=item.body_text,
+            parent_id=None,
+            root_id=item.video_id,
+            author_id=None,
+            author_name=None,
+            url=item.source_url,
+            created_at=item.published_at,
+            like_count=item.like_count,
+            reply_count=item.reply_count,
+            raw_data_safe={
+                "provider": "youtube_official_api",
+                "discussion_id": item.discussion_id,
+                "video_id": item.video_id,
+                "comment_id": item.comment_id,
+                "top_level_comment": True,
+                "reply_content_acquired": False,
+                "author_identity_omitted": True,
+                "review_batch_safe_hash": review_batch_safe_hash,
+            },
+            content_visibility="public",
+            access_scope="public",
+            ingestion_metadata=EvidenceNormalizationMetadata(
+                normalized_from="youtube_official_api_reviewed_public_discussion",
+                source_record_id=item.comment_id,
+                source_type="youtube",
+                acquisition_mode="official_api_public",
+                warnings=[
+                    "Human-selected public comment; transport provenance is not truth verification.",
+                    "Author identity omitted.",
+                    "Reply content was not acquired.",
+                ],
+                safe_mode={
+                    "secrets_redacted": True,
+                    "real_api_calls": True,
+                    "real_llm_calls": False,
+                    "private_data": False,
+                },
+            ),
+            provenance_type="official_api",
+            verification_status="verified_by_official_api",
+            source_url_present=True,
+            source_url=item.source_url,
+            source_platform_claim="youtube",
+            source_capture_method="official_api",
+            user_attestation_required=False,
+            review_status="not_reviewed",
+            risk_flags=["official_api_transport_not_truth_verification"],
+            verification_notes=[
+                "Selected by a human from a bounded official API review batch.",
+                "Official API provenance verifies transport only, not claim truth.",
+            ],
+        )
+        for item in items
+    ]
+    return enrich_and_deduplicate_evidence_items(evidence_items)
 
 
 def get_youtube_official_api_live_public_discussion_route(

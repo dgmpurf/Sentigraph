@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import {
   attachSearchDiscoveryCandidates,
+  attachYouTubeOfficialApiReviewedPublicDiscussion,
   getAnalysisCase,
   getMockSearchDiscoveryCandidates,
   getSearchDiscoveryProviders,
@@ -43,7 +44,7 @@ const LIVE_PROVIDER_STATUS = Object.freeze({
     'Official API metadata only',
     'URL content not fetched',
     'Human review required',
-    'Attachment disabled in this phase',
+    'Attachment requires the separate reviewed-evidence gate',
   ]),
 })
 
@@ -75,6 +76,8 @@ export function SearchDiscovery({
     import.meta.env.VITE_SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_ENABLED === '1',
   publicDiscussionReviewFrontendEnabled =
     import.meta.env.VITE_SENTIGRAPH_SEARCH_DISCOVERY_PUBLIC_DISCUSSION_REVIEW_ENABLED === '1',
+  publicDiscussionAttachFrontendEnabled =
+    import.meta.env.VITE_SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_REVIEWED_EVIDENCE_ATTACH_ENABLED === '1',
 }) {
   const [query, setQuery] = useState('Tesla')
   const [provider, setProvider] = useState('mock_static')
@@ -90,6 +93,8 @@ export function SearchDiscovery({
   const [publicDiscussionDecisionById, setPublicDiscussionDecisionById] = useState({})
   const [publicDiscussionLoading, setPublicDiscussionLoading] = useState(false)
   const [publicDiscussionSource, setPublicDiscussionSource] = useState(null)
+  const [publicDiscussionAttaching, setPublicDiscussionAttaching] = useState(false)
+  const [publicDiscussionAttachResult, setPublicDiscussionAttachResult] = useState(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -169,6 +174,21 @@ export function SearchDiscovery({
     acceptedLiveCandidate &&
     acceptedLiveVideoId,
   )
+  const acceptedPublicDiscussionIds = useMemo(
+    () => (publicDiscussionBatch?.items || [])
+      .filter((item) => publicDiscussionDecisionById[item.discussion_id] === 'accepted')
+      .map((item) => item.discussion_id),
+    [publicDiscussionBatch, publicDiscussionDecisionById],
+  )
+  const publicDiscussionAttachAvailable = Boolean(
+    publicDiscussionAttachFrontendEnabled &&
+    publicDiscussionSource === 'provider-backed' &&
+    targetCaseId &&
+    /^[0-9a-f]{64}$/.test(publicDiscussionBatch?.review_batch_safe_hash || '') &&
+    acceptedPublicDiscussionIds.length >= 1 &&
+    acceptedPublicDiscussionIds.length <= 3 &&
+    !publicDiscussionAttaching,
+  )
 
   async function handleGenerateCandidates() {
     setLoading(true)
@@ -177,6 +197,7 @@ export function SearchDiscovery({
     setPublicDiscussionBatch(null)
     setPublicDiscussionDecisionById({})
     setPublicDiscussionSource(null)
+    setPublicDiscussionAttachResult(null)
     try {
       const result = provider === LIVE_PROVIDER_ID
         ? await getYouTubeOfficialApiLiveCandidates(query, 1)
@@ -209,6 +230,7 @@ export function SearchDiscovery({
 
   function handleLoadPublicDiscussionFixture() {
     setError('')
+    setPublicDiscussionAttachResult(null)
     setPublicDiscussionBatch(PUBLIC_DISCUSSION_REVIEW_FIXTURE)
     setPublicDiscussionSource('synthetic')
     setPublicDiscussionDecisionById(
@@ -229,6 +251,7 @@ export function SearchDiscovery({
     setPublicDiscussionBatch(null)
     setPublicDiscussionDecisionById({})
     setPublicDiscussionSource(null)
+    setPublicDiscussionAttachResult(null)
     try {
       const result = await getYouTubeOfficialApiLivePublicDiscussion(acceptedLiveVideoId, 3)
       setPublicDiscussionBatch(result)
@@ -246,7 +269,37 @@ export function SearchDiscovery({
   }
 
   function setPublicDiscussionDecision(discussionId, decision) {
+    setPublicDiscussionAttachResult(null)
     setPublicDiscussionDecisionById((current) => ({ ...current, [discussionId]: decision }))
+  }
+
+  async function handleAttachReviewedPublicDiscussion() {
+    if (!publicDiscussionAttachAvailable || !acceptedLiveVideoId) {
+      setError('Select a target case and accept one to three provider-backed comments before attaching.')
+      return
+    }
+
+    setPublicDiscussionAttaching(true)
+    setPublicDiscussionAttachResult(null)
+    setError('')
+    try {
+      const result = await attachYouTubeOfficialApiReviewedPublicDiscussion(
+        targetCaseId,
+        acceptedLiveVideoId,
+        {
+          review_batch_safe_hash: publicDiscussionBatch.review_batch_safe_hash,
+          selected_discussion_ids: acceptedPublicDiscussionIds,
+        },
+      )
+      setPublicDiscussionAttachResult(result)
+      const refreshedCase = await getAnalysisCase(targetCaseId)
+      onCaseReady?.(refreshedCase)
+      await onRefreshCases?.()
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to attach reviewed public discussion.')
+    } finally {
+      setPublicDiscussionAttaching(false)
+    }
   }
 
   async function handleAttachAcceptedCandidates() {
@@ -409,7 +462,11 @@ export function SearchDiscovery({
                 <Tag>Official API metadata only</Tag>
                 <Tag>URL content not fetched</Tag>
                 <Tag>Human review required</Tag>
-                <Tag>Attachment disabled in this phase</Tag>
+                <Tag>
+                  {publicDiscussionAttachFrontendEnabled
+                    ? 'Reviewed public comments may be attached through a separate guarded action'
+                    : 'Attachment disabled in this phase'}
+                </Tag>
                 <Tag>Backend route remains independently gated</Tag>
               </Space>
             )}
@@ -516,7 +573,7 @@ export function SearchDiscovery({
         </div>
         <Paragraph type="secondary">
           {provider === LIVE_PROVIDER_ID
-            ? `${selectedProviderStatus.display_name} · This local UI choice can request one guarded metadata preview only when the independently gated backend route is available. It does not fetch URL content, attach Evidence, or start analysis.`
+            ? `${selectedProviderStatus.display_name} · This local UI choice can request one guarded metadata preview only when the independently gated backend route is available. URL content is not fetched. Reviewed public comments can be attached only when the separate attach gate is enabled; analysis always remains a separate action.`
             : `${selectedProviderStatus?.display_name || 'Selected provider'} · RSS/GDELT and the Phase-1 YouTube official-shaped response are offline fixtures. Future real providers may return URL/title/snippet metadata only; full content extraction requires a separate reviewed public parser, official API route, licensed vendor payload, or user-provided text.`}
         </Paragraph>
         <Space wrap size={6}>
@@ -570,7 +627,11 @@ export function SearchDiscovery({
                   <Tag>Author identity omitted</Tag>
                   <Tag>Reply content not acquired</Tag>
                   <Tag>Human review required</Tag>
-                  <Tag>No Evidence persistence</Tag>
+                  <Tag>
+                    {publicDiscussionAttachFrontendEnabled
+                      ? 'Human-selected comments may become case Evidence'
+                      : 'No Evidence persistence'}
+                  </Tag>
                   <Tag>No analysis run</Tag>
                   <Tag>Provider transport is not truth verification</Tag>
                 </Space>
@@ -600,6 +661,9 @@ export function SearchDiscovery({
                 <Tag color="blue">video_id={publicDiscussionBatch.video_id}</Tag>
                 <Tag>generated_at={publicDiscussionBatch.generated_at}</Tag>
                 <Tag color="green">reply_content_acquired=false</Tag>
+                {publicDiscussionBatch.review_batch_safe_hash ? (
+                  <Tag color="cyan">review batch bound</Tag>
+                ) : null}
               </Space>
               {publicDiscussionBatch.items.map((item) => {
                 const localDecision = publicDiscussionDecisionById[item.discussion_id] || 'pending_review'
@@ -654,6 +718,48 @@ export function SearchDiscovery({
                   </Card>
                 )
               })}
+              {publicDiscussionAttachFrontendEnabled && publicDiscussionSource === 'provider-backed' ? (
+                <Space wrap>
+                  <Button
+                    type="primary"
+                    icon={<ShieldCheck size={16} />}
+                    loading={publicDiscussionAttaching}
+                    disabled={!publicDiscussionAttachAvailable}
+                    onClick={handleAttachReviewedPublicDiscussion}
+                  >
+                    Attach reviewed public discussion to case
+                  </Button>
+                  <Text type="secondary">
+                    Select one to three accepted comments and a target case. The server refetches the bounded batch;
+                    browser text is not authoritative.
+                  </Text>
+                </Space>
+              ) : null}
+              {publicDiscussionAttachResult ? (
+                <Card size="small" data-testid="public-discussion-attach-result">
+                  <Space direction="vertical" size={8} className="full-width">
+                    <Space wrap>
+                      <Tag color="green">
+                        attached={publicDiscussionAttachResult.attached_discussion_count}
+                      </Tag>
+                      <Tag color="purple">acquisition_mode=official_api_public</Tag>
+                      <Tag color="blue">provenance=official_api</Tag>
+                      <Tag color="gold">analysis_run=false</Tag>
+                    </Space>
+                    <Text type="secondary">
+                      Human-selected public comments are attached to the existing case. Official API provenance is
+                      transport provenance, not truth verification.
+                    </Text>
+                    <Button
+                      icon={<PlayCircle size={16} />}
+                      disabled={!targetCaseId}
+                      onClick={() => onRunCase?.(targetCaseId, 'analysis')}
+                    >
+                      Run analysis after attach
+                    </Button>
+                  </Space>
+                </Card>
+              ) : null}
             </Space>
           ) : (
             <Empty description="Use one explicit load action to begin local review." />
@@ -672,7 +778,14 @@ export function SearchDiscovery({
           <Statistic title="Rejected" value={rejectedCount} />
         </Card>
         <Card className="metric-card">
-          <Statistic title="Attached evidence" value={attachResult?.attached_candidate_count || 0} />
+          <Statistic
+            title="Attached evidence"
+            value={
+              publicDiscussionAttachResult?.attached_discussion_count ||
+              attachResult?.attached_candidate_count ||
+              0
+            }
+          />
         </Card>
       </div>
 

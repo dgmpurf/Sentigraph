@@ -1476,6 +1476,43 @@ export async function getYouTubeOfficialApiLivePublicDiscussion(videoId, maxItem
   return normalizeSearchDiscoveryDiscussionBatch(data)
 }
 
+export async function attachYouTubeOfficialApiReviewedPublicDiscussion(
+  caseId,
+  videoId,
+  payload = {},
+) {
+  const safeCaseId = String(caseId || '').trim()
+  const safeVideoId = String(videoId || '').trim()
+  const reviewBatchSafeHash = String(payload.review_batch_safe_hash || '').trim()
+  const selectedDiscussionIds = Array.isArray(payload.selected_discussion_ids)
+    ? payload.selected_discussion_ids.map((item) => String(item || '').trim())
+    : []
+  if (!safeCaseId) throw new Error('youtube_reviewed_public_discussion_case_id_invalid')
+  if (!/^[A-Za-z0-9_-]{11}$/.test(safeVideoId)) {
+    throw new Error('youtube_reviewed_public_discussion_video_id_invalid')
+  }
+  if (!/^[0-9a-f]{64}$/.test(reviewBatchSafeHash)) {
+    throw new Error('youtube_reviewed_public_discussion_batch_hash_invalid')
+  }
+  if (
+    selectedDiscussionIds.length < 1 ||
+    selectedDiscussionIds.length > 3 ||
+    new Set(selectedDiscussionIds).size !== selectedDiscussionIds.length ||
+    selectedDiscussionIds.some((item) => !/^[A-Za-z0-9_-]{1,200}$/.test(item))
+  ) {
+    throw new Error('youtube_reviewed_public_discussion_selection_invalid')
+  }
+
+  const { data } = await apiClient.post(
+    `${API_PREFIX}/cases/${encodeURIComponent(safeCaseId)}/search-discovery/youtube-official-api/live-public-discussion/${encodeURIComponent(safeVideoId)}/attach-reviewed`,
+    {
+      review_batch_safe_hash: reviewBatchSafeHash,
+      selected_discussion_ids: selectedDiscussionIds,
+    },
+  )
+  return normalizeYouTubeReviewedPublicDiscussionAttachResult(data)
+}
+
 export async function attachSearchDiscoveryCandidates(caseId, payload = {}) {
   const { data } = await apiClient.post(`${API_PREFIX}/cases/${caseId}/search-discovery/candidates/attach`, payload)
   return normalizeSearchDiscoveryAttachResult(data)
@@ -5223,6 +5260,7 @@ function normalizeSearchDiscoveryDiscussionBatch(data) {
       generated_at: '',
       item_count: 0,
       items: [],
+      review_batch_safe_hash: '',
       safe_mode: {},
     }
   }
@@ -5235,6 +5273,40 @@ function normalizeSearchDiscoveryDiscussionBatch(data) {
     generated_at: String(data.generated_at || ''),
     item_count: items.length,
     items,
+    review_batch_safe_hash: /^[0-9a-f]{64}$/.test(String(data.review_batch_safe_hash || ''))
+      ? String(data.review_batch_safe_hash)
+      : '',
+    safe_mode: data.safe_mode && typeof data.safe_mode === 'object'
+      ? normalizeBooleanMap(data.safe_mode)
+      : {},
+  }
+}
+
+function normalizeYouTubeReviewedPublicDiscussionAttachResult(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return {
+      case_id: '',
+      video_id: '',
+      status: 'attached',
+      attached_discussion_count: 0,
+      attached_evidence_items: [],
+      evidence_result: normalizeEvidenceIngestionResult(null),
+      review_batch_safe_hash: '',
+      safe_mode: {},
+    }
+  }
+  return {
+    case_id: String(data.case_id || ''),
+    video_id: String(data.video_id || ''),
+    status: String(data.status || 'attached'),
+    attached_discussion_count: Number(data.attached_discussion_count || 0),
+    attached_evidence_items: Array.isArray(data.attached_evidence_items)
+      ? data.attached_evidence_items.map(normalizeEvidenceItem).filter(Boolean)
+      : [],
+    evidence_result: normalizeEvidenceIngestionResult(data.evidence_result),
+    review_batch_safe_hash: /^[0-9a-f]{64}$/.test(String(data.review_batch_safe_hash || ''))
+      ? String(data.review_batch_safe_hash)
+      : '',
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object'
       ? normalizeBooleanMap(data.safe_mode)
       : {},

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime
-from typing import Iterable
+from typing import Callable, Iterable
 
 from app.repositories.case_repository import CaseRepository
 from app.schemas.alert import AlertEvent, AlertThresholdConfig, AnalysisSnapshot, MonitoringStatus
@@ -36,6 +36,9 @@ from app.schemas.evidence import (
 from app.schemas.search_discovery import (
     SearchDiscoveryCandidateAttachRequest,
     SearchDiscoveryCandidateAttachResult,
+    SearchDiscoveryDiscussionBatch,
+    YouTubeReviewedPublicDiscussionAttachRequest,
+    YouTubeReviewedPublicDiscussionAttachResult,
 )
 from app.services.evidence_import import (
     build_import_commit_result,
@@ -69,13 +72,27 @@ from app.services.monitoring.alert_evaluator import evaluate_alerts
 from app.services.monitoring.snapshot_builder import build_analysis_snapshot
 from app.services.notifications.notification_service import create_notifications_from_alerts
 from app.services.recommendation.report_builder import build_public_opinion_report
-from app.services.search_discovery import search_discovery_candidates_to_evidence_items
+from app.services.search_discovery import (
+    calculate_youtube_public_discussion_review_batch_safe_hash,
+    get_youtube_official_api_live_public_discussion_route,
+    require_youtube_reviewed_public_discussion_attach_enabled,
+    search_discovery_candidates_to_evidence_items,
+    youtube_public_discussion_items_to_evidence_items,
+)
 from app.services.storage.base_store import CaseStore
 from app.services.storage.store_factory import create_case_store_from_env
 from app.services.visualization.chart_data_builder import build_visualization_response
 
 
 _CASE_REPOSITORY: CaseRepository | None = None
+
+
+class YouTubeReviewedPublicDiscussionBatchMismatchError(RuntimeError):
+    """Raised when the browser-reviewed batch no longer matches the refetch."""
+
+
+class YouTubeReviewedPublicDiscussionSelectionError(RuntimeError):
+    """Raised when a selected discussion id is absent from the refetched batch."""
 
 
 def get_case_repository() -> CaseRepository:
@@ -499,6 +516,124 @@ def attach_search_discovery_candidates(
     )
 
 
+def attach_youtube_reviewed_public_discussion(
+    case_id: str,
+    video_id: str,
+    payload: YouTubeReviewedPublicDiscussionAttachRequest,
+    *,
+    discussion_loader: Callable[..., SearchDiscoveryDiscussionBatch] | None = None,
+) -> YouTubeReviewedPublicDiscussionAttachResult | None:
+    """Refetch and persist only human-selected official-API public comments."""
+
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case:
+        return None
+
+    require_youtube_reviewed_public_discussion_attach_enabled()
+    load_discussion = (
+        discussion_loader or get_youtube_official_api_live_public_discussion_route
+    )
+    batch = load_discussion(video_id, max_items=3)
+    if batch.video_id != video_id or batch.item_count != len(batch.items):
+        raise YouTubeReviewedPublicDiscussionBatchMismatchError(
+            "youtube_reviewed_public_discussion_batch_mismatch"
+        )
+
+    fresh_safe_hash = calculate_youtube_public_discussion_review_batch_safe_hash(
+        batch.video_id,
+        batch.items,
+    )
+    if fresh_safe_hash != payload.review_batch_safe_hash:
+        raise YouTubeReviewedPublicDiscussionBatchMismatchError(
+            "youtube_reviewed_public_discussion_batch_mismatch"
+        )
+
+    item_by_id = {item.discussion_id: item for item in batch.items}
+    selected_items = [
+        item_by_id[discussion_id]
+        for discussion_id in payload.selected_discussion_ids
+        if discussion_id in item_by_id
+    ]
+    if len(selected_items) != len(payload.selected_discussion_ids):
+        raise YouTubeReviewedPublicDiscussionSelectionError(
+            "youtube_reviewed_public_discussion_selection_missing"
+        )
+
+    evidence_items = youtube_public_discussion_items_to_evidence_items(
+        case_id=case_id,
+        review_batch_safe_hash=fresh_safe_hash,
+        items=selected_items,
+    )
+    existing_hashes = {
+        item.normalized_content_hash
+        for item in enrich_and_deduplicate_evidence_items(case.evidence_items)
+    }
+    new_items = [
+        item
+        for item in evidence_items
+        if item.normalized_content_hash not in existing_hashes
+    ]
+    total_items = merge_evidence_items(case.evidence_items, evidence_items)
+    timestamp = repository.next_timestamp()
+    job = _build_evidence_ingestion_job(
+        case_id=case_id,
+        input_type="api",
+        source_type="youtube",
+        acquisition_mode="official_api_public",
+        total_rows=len(payload.selected_discussion_ids),
+        accepted_rows=len(new_items),
+        rejected_rows=0,
+        duplicate_rows=max(0, len(payload.selected_discussion_ids) - len(new_items)),
+        warning_count=_evidence_warning_count(evidence_items),
+        review_needed_count=build_review_summary(
+            case_id,
+            evidence_items,
+        ).review_needed_count,
+        timestamp=timestamp,
+        safe_metadata={
+            "source": "youtube_reviewed_public_discussion_attach",
+            "provider": "youtube_official_api",
+            "provider_request_count": 1,
+            "selected_discussion_count": len(payload.selected_discussion_ids),
+            "review_batch_safe_hash": fresh_safe_hash,
+            "raw_file_persisted": False,
+            "raw_provider_response_persisted": False,
+            "real_api_calls": True,
+            "url_fetching": False,
+            "scraping": False,
+            "secrets_exposed": False,
+        },
+    )
+    saved_case = repository.save_case_evidence(
+        case_id,
+        evidence_items=total_items,
+        evidence_ingestion_jobs=_prepend_evidence_job(
+            case.evidence_ingestion_jobs,
+            job,
+        ),
+        updated_at=timestamp,
+    )
+    if not saved_case:
+        return None
+
+    result = build_evidence_ingestion_result(case_id, saved_case.evidence_items)
+    selected_hashes = {item.normalized_content_hash for item in evidence_items}
+    attached_items = [
+        item
+        for item in result.evidence_items
+        if item.normalized_content_hash in selected_hashes
+    ]
+    return YouTubeReviewedPublicDiscussionAttachResult(
+        case_id=case_id,
+        video_id=video_id,
+        attached_discussion_count=len(payload.selected_discussion_ids),
+        attached_evidence_items=attached_items,
+        evidence_result=result,
+        review_batch_safe_hash=fresh_safe_hash,
+    )
+
+
 def preview_case_evidence_import(case_id: str, payload: EvidenceImportPreviewRequest) -> EvidenceImportPreviewResult | None:
     repository = get_case_repository()
     if not repository.get_case(case_id):
@@ -689,7 +824,6 @@ def _build_evidence_ingestion_job(
         current_stage="completed",
     )
     safe_metadata = {
-        **safe_metadata,
         "raw_secret_persisted": False,
         "real_api_calls": False,
         "real_llm_calls": False,
@@ -697,6 +831,7 @@ def _build_evidence_ingestion_job(
         "scraping": False,
         "third_party_crawler_integrated": False,
         "full_platform_coverage_claimed": False,
+        **safe_metadata,
     }
     return EvidenceIngestionJob(
         job_id=_evidence_job_id(case_id, input_type, timestamp),
@@ -716,6 +851,14 @@ def _build_evidence_ingestion_job(
         completed_at=timestamp,
         progress=progress,
         safe_metadata=safe_metadata,
+        safe_mode={
+            "real_api_calls": bool(safe_metadata.get("real_api_calls", False)),
+            "real_llm_calls": False,
+            "url_fetching": False,
+            "scraping": False,
+            "third_party_crawler_integrated": False,
+            "secrets_exposed": False,
+        },
     )
 
 

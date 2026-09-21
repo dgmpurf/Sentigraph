@@ -1556,6 +1556,40 @@ Validation:
 
 Next recommended task: consider PDF export or a policy/legal review checklist workflow for Simulation Lab strategy reports.
 
+## 6.20 Reviewed YouTube Public Discussion Case Evidence Bridge
+
+Update date: 2026-09-21.
+
+Status: implemented and locally validated; pending Mainline independent review.
+
+What changed:
+
+- Added a strict reviewed-discussion attach request containing only a canonical batch SHA-256 and one to three unique discussion IDs.
+- Added a disabled-by-default backend gate, `SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_REVIEWED_EVIDENCE_ATTACH_ENABLED`, and a matching disabled-by-default frontend build gate.
+- Added a hidden existing-case attach endpoint that resolves the case first, refetches one bounded three-item official API discussion batch, recomputes the safe batch hash, verifies every selected ID, and performs one bounded case Evidence merge/save.
+- Maps only server-returned selected top-level comments to `official_api_public` / `official_api` EvidenceItems. Author identity, credentials, raw provider responses, reply content, URL fetching, scraping, and cookies remain excluded.
+- Added an explicit frontend action, `Attach reviewed public discussion to case`, for provider-backed batches only. A successful attach refreshes the case but does not run analysis; `Run analysis after attach` remains a separate user action.
+- Preserved the existing synthetic review fixture as review-only and non-attachable.
+
+Validation:
+
+- New focused backend attach matrix passed (`21 passed`) with injected fake provider loaders and zero real YouTube/network calls.
+- Existing public-discussion boundary and route tests passed in their required app-import-isolated process (`36 passed`).
+- Existing static Search Discovery tests passed separately (`16 passed`).
+- Public discussion component tests passed (`17 passed`), including gate-off, synthetic rejection, enablement, exact endpoint payload, refresh, and no automatic analysis.
+- Existing Search Discovery component regressions passed (`6 passed`).
+- Changed backend modules passed `py_compile` with a repository-external cache prefix.
+- Frontend production build passed; the existing non-blocking Vite large-chunk warning remains.
+- `git diff --check` passed. Combining the static route suite with the boundary suite in one pytest process is intentionally unsupported because the boundary suite requires `app.main` to remain unimported; isolated runs passed.
+
+Safety and scope:
+
+- Validation used no real provider call, browser live-provider smoke, HTTP request, database service, crawler, personal-crawler path, credential, Project Source mutation, production Evidence Layer write, Review Queue runtime, analysis run, or report generation.
+- Official API provenance remains transport provenance only and is never treated as automatic truth verification.
+- The feature writes only bounded `case_evidence_items` and ingestion metadata for an existing case after explicit human selection.
+
+Next recommended task: complete Mainline independent review of the exact implementation commit. Only after Mainline acceptance should the human-controlled Project Source checkpoint be created.
+
 ## 7. Next Recommended Task
 
 Recommended next development task: add optional PDF export or a policy/legal review checklist workflow for Simulation Lab strategy reports.

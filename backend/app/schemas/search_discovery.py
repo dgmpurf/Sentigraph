@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.evidence import EvidenceIngestionResult, EvidenceItem
 
@@ -82,6 +82,10 @@ class SearchDiscoveryDiscussionBatch(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     item_count: int = Field(default=0, ge=0, le=20)
     items: list[SearchDiscoveryDiscussionItem] = Field(default_factory=list)
+    review_batch_safe_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     safe_mode: dict[str, bool] = Field(
         default_factory=lambda: {
             "public_discussion_text": True,
@@ -94,6 +98,64 @@ class SearchDiscoveryDiscussionBatch(BaseModel):
             "secrets_exposed": False,
             "evidence_write": False,
             "analysis_run": False,
+            "human_review_required": True,
+        }
+    )
+
+
+class YouTubeReviewedPublicDiscussionAttachRequest(BaseModel):
+    """Bind human-selected discussion identifiers to a server-refetched batch."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    review_batch_safe_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    selected_discussion_ids: list[str] = Field(min_length=1, max_length=3)
+
+    @field_validator("selected_discussion_ids")
+    @classmethod
+    def validate_selected_discussion_ids(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("selected_discussion_ids_must_be_unique")
+        if any(
+            not value
+            or len(value) > 200
+            or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in value)
+            for value in values
+        ):
+            raise ValueError("selected_discussion_id_invalid")
+        return values
+
+
+class YouTubeReviewedPublicDiscussionAttachResult(BaseModel):
+    """Safe receipt for one reviewed public-discussion evidence attach."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    video_id: str
+    status: Literal["attached"] = "attached"
+    attached_discussion_count: int = Field(ge=1, le=3)
+    attached_evidence_items: list[EvidenceItem] = Field(default_factory=list)
+    evidence_result: EvidenceIngestionResult
+    review_batch_safe_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    safe_mode: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "official_api_public": True,
+            "server_side_refetch": True,
+            "top_level_comments_only": True,
+            "reply_content_acquired": False,
+            "author_identity_persisted": False,
+            "url_fetching": False,
+            "scraping": False,
+            "cookies_used": False,
+            "secrets_exposed": False,
+            "case_evidence_write": True,
+            "production_evidence_layer_write": False,
+            "review_queue_runtime": False,
+            "analysis_run": False,
+            "report_triggered": False,
+            "production_object_created": False,
+            "automatic_truth_upgrade": False,
             "human_review_required": True,
         }
     )
