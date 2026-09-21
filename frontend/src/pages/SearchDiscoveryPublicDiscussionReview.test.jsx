@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
@@ -128,6 +128,12 @@ const TARGET_CASE = {
   keyword: 'Current launch',
 }
 
+const SECOND_TARGET_CASE = {
+  case_id: 'case_002',
+  title: 'Second target case',
+  keyword: 'Second target',
+}
+
 const ATTACH_RESULT = {
   case_id: TARGET_CASE.case_id,
   video_id: LIVE_DISCUSSION_BATCH.video_id,
@@ -162,6 +168,16 @@ const ATTACH_RESULT = {
 
 function selectFirstComboboxOption(label) {
   const combobox = screen.getAllByRole('combobox')[0]
+  fireEvent.mouseDown(combobox)
+  return screen.findAllByText(label, { exact: true }).then((options) => {
+    expect(options).toHaveLength(1)
+    fireEvent.click(options[0])
+  })
+}
+
+function selectTargetCaseOption(targetCase) {
+  const combobox = screen.getAllByRole('combobox')[1]
+  const label = `${targetCase.title} · ${targetCase.case_id}`
   fireEvent.mouseDown(combobox)
   return screen.findAllByText(label, { exact: true }).then((options) => {
     expect(options).toHaveLength(1)
@@ -656,6 +672,7 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
     )
 
     const result = await within(panel).findByTestId('public-discussion-attach-result')
+    expect(within(result).getByText(`case=${TARGET_CASE.case_id}`, { exact: true })).toBeTruthy()
     expect(within(result).getByText('attached=1', { exact: true })).toBeTruthy()
     expect(within(result).getByText('analysis_run=false', { exact: true })).toBeTruthy()
     expect(onRunCase).toHaveBeenCalledTimes(0)
@@ -663,5 +680,79 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
     fireEvent.click(within(result).getByRole('button', { name: 'Run analysis after attach' }))
     expect(onRunCase).toHaveBeenCalledTimes(1)
     expect(onRunCase).toHaveBeenCalledWith(TARGET_CASE.case_id, 'analysis')
+  })
+
+  it('binds a delayed attach receipt run action to its immutable case id', async () => {
+    let resolveAttach
+    apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveAttach = resolve
+      }),
+    )
+    const onRunCase = vi.fn()
+    const panel = await renderProviderDiscussion({
+      cases: [TARGET_CASE, SECOND_TARGET_CASE],
+      publicDiscussionAttachFrontendEnabled: true,
+      onRunCase,
+    })
+    fireEvent.click(
+      within(panel).getByRole('button', {
+        name: `Accept ${LIVE_DISCUSSION_BATCH.items[0].discussion_id}`,
+      }),
+    )
+    fireEvent.click(
+      within(panel).getByRole('button', {
+        name: 'Attach reviewed public discussion to case',
+      }),
+    )
+    await waitFor(() => {
+      expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).toHaveBeenCalledWith(
+        TARGET_CASE.case_id,
+        LIVE_DISCUSSION_BATCH.video_id,
+        expect.any(Object),
+      )
+    })
+
+    await selectTargetCaseOption(SECOND_TARGET_CASE)
+    await act(async () => {
+      resolveAttach(ATTACH_RESULT)
+      await Promise.resolve()
+    })
+
+    const result = await within(panel).findByTestId('public-discussion-attach-result')
+    expect(within(result).getByText(`case=${TARGET_CASE.case_id}`, { exact: true })).toBeTruthy()
+    fireEvent.click(within(result).getByRole('button', { name: 'Run analysis after attach' }))
+    expect(onRunCase).toHaveBeenCalledTimes(1)
+    expect(onRunCase).toHaveBeenCalledWith(TARGET_CASE.case_id, 'analysis')
+    expect(onRunCase).not.toHaveBeenCalledWith(SECOND_TARGET_CASE.case_id, 'analysis')
+  })
+
+  it('clears a completed attach receipt when the target case changes', async () => {
+    const onRunCase = vi.fn()
+    const panel = await renderProviderDiscussion({
+      cases: [TARGET_CASE, SECOND_TARGET_CASE],
+      publicDiscussionAttachFrontendEnabled: true,
+      onRunCase,
+    })
+    fireEvent.click(
+      within(panel).getByRole('button', {
+        name: `Accept ${LIVE_DISCUSSION_BATCH.items[0].discussion_id}`,
+      }),
+    )
+    fireEvent.click(
+      within(panel).getByRole('button', {
+        name: 'Attach reviewed public discussion to case',
+      }),
+    )
+
+    const result = await within(panel).findByTestId('public-discussion-attach-result')
+    expect(within(result).getByText(`case=${TARGET_CASE.case_id}`, { exact: true })).toBeTruthy()
+    await selectTargetCaseOption(SECOND_TARGET_CASE)
+
+    await waitFor(() => {
+      expect(within(panel).queryByTestId('public-discussion-attach-result')).toBeNull()
+    })
+    expect(within(panel).queryByRole('button', { name: 'Run analysis after attach' })).toBeNull()
+    expect(onRunCase).toHaveBeenCalledTimes(0)
   })
 })

@@ -120,6 +120,11 @@ export function SearchDiscovery({
     }
   }, [cases, currentCase, targetCaseId])
 
+  function handleTargetCaseChange(nextCaseId) {
+    setTargetCaseId(nextCaseId)
+    setPublicDiscussionAttachResult(null)
+  }
+
   const caseOptions = useMemo(
     () =>
       cases.map((item) => ({
@@ -503,7 +508,7 @@ export function SearchDiscovery({
             <Select
               showSearch
               value={targetCaseId || undefined}
-              onChange={setTargetCaseId}
+              onChange={handleTargetCaseChange}
               options={caseOptions}
               placeholder="Select a case"
               optionFilterProp="label"
@@ -739,6 +744,7 @@ export function SearchDiscovery({
                 <Card size="small" data-testid="public-discussion-attach-result">
                   <Space direction="vertical" size={8} className="full-width">
                     <Space wrap>
+                      <Tag color="cyan">case={publicDiscussionAttachResult.case_id}</Tag>
                       <Tag color="green">
                         attached={publicDiscussionAttachResult.attached_discussion_count}
                       </Tag>
@@ -752,8 +758,8 @@ export function SearchDiscovery({
                     </Text>
                     <Button
                       icon={<PlayCircle size={16} />}
-                      disabled={!targetCaseId}
-                      onClick={() => onRunCase?.(targetCaseId, 'analysis')}
+                      disabled={!publicDiscussionAttachResult.case_id}
+                      onClick={() => onRunCase?.(publicDiscussionAttachResult.case_id, 'analysis')}
                     >
                       Run analysis after attach
                     </Button>

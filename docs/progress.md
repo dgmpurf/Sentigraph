@@ -1560,7 +1560,7 @@ Next recommended task: consider PDF export or a policy/legal review checklist wo
 
 Update date: 2026-09-21.
 
-Status: implemented and locally validated; pending Mainline independent review.
+Status: implemented, locally validated, and published in `d0405e4d802514463bdb006b2719ac6f3852f500`; Mainline independent review identified a narrow post-attach frontend case-binding defect.
 
 What changed:
 
@@ -1588,7 +1588,34 @@ Safety and scope:
 - Official API provenance remains transport provenance only and is never treated as automatic truth verification.
 - The feature writes only bounded `case_evidence_items` and ingestion metadata for an existing case after explicit human selection.
 
-Next recommended task: complete Mainline independent review of the exact implementation commit. Only after Mainline acceptance should the human-controlled Project Source checkpoint be created.
+Next recommended task: apply the bounded frontend-only post-attach case-binding correction below. Only after Mainline accepts the corrected implementation should the human-controlled Project Source checkpoint be created.
+
+## 6.21 Reviewed YouTube Discussion Post-Attach Case Binding Correction
+
+Update date: 2026-09-21.
+
+Status: implemented and locally validated; pending Mainline independent correction review.
+
+Root cause and correction:
+
+- The published bridge stored the successful attach receipt for case A, but its explicit `Run analysis after attach` button still used the later mutable target-case selector. Selecting case B could therefore detach the visible Evidence receipt from the downstream analysis target.
+- The result action now calls analysis with the immutable `publicDiscussionAttachResult.case_id`, never the mutable `targetCaseId`.
+- The successful result card now visibly identifies its bound case ID.
+- Changing the target-case selector clears any completed public-discussion attach receipt, preventing reuse of stale case-A state for case B.
+- A delayed attach completion is also covered: if the selector changes while the request is in flight, the eventual case-A receipt can run only case A.
+
+Validation:
+
+- Public-discussion component tests passed (`19 passed`), including immutable receipt binding, visible case identity, and stale-result clearing.
+- Existing Search Discovery component regressions passed (`6 passed`).
+- Frontend production build passed; the existing non-blocking Vite large-chunk warning remains.
+- `git diff --check` passed.
+
+Safety and scope:
+
+- Changed scope is frontend-only plus this progress record; backend/API/schema/provider behavior is unchanged.
+- Validation used no real YouTube/provider call, browser live-provider smoke, credential, personal crawler, production Evidence Layer, or Project Source mutation.
+- `SOURCE_UPDATE_REQUIRED_NOW=false`; the next action is Mainline independent correction review only.
 
 ## 7. Next Recommended Task
 
