@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.schemas.comment import RawComment, RawPost
+from app.services.crawling import youtube_adapter as youtube_adapter_module
 from app.services.crawling.adapter_factory import get_adapter
 from app.services.crawling.youtube_adapter import (
     YouTubeAdapter,
@@ -860,3 +861,116 @@ def test_crawl_start_youtube_real_mode_missing_key_returns_safe_metadata(monkeyp
     assert metadata["raw_comment_schema_valid"] is True
     assert body["raw_posts"]
     assert body["raw_comments"]
+
+
+def _build_in_memory_official_client(
+    search_items: list[Mapping[str, Any]],
+    calls: list[tuple[str, dict[str, Any]]],
+) -> Any:
+    official_client = object.__new__(youtube_adapter_module._OfficialYouTubeClient)
+    official_client.credentials = YouTubeCredentials(api_key="synthetic-youtube-key")
+
+    def fake_get_json(url: str, *, params: Mapping[str, Any]) -> Mapping[str, Any]:
+        safe_params = dict(params)
+        calls.append((url, safe_params))
+        if url == youtube_adapter_module.YOUTUBE_SEARCH_ENDPOINT:
+            return {"items": search_items}
+        if url == youtube_adapter_module.YOUTUBE_VIDEOS_ENDPOINT:
+            video_ids = str(safe_params["id"]).split(",")
+            return {
+                "items": [
+                    {
+                        "id": video_id,
+                        "snippet": {"title": f"Synthetic {video_id}"},
+                        "statistics": {},
+                    }
+                    for video_id in video_ids
+                ]
+            }
+        raise AssertionError(f"Unexpected endpoint: {url}")
+
+    official_client._get_json = fake_get_json
+    return official_client
+
+
+def test_official_search_bounded_oversampling_skips_leading_invalid_row() -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+    official_client = _build_in_memory_official_client(
+        [
+            {"id": {"kind": "youtube#channel"}},
+            {"id": {"videoId": "synthetic-video-a"}},
+        ],
+        calls,
+    )
+
+    posts = official_client.search_posts(
+        "OpenAI",
+        limit=1,
+        sort="relevance",
+        date_range=None,
+    )
+
+    assert [url for url, _ in calls] == [
+        youtube_adapter_module.YOUTUBE_SEARCH_ENDPOINT,
+        youtube_adapter_module.YOUTUBE_VIDEOS_ENDPOINT,
+    ]
+    assert calls[0][1]["maxResults"] == youtube_adapter_module.YOUTUBE_REAL_POST_LIMIT == 5
+    assert "pageToken" not in calls[0][1]
+    assert calls[1][1]["id"] == "synthetic-video-a"
+    assert len(posts) == 1
+    assert posts[0]["id"] == "synthetic-video-a"
+
+
+def test_official_search_bounded_oversampling_all_invalid_skips_videos_request() -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+    official_client = _build_in_memory_official_client(
+        [
+            {"id": {"kind": "youtube#channel"}},
+            {"id": {"videoId": ""}},
+            {"id": {}},
+        ],
+        calls,
+    )
+
+    posts = official_client.search_posts(
+        "OpenAI",
+        limit=1,
+        sort="relevance",
+        date_range=None,
+    )
+
+    assert [url for url, _ in calls] == [youtube_adapter_module.YOUTUBE_SEARCH_ENDPOINT]
+    assert calls[0][1]["maxResults"] == youtube_adapter_module.YOUTUBE_REAL_POST_LIMIT == 5
+    assert "pageToken" not in calls[0][1]
+    assert posts == []
+
+
+def test_official_search_bounded_oversampling_deduplicates_in_order_and_limits() -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+    official_client = _build_in_memory_official_client(
+        [
+            {"id": {"kind": "youtube#channel"}},
+            {"id": {"videoId": "synthetic-video-a"}},
+            {"id": {"videoId": "synthetic-video-a"}},
+            {"id": {"videoId": "synthetic-video-b"}},
+            {"id": {"videoId": "synthetic-video-c"}},
+        ],
+        calls,
+    )
+
+    posts = official_client.search_posts(
+        "OpenAI",
+        limit=2,
+        sort="relevance",
+        date_range=None,
+    )
+
+    assert [url for url, _ in calls] == [
+        youtube_adapter_module.YOUTUBE_SEARCH_ENDPOINT,
+        youtube_adapter_module.YOUTUBE_VIDEOS_ENDPOINT,
+    ]
+    assert calls[0][1]["maxResults"] == youtube_adapter_module.YOUTUBE_REAL_POST_LIMIT == 5
+    assert "pageToken" not in calls[0][1]
+    assert calls[1][1]["id"] == "synthetic-video-a,synthetic-video-b"
+    assert [post["id"] for post in posts] == ["synthetic-video-a", "synthetic-video-b"]
+    assert len(posts) <= 2

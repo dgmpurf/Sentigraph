@@ -630,7 +630,7 @@ class _OfficialYouTubeClient:
                 "part": "snippet",
                 "q": keyword,
                 "type": "video",
-                "maxResults": min(limit, YOUTUBE_REAL_POST_LIMIT),
+                "maxResults": YOUTUBE_REAL_POST_LIMIT,
                 "order": _youtube_search_order(sort),
                 "key": self.credentials.api_key,
             }
@@ -641,11 +641,16 @@ class _OfficialYouTubeClient:
                     params["publishedBefore"] = published_before
             search_payload = self._get_json(YOUTUBE_SEARCH_ENDPOINT, params=params)
             search_items = _items(search_payload)
-            video_ids = [
-                _video_id_from_search_item(item)
-                for item in search_items
-                if _video_id_from_search_item(item)
-            ][:limit]
+            video_ids: list[str] = []
+            seen_video_ids: set[str] = set()
+            for item in search_items:
+                video_id = _video_id_from_search_item(item)
+                if not video_id or video_id in seen_video_ids:
+                    continue
+                seen_video_ids.add(video_id)
+                video_ids.append(video_id)
+                if len(video_ids) >= limit:
+                    break
             if not video_ids:
                 return []
             videos_response = self._video_details_response(video_ids)
