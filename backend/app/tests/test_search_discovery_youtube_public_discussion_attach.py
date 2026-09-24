@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import hashlib
+import json
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
+import app.api.v1.routes.cases as cases_route_module
 import app.services.case_store as case_store_module
 import app.services.search_discovery as search_discovery_service_module
 from app.repositories.case_repository import CaseRepository
@@ -114,8 +118,9 @@ def _item(index: int, *, body_text: str | None = None) -> SearchDiscoveryDiscuss
     )
 
 
-def _batch(count: int = 3) -> SearchDiscoveryDiscussionBatch:
-    items = [_item(index) for index in range(count)]
+def _batch_from_items(
+    items: list[SearchDiscoveryDiscussionItem],
+) -> SearchDiscoveryDiscussionBatch:
     safe_hash = (
         search_discovery_service_module.calculate_youtube_public_discussion_review_batch_safe_hash(
             VIDEO_ID,
@@ -127,7 +132,20 @@ def _batch(count: int = 3) -> SearchDiscoveryDiscussionBatch:
         item_count=len(items),
         items=items,
         review_batch_safe_hash=safe_hash,
+        review_item_safe_hashes={
+            item.discussion_id: (
+                search_discovery_service_module.calculate_youtube_public_discussion_selected_item_safe_hash(
+                    VIDEO_ID,
+                    item,
+                )
+            )
+            for item in items
+        },
     )
+
+
+def _batch(count: int = 3) -> SearchDiscoveryDiscussionBatch:
+    return _batch_from_items([_item(index) for index in range(count)])
 
 
 def _payload(
@@ -137,6 +155,35 @@ def _payload(
     return YouTubeReviewedPublicDiscussionAttachRequest(
         review_batch_safe_hash=batch.review_batch_safe_hash,
         selected_discussion_ids=selected_ids or [batch.items[0].discussion_id],
+    )
+
+
+def _selected_payload(
+    reviewed_batch: SearchDiscoveryDiscussionBatch,
+    selected_ids: list[str] | None = None,
+) -> YouTubeReviewedPublicDiscussionAttachRequest:
+    selected_discussion_ids = (
+        selected_ids
+        if selected_ids is not None
+        else [reviewed_batch.items[0].discussion_id]
+    )
+    reviewed_items = {
+        item.discussion_id: item
+        for item in reviewed_batch.items
+    }
+    return YouTubeReviewedPublicDiscussionAttachRequest(
+        review_batch_safe_hash=reviewed_batch.review_batch_safe_hash,
+        selected_discussion_ids=selected_discussion_ids,
+        review_binding_mode="selected_item_v1",
+        selected_discussion_safe_hashes={
+            discussion_id: (
+                search_discovery_service_module.calculate_youtube_public_discussion_selected_item_safe_hash(
+                    VIDEO_ID,
+                    reviewed_items[discussion_id],
+                )
+            )
+            for discussion_id in selected_discussion_ids
+        },
     )
 
 
@@ -164,6 +211,20 @@ def _attach(
         VIDEO_ID,
         _payload(batch, selected_ids),
         discussion_loader=loader,
+    )
+
+
+def _attach_selected(
+    case_id: str,
+    reviewed_batch: SearchDiscoveryDiscussionBatch,
+    fresh_batch: SearchDiscoveryDiscussionBatch,
+    selected_ids: list[str] | None = None,
+):
+    return case_store_module.attach_youtube_reviewed_public_discussion(
+        case_id,
+        VIDEO_ID,
+        _selected_payload(reviewed_batch, selected_ids),
+        discussion_loader=FakeDiscussionLoader(fresh_batch),
     )
 
 
@@ -237,6 +298,57 @@ def test_request_forbids_browser_comment_text_and_other_extra_fields() -> None:
                 "selected_discussion_ids": ["discussion_001"],
                 "body_text": "Browser text must not be authoritative",
             }
+        )
+
+
+def test_batch_v1_rejects_nonempty_selected_hash_map() -> None:
+    with pytest.raises(ValidationError):
+        YouTubeReviewedPublicDiscussionAttachRequest(
+            review_batch_safe_hash="a" * 64,
+            selected_discussion_ids=["discussion_001"],
+            selected_discussion_safe_hashes={"discussion_001": "b" * 64},
+        )
+
+
+def test_selected_item_v1_requires_selected_hash_map() -> None:
+    with pytest.raises(ValidationError):
+        YouTubeReviewedPublicDiscussionAttachRequest(
+            review_batch_safe_hash="a" * 64,
+            selected_discussion_ids=["discussion_001"],
+            review_binding_mode="selected_item_v1",
+        )
+
+
+@pytest.mark.parametrize(
+    "selected_hashes",
+    [
+        {
+            "discussion_001": "b" * 64,
+            "discussion_extra": "c" * 64,
+        },
+        {"discussion_extra": "b" * 64},
+    ],
+)
+def test_selected_item_v1_hash_keys_must_exactly_match_selected_ids(
+    selected_hashes: dict[str, str],
+) -> None:
+    with pytest.raises(ValidationError):
+        YouTubeReviewedPublicDiscussionAttachRequest(
+            review_batch_safe_hash="a" * 64,
+            selected_discussion_ids=["discussion_001"],
+            review_binding_mode="selected_item_v1",
+            selected_discussion_safe_hashes=selected_hashes,
+        )
+
+
+@pytest.mark.parametrize("invalid_hash", ["A" * 64, "g" * 64, "a" * 63])
+def test_selected_item_v1_rejects_invalid_selected_hash(invalid_hash: str) -> None:
+    with pytest.raises(ValidationError):
+        YouTubeReviewedPublicDiscussionAttachRequest(
+            review_batch_safe_hash="a" * 64,
+            selected_discussion_ids=["discussion_001"],
+            review_binding_mode="selected_item_v1",
+            selected_discussion_safe_hashes={"discussion_001": invalid_hash},
         )
 
 
@@ -468,6 +580,332 @@ def test_batch_safe_hash_is_deterministic_ordered_and_content_sensitive() -> Non
     assert calculate(VIDEO_ID, first) != calculate(VIDEO_ID, list(reversed(second)))
     changed = [second[0].model_copy(update={"body_text": "Changed provider text"}), second[1]]
     assert calculate(VIDEO_ID, first) != calculate(VIDEO_ID, changed)
+
+
+def test_selected_item_hash_uses_exact_canonical_payload_and_is_deterministic() -> None:
+    item = _item(0)
+    calculate = (
+        search_discovery_service_module.calculate_youtube_public_discussion_selected_item_safe_hash
+    )
+    canonical_payload = {
+        "schema": (
+            "sentigraph.youtube.reviewed_public_discussion."
+            "selected_item_binding.v1"
+        ),
+        "video_id": VIDEO_ID,
+        "discussion_id": item.discussion_id,
+        "body_text": item.body_text,
+        "published_at": item.published_at,
+    }
+    expected = hashlib.sha256(
+        json.dumps(
+            canonical_payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    assert calculate(VIDEO_ID, item) == expected
+    assert calculate(VIDEO_ID, item.model_copy(deep=True)) == expected
+
+
+@pytest.mark.parametrize(
+    ("field_name", "changed_value"),
+    [
+        ("like_count", 999),
+        ("reply_count", 999),
+        ("source_url", "https://example.invalid/engagement-drift"),
+    ],
+)
+def test_selected_item_hash_ignores_engagement_and_source_url_drift(
+    field_name: str,
+    changed_value: object,
+) -> None:
+    item = _item(0)
+    calculate = (
+        search_discovery_service_module.calculate_youtube_public_discussion_selected_item_safe_hash
+    )
+
+    assert calculate(VIDEO_ID, item) == calculate(
+        VIDEO_ID,
+        item.model_copy(update={field_name: changed_value}),
+    )
+
+
+def test_selected_item_hash_is_independent_of_batch_order() -> None:
+    items = [_item(0), _item(1), _item(2)]
+    selected_item = items[1]
+    reversed_items = list(reversed(items))
+    calculate = (
+        search_discovery_service_module.calculate_youtube_public_discussion_selected_item_safe_hash
+    )
+
+    assert calculate(VIDEO_ID, selected_item) == calculate(
+        VIDEO_ID,
+        next(
+            item
+            for item in reversed_items
+            if item.discussion_id == selected_item.discussion_id
+        ),
+    )
+
+
+@pytest.mark.parametrize("unselected_drift", ["changed", "removed", "reordered"])
+def test_selected_item_v1_allows_unselected_item_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    unselected_drift: str,
+) -> None:
+    monkeypatch.setenv(ENABLE_FLAG, "1")
+    reviewed_batch = _batch(3)
+    if unselected_drift == "changed":
+        fresh_items = [
+            reviewed_batch.items[0],
+            reviewed_batch.items[1],
+            reviewed_batch.items[2].model_copy(
+                update={"body_text": "Changed unselected public text"}
+            ),
+        ]
+    elif unselected_drift == "removed":
+        fresh_items = reviewed_batch.items[:2]
+    else:
+        fresh_items = list(reversed(reviewed_batch.items))
+    fresh_batch = _batch_from_items(fresh_items)
+
+    result = _attach_selected(
+        _create_case(),
+        reviewed_batch,
+        fresh_batch,
+    )
+
+    assert result is not None
+    assert result.attached_discussion_count == 1
+    assert result.reviewed_batch_safe_hash == reviewed_batch.review_batch_safe_hash
+    assert result.fresh_batch_safe_hash == fresh_batch.review_batch_safe_hash
+    assert result.reviewed_batch_safe_hash != result.fresh_batch_safe_hash
+
+
+@pytest.mark.parametrize(
+    ("field_name", "changed_value"),
+    [
+        ("body_text", "Changed selected public text"),
+        ("published_at", "2026-10-01T00:00:00Z"),
+    ],
+)
+def test_selected_item_v1_selected_content_drift_fails_closed_with_zero_writes(
+    monkeypatch: pytest.MonkeyPatch,
+    field_name: str,
+    changed_value: str,
+) -> None:
+    monkeypatch.setenv(ENABLE_FLAG, "1")
+    case_id = _create_case()
+    reviewed_batch = _batch(3)
+    fresh_items = [
+        reviewed_batch.items[0].model_copy(update={field_name: changed_value}),
+        *reviewed_batch.items[1:],
+    ]
+    loader = FakeDiscussionLoader(_batch_from_items(fresh_items))
+    save_calls = _track_saves(monkeypatch)
+
+    with pytest.raises(
+        case_store_module.YouTubeReviewedPublicDiscussionSelectedBindingMismatchError
+    ) as captured:
+        case_store_module.attach_youtube_reviewed_public_discussion(
+            case_id,
+            VIDEO_ID,
+            _selected_payload(reviewed_batch),
+            discussion_loader=loader,
+        )
+
+    assert str(captured.value) == (
+        "youtube_reviewed_public_discussion_selected_binding_mismatch"
+    )
+    assert loader.call_count == 1
+    assert save_calls == []
+
+
+def test_selected_item_v1_missing_selected_id_still_raises_selection_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ENABLE_FLAG, "1")
+    reviewed_batch = _batch(3)
+    missing_id = "youtube_official_api_missing_comment"
+    payload = YouTubeReviewedPublicDiscussionAttachRequest(
+        review_batch_safe_hash=reviewed_batch.review_batch_safe_hash,
+        selected_discussion_ids=[missing_id],
+        review_binding_mode="selected_item_v1",
+        selected_discussion_safe_hashes={missing_id: "a" * 64},
+    )
+    loader = FakeDiscussionLoader(reviewed_batch)
+    save_calls = _track_saves(monkeypatch)
+
+    with pytest.raises(case_store_module.YouTubeReviewedPublicDiscussionSelectionError):
+        case_store_module.attach_youtube_reviewed_public_discussion(
+            _create_case(),
+            VIDEO_ID,
+            payload,
+            discussion_loader=loader,
+        )
+
+    assert loader.call_count == 1
+    assert save_calls == []
+
+
+def test_selected_item_v1_wrong_selected_hash_uses_distinct_error_and_zero_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ENABLE_FLAG, "1")
+    reviewed_batch = _batch(3)
+    selected_id = reviewed_batch.items[0].discussion_id
+    payload = YouTubeReviewedPublicDiscussionAttachRequest(
+        review_batch_safe_hash=reviewed_batch.review_batch_safe_hash,
+        selected_discussion_ids=[selected_id],
+        review_binding_mode="selected_item_v1",
+        selected_discussion_safe_hashes={selected_id: "0" * 64},
+    )
+    loader = FakeDiscussionLoader(reviewed_batch)
+    save_calls = _track_saves(monkeypatch)
+
+    with pytest.raises(
+        case_store_module.YouTubeReviewedPublicDiscussionSelectedBindingMismatchError
+    ):
+        case_store_module.attach_youtube_reviewed_public_discussion(
+            _create_case(),
+            VIDEO_ID,
+            payload,
+            discussion_loader=loader,
+        )
+
+    assert loader.call_count == 1
+    assert save_calls == []
+
+
+def test_selected_item_v1_success_persists_exact_safe_binding_lineage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ENABLE_FLAG, "1")
+    counters = {"analysis": 0, "report": 0}
+
+    def forbidden_analysis(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        counters["analysis"] += 1
+        raise AssertionError("analysis must remain a separate action")
+
+    def forbidden_report(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        counters["report"] += 1
+        raise AssertionError("report generation must remain a separate action")
+
+    monkeypatch.setattr(case_store_module, "run_case", forbidden_analysis)
+    monkeypatch.setattr(
+        case_store_module,
+        "build_public_opinion_report",
+        forbidden_report,
+    )
+    case_id = _create_case()
+    reviewed_batch = _batch(3)
+    selected_ids = [
+        reviewed_batch.items[0].discussion_id,
+        reviewed_batch.items[1].discussion_id,
+    ]
+    fresh_batch = _batch_from_items(
+        [
+            reviewed_batch.items[1],
+            reviewed_batch.items[0],
+            reviewed_batch.items[2].model_copy(
+                update={
+                    "body_text": "Changed unselected public text",
+                    "like_count": 999,
+                }
+            ),
+        ]
+    )
+    loader = FakeDiscussionLoader(fresh_batch)
+    save_calls = _track_saves(monkeypatch)
+    payload = _selected_payload(reviewed_batch, selected_ids)
+
+    result = case_store_module.attach_youtube_reviewed_public_discussion(
+        case_id,
+        VIDEO_ID,
+        payload,
+        discussion_loader=loader,
+    )
+
+    assert result is not None
+    assert loader.call_count == 1
+    assert len(save_calls) == 1
+    assert result.attached_discussion_count == 2
+    assert result.evidence_result.evidence_item_count == 2
+    assert len(result.attached_evidence_items) == 2
+    assert result.review_binding_mode == "selected_item_v1"
+    assert result.reviewed_batch_safe_hash == reviewed_batch.review_batch_safe_hash
+    assert result.fresh_batch_safe_hash == fresh_batch.review_batch_safe_hash
+    assert result.review_batch_safe_hash == result.fresh_batch_safe_hash
+    assert result.reviewed_batch_safe_hash != result.fresh_batch_safe_hash
+    assert result.selected_discussion_safe_hashes == (
+        payload.selected_discussion_safe_hashes
+    )
+    assert counters == {"analysis": 0, "report": 0}
+
+    attached_by_discussion_id = {
+        item.raw_data_safe["discussion_id"]: item
+        for item in result.attached_evidence_items
+    }
+    assert set(attached_by_discussion_id) == set(selected_ids)
+    for discussion_id, item in attached_by_discussion_id.items():
+        assert item.author_id is None
+        assert item.author_name is None
+        assert item.raw_data_safe["reply_content_acquired"] is False
+        assert item.raw_data_safe["review_binding_mode"] == "selected_item_v1"
+        assert item.raw_data_safe["reviewed_batch_safe_hash"] == (
+            reviewed_batch.review_batch_safe_hash
+        )
+        assert item.raw_data_safe["fresh_batch_safe_hash"] == (
+            fresh_batch.review_batch_safe_hash
+        )
+        assert item.raw_data_safe["selected_discussion_safe_hash"] == (
+            payload.selected_discussion_safe_hashes[discussion_id]
+        )
+
+    saved_case = case_store_module.get_case(case_id)
+    assert saved_case is not None
+    metadata = saved_case.evidence_ingestion_jobs[0].safe_metadata
+    assert metadata["review_binding_mode"] == "selected_item_v1"
+    assert metadata["reviewed_batch_safe_hash"] == reviewed_batch.review_batch_safe_hash
+    assert metadata["fresh_batch_safe_hash"] == fresh_batch.review_batch_safe_hash
+    assert metadata["selected_discussion_safe_hashes"] == (
+        payload.selected_discussion_safe_hashes
+    )
+
+
+def test_selected_binding_mismatch_maps_to_exact_http_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reviewed_batch = _batch(1)
+
+    def fail_with_selected_binding_mismatch(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise case_store_module.YouTubeReviewedPublicDiscussionSelectedBindingMismatchError(
+            "youtube_reviewed_public_discussion_selected_binding_mismatch"
+        )
+
+    monkeypatch.setattr(
+        cases_route_module,
+        "attach_youtube_reviewed_public_discussion",
+        fail_with_selected_binding_mismatch,
+    )
+
+    with pytest.raises(HTTPException) as captured:
+        cases_route_module.attach_youtube_reviewed_public_discussion_to_case(
+            "case_synthetic",
+            VIDEO_ID,
+            _selected_payload(reviewed_batch),
+        )
+
+    assert captured.value.status_code == 409
+    assert captured.value.detail == (
+        "youtube_reviewed_public_discussion_selected_binding_mismatch"
+    )
 
 
 def test_hidden_route_is_registered_once_with_exact_identity() -> None:

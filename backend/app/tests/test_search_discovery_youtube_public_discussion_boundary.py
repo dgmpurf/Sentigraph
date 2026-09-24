@@ -458,6 +458,19 @@ def test_service_batch_calls_one_seam_and_keeps_review_only_hard_zeroes(
     assert batch.safe_mode == EXPECTED_SAFE_MODE
     assert all(item.status == "pending_review" for item in batch.items)
     assert all(item.safety_notes == EXPECTED_SAFETY_NOTES for item in batch.items)
+    assert set(batch.review_item_safe_hashes) == {
+        item.discussion_id
+        for item in batch.items
+    }
+    assert batch.review_item_safe_hashes == {
+        item.discussion_id: (
+            search_discovery_service_module.calculate_youtube_public_discussion_selected_item_safe_hash(
+                VIDEO_ID,
+                item,
+            )
+        )
+        for item in batch.items
+    }
     assert FAKE_API_KEY not in str(batch.model_dump(mode="json"))
     assert all(value == 0 for value in hard_zero_guards.values())
 

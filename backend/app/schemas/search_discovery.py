@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.evidence import EvidenceIngestionResult, EvidenceItem
 
@@ -86,6 +86,7 @@ class SearchDiscoveryDiscussionBatch(BaseModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+    review_item_safe_hashes: dict[str, str] = Field(default_factory=dict)
     safe_mode: dict[str, bool] = Field(
         default_factory=lambda: {
             "public_discussion_text": True,
@@ -110,6 +111,8 @@ class YouTubeReviewedPublicDiscussionAttachRequest(BaseModel):
 
     review_batch_safe_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     selected_discussion_ids: list[str] = Field(min_length=1, max_length=3)
+    review_binding_mode: Literal["batch_v1", "selected_item_v1"] = "batch_v1"
+    selected_discussion_safe_hashes: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("selected_discussion_ids")
     @classmethod
@@ -125,6 +128,25 @@ class YouTubeReviewedPublicDiscussionAttachRequest(BaseModel):
             raise ValueError("selected_discussion_id_invalid")
         return values
 
+    @model_validator(mode="after")
+    def validate_review_binding(self) -> YouTubeReviewedPublicDiscussionAttachRequest:
+        if self.review_binding_mode == "batch_v1":
+            if self.selected_discussion_safe_hashes:
+                raise ValueError("batch_v1_selected_hashes_must_be_empty")
+            return self
+
+        if not self.selected_discussion_safe_hashes:
+            raise ValueError("selected_item_v1_hashes_required")
+        if set(self.selected_discussion_safe_hashes) != set(self.selected_discussion_ids):
+            raise ValueError("selected_item_v1_hash_keys_must_match_selected_ids")
+        if any(
+            len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in self.selected_discussion_safe_hashes.values()
+        ):
+            raise ValueError("selected_item_v1_hash_invalid")
+        return self
+
 
 class YouTubeReviewedPublicDiscussionAttachResult(BaseModel):
     """Safe receipt for one reviewed public-discussion evidence attach."""
@@ -138,6 +160,10 @@ class YouTubeReviewedPublicDiscussionAttachResult(BaseModel):
     attached_evidence_items: list[EvidenceItem] = Field(default_factory=list)
     evidence_result: EvidenceIngestionResult
     review_batch_safe_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    review_binding_mode: Literal["batch_v1", "selected_item_v1"] = "batch_v1"
+    reviewed_batch_safe_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fresh_batch_safe_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    selected_discussion_safe_hashes: dict[str, str] = Field(default_factory=dict)
     safe_mode: dict[str, bool] = Field(
         default_factory=lambda: {
             "official_api_public": True,

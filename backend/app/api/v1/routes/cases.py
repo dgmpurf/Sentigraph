@@ -44,6 +44,7 @@ from app.services.simulation.case_initializer import (
 from app.services.simulation.schemas import CaseSimulationInitializationResult
 from app.services.case_store import (
     YouTubeReviewedPublicDiscussionBatchMismatchError,
+    YouTubeReviewedPublicDiscussionSelectedBindingMismatchError,
     YouTubeReviewedPublicDiscussionSelectionError,
     attach_case_evidence,
     attach_search_discovery_candidates,
@@ -275,6 +276,13 @@ def attach_youtube_reviewed_public_discussion_to_case(
         raise HTTPException(
             status_code=409,
             detail="youtube_reviewed_public_discussion_batch_mismatch",
+        ) from exc
+    except YouTubeReviewedPublicDiscussionSelectedBindingMismatchError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "youtube_reviewed_public_discussion_selected_binding_mismatch"
+            ),
         ) from exc
     except YouTubeReviewedPublicDiscussionSelectionError as exc:
         raise HTTPException(

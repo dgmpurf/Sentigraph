@@ -74,6 +74,7 @@ from app.services.notifications.notification_service import create_notifications
 from app.services.recommendation.report_builder import build_public_opinion_report
 from app.services.search_discovery import (
     calculate_youtube_public_discussion_review_batch_safe_hash,
+    calculate_youtube_public_discussion_selected_item_safe_hash,
     get_youtube_official_api_live_public_discussion_route,
     require_youtube_reviewed_public_discussion_attach_enabled,
     search_discovery_candidates_to_evidence_items,
@@ -89,6 +90,10 @@ _CASE_REPOSITORY: CaseRepository | None = None
 
 class YouTubeReviewedPublicDiscussionBatchMismatchError(RuntimeError):
     """Raised when the browser-reviewed batch no longer matches the refetch."""
+
+
+class YouTubeReviewedPublicDiscussionSelectedBindingMismatchError(RuntimeError):
+    """Raised when refetched selected content differs from its reviewed binding."""
 
 
 class YouTubeReviewedPublicDiscussionSelectionError(RuntimeError):
@@ -544,7 +549,10 @@ def attach_youtube_reviewed_public_discussion(
         batch.video_id,
         batch.items,
     )
-    if fresh_safe_hash != payload.review_batch_safe_hash:
+    if (
+        payload.review_binding_mode == "batch_v1"
+        and fresh_safe_hash != payload.review_batch_safe_hash
+    ):
         raise YouTubeReviewedPublicDiscussionBatchMismatchError(
             "youtube_reviewed_public_discussion_batch_mismatch"
         )
@@ -560,10 +568,34 @@ def attach_youtube_reviewed_public_discussion(
             "youtube_reviewed_public_discussion_selection_missing"
         )
 
+    current_selected_safe_hashes: dict[str, str] = {}
+    if payload.review_binding_mode == "selected_item_v1":
+        current_selected_safe_hashes = {
+            item.discussion_id: (
+                calculate_youtube_public_discussion_selected_item_safe_hash(
+                    video_id,
+                    item,
+                )
+            )
+            for item in selected_items
+        }
+        if current_selected_safe_hashes != payload.selected_discussion_safe_hashes:
+            raise YouTubeReviewedPublicDiscussionSelectedBindingMismatchError(
+                "youtube_reviewed_public_discussion_selected_binding_mismatch"
+            )
+
     evidence_items = youtube_public_discussion_items_to_evidence_items(
         case_id=case_id,
         review_batch_safe_hash=fresh_safe_hash,
         items=selected_items,
+        review_binding_mode=payload.review_binding_mode,
+        reviewed_batch_safe_hash=payload.review_batch_safe_hash,
+        fresh_batch_safe_hash=fresh_safe_hash,
+        selected_discussion_safe_hashes=(
+            current_selected_safe_hashes
+            if payload.review_binding_mode == "selected_item_v1"
+            else {}
+        ),
     )
     existing_hashes = {
         item.normalized_content_hash
@@ -576,6 +608,29 @@ def attach_youtube_reviewed_public_discussion(
     ]
     total_items = merge_evidence_items(case.evidence_items, evidence_items)
     timestamp = repository.next_timestamp()
+    safe_metadata = {
+        "source": "youtube_reviewed_public_discussion_attach",
+        "provider": "youtube_official_api",
+        "provider_request_count": 1,
+        "selected_discussion_count": len(payload.selected_discussion_ids),
+        "review_batch_safe_hash": fresh_safe_hash,
+        "raw_file_persisted": False,
+        "raw_provider_response_persisted": False,
+        "real_api_calls": True,
+        "url_fetching": False,
+        "scraping": False,
+        "secrets_exposed": False,
+    }
+    if payload.review_binding_mode == "selected_item_v1":
+        safe_metadata.update(
+            {
+                "review_binding_mode": payload.review_binding_mode,
+                "reviewed_batch_safe_hash": payload.review_batch_safe_hash,
+                "fresh_batch_safe_hash": fresh_safe_hash,
+                "selected_discussion_safe_hashes": current_selected_safe_hashes,
+            }
+        )
+
     job = _build_evidence_ingestion_job(
         case_id=case_id,
         input_type="api",
@@ -591,19 +646,7 @@ def attach_youtube_reviewed_public_discussion(
             evidence_items,
         ).review_needed_count,
         timestamp=timestamp,
-        safe_metadata={
-            "source": "youtube_reviewed_public_discussion_attach",
-            "provider": "youtube_official_api",
-            "provider_request_count": 1,
-            "selected_discussion_count": len(payload.selected_discussion_ids),
-            "review_batch_safe_hash": fresh_safe_hash,
-            "raw_file_persisted": False,
-            "raw_provider_response_persisted": False,
-            "real_api_calls": True,
-            "url_fetching": False,
-            "scraping": False,
-            "secrets_exposed": False,
-        },
+        safe_metadata=safe_metadata,
     )
     saved_case = repository.save_case_evidence(
         case_id,
@@ -631,6 +674,14 @@ def attach_youtube_reviewed_public_discussion(
         attached_evidence_items=attached_items,
         evidence_result=result,
         review_batch_safe_hash=fresh_safe_hash,
+        review_binding_mode=payload.review_binding_mode,
+        reviewed_batch_safe_hash=payload.review_batch_safe_hash,
+        fresh_batch_safe_hash=fresh_safe_hash,
+        selected_discussion_safe_hashes=(
+            current_selected_safe_hashes
+            if payload.review_binding_mode == "selected_item_v1"
+            else {}
+        ),
     )
 
 

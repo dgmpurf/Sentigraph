@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import re
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Literal, Mapping
 from urllib.parse import quote
 
 from app.schemas.evidence import EvidenceItem, EvidenceNormalizationMetadata
@@ -443,12 +443,20 @@ def get_youtube_official_api_live_public_discussion(
         safe_video_id,
         items,
     )
+    review_item_safe_hashes = {
+        item.discussion_id: calculate_youtube_public_discussion_selected_item_safe_hash(
+            safe_video_id,
+            item,
+        )
+        for item in items
+    }
     return SearchDiscoveryDiscussionBatch(
         video_id=safe_video_id,
         generated_at=datetime.now(timezone.utc),
         item_count=len(items),
         items=items,
         review_batch_safe_hash=review_batch_safe_hash,
+        review_item_safe_hashes=review_item_safe_hashes,
         safe_mode=dict(YOUTUBE_PUBLIC_DISCUSSION_SAFE_MODE),
     )
 
@@ -488,6 +496,35 @@ def calculate_youtube_public_discussion_review_batch_safe_hash(
     return hashlib.sha256(canonical_bytes).hexdigest()
 
 
+def calculate_youtube_public_discussion_selected_item_safe_hash(
+    video_id: str,
+    item: SearchDiscoveryDiscussionItem,
+) -> str:
+    """Hash the stable, author-free content of one reviewable discussion item."""
+
+    safe_video_id = _required_public_discussion_token(
+        video_id,
+        error_code="youtube_public_discussion_video_id_required",
+    )
+    canonical_payload = {
+        "schema": (
+            "sentigraph.youtube.reviewed_public_discussion."
+            "selected_item_binding.v1"
+        ),
+        "video_id": safe_video_id,
+        "discussion_id": item.discussion_id,
+        "body_text": item.body_text,
+        "published_at": item.published_at,
+    }
+    canonical_bytes = json.dumps(
+        canonical_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical_bytes).hexdigest()
+
+
 def require_youtube_reviewed_public_discussion_attach_enabled() -> None:
     """Fail closed before credentials or provider access for the attach lane."""
 
@@ -502,8 +539,40 @@ def youtube_public_discussion_items_to_evidence_items(
     case_id: str,
     review_batch_safe_hash: str,
     items: list[SearchDiscoveryDiscussionItem],
+    review_binding_mode: Literal["batch_v1", "selected_item_v1"] = "batch_v1",
+    reviewed_batch_safe_hash: str | None = None,
+    fresh_batch_safe_hash: str | None = None,
+    selected_discussion_safe_hashes: Mapping[str, str] | None = None,
 ) -> list[EvidenceItem]:
     """Map server-refetched selected comments into bounded case EvidenceItems."""
+
+    selected_safe_hashes = dict(selected_discussion_safe_hashes or {})
+    resolved_reviewed_batch_hash = reviewed_batch_safe_hash or review_batch_safe_hash
+    resolved_fresh_batch_hash = fresh_batch_safe_hash or review_batch_safe_hash
+
+    def raw_data_safe(item: SearchDiscoveryDiscussionItem) -> dict[str, Any]:
+        safe_data: dict[str, Any] = {
+            "provider": "youtube_official_api",
+            "discussion_id": item.discussion_id,
+            "video_id": item.video_id,
+            "comment_id": item.comment_id,
+            "top_level_comment": True,
+            "reply_content_acquired": False,
+            "author_identity_omitted": True,
+            "review_batch_safe_hash": review_batch_safe_hash,
+        }
+        if review_binding_mode == "selected_item_v1":
+            safe_data.update(
+                {
+                    "review_binding_mode": review_binding_mode,
+                    "reviewed_batch_safe_hash": resolved_reviewed_batch_hash,
+                    "fresh_batch_safe_hash": resolved_fresh_batch_hash,
+                    "selected_discussion_safe_hash": selected_safe_hashes[
+                        item.discussion_id
+                    ],
+                }
+            )
+        return safe_data
 
     evidence_items = [
         EvidenceItem(
@@ -525,16 +594,7 @@ def youtube_public_discussion_items_to_evidence_items(
             created_at=item.published_at,
             like_count=item.like_count,
             reply_count=item.reply_count,
-            raw_data_safe={
-                "provider": "youtube_official_api",
-                "discussion_id": item.discussion_id,
-                "video_id": item.video_id,
-                "comment_id": item.comment_id,
-                "top_level_comment": True,
-                "reply_content_acquired": False,
-                "author_identity_omitted": True,
-                "review_batch_safe_hash": review_batch_safe_hash,
-            },
+            raw_data_safe=raw_data_safe(item),
             content_visibility="public",
             access_scope="public",
             ingestion_metadata=EvidenceNormalizationMetadata(
