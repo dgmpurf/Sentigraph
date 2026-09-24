@@ -62,6 +62,9 @@ class CaseRepository:
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
         return self.store.update_case(case)
 
+    def delete_case(self, case_id: str) -> bool:
+        return self.store.delete_case(case_id)
+
     def save_case_raw_data(
         self,
         case_id: str,

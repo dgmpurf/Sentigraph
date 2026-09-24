@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from app.repositories.case_repository import CaseRepository
@@ -152,6 +153,68 @@ def test_local_json_store_persists_attached_raw_crawl_data_after_reload(tmp_path
     assert detail.raw_comments[0].content == "YouTube fixture QA comment survives local JSON reload."
     assert detail.crawl_metadata[0].credential_present is True
     assert "YOUTUBE_API_KEY" not in detail.model_dump_json()
+
+
+def test_local_json_store_delete_case_removes_only_target_owned_records(tmp_path) -> None:
+    store_path = tmp_path / "cases.json"
+    store_path.write_text(
+        json.dumps(_delete_case_fixture_data(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    repository = CaseRepository(LocalJsonCaseStore(store_path))
+
+    assert repository.delete_case("case_target") is True
+
+    persisted = json.loads(store_path.read_text(encoding="utf-8"))
+    assert persisted == {
+        "alerts": {"case_keep": [{"alert_id": "alert_keep", "case_id": "case_keep"}]},
+        "cases": {"case_keep": {"case_id": "case_keep", "title": "Keep"}},
+        "markdown_reports": {"case_keep": {"case_id": "case_keep", "markdown": "keep"}},
+        "notifications": {
+            "notification_keep": {"case_id": "case_keep", "message": "keep"},
+            "notification_without_mapping": "preserve",
+        },
+        "snapshots": {"case_keep": [{"case_id": "case_keep", "snapshot_id": "snapshot_keep"}]},
+    }
+
+
+def test_local_json_store_delete_missing_case_does_not_rewrite_store(tmp_path) -> None:
+    store_path = tmp_path / "cases.json"
+    store_path.write_text(
+        json.dumps(_delete_case_fixture_data(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    repository = CaseRepository(LocalJsonCaseStore(store_path))
+    before = store_path.read_bytes()
+
+    assert repository.delete_case("case_missing") is False
+    assert store_path.read_bytes() == before
+
+
+def _delete_case_fixture_data() -> dict[str, object]:
+    return {
+        "cases": {
+            "case_target": {"case_id": "case_target", "title": "Target"},
+            "case_keep": {"case_id": "case_keep", "title": "Keep"},
+        },
+        "markdown_reports": {
+            "case_target": {"case_id": "case_target", "markdown": "target"},
+            "case_keep": {"case_id": "case_keep", "markdown": "keep"},
+        },
+        "snapshots": {
+            "case_target": [{"case_id": "case_target", "snapshot_id": "snapshot_target"}],
+            "case_keep": [{"case_id": "case_keep", "snapshot_id": "snapshot_keep"}],
+        },
+        "alerts": {
+            "case_target": [{"alert_id": "alert_target", "case_id": "case_target"}],
+            "case_keep": [{"alert_id": "alert_keep", "case_id": "case_keep"}],
+        },
+        "notifications": {
+            "notification_target": {"case_id": "case_target", "message": "target"},
+            "notification_keep": {"case_id": "case_keep", "message": "keep"},
+            "notification_without_mapping": "preserve",
+        },
+    }
 
 
 def _raw_post() -> RawPost:

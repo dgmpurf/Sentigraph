@@ -58,6 +58,23 @@ class LocalJsonCaseStore(CaseStore):
             self._write_data(data)
         return case.model_copy(deep=True)
 
+    def delete_case(self, case_id: str) -> bool:
+        with self._lock:
+            data = self._read_data()
+            if case_id not in data["cases"]:
+                return False
+
+            del data["cases"][case_id]
+            for collection_name in ("markdown_reports", "snapshots", "alerts"):
+                data[collection_name].pop(case_id, None)
+            data["notifications"] = {
+                notification_id: notification
+                for notification_id, notification in data["notifications"].items()
+                if not (isinstance(notification, dict) and notification.get("case_id") == case_id)
+            }
+            self._write_data(data)
+        return True
+
     def save_analysis_result(
         self,
         case_id: str,

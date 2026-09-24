@@ -36,6 +36,10 @@ class CaseStore(ABC):
         """Replace an existing case detail."""
 
     @abstractmethod
+    def delete_case(self, case_id: str) -> bool:
+        """Delete one case and its store-owned auxiliary records."""
+
+    @abstractmethod
     def save_analysis_result(
         self,
         case_id: str,

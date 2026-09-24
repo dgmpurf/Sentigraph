@@ -103,6 +103,19 @@ class MongoDbCaseStore(CaseStore):
         self._cases.replace_one({"case_id": case.case_id}, _case_to_document(case), upsert=False)
         return case.model_copy(deep=True)
 
+    def delete_case(self, case_id: str) -> bool:
+        if not self.get_case(case_id):
+            return False
+        for collection in (
+            self._cases,
+            self._markdown_reports,
+            self._snapshots,
+            self._alerts,
+            self._notifications,
+        ):
+            collection.delete_many({"case_id": case_id})
+        return True
+
     def save_analysis_result(
         self,
         case_id: str,

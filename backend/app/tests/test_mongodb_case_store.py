@@ -262,6 +262,51 @@ def test_mongodb_store_reset_clears_all_collections() -> None:
     assert repository.list_cases() == []
 
 
+def test_mongodb_store_delete_case_removes_only_target_owned_records() -> None:
+    fake_database = FakeMongoDatabase()
+    repository = CaseRepository(MongoDbCaseStore(database=fake_database))
+    target = repository.create_case(AnalysisCaseCreateRequest(keyword="Target", platforms=["reddit"]))
+    keep = repository.create_case(AnalysisCaseCreateRequest(keyword="Keep", platforms=["weibo"]))
+    _seed_case_owned_mongodb_records(fake_database, target.case_id, "target")
+    _seed_case_owned_mongodb_records(fake_database, keep.case_id, "keep")
+
+    assert repository.delete_case(target.case_id) is True
+    assert repository.get_case(target.case_id) is None
+    assert repository.get_case(keep.case_id) is not None
+    for collection_name in (
+        "markdown_reports",
+        "analysis_snapshots",
+        "alert_events",
+        "notification_outbox",
+    ):
+        assert fake_database[collection_name].find({"case_id": target.case_id}) == []
+        kept_records = fake_database[collection_name].find({"case_id": keep.case_id})
+        assert len(kept_records) == 1
+
+
+def test_mongodb_store_delete_missing_case_does_not_delete_unrelated_records() -> None:
+    fake_database = FakeMongoDatabase()
+    repository = CaseRepository(MongoDbCaseStore(database=fake_database))
+    keep = repository.create_case(AnalysisCaseCreateRequest(keyword="Keep", platforms=["weibo"]))
+    _seed_case_owned_mongodb_records(fake_database, keep.case_id, "keep")
+    before = {
+        collection_name: deepcopy(fake_database[collection_name].documents)
+        for collection_name in (
+            "analysis_cases",
+            "markdown_reports",
+            "analysis_snapshots",
+            "alert_events",
+            "notification_outbox",
+        )
+    }
+
+    assert repository.delete_case("case_missing") is False
+    assert {
+        collection_name: fake_database[collection_name].documents
+        for collection_name in before
+    } == before
+
+
 def test_mongodb_safe_document_converts_nested_keys_to_strings() -> None:
     assert _safe_document({1: {"$bad.key": "value", "a.b": [{"$inner": 1}]}}) == {
         "1": {"_bad_key": "value", "a_b": [{"_inner": 1}]}
@@ -342,6 +387,33 @@ class FakeMongoCollection:
 
     def delete_many(self, filter_query: dict[str, Any]) -> None:
         self.documents = [document for document in self.documents if not _matches(document, filter_query)]
+
+
+def _seed_case_owned_mongodb_records(
+    fake_database: FakeMongoDatabase,
+    case_id: str,
+    suffix: str,
+) -> None:
+    fake_database["markdown_reports"].replace_one(
+        {"case_id": case_id},
+        {"case_id": case_id, "markdown": suffix},
+        upsert=True,
+    )
+    fake_database["analysis_snapshots"].replace_one(
+        {"snapshot_id": f"snapshot_{suffix}"},
+        {"snapshot_id": f"snapshot_{suffix}", "case_id": case_id},
+        upsert=True,
+    )
+    fake_database["alert_events"].replace_one(
+        {"alert_id": f"alert_{suffix}"},
+        {"alert_id": f"alert_{suffix}", "case_id": case_id},
+        upsert=True,
+    )
+    fake_database["notification_outbox"].replace_one(
+        {"notification_id": f"notification_{suffix}"},
+        {"notification_id": f"notification_{suffix}", "case_id": case_id},
+        upsert=True,
+    )
 
 
 def _matches(document: dict[str, Any], filter_query: dict[str, Any]) -> bool:
