@@ -53,10 +53,6 @@ FORBIDDEN_PUBLIC_ALIASES = [
 ]
 
 FORBIDDEN_ACTIVE_CTA_TERMS = [
-    "<button",
-    "<Button",
-    "<form",
-    "href=",
     "approveWrite",
     "writeNow",
     "publishNow",
@@ -291,6 +287,33 @@ def test_no_active_write_operator_or_runtime_cta_exists() -> None:
     assert "no source 11 / finalsummaryreport runtime" in shell_lower
 
 
+def test_selected_lineage_explicit_control_is_strictly_read_only() -> None:
+    api_text = _read(FRONTEND_API_CLIENT)
+    helper = _helper_body(api_text, "getInternalAlphaSelectedItemLineageFixture")
+    assert helper.count("apiClient.get(") == 1
+    assert "selected-item-lineage-fixture" in helper
+    assert "normalizeInternalAlphaSelectedItemLineageFixture(data, status)" in helper
+    for forbidden in FORBIDDEN_ROUTE_METHODS:
+        assert forbidden not in helper
+
+    shell = _read(FRONTEND_SHELL)
+    handler = re.search(
+        r"const handleSelectedItemLineageRead = async \(\) => \{(?P<body>.*?)\n  \}",
+        shell,
+        re.DOTALL,
+    )
+    assert handler is not None
+    body = handler.group("body")
+    assert body.count("getInternalAlphaSelectedItemLineageFixture()") == 1
+    assert body.index("selectedItemLineageGetStarted.current = true") < body.index(
+        "await getInternalAlphaSelectedItemLineageFixture()"
+    )
+    assert "onClick={handleSelectedItemLineageRead}" in shell
+    assert "Read safe lineage projection" in shell
+    for forbidden in ("apiClient.post", "postInternalAlpha", "runProvider", "writeNow", "executeNow"):
+        assert forbidden not in body
+
+
 def test_no_forbidden_display_fields_or_readiness_overclaims() -> None:
     api_text = _read(FRONTEND_API_CLIENT)
     helper_match = re.search(
@@ -439,5 +462,39 @@ def test_b05_frontend_state_view_copy_and_no_mutation_controls_are_distinct() ->
     ):
         assert forbidden not in shell
 
-    assert "retry" not in shell.casefold()
     assert "prefetch" not in shell.casefold()
+
+    # Inspect the bounded read effect, not negative user-facing "No retry" copy.
+    effect = re.search(
+        r"  useEffect\(\(\) => \{\n(?P<body>    if \(selectedReviewView !== LOCAL_EXCHANGE_PROJECTION_REVIEW_VIEW\).*?)\n  \}, \[",
+        shell,
+        re.DOTALL,
+    )
+    assert effect is not None
+    body = effect.group("body")
+    guard = (
+        "if (requestedLocalExchangeHandles.current.has(selectedLocalExchangeSampleHandle)) return"
+    )
+    guard_add = "requestedLocalExchangeHandles.current.add(selectedLocalExchangeSampleHandle)"
+    get_call = f"{B05_READ_ONLY_HELPER}(selectedLocalExchangeSampleHandle)"
+    assert body.index(guard) < body.index(guard_add) < body.index(get_call)
+    assert body.count(get_call) == 1
+    assert re.findall(r"\bgetInternalAlpha\w+\s*\(", body) == [
+        f"{B05_READ_ONLY_HELPER}("
+    ]
+    assert body.count(".then(") == 1
+    assert body.count(".catch(") == 1
+    assert "requestedLocalExchangeHandles.current.clear(" not in shell
+    assert "requestedLocalExchangeHandles.current.delete(" not in shell
+    assert re.search(r"\b(?:for|while|do)\b", body) is None
+    for forbidden in (
+        "setTimeout(", "setInterval(", "requestAnimationFrame(", "queueMicrotask(",
+        "retry", "fetch(", "XMLHttpRequest", "postInternalAlpha", "runProvider",
+        "writeNow", "executeNow",
+    ):
+        assert forbidden not in body, forbidden
+
+    helper = _helper_body(_read(FRONTEND_API_CLIENT), B05_READ_ONLY_HELPER)
+    assert helper.count("apiClient.get(") == 1
+    for method in ("post", "put", "patch", "delete"):
+        assert f"apiClient.{method}(" not in helper

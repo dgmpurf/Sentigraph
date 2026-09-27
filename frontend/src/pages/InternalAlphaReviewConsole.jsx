@@ -10,6 +10,8 @@ import {
   getInternalAlphaLocalExchangeProjection,
   getInternalAlphaLocalExchangeSampleCatalog,
   getInternalAlphaReviewConsoleProjection,
+  getInternalAlphaSelectedItemLineageFixture,
+  INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE,
   INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
   INTERNAL_ALPHA_GOVERNED_RECORD_REVIEW_PROJECTION_ID,
@@ -36,6 +38,7 @@ const LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW =
   'internalAlphaLocalExchangeIdentityReadyV02Review'
 const IDENTITY_READY_DURABLE_DECISION_AUDIT_READBACK_VIEW =
   'identityReadyDurableDecisionAuditReadback'
+const SELECTED_ITEM_LINEAGE_AUDIT_VIEW = 'selectedItemLineageAudit'
 
 const INITIAL_LOCAL_EXCHANGE_CATALOG_STATE = Object.freeze({
   catalogPhase: 'loading',
@@ -78,6 +81,10 @@ const REVIEW_SURFACE_OPTIONS = Object.freeze([
   {
     value: IDENTITY_READY_DURABLE_DECISION_AUDIT_READBACK_VIEW,
     label: 'Identity-ready durable decision audit readback',
+  },
+  {
+    value: SELECTED_ITEM_LINEAGE_AUDIT_VIEW,
+    label: 'Selected-item v1 lineage audit (synthetic contract)',
   },
 ])
 
@@ -315,6 +322,9 @@ export function InternalAlphaReviewConsole() {
     useState({ phase: 'idle', result: null })
   const [identityReadyDecisionHistoryState, setIdentityReadyDecisionHistoryState] =
     useState({ phase: 'not_loaded', result: null })
+  const [selectedItemLineageState, setSelectedItemLineageState] =
+    useState({ phase: 'idle', result: null })
+  const selectedItemLineageGetStarted = useRef(false)
   const requestedLocalExchangeHandles = useRef(new Set())
   const localExchangeIdentityReadyV02RequestStarted = useRef(false)
   const identityReadyDecisionCandidateBuildStarted = useRef(false)
@@ -621,6 +631,20 @@ export function InternalAlphaReviewConsole() {
     setIdentityReadyDecisionAuditState({ phase: 'idle', result: null })
   }
 
+  const handleSelectedItemLineageRead = async () => {
+    if (selectedItemLineageGetStarted.current) return
+    selectedItemLineageGetStarted.current = true
+    setSelectedItemLineageState({ phase: 'loading', result: null })
+    try {
+      const result = await getInternalAlphaSelectedItemLineageFixture()
+      if (!pageIsMounted.current) return
+      setSelectedItemLineageState({ phase: 'ready', result })
+    } catch {
+      if (!pageIsMounted.current) return
+      setSelectedItemLineageState({ phase: 'bounded_error', result: null })
+    }
+  }
+
   const handleIdentityReadyDecisionAuditReadback = async () => {
     if (
       !identityReadyAuditDecisionIdIsValid ||
@@ -717,6 +741,55 @@ export function InternalAlphaReviewConsole() {
       </Space>
     </Card>
   )
+
+  if (selectedReviewView === SELECTED_ITEM_LINEAGE_AUDIT_VIEW) {
+    return (
+      <div className="page-stack internal-alpha-review-shell-page">
+        {reviewSurfaceSelector}
+        <Card className="panel-card internal-alpha-review-card">
+          <Space direction="vertical" size={12} className="full-width">
+            <Title level={2}>Selected-item v1 lineage audit</Title>
+            <Space wrap>
+              <Tag color="cyan">synthetic fixture only</Tag>
+              <Tag>live persisted record not connected</Tag>
+              <Tag>human review required</Tag>
+              <Tag>no automatic trust upgrade</Tag>
+            </Space>
+            <Paragraph>
+              Producer attestations describe the synthetic attach-time contract only.
+              They do not verify a current persisted record or establish independent digest equality.
+              Official API transport does not establish truth.
+            </Paragraph>
+            <Button
+              onClick={handleSelectedItemLineageRead}
+              disabled={selectedItemLineageGetStarted.current}
+              loading={selectedItemLineageState.phase === 'loading'}
+            >
+              Read safe lineage projection
+            </Button>
+            {selectedItemLineageState.phase === 'idle' ? (
+              <Text>No lineage projection requested.</Text>
+            ) : null}
+            {selectedItemLineageState.phase === 'bounded_error' ? (
+              <Alert type="warning" showIcon message="Safe lineage projection unavailable." />
+            ) : null}
+            {selectedItemLineageState.phase === 'ready' ? (
+              <Descriptions title="Safe synthetic producer attestation" column={1} size="small">
+                {INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS.map((field) => {
+                  const value = selectedItemLineageState.result.projection[field]
+                  return (
+                    <Descriptions.Item key={field} label={field}>
+                      <Text code>{typeof value === 'boolean' ? (value ? 'true' : 'false') : value}</Text>
+                    </Descriptions.Item>
+                  )
+                })}
+              </Descriptions>
+            ) : null}
+          </Space>
+        </Card>
+      </div>
+    )
+  }
 
   if (selectedReviewView === IDENTITY_READY_DURABLE_DECISION_AUDIT_READBACK_VIEW) {
     return (

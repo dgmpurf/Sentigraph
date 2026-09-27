@@ -28,11 +28,17 @@ from app.services.governed_nonproduction_review_console_projection import (
     PROJECTION_FIELDS as GOVERNED_RECORD_PROJECTION_FIELDS,
     build_governed_nonproduction_review_console_projection,
 )
+from app.services.internal_alpha_selected_item_lineage_projection import (
+    build_internal_alpha_selected_item_lineage_projection,
+)
 
 
 router = APIRouter()
 
 ENV_FLAG = "SENTIGRAPH_INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_ENABLED"
+SELECTED_ITEM_LINEAGE_FIXTURE_ENV_FLAG = (
+    "SENTIGRAPH_INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_FIXTURE_ENABLED"
+)
 IDENTITY_READY_V02_ENV_FLAG = (
     "SENTIGRAPH_INTERNAL_ALPHA_LOCAL_EXCHANGE_"
     "IDENTITY_READY_REVIEW_PROJECTION_V0_2_ENABLED"
@@ -47,6 +53,51 @@ ALLOWED_PROJECTION_IDS = {
     "internal-alpha-safe-projection-fixture",
     "8z16-no-write-alpha-fixture",
 }
+
+
+def _selected_item_lineage_fixture_enabled() -> bool:
+    return _resolve_internal_alpha_review_console_route_enabled_mode(
+        os.environ.get(SELECTED_ITEM_LINEAGE_FIXTURE_ENV_FLAG)
+    ).enabled
+
+
+def _selected_item_lineage_safe_fixture() -> dict[str, str | bool]:
+    return {
+        "review_binding_mode": "selected_item_v1",
+        "reviewed_batch_safe_hash": "1" * 64,
+        "fresh_batch_safe_hash": "2" * 64,
+        "selected_discussion_safe_hash": "3" * 64,
+        "reply_content_acquired": False,
+        "author_identity_omitted": True,
+    }
+
+
+@router.get("/selected-item-lineage-fixture")
+def get_internal_alpha_selected_item_lineage_fixture() -> dict[str, Any]:
+    """Expose only the synthetic contract, after both disabled-by-default gates."""
+    projection = None
+    if _route_enabled() and _selected_item_lineage_fixture_enabled():
+        try:
+            projection = dict(build_internal_alpha_selected_item_lineage_projection(
+                _selected_item_lineage_safe_fixture()
+            ))
+        except ValueError:
+            projection = None
+    return {
+        "response_schema": "sentigraph_internal_alpha_selected_item_lineage_fixture_response_v0_1",
+        "route_mode": "disabled_by_default_internal_synthetic_fixture_only",
+        "projection": projection,
+        "safe_metadata_only": True,
+        "human_review_required": True,
+        "no_automatic_trust_upgrade": True,
+        "synthetic_fixture_only": True,
+        "live_persisted_record_connected": False,
+        "actual_write_enabled": False,
+        "production_object_enabled": False,
+        "review_queue_runtime_enabled": False,
+        "public_ready": False,
+        "production_ready": False,
+    }
 
 
 @router.get("/local-exchange-samples")

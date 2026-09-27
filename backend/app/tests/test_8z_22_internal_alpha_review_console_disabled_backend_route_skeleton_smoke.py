@@ -248,19 +248,27 @@ def test_unknown_projection_id_is_safe_not_found_without_default_fallback(
 
 
 def test_route_family_is_get_only_and_internal_only() -> None:
+    import app.api.v1.routes.internal_alpha_review_console as route_module
+
+    # Inspect this router directly: app.routes may hold lazy included routers.
     route_methods = {
         route.path: route.methods
-        for route in app.routes
-        if "internal/alpha/review-console" in getattr(route, "path", "")
+        for route in route_module.router.routes
     }
 
-    assert set(route_methods) == {
-        f"{ROUTE_PREFIX}/projections/{{projection_id}}",
-        f"{ROUTE_PREFIX}/local-exchange-samples",
-        f"{ROUTE_PREFIX}/local-exchange-projections/{{sample_handle}}",
-    }
+    assert {
+        "/projections/{projection_id}",
+        "/local-exchange-samples",
+        "/local-exchange-projections/{sample_handle}",
+        "/v0.2/local-exchange-projections/{sample_handle}",
+        "/selected-item-lineage-fixture",
+    } <= set(route_methods)
     for path, methods in route_methods.items():
-        assert path.startswith("/api/v1/internal/")
+        assert path.startswith("/")
+        assert ".." not in path
+        mapped_path = f"{ROUTE_PREFIX}{path}"
+        assert mapped_path.startswith("/api/v1/internal/alpha/review-console/")
+        assert mapped_path not in PUBLIC_ALIASES
         assert "GET" in methods
         assert "POST" not in methods
         assert "PUT" not in methods

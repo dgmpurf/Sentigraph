@@ -72,9 +72,13 @@ import {
   INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_CATALOG_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS,
+  INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS,
+  INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS,
   getInternalAlphaGovernedReviewFormalState,
   getInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory,
   getInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
+  getInternalAlphaSelectedItemLineageFixture,
+  normalizeInternalAlphaSelectedItemLineageFixture,
   normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory,
   normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
   normalizeInternalAlphaGovernedReviewFormalStateProjection,
@@ -650,6 +654,209 @@ async function renderGovernedProjection(payload = createGovernedProjectionPayloa
 async function selectGovernedDecision(decisionType) {
   await chooseAntDesignOption('Governed human-review decision type', decisionType)
 }
+
+const SELECTED_LINEAGE_ENDPOINT =
+  '/api/v1/internal/alpha/review-console/selected-item-lineage-fixture'
+const SELECTED_LINEAGE_OPTION = 'Selected-item v1 lineage audit (synthetic contract)'
+const SELECTED_LINEAGE_CONTRACT_ERROR = 'frontend_selected_item_lineage_fixture_contract_mismatch'
+
+function createSelectedLineageResponse() {
+  return {
+    status: 200,
+    data: {
+      response_schema: 'sentigraph_internal_alpha_selected_item_lineage_fixture_response_v0_1',
+      route_mode: 'disabled_by_default_internal_synthetic_fixture_only',
+      projection: {
+        projection_schema: 'sentigraph_internal_alpha_selected_item_lineage_projection_v0_1',
+        projection_mode: 'producer_attestation_synthetic_fixture_only',
+        binding_mode: 'selected_item_v1',
+        reviewed_batch_safe_hash: '1'.repeat(64),
+        fresh_batch_safe_hash: '2'.repeat(64),
+        persisted_selected_safe_hash: '3'.repeat(64),
+        selected_binding_evidence_present: true,
+        reply_content_acquired: false,
+        author_identity_omitted_at_production: true,
+        transport_source_provenance_only: true,
+        human_review_required: true,
+        no_automatic_trust_upgrade: true,
+        synthetic_fixture_only: true,
+        live_persisted_record_connected: false,
+      },
+      safe_metadata_only: true,
+      human_review_required: true,
+      no_automatic_trust_upgrade: true,
+      synthetic_fixture_only: true,
+      live_persisted_record_connected: false,
+      actual_write_enabled: false,
+      production_object_enabled: false,
+      review_queue_runtime_enabled: false,
+      public_ready: false,
+      production_ready: false,
+    },
+  }
+}
+
+function selectedLineageGetCalls() {
+  return apiMocks.apiClientGet.mock.calls.filter(([url]) => url === SELECTED_LINEAGE_ENDPOINT)
+}
+
+function prepareSelectedLineageView(loader = () => Promise.resolve(createSelectedLineageResponse())) {
+  apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+  apiMocks.apiClientGet.mockImplementation((url) =>
+    url === SELECTED_LINEAGE_ENDPOINT
+      ? loader()
+      : Promise.resolve(createGovernedFormalStateResponse()),
+  )
+}
+
+async function openSelectedLineageView() {
+  await chooseAntDesignOption('Read-only review surface', SELECTED_LINEAGE_OPTION)
+}
+
+describe('InternalAlphaReviewConsole synthetic selected-item lineage audit', () => {
+  it('does not fetch on mount/selection and performs one GET only after explicit action', async () => {
+    prepareSelectedLineageView()
+    render(<InternalAlphaReviewConsole />)
+    expect(selectedLineageGetCalls()).toHaveLength(0)
+    await openSelectedLineageView()
+    expect(selectedLineageGetCalls()).toHaveLength(0)
+    expect(screen.getByText('synthetic fixture only', { exact: true })).toBeTruthy()
+    expect(screen.getByText('live persisted record not connected', { exact: true })).toBeTruthy()
+    expect(screen.getByText('human review required', { exact: true })).toBeTruthy()
+    expect(screen.getByText('no automatic trust upgrade', { exact: true })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Read safe lineage projection' }))
+    await screen.findByText('Safe synthetic producer attestation', { exact: true })
+    expect(selectedLineageGetCalls()).toHaveLength(1)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+    expect(screen.getByText('3'.repeat(64), { exact: true })).toBeTruthy()
+    for (const blocked of ['reviewed_selected_safe_hash', 'fresh_selected_safe_hash', 'selected_safe_lineage_consistent', 'author_identity_absent']) {
+      expect(screen.queryByText(blocked, { exact: true })).toBeNull()
+    }
+  })
+
+  it('retains one pending GET under StrictMode, double click, and delayed completion', async () => {
+    const pending = deferred()
+    prepareSelectedLineageView(() => pending.promise)
+    render(<React.StrictMode><InternalAlphaReviewConsole /></React.StrictMode>)
+    expect(selectedLineageGetCalls()).toHaveLength(0)
+    await openSelectedLineageView()
+    expect(selectedLineageGetCalls()).toHaveLength(0)
+    const button = screen.getByRole('button', { name: 'Read safe lineage projection' })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    expect(selectedLineageGetCalls()).toHaveLength(1)
+    await act(async () => { pending.resolve(createSelectedLineageResponse()) })
+    await screen.findByText('Safe synthetic producer attestation', { exact: true })
+    fireEvent.click(button)
+    expect(selectedLineageGetCalls()).toHaveLength(1)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it('does not re-fetch after leaving and returning to the view', async () => {
+    prepareSelectedLineageView()
+    render(<InternalAlphaReviewConsole />)
+    await openSelectedLineageView()
+    fireEvent.click(screen.getByRole('button', { name: 'Read safe lineage projection' }))
+    await screen.findByText('Safe synthetic producer attestation', { exact: true })
+    await chooseAntDesignOption('Read-only review surface', 'Governed record review (default)')
+    await openSelectedLineageView()
+    expect(screen.getByRole('button', { name: 'Read safe lineage projection' }).disabled).toBe(true)
+    expect(selectedLineageGetCalls()).toHaveLength(1)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it('bounds errors without a retry, POST, or raw server detail', async () => {
+    prepareSelectedLineageView(() => Promise.reject(new Error(RAW_ERROR_MARKER)))
+    render(<InternalAlphaReviewConsole />)
+    await openSelectedLineageView()
+    const button = screen.getByRole('button', { name: 'Read safe lineage projection' })
+    fireEvent.click(button)
+    await screen.findByText('Safe lineage projection unavailable.', { exact: true })
+    fireEvent.click(button)
+    expect(selectedLineageGetCalls()).toHaveLength(1)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+    expect(screen.queryByText(RAW_ERROR_MARKER, { exact: false })).toBeNull()
+  })
+
+  it('ignores delayed completion after unmount without replay', async () => {
+    const pending = deferred()
+    prepareSelectedLineageView(() => pending.promise)
+    const view = render(<InternalAlphaReviewConsole />)
+    await openSelectedLineageView()
+    fireEvent.click(screen.getByRole('button', { name: 'Read safe lineage projection' }))
+    view.unmount()
+    await act(async () => { pending.resolve(createSelectedLineageResponse()) })
+    expect(selectedLineageGetCalls()).toHaveLength(1)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+    expect(screen.queryByText('Safe synthetic producer attestation', { exact: true })).toBeNull()
+  })
+
+  it('never renders forbidden content from an invalid server projection', async () => {
+    const raw = createSelectedLineageResponse()
+    raw.data.projection.body_text = RAW_CONFIGURATION_MARKER
+    prepareSelectedLineageView(() => Promise.resolve(raw))
+    render(<InternalAlphaReviewConsole />)
+    await openSelectedLineageView()
+    fireEvent.click(screen.getByRole('button', { name: 'Read safe lineage projection' }))
+    await screen.findByText('Safe lineage projection unavailable.', { exact: true })
+    expect(screen.queryByText(RAW_CONFIGURATION_MARKER, { exact: false })).toBeNull()
+    expect(screen.queryByText('Safe synthetic producer attestation', { exact: true })).toBeNull()
+    expect(selectedLineageGetCalls()).toHaveLength(1)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it('normalizes only exact immutable detached safe key sets', () => {
+    const raw = createSelectedLineageResponse()
+    const safe = normalizeInternalAlphaSelectedItemLineageFixture(raw.data, raw.status)
+    expect(safe).toEqual(raw.data)
+    expect(Object.keys(safe)).toEqual(INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS)
+    expect(Object.keys(safe.projection)).toEqual(INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS)
+    expect(Object.isFrozen(safe)).toBe(true)
+    expect(Object.isFrozen(safe.projection)).toBe(true)
+    raw.data.projection.persisted_selected_safe_hash = '4'.repeat(64)
+    expect(safe.projection.persisted_selected_safe_hash).toBe('3'.repeat(64))
+  })
+
+  it.each([
+    ['missing wrapper', (data) => { delete data.safe_metadata_only }],
+    ['missing projection', (data) => { delete data.projection.reviewed_batch_safe_hash }],
+    ['extra wrapper', (data) => { data.raw_payload = RAW_CONFIGURATION_MARKER }],
+    ['extra projection', (data) => { data.projection.job_id = RAW_CONFIGURATION_MARKER }],
+    ['short hash', (data) => { data.projection.fresh_batch_safe_hash = 'a'.repeat(63) }],
+    ['uppercase hash', (data) => { data.projection.persisted_selected_safe_hash = 'A'.repeat(64) }],
+    ['hash trailing LF', (data) => { data.projection.reviewed_batch_safe_hash += '\n' }],
+    ['wrong binding', (data) => { data.projection.binding_mode = 'batch_v1' }],
+    ['boolean string', (data) => { data.projection.reply_content_acquired = 'false' }],
+    ['boolean integer', (data) => { data.projection.author_identity_omitted_at_production = 1 }],
+    ['wrong human policy', (data) => { data.projection.human_review_required = false }],
+    ['wrong transport policy', (data) => { data.projection.transport_source_provenance_only = false }],
+    ['wrong trust policy', (data) => { data.no_automatic_trust_upgrade = false }],
+    ['wrong live policy', (data) => { data.live_persisted_record_connected = true }],
+    ['disabled response', (data) => { data.projection = null }],
+    ['blocked dual digest', (data) => { data.projection.reviewed_selected_safe_hash = '3'.repeat(64) }],
+  ])('rejects %s with only the bounded contract error', (_label, mutate) => {
+    const raw = createSelectedLineageResponse()
+    mutate(raw.data)
+    expect(() => normalizeInternalAlphaSelectedItemLineageFixture(raw.data, raw.status)).toThrow(SELECTED_LINEAGE_CONTRACT_ERROR)
+  })
+
+  it('rejects accessors without evaluating them and rejects non-200 status', () => {
+    const raw = createSelectedLineageResponse()
+    const getter = vi.fn(() => RAW_CONFIGURATION_MARKER)
+    Object.defineProperty(raw.data.projection, 'binding_mode', { enumerable: true, get: getter })
+    expect(() => normalizeInternalAlphaSelectedItemLineageFixture(raw.data)).toThrow(SELECTED_LINEAGE_CONTRACT_ERROR)
+    expect(getter).toHaveBeenCalledTimes(0)
+    expect(() => normalizeInternalAlphaSelectedItemLineageFixture(createSelectedLineageResponse().data, 500)).toThrow(SELECTED_LINEAGE_CONTRACT_ERROR)
+  })
+
+  it('GET helper has no write fallback when transport rejects', async () => {
+    apiMocks.apiClientGet.mockRejectedValue(new Error(RAW_ERROR_MARKER))
+    await expect(getInternalAlphaSelectedItemLineageFixture()).rejects.toThrow(RAW_ERROR_MARKER)
+    expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
+    expect(apiMocks.apiClientGet.mock.calls[0][0]).toBe(SELECTED_LINEAGE_ENDPOINT)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+})
 
 describe('InternalAlphaReviewConsole StrictMode hydration', () => {
   it('requests the governed projection once and applies the retained first result', async () => {

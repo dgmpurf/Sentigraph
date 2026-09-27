@@ -944,6 +944,116 @@ export async function getInternalAlphaLocalExchangeProjection(sampleHandle) {
   return normalizeInternalAlphaLocalExchangeProjection(data)
 }
 
+export const INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS = Object.freeze([
+  'projection_schema',
+  'projection_mode',
+  'binding_mode',
+  'reviewed_batch_safe_hash',
+  'fresh_batch_safe_hash',
+  'persisted_selected_safe_hash',
+  'selected_binding_evidence_present',
+  'reply_content_acquired',
+  'author_identity_omitted_at_production',
+  'transport_source_provenance_only',
+  'human_review_required',
+  'no_automatic_trust_upgrade',
+  'synthetic_fixture_only',
+  'live_persisted_record_connected',
+])
+
+export const INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS = Object.freeze([
+  'response_schema',
+  'route_mode',
+  'projection',
+  'safe_metadata_only',
+  'human_review_required',
+  'no_automatic_trust_upgrade',
+  'synthetic_fixture_only',
+  'live_persisted_record_connected',
+  'actual_write_enabled',
+  'production_object_enabled',
+  'review_queue_runtime_enabled',
+  'public_ready',
+  'production_ready',
+])
+
+const SELECTED_ITEM_LINEAGE_HASH_PATTERN = /^[0-9a-f]{64}$/
+const SELECTED_ITEM_LINEAGE_CONTRACT_ERROR =
+  'frontend_selected_item_lineage_fixture_contract_mismatch'
+
+function hasExactSelectedItemLineageFields(value, fields) {
+  if (!isPlainInternalAlphaProjectionObject(value)) return false
+  const keys = Reflect.ownKeys(value)
+  return (
+    keys.length === fields.length &&
+    keys.every((key) => typeof key === 'string' && fields.includes(key)) &&
+    fields.every((field) => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, field)
+      return descriptor?.enumerable === true && Object.hasOwn(descriptor, 'value')
+    })
+  )
+}
+
+export function normalizeInternalAlphaSelectedItemLineageFixture(data, httpStatus = 200) {
+  const contractError = () => {
+    throw new Error(SELECTED_ITEM_LINEAGE_CONTRACT_ERROR)
+  }
+  if (
+    httpStatus !== 200 ||
+    !hasExactSelectedItemLineageFields(data, INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS) ||
+    data.response_schema !== 'sentigraph_internal_alpha_selected_item_lineage_fixture_response_v0_1' ||
+    data.route_mode !== 'disabled_by_default_internal_synthetic_fixture_only'
+  ) contractError()
+
+  const trueWrapperFields = [
+    'safe_metadata_only', 'human_review_required', 'no_automatic_trust_upgrade',
+    'synthetic_fixture_only',
+  ]
+  const falseWrapperFields = [
+    'live_persisted_record_connected', 'actual_write_enabled', 'production_object_enabled',
+    'review_queue_runtime_enabled', 'public_ready', 'production_ready',
+  ]
+  if (
+    trueWrapperFields.some((field) => data[field] !== true) ||
+    falseWrapperFields.some((field) => data[field] !== false)
+  ) contractError()
+
+  const projection = data.projection
+  if (
+    !hasExactSelectedItemLineageFields(projection, INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS) ||
+    projection.projection_schema !== 'sentigraph_internal_alpha_selected_item_lineage_projection_v0_1' ||
+    projection.projection_mode !== 'producer_attestation_synthetic_fixture_only' ||
+    projection.binding_mode !== 'selected_item_v1' ||
+    ['reviewed_batch_safe_hash', 'fresh_batch_safe_hash', 'persisted_selected_safe_hash'].some(
+      (field) => typeof projection[field] !== 'string' ||
+        !SELECTED_ITEM_LINEAGE_HASH_PATTERN.test(projection[field]) || projection[field].length !== 64,
+    ) ||
+    ['selected_binding_evidence_present', 'reply_content_acquired', 'author_identity_omitted_at_production'].some(
+      (field) => typeof projection[field] !== 'boolean',
+    ) ||
+    ['transport_source_provenance_only', 'human_review_required', 'no_automatic_trust_upgrade', 'synthetic_fixture_only'].some(
+      (field) => projection[field] !== true,
+    ) ||
+    projection.live_persisted_record_connected !== false
+  ) contractError()
+
+  const safeProjection = Object.freeze(Object.fromEntries(
+    INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS.map((field) => [field, projection[field]]),
+  ))
+  return Object.freeze(Object.fromEntries(
+    INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS.map((field) => [
+      field, field === 'projection' ? safeProjection : data[field],
+    ]),
+  ))
+}
+
+export async function getInternalAlphaSelectedItemLineageFixture() {
+  const { data, status } = await apiClient.get(
+    `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT}/selected-item-lineage-fixture`,
+  )
+  return normalizeInternalAlphaSelectedItemLineageFixture(data, status)
+}
+
 function isPlainInternalAlphaProjectionObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
