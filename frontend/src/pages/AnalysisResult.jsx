@@ -245,6 +245,9 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
     () => buildEvidenceSummary({ analysis, currentCase }),
     [analysis, currentCase],
   )
+  const caseIsStale = Boolean(currentCase && (
+    currentCase.status !== 'completed' || !currentCase.analysis_result || !currentCase.report
+  ))
 
   const copyResponse = async () => {
     try {
@@ -258,6 +261,19 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
       return
     }
     message.warning('暂无可复制的建议公开回应文案')
+  }
+
+  if (caseIsStale) {
+    return (
+      <Card className="panel-card">
+        <Alert
+          message="当前案例分析不再有效"
+          description="Evidence 人工复核后，旧分析不再是当前结果。请显式点击 Run analysis 重新运行；系统不会自动分析。"
+          showIcon
+          type="warning"
+        />
+      </Card>
+    )
   }
 
   if (!analysis) {

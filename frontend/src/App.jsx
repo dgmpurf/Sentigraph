@@ -195,18 +195,11 @@ function App() {
     setCaseForecast(null)
     setMonitoringStatus(null)
     setMonitoringConfig(caseDetail.monitoring_config || null)
-
-    if (caseDetail.analysis_result) {
-      setAnalysis(caseDetail.analysis_result)
-    }
-    if (caseDetail.visualization_data) {
-      setVisualization(caseDetail.visualization_data)
-      setPropagation(null)
-    }
-    if (caseDetail.report) {
-      setSummary(caseDetail.report)
-      setRecommendation(caseDetail.report)
-    }
+    setAnalysis(caseDetail.analysis_result || null)
+    setVisualization(caseDetail.visualization_data || null)
+    setPropagation(null)
+    setSummary(caseDetail.report || null)
+    setRecommendation(caseDetail.report || null)
   }, [])
 
   const refreshCases = useCallback(async () => {
@@ -682,6 +675,9 @@ function App() {
   const handleGetMarkdownReport = useCallback(async () => {
     if (!currentCase?.case_id) {
       throw new Error('No analysis case is currently selected.')
+    }
+    if (currentCase.status !== 'completed' || !currentCase.report || !currentCase.markdown_available) {
+      throw new Error('请先显式重新运行案例分析，再获取当前 Markdown 报告。')
     }
     if (markdownReport?.case_id === currentCase.case_id) {
       return markdownReport

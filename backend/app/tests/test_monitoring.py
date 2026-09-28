@@ -64,6 +64,46 @@ def test_monitor_run_endpoint_creates_snapshot_and_alerts() -> None:
     assert isinstance(alerts_response.json(), list)
 
 
+def test_reviewed_case_monitoring_requires_explicit_analysis_and_preserves_history(monkeypatch) -> None:
+    case_id = _create_case()
+    attached = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={"evidence_items": [{"evidence_type": "comment", "comment_text": "Synthetic monitor evidence."}]},
+    )
+    assert attached.status_code == 200
+    evidence_id = attached.json()["evidence_items"][0]["evidence_id"]
+    assert client.post(f"/api/v1/cases/{case_id}/run").status_code == 200
+    assert client.post(f"/api/v1/cases/{case_id}/monitoring/enable").status_code == 200
+    historical = client.get(f"/api/v1/cases/{case_id}/snapshots").json()
+    alerts_before = client.get(f"/api/v1/cases/{case_id}/alerts").json()
+
+    reviewed = client.post(
+        f"/api/v1/cases/{case_id}/evidence/{evidence_id}/review",
+        json={"decision": "reject"},
+    )
+    assert reviewed.status_code == 200
+
+    def no_automatic_run(*args, **kwargs):
+        raise AssertionError("Monitoring must not start case analysis")
+
+    with monkeypatch.context() as guard:
+        guard.setattr("app.services.case_store.run_case", no_automatic_run)
+        stale_monitor = client.post(f"/api/v1/cases/{case_id}/monitor/run")
+        due = client.post("/api/v1/scheduler/run-due")
+    assert stale_monitor.status_code == 400
+    assert stale_monitor.json()["detail"]["error"] == "case_analysis_required"
+    assert due.status_code == 200
+    assert due.json()["executed_case_count"] == 0
+    assert client.get(f"/api/v1/cases/{case_id}/snapshots").json() == historical
+    assert client.get(f"/api/v1/cases/{case_id}/alerts").json() == alerts_before
+    assert client.post("/api/v1/cases/missing/monitor/run").status_code == 404
+
+    assert client.post(f"/api/v1/cases/{case_id}/run").status_code == 200
+    fresh_monitor = client.post(f"/api/v1/cases/{case_id}/monitor/run")
+    assert fresh_monitor.status_code == 200
+    assert fresh_monitor.json()["snapshot_count"] == len(historical) + 2
+
+
 def test_all_alerts_endpoint_returns_persisted_events() -> None:
     case_id = _create_case()
     client.post(f"/api/v1/cases/{case_id}/run")

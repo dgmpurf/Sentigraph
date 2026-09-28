@@ -20,7 +20,6 @@ export function SummaryReport({
   error,
   loading,
   markdownLoading,
-  markdownReport,
   onGetMarkdownReport,
   recommendation,
   summary,
@@ -39,10 +38,13 @@ export function SummaryReport({
   const sourceStatus = getAnalysisSourceStatus({ analysis, currentCase })
   const evidenceReviewNeeded = Number(analysis?.evidence_review_needed_count || 0)
   const evidenceDuplicateItems = Number(analysis?.evidence_duplicate_item_count || 0)
+  const caseIsStale = Boolean(currentCase && (currentCase.status !== 'completed' || !currentCase.report))
+  const canExportMarkdown = Boolean(currentCase?.case_id && !caseIsStale && currentCase.markdown_available && hasContent)
 
   const copyMarkdown = async () => {
+    if (!canExportMarkdown) return
     try {
-      const exportData = markdownReport || (await onGetMarkdownReport?.())
+      const exportData = await onGetMarkdownReport?.()
       const copied = await copyTextToClipboard(exportData?.markdown || '')
       if (copied) {
         message.success('Markdown 报告已复制')
@@ -55,8 +57,9 @@ export function SummaryReport({
   }
 
   const downloadMarkdown = async () => {
+    if (!canExportMarkdown) return
     try {
-      const exportData = markdownReport || (await onGetMarkdownReport?.())
+      const exportData = await onGetMarkdownReport?.()
       if (!exportData?.markdown) {
         message.warning('暂无可下载的 Markdown 报告')
         return
@@ -74,6 +77,19 @@ export function SummaryReport({
     } catch (downloadError) {
       message.error(downloadError?.message || '暂时无法下载 Markdown 报告')
     }
+  }
+
+  if (caseIsStale) {
+    return (
+      <Card className="panel-card">
+        <Alert
+          message="当前案例报告不再有效"
+          description="Evidence 人工复核后，旧报告及 Markdown 不再是当前结果。请显式点击 Run analysis 重新运行。"
+          showIcon
+          type="warning"
+        />
+      </Card>
+    )
   }
 
   return (
@@ -104,7 +120,7 @@ export function SummaryReport({
           <Space>
             <Button
               data-testid="summary-copy-markdown-button"
-              disabled={!currentCase?.case_id || !hasContent}
+              disabled={!canExportMarkdown}
               icon={<ClipboardCopy size={16} />}
               loading={markdownLoading}
               onClick={copyMarkdown}
@@ -113,7 +129,7 @@ export function SummaryReport({
             </Button>
             <Button
               data-testid="summary-download-markdown-button"
-              disabled={!currentCase?.case_id || !hasContent}
+              disabled={!canExportMarkdown}
               icon={<Download size={16} />}
               loading={markdownLoading}
               onClick={downloadMarkdown}

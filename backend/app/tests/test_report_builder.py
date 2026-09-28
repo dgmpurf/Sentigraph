@@ -9,6 +9,7 @@ from app.schemas.analysis import (
     TopicCluster,
 )
 from app.schemas.common import RISK_MODEL_VERSION
+from app.schemas.report import PublicOpinionReport
 from app.schemas.risk import TOPIC_RISK_MODEL_VERSION
 from app.schemas.recommendation import RecommendationResponse
 from app.schemas.summary import SummaryGenerateResponse
@@ -23,6 +24,7 @@ client = TestClient(app)
 
 NORMALIZED_REPORT_FIELDS = {
     "project_id",
+    "analysis_input_source",
     "report_language",
     "risk_score",
     "risk_level",
@@ -106,8 +108,23 @@ def test_report_builder_is_deterministic_and_offline(monkeypatch) -> None:
     assert report.recommended_actions
     assert report.suggested_public_response
     assert report.generated_from_mock_pipeline is True
+    assert report.analysis_input_source == "mock_data_fallback"
 
     assert set(report.model_dump()) == NORMALIZED_REPORT_FIELDS
+
+
+def test_report_lineage_tracks_actual_analysis_source_and_old_reports_remain_loadable() -> None:
+    pipeline, _ = _pipeline_with_visualization()
+    for source in ("case_evidence_items", "case_raw_data", "mock_data_fallback"):
+        analysis = pipeline.analysis.model_copy(update={"analysis_input_source": source})
+        report = build_public_opinion_report(analysis)
+        assert report.analysis_input_source == source
+        assert report.model_dump()["analysis_input_source"] == source
+
+    historical = PublicOpinionReport.model_validate(
+        {key: value for key, value in report.model_dump().items() if key != "analysis_input_source"}
+    )
+    assert historical.analysis_input_source is None
 
 
 def test_report_builder_supports_en_us_output() -> None:

@@ -145,19 +145,19 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
     running_case = case.model_copy(update={"status": "running", "updated_at": repository.next_timestamp()})
     repository.update_case(running_case)
 
-    if running_case.raw_comments:
+    if running_case.evidence_items:
+        pipeline = build_pipeline_from_evidence_items(
+            running_case.project_id,
+            evidence_items=enrich_and_deduplicate_evidence_items(running_case.evidence_items),
+            platforms=running_case.platforms,
+        )
+    elif running_case.raw_comments:
         pipeline = build_pipeline_from_raw_data(
             running_case.project_id,
             raw_posts=running_case.raw_posts,
             raw_comments=running_case.raw_comments,
             platforms=running_case.platforms,
             evidence_items=running_case.evidence_items,
-        )
-    elif running_case.evidence_items:
-        pipeline = build_pipeline_from_evidence_items(
-            running_case.project_id,
-            evidence_items=enrich_and_deduplicate_evidence_items(running_case.evidence_items),
-            platforms=running_case.platforms,
         )
     else:
         pipeline = build_mock_pipeline(running_case.project_id, platforms=running_case.platforms)
@@ -403,10 +403,25 @@ def review_case_evidence_item(
     if not decision:
         return None
     updated_items, result = decision
-    repository.save_case_evidence(
-        case_id,
-        evidence_items=updated_items,
-        updated_at=repository.next_timestamp(),
+    # The review decision and all derived-output invalidation form one case write.
+    repository.update_case(
+        case.model_copy(
+            update={
+                "evidence_items": updated_items,
+                "evidence_item_count": len(updated_items),
+                "updated_at": repository.next_timestamp(),
+                "status": "draft",
+                "analysis_result": None,
+                "visualization_data": None,
+                "report": None,
+                "markdown_available": False,
+                "analysis_input_source": None,
+                "risk_score": None,
+                "risk_level": None,
+                "risk_model_version": None,
+            },
+            deep=True,
+        )
     )
     return result
 
@@ -782,22 +797,8 @@ def run_monitoring_check(
     if not case:
         return None
 
-    if not case.report:
-        completed_case = run_case(case_id)
-        if not completed_case:
-            return None
-        snapshots = repository.list_analysis_snapshots(case_id)
-        latest = snapshots[-1]
-        alerts = evaluate_alerts(None, latest, config=threshold_config)
-        saved_alerts = repository.save_alert_events(case_id, alerts)
-        create_notifications_from_alerts(saved_alerts, repository=repository)
-        return _build_monitoring_status(
-            case_id,
-            latest_snapshot=latest,
-            previous_snapshot=None,
-            alerts=saved_alerts,
-            snapshot_count=len(snapshots),
-        )
+    if case.status != "completed" or not case.report or not case.analysis_result:
+        return None
 
     previous_snapshots = repository.list_analysis_snapshots(case_id)
     previous_snapshot = previous_snapshots[-1] if previous_snapshots else None
@@ -816,13 +817,13 @@ def run_monitoring_check(
 
 def export_case_markdown(case_id: str) -> MarkdownExportResponse | None:
     repository = get_case_repository()
+    case = repository.get_case(case_id)
+    if not case or case.status != "completed" or not case.report or not case.markdown_available:
+        return None
+
     persisted_report = repository.get_markdown_report(case_id)
     if persisted_report:
         return persisted_report
-
-    case = repository.get_case(case_id)
-    if not case or not case.report:
-        return None
 
     report = MarkdownExportResponse(
         case_id=case.case_id,

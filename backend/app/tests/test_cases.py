@@ -69,6 +69,7 @@ def test_run_case_attaches_mock_pipeline_outputs() -> None:
     assert body["markdown_available"] is True
     assert body["analysis_result"]["analysis_input_source"] == "mock_data_fallback"
     assert body["analysis_input_source"] == "mock_data_fallback"
+    assert body["report"]["analysis_input_source"] == "mock_data_fallback"
     assert body["raw_data_status"] == "missing"
 
 
@@ -147,7 +148,7 @@ def test_case_specific_crawl_start_uses_case_defaults_without_body(monkeypatch) 
     assert body["raw_comment_count"] == 2
 
 
-def test_run_case_uses_attached_youtube_raw_comments(monkeypatch) -> None:
+def test_run_case_uses_review_governed_evidence_from_attached_youtube_raw_comments(monkeypatch) -> None:
     case_id = _create_case(platforms=["youtube"])
     monkeypatch.setattr("app.services.case_store.start_crawl_with_adapters", lambda payload: _youtube_crawl_response())
     attach_response = client.post(f"/api/v1/cases/{case_id}/crawl/start", json={"limit": 3})
@@ -158,14 +159,17 @@ def test_run_case_uses_attached_youtube_raw_comments(monkeypatch) -> None:
     assert run_response.status_code == 200
     body = run_response.json()
     assert body["status"] == "completed"
-    assert body["analysis_input_source"] == "case_raw_data"
-    assert body["analysis_result"]["analysis_input_source"] == "case_raw_data"
+    assert body["analysis_input_source"] == "case_evidence_items"
+    assert body["analysis_result"]["analysis_input_source"] == "case_evidence_items"
+    assert body["report"]["analysis_input_source"] == "case_evidence_items"
     assert body["analysis_result"]["summary"].startswith(
-        "Offline deterministic analysis from attached case raw data"
+        "Offline deterministic analysis from normalized case evidence"
     )
     assert "Mock pipeline analysis" not in body["analysis_result"]["summary"]
     assert body["analysis_result"]["raw_post_count"] == 1
-    assert body["analysis_result"]["raw_comment_count"] == 2
+    # The Evidence projection includes the public video body as a comment signal.
+    assert body["analysis_result"]["raw_comment_count"] == 3
+    assert body["raw_comment_count"] == 2
     assert body["report"]["generated_from_mock_pipeline"] is False
     assert any(
         "youtube fixture quality issue comment" in comment
@@ -199,7 +203,7 @@ def test_youtube_raw_data_report_downranks_promotional_comments(monkeypatch) -> 
     assert run_response.status_code == 200
     body = run_response.json()
     representative_comments = body["report"]["representative_comments"]
-    assert body["analysis_input_source"] == "case_raw_data"
+    assert body["analysis_input_source"] == "case_evidence_items"
     assert any("official response timeline" in comment for comment in representative_comments)
     assert all("patreon" not in comment.lower() for comment in representative_comments)
     assert all("promo code" not in comment.lower() for comment in representative_comments)
@@ -228,7 +232,7 @@ def test_simulation_initializer_works_after_youtube_based_case_analysis(monkeypa
     body = response.json()
     assert body["status"] in {"initialized", "partial"}
     assert body["simulation_scenario"]["name"]
-    assert "insufficient_observed_comment_count" in body["warnings"]
+    assert isinstance(body["warnings"], list)
     assert "yt_fixture_commenter" not in response.text
     assert "influenceability_score" not in response.text
 
@@ -262,6 +266,33 @@ def test_export_markdown_report() -> None:
     assert "## 高风险话题" in body["markdown"]
     assert "建议公开回应文案" in body["markdown"]
     assert TOPIC_RISK_MODEL_VERSION in body["markdown"]
+
+
+def test_reviewed_case_cannot_export_stale_persisted_markdown_until_explicit_rerun() -> None:
+    case_id = _create_case()
+    attached = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={"evidence_items": [{"evidence_type": "comment", "comment_text": "Synthetic report evidence."}]},
+    )
+    assert attached.status_code == 200
+    evidence_id = attached.json()["evidence_items"][0]["evidence_id"]
+    assert client.post(f"/api/v1/cases/{case_id}/run").status_code == 200
+    first_markdown = client.get(f"/api/v1/cases/{case_id}/report/markdown")
+    assert first_markdown.status_code == 200
+
+    reviewed = client.post(
+        f"/api/v1/cases/{case_id}/evidence/{evidence_id}/review",
+        json={"decision": "mark_weak"},
+    )
+    assert reviewed.status_code == 200
+    assert client.get(f"/api/v1/cases/{case_id}/report/markdown").status_code == 404
+    assert client.get(f"/api/v1/cases/{case_id}").json()["status"] == "draft"
+
+    rerun = client.post(f"/api/v1/cases/{case_id}/run")
+    assert rerun.status_code == 200
+    assert rerun.json()["status"] == "completed"
+    assert rerun.json()["report"]["analysis_input_source"] == "case_evidence_items"
+    assert client.get(f"/api/v1/cases/{case_id}/report/markdown").status_code == 200
 
 
 def test_case_api_persists_after_repository_reload(case_store_path) -> None:

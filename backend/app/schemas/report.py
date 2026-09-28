@@ -11,6 +11,7 @@ ReportLanguage = Literal["zh-CN", "en-US"]
 
 class PublicOpinionReport(BaseModel):
     project_id: str
+    analysis_input_source: Literal["case_evidence_items", "case_raw_data", "mock_data_fallback"] | None = None
     report_language: ReportLanguage = "zh-CN"
     risk_score: int
     risk_level: RiskLevel

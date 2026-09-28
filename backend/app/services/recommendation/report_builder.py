@@ -98,6 +98,7 @@ def build_public_opinion_report(
 
     return PublicOpinionReport(
         project_id=effective_analysis.project_id,
+        analysis_input_source=effective_analysis.analysis_input_source,
         report_language=language,
         risk_score=effective_analysis.risk.risk_score,
         risk_level=effective_analysis.risk.risk_level,

@@ -404,7 +404,16 @@ def initialize_case_simulation(case_id: str) -> CaseSimulationInitializationResu
 def run_case_monitoring(case_id: str) -> MonitoringStatus:
     status = run_monitoring_check(case_id)
     if not status:
-        raise HTTPException(status_code=404, detail="Analysis case not found.")
+        if not get_case(case_id):
+            raise HTTPException(status_code=404, detail="Analysis case not found.")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "case_analysis_required",
+                "message": "Run explicit case analysis before monitoring this case.",
+                "case_id": case_id,
+            },
+        )
     return status
 
 

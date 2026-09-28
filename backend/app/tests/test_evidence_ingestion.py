@@ -891,42 +891,112 @@ def test_merge_duplicate_review_status_preserves_collapse_without_inflating_coun
     assert body["analysis_result"]["evidence_review_excluded_count"] == 0
 
 
-def test_raw_comments_take_priority_over_evidence_items_when_both_exist(monkeypatch) -> None:
+def test_persisted_evidence_takes_priority_over_raw_comments(monkeypatch) -> None:
     case_id = _create_case(platforms=["youtube"])
+    monkeypatch.setattr("app.services.case_store.start_crawl_with_adapters", lambda payload: _crawl_response())
+    crawl_response = client.post(f"/api/v1/cases/{case_id}/crawl/start", json={"limit": 3})
+    assert crawl_response.status_code == 200
+
     attach_response = client.post(
         f"/api/v1/cases/{case_id}/evidence/attach",
         json={
             "source": {
-                "platform": "uploaded_dataset",
+                "platform": "youtube",
                 "source_type": "uploaded_dataset",
                 "acquisition_mode": "user_upload",
             },
             "evidence_items": [
                 {
                     "evidence_type": "comment",
-                    "comment_text": "Manual evidence exists but raw YouTube comments should win.",
+                    "comment_text": "Manual evidence remains governed when raw comments also exist.",
                 }
             ],
         },
     )
     assert attach_response.status_code == 200
 
-    def fake_start_crawl(payload):
-        return _crawl_response()
-
-    monkeypatch.setattr("app.services.case_store.start_crawl_with_adapters", fake_start_crawl)
-    crawl_response = client.post(f"/api/v1/cases/{case_id}/crawl/start", json={"limit": 3})
-    assert crawl_response.status_code == 200
-
     run_response = client.post(f"/api/v1/cases/{case_id}/run")
 
     assert run_response.status_code == 200
     body = run_response.json()
-    assert body["analysis_input_source"] == "case_raw_data"
-    assert body["analysis_result"]["analysis_input_source"] == "case_raw_data"
+    assert body["analysis_input_source"] == "case_evidence_items"
+    assert body["analysis_result"]["analysis_input_source"] == "case_evidence_items"
+    assert body["report"]["analysis_input_source"] == "case_evidence_items"
     assert body["raw_comment_count"] == 1
-    assert body["evidence_item_count"] == 2
-    assert any("YouTube fixture quality issue comment" in comment for comment in body["report"]["representative_comments"])
+    assert body["evidence_item_count"] == 3
+    assert body["analysis_result"]["evidence_item_count"] == 3
+    assert body["report"]["evidence_item_count"] == 3
+
+
+def test_rejected_persisted_evidence_cannot_bypass_through_stored_raw_comments(monkeypatch) -> None:
+    case_id = _create_case(platforms=["youtube"])
+    monkeypatch.setattr("app.services.case_store.start_crawl_with_adapters", lambda payload: _crawl_response())
+    crawl = client.post(f"/api/v1/cases/{case_id}/crawl/start", json={"limit": 3})
+    assert crawl.status_code == 200
+    comment = next(item for item in crawl.json()["evidence_items"] if item["evidence_type"] == "comment")
+    rejected = client.post(
+        f"/api/v1/cases/{case_id}/evidence/{comment['evidence_id']}/review",
+        json={"decision": "reject"},
+    )
+    assert rejected.status_code == 200
+
+    result = client.post(f"/api/v1/cases/{case_id}/run")
+    assert result.status_code == 200
+    body = result.json()
+    assert body["raw_comment_count"] == 1
+    assert body["analysis_input_source"] == "case_evidence_items"
+    assert body["analysis_result"]["evidence_review_excluded_count"] == 1
+    assert not any(
+        "YouTube fixture quality issue comment" in text
+        for text in body["report"]["representative_comments"]
+    )
+
+
+def test_review_clears_current_outputs_in_one_case_update_without_running_analysis(monkeypatch) -> None:
+    case_id = _create_case(platforms=["public_web"])
+    attached = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={"evidence_items": [{"evidence_type": "comment", "comment_text": "Synthetic review target."}]},
+    )
+    assert attached.status_code == 200
+    evidence_id = attached.json()["evidence_items"][0]["evidence_id"]
+    assert client.post(f"/api/v1/cases/{case_id}/run").status_code == 200
+    before = client.get(f"/api/v1/cases/{case_id}").json()
+    snapshots_before = client.get(f"/api/v1/cases/{case_id}/snapshots").json()
+    assert before["status"] == "completed"
+
+    def no_analysis(*args, **kwargs):
+        raise AssertionError("Review must not start analysis or report generation")
+
+    with monkeypatch.context() as guard:
+        guard.setattr("app.services.case_store.run_case", no_analysis)
+        guard.setattr("app.services.case_store.build_public_opinion_report", no_analysis)
+        reviewed = client.post(
+            f"/api/v1/cases/{case_id}/evidence/{evidence_id}/review",
+            json={"decision": "reject"},
+        )
+    assert reviewed.status_code == 200
+    after = client.get(f"/api/v1/cases/{case_id}").json()
+    assert after["status"] == "draft"
+    for field in ("analysis_result", "visualization_data", "report", "analysis_input_source", "risk_score", "risk_level", "risk_model_version"):
+        assert after[field] is None
+    assert after["markdown_available"] is False
+    assert after["raw_comments"] == before["raw_comments"]
+    assert after["evidence_items"][0]["review_status"] == "rejected"
+    assert len(after["evidence_items"][0]["review_history"]) == 1
+    assert client.get(f"/api/v1/cases/{case_id}/snapshots").json() == snapshots_before
+
+    missing = client.post(
+        f"/api/v1/cases/{case_id}/evidence/missing/review",
+        json={"decision": "approve"},
+    )
+    assert missing.status_code == 404
+    assert client.get(f"/api/v1/cases/{case_id}").json() == after
+
+    rerun = client.post(f"/api/v1/cases/{case_id}/run")
+    assert rerun.status_code == 200
+    assert rerun.json()["status"] == "completed"
+    assert rerun.json()["analysis_input_source"] == "case_evidence_items"
 
 
 def test_case_without_evidence_still_falls_back_to_mock_data() -> None:
@@ -938,6 +1008,25 @@ def test_case_without_evidence_still_falls_back_to_mock_data() -> None:
     assert body["analysis_input_source"] == "mock_data_fallback"
     assert body["analysis_result"]["evidence_item_count"] == 0
     assert body["report"]["evidence_item_count"] == 0
+
+
+def test_raw_only_case_retains_raw_data_analysis_source() -> None:
+    case_id = _create_case(platforms=["youtube"])
+    get_case_repository().save_case_raw_data(
+        case_id,
+        raw_posts=[_youtube_post()],
+        raw_comments=[_youtube_comment()],
+        crawl_metadata=[],
+        crawl_source_mode="synthetic_fixture",
+        raw_data_status="attached",
+    )
+    result = client.post(f"/api/v1/cases/{case_id}/run")
+    assert result.status_code == 200
+    body = result.json()
+    assert body["evidence_items"] == []
+    assert body["analysis_input_source"] == "case_raw_data"
+    assert body["analysis_result"]["analysis_input_source"] == "case_raw_data"
+    assert body["report"]["analysis_input_source"] == "case_raw_data"
 
 
 def test_converter_redacts_nested_secret_fields() -> None:
