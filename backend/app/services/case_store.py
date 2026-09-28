@@ -322,6 +322,13 @@ def get_case_evidence_review_timeline(case_id: str, evidence_id: str | None = No
     case = repository.get_case(case_id)
     if not case:
         return None
+    if evidence_id is not None:
+        # An exact-item audit read must bind to one persisted EvidenceItem.
+        # The case-wide raw-data fallback below is not a review-history source.
+        matching_items = [item for item in case.evidence_items if item.evidence_id == evidence_id]
+        if len(matching_items) != 1:
+            return None
+        return build_review_timeline(case_id, matching_items, evidence_id=evidence_id)
     evidence_items = case.evidence_items
     if not evidence_items and (case.raw_posts or case.raw_comments):
         evidence_items = build_evidence_items_from_raw_data(

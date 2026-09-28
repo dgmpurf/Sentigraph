@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import get_args
 import urllib.request
 
 import pytest
@@ -8,8 +9,8 @@ from app.main import app
 from app.repositories.case_repository import CaseRepository
 from app.schemas.comment import RawComment, RawPost
 from app.schemas.crawl import PlatformCrawlMetadata
-from app.schemas.evidence import EvidenceItem
-from app.services.case_store import configure_case_repository, reset_case_store
+from app.schemas.evidence import EvidenceItem, EvidenceReviewDecision
+from app.services.case_store import configure_case_repository, get_case_repository, reset_case_store
 from app.services.evidence_ingestion import (
     build_evidence_items_from_raw_data,
     raw_comment_to_evidence_item,
@@ -724,6 +725,133 @@ def test_review_history_timeline_and_audit_summary_are_append_only() -> None:
     approve_history = approve_history_response.json()
     assert approve_history["total_review_events"] == 1
     assert approve_history["entries"][0]["decision"] == "approve"
+    assert all(entry["evidence_id"] == ids_by_text[comments_by_decision["approve"]] for entry in approve_history["entries"])
+
+
+def test_exact_review_history_accepts_empty_persisted_item_and_rejects_missing_target() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    attached = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={
+            "source": {"platform": "public_web", "source_type": "public_web", "acquisition_mode": "manual_url"},
+            "evidence_items": [{
+                "evidence_type": "comment",
+                "comment_text": "Persisted item without review history.",
+                "url": "https://example.test/history-empty",
+                "user_attestation_text": "I confirm lawful source.",
+            }],
+        },
+    )
+    assert attached.status_code == 200
+    evidence_id = attached.json()["evidence_items"][0]["evidence_id"]
+
+    exact = client.get(f"/api/v1/cases/{case_id}/evidence/{evidence_id}/review-history")
+    assert exact.status_code == 200
+    assert exact.json()["evidence_id"] == evidence_id
+    assert exact.json()["entries"] == []
+    assert exact.json()["total_review_events"] == 0
+
+    missing = client.get(f"/api/v1/cases/{case_id}/evidence/missing-evidence/review-history")
+    assert missing.status_code == 404
+    case_wide = client.get(f"/api/v1/cases/{case_id}/evidence/review-timeline")
+    assert case_wide.status_code == 200
+    assert case_wide.json()["total_review_events"] == 0
+
+
+def test_exact_review_history_tracks_only_target_and_each_successful_decision() -> None:
+    assert get_args(EvidenceReviewDecision) == (
+        "approve", "reject", "mark_weak", "request_more_source", "merge_duplicate", "reset_review"
+    )
+    case_id = _create_case(platforms=["public_web"])
+    attached = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={
+            "source": {"platform": "public_web", "source_type": "public_web", "acquisition_mode": "manual_url"},
+            "evidence_items": [
+                {"evidence_type": "comment", "comment_text": text, "url": url,
+                 "user_attestation_text": "I confirm lawful source."}
+                for text, url in (
+                    ("First persisted review item.", "https://example.test/review-first"),
+                    ("Second persisted review item.", "https://example.test/review-second"),
+                )
+            ],
+        },
+    )
+    assert attached.status_code == 200
+    first_id, second_id = [item["evidence_id"] for item in attached.json()["evidence_items"]]
+    for evidence_id, decision in ((first_id, "approve"), (second_id, "reject"), (first_id, "mark_weak")):
+        reviewed = client.post(
+            f"/api/v1/cases/{case_id}/evidence/{evidence_id}/review",
+            json={"decision": decision, "reviewer_label": "qa"},
+        )
+        assert reviewed.status_code == 200
+        assert reviewed.json()["history_entry"]["decision"] == decision
+
+    exact = client.get(f"/api/v1/cases/{case_id}/evidence/{first_id}/review-history")
+    assert exact.status_code == 200
+    assert exact.json()["total_review_events"] == 2
+    assert {entry["decision"] for entry in exact.json()["entries"]} == {"approve", "mark_weak"}
+    assert all(entry["evidence_id"] == first_id for entry in exact.json()["entries"])
+    assert len({entry["review_event_id"] for entry in exact.json()["entries"]}) == 2
+
+    repository = get_case_repository()
+    before = repository.get_case(case_id)
+    assert before is not None
+    missing_review = client.post(
+        f"/api/v1/cases/{case_id}/evidence/missing-evidence/review",
+        json={"decision": "approve"},
+    )
+    assert missing_review.status_code == 404
+    after = repository.get_case(case_id)
+    assert after is not None
+    assert after.model_dump(mode="json") == before.model_dump(mode="json")
+    audit = client.get(f"/api/v1/cases/{case_id}/evidence/review-audit-summary")
+    assert audit.status_code == 200
+    assert audit.json()["total_review_events"] == 3
+
+
+def test_exact_review_history_cannot_bind_transient_raw_data_fallback() -> None:
+    case_id = _create_case(platforms=["youtube"])
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    assert case is not None
+    raw_post = _youtube_post()
+    transient_item = build_evidence_items_from_raw_data(
+        case_id=case_id, raw_posts=[raw_post], raw_comments=[], crawl_metadata=[]
+    )[0]
+    repository.update_case(case.model_copy(update={
+        "raw_posts": [raw_post], "evidence_items": [], "evidence_item_count": 0,
+    }, deep=True))
+
+    exact = client.get(f"/api/v1/cases/{case_id}/evidence/{transient_item.evidence_id}/review-history")
+    assert exact.status_code == 404
+    case_wide = client.get(f"/api/v1/cases/{case_id}/evidence/review-timeline")
+    assert case_wide.status_code == 200
+    assert case_wide.json()["total_review_events"] == 0
+
+
+def test_exact_review_history_rejects_ambiguous_persisted_evidence_id() -> None:
+    case_id = _create_case(platforms=["public_web"])
+    attached = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={
+            "source": {"platform": "public_web", "source_type": "public_web", "acquisition_mode": "manual_url"},
+            "evidence_items": [{
+                "evidence_type": "comment", "comment_text": "Duplicate identity fixture.",
+                "url": "https://example.test/history-duplicate", "user_attestation_text": "I confirm lawful source.",
+            }],
+        },
+    )
+    assert attached.status_code == 200
+    evidence_id = attached.json()["evidence_items"][0]["evidence_id"]
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    assert case is not None
+    item = case.evidence_items[0]
+    repository.save_case_evidence(case_id, evidence_items=[item, item.model_copy(deep=True)])
+
+    exact = client.get(f"/api/v1/cases/{case_id}/evidence/{evidence_id}/review-history")
+    assert exact.status_code == 404
 
 
 def test_merge_duplicate_review_status_preserves_collapse_without_inflating_counts() -> None:

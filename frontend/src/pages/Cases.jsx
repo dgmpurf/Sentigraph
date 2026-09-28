@@ -10,6 +10,7 @@ import {
   getCaseEvidenceCoverage,
   getCaseEvidenceJobs,
   getCaseEvidenceReviewAuditSummary,
+  getCaseEvidenceReviewHistory,
   getCaseEvidenceReviewQueue,
   getCaseEvidenceReviewTimeline,
   getCaseEvidenceSummary,
@@ -17,7 +18,7 @@ import {
   previewCaseEvidenceImport,
   reviewCaseEvidence,
 } from '../api/sentigraphApi.js'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const { Text, Title } = Typography
 const { Dragger } = Upload
@@ -782,7 +783,7 @@ function matchesReviewFilter(item, filter) {
   return true
 }
 
-function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
+export function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
   const [filter, setFilter] = useState('all')
   const [queueSummary, setQueueSummary] = useState(null)
   const [reviewTimeline, setReviewTimeline] = useState(null)
@@ -792,8 +793,17 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
   const [decisionLoadingId, setDecisionLoadingId] = useState('')
   const [queueError, setQueueError] = useState('')
   const [queueSuccess, setQueueSuccess] = useState('')
+  const [exactHistory, setExactHistory] = useState({ status: 'unopened', evidenceId: '', entries: [] })
+  const historyRequestToken = useRef(0)
+  const openHistoryEvidenceId = useRef('')
 
   const caseId = currentCase?.case_id
+
+  useEffect(() => {
+    historyRequestToken.current += 1
+    openHistoryEvidenceId.current = ''
+    setExactHistory({ status: 'unopened', evidenceId: '', entries: [] })
+  }, [caseId])
 
   useEffect(() => {
     if (!caseId) {
@@ -844,6 +854,24 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
     setAuditSummary(auditResult)
   }
 
+  const loadExactReviewHistory = async (evidenceId) => {
+    const requestToken = ++historyRequestToken.current
+    openHistoryEvidenceId.current = evidenceId
+    setExactHistory({ status: 'loading', evidenceId, entries: [] })
+    try {
+      const timeline = await getCaseEvidenceReviewHistory(caseId, evidenceId)
+      if (requestToken !== historyRequestToken.current) return
+      if (timeline?.case_id !== caseId || timeline?.evidence_id !== evidenceId) {
+        setExactHistory({ status: 'error', evidenceId, entries: [] })
+        return
+      }
+      setExactHistory({ status: 'loaded', evidenceId, entries: timeline.entries || [] })
+    } catch (error) {
+      if (requestToken !== historyRequestToken.current) return
+      setExactHistory({ status: error?.response?.status === 404 ? 'missing' : 'error', evidenceId, entries: [] })
+    }
+  }
+
   const handleDecision = async (item, decision) => {
     setQueueError('')
     setQueueSuccess('')
@@ -860,6 +888,9 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
       const refreshedCase = await getCase(caseId)
       onCaseReady?.(refreshedCase)
       await refreshQueue()
+      if (openHistoryEvidenceId.current === item.evidence_id) {
+        await loadExactReviewHistory(item.evidence_id)
+      }
     } catch (error) {
       setQueueError(error?.response?.data?.detail || error?.message || 'Review decision failed.')
     } finally {
@@ -936,6 +967,13 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
               {action.label}
             </Button>
           ))}
+          <Button
+            loading={exactHistory.status === 'loading' && exactHistory.evidenceId === record.evidence_id}
+            onClick={() => void loadExactReviewHistory(record.evidence_id)}
+            size="small"
+          >
+            View review history
+          </Button>
         </Space>
       ),
     },
@@ -1058,6 +1096,41 @@ function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
           rowKey="evidence_id"
           size="small"
         />
+        {exactHistory.status !== 'unopened' ? (
+          <Card size="small" title="Selected evidence review history">
+            <Space direction="vertical" className="full-width" size={8}>
+              <Space>
+                <Text code>{exactHistory.evidenceId}</Text>
+                <Button size="small" onClick={() => {
+                  historyRequestToken.current += 1
+                  openHistoryEvidenceId.current = ''
+                  setExactHistory({ status: 'unopened', evidenceId: '', entries: [] })
+                }}>
+                  Close history
+                </Button>
+              </Space>
+              {exactHistory.status === 'loading' ? <Text>Loading review history...</Text> : null}
+              {exactHistory.status === 'missing' ? (
+                <Alert message="Persisted evidence item not found" type="warning" showIcon />
+              ) : null}
+              {exactHistory.status === 'error' ? (
+                <Alert message="Review history request failed" type="error" showIcon />
+              ) : null}
+              {exactHistory.status === 'loaded' && exactHistory.entries.length === 0 ? (
+                <Text>No review history for this persisted evidence item.</Text>
+              ) : null}
+              {exactHistory.status === 'loaded' && exactHistory.entries.length > 0 ? (
+                <Table
+                  columns={historyColumns}
+                  dataSource={exactHistory.entries}
+                  pagination={{ pageSize: 5 }}
+                  rowKey="review_event_id"
+                  size="small"
+                />
+              ) : null}
+            </Space>
+          </Card>
+        ) : null}
         <Alert
           message="Review history / audit timeline"
           description="Audit records only capture human review decisions. They do not mean the platform officially verified the evidence. The system does not fetch URLs or use AI to verify screenshot authenticity."
