@@ -31,6 +31,13 @@ from app.services.governed_nonproduction_review_console_projection import (
 from app.services.internal_alpha_selected_item_lineage_projection import (
     build_internal_alpha_selected_item_lineage_projection,
 )
+from app.services.internal_alpha_live_safe_selected_item_lineage_projection import (
+    LiveSafeLineageAmbiguous,
+    LiveSafeLineageContractError,
+    LiveSafeLineageUnavailable,
+    build_live_safe_selected_item_lineage_projection,
+)
+from app.services.case_store import get_case_repository
 
 
 router = APIRouter()
@@ -38,6 +45,9 @@ router = APIRouter()
 ENV_FLAG = "SENTIGRAPH_INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_ENABLED"
 SELECTED_ITEM_LINEAGE_FIXTURE_ENV_FLAG = (
     "SENTIGRAPH_INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_FIXTURE_ENABLED"
+)
+LIVE_SAFE_SELECTED_ITEM_LINEAGE_ENV_FLAG = (
+    "SENTIGRAPH_INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_V0_1_ENABLED"
 )
 IDENTITY_READY_V02_ENV_FLAG = (
     "SENTIGRAPH_INTERNAL_ALPHA_LOCAL_EXCHANGE_"
@@ -98,6 +108,57 @@ def get_internal_alpha_selected_item_lineage_fixture() -> dict[str, Any]:
         "public_ready": False,
         "production_ready": False,
     }
+
+
+def _live_safe_selected_item_lineage_enabled() -> bool:
+    return _resolve_internal_alpha_review_console_route_enabled_mode(
+        os.environ.get(LIVE_SAFE_SELECTED_ITEM_LINEAGE_ENV_FLAG)
+    ).enabled
+
+
+def _live_safe_selected_item_lineage_response(
+    status: str, projection: dict[str, str | bool] | None = None
+) -> dict[str, Any]:
+    """Return a fixed-field response without echoing path selectors or errors."""
+    return {
+        "response_schema": "sentigraph_internal_alpha_live_safe_selected_item_lineage_response_v0_1",
+        "route_mode": "disabled_by_default_internal_live_safe_read_only",
+        "status": status,
+        "projection": projection,
+        "safe_metadata_only": True,
+        "human_review_required": True,
+        "no_automatic_trust_upgrade": True,
+        "synthetic_fixture_only": False,
+        "live_persisted_record_connected": projection is not None,
+        "actual_write_enabled": False,
+        "production_object_enabled": False,
+        "review_queue_runtime_enabled": False,
+        "public_ready": False,
+        "production_ready": False,
+    }
+
+
+@router.get("/v0.1/live-selected-item-lineage/{case_id}/{evidence_id}")
+def get_internal_alpha_live_safe_selected_item_lineage_v0_1(
+    case_id: str, evidence_id: str
+) -> dict[str, Any]:
+    """Read one exact persisted lineage only after both opt-in gates."""
+    if not _route_enabled() or not _live_safe_selected_item_lineage_enabled():
+        return _live_safe_selected_item_lineage_response("disabled")
+    try:
+        safe_source = get_case_repository().read_exact_live_safe_selected_item_lineage(
+            case_id, evidence_id
+        )
+        projection = dict(build_live_safe_selected_item_lineage_projection(safe_source))
+    except LiveSafeLineageUnavailable:
+        return _live_safe_selected_item_lineage_response("unavailable")
+    except LiveSafeLineageAmbiguous:
+        return _live_safe_selected_item_lineage_response("ambiguous")
+    except LiveSafeLineageContractError:
+        return _live_safe_selected_item_lineage_response("contract_mismatch")
+    except Exception:
+        return _live_safe_selected_item_lineage_response("unavailable")
+    return _live_safe_selected_item_lineage_response("available", projection)
 
 
 @router.get("/local-exchange-samples")

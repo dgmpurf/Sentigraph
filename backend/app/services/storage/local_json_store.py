@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, Mapping
 
 from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
@@ -13,6 +13,15 @@ from app.schemas.common import RiskLevel
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.report import PublicOpinionReport
 from app.schemas.visualization import VisualizationResponse
+from app.services.internal_alpha_live_safe_selected_item_lineage_projection import (
+    CONTRACT_ERROR,
+    SOURCE_FIELDS,
+    LiveSafeLineageAmbiguous,
+    LiveSafeLineageContractError,
+    LiveSafeLineageUnavailable,
+    validate_live_safe_selector,
+    validate_live_safe_source,
+)
 from app.services.storage.base_store import CaseStore
 
 
@@ -48,6 +57,46 @@ class LocalJsonCaseStore(CaseStore):
             data = self._read_data()
             raw_case = data["cases"].get(case_id)
         return AnalysisCaseDetail.model_validate(raw_case) if raw_case else None
+
+    def read_exact_live_safe_selected_item_lineage(
+        self, case_id: str, evidence_id: str
+    ) -> Mapping[str, str | bool]:
+        """Read only six attestations for one surviving persisted evidence id.
+
+        The existing whole-file JSON parser runs inside this trusted adapter;
+        no full case, evidence item or raw_data_safe mapping leaves this method.
+        """
+        validate_live_safe_selector(case_id, evidence_id)
+        with self._lock:
+            data = self._read_data()
+            raw_case = data["cases"].get(case_id)
+            if raw_case is None:
+                raise LiveSafeLineageUnavailable("live_safe_lineage_unavailable")
+            if type(raw_case) is not dict or raw_case.get("case_id") != case_id:
+                raise LiveSafeLineageContractError(CONTRACT_ERROR)
+            evidence_items = raw_case.get("evidence_items")
+            if type(evidence_items) is not list:
+                raise LiveSafeLineageContractError(CONTRACT_ERROR)
+
+            match = None
+            match_count = 0
+            for item in evidence_items:
+                if type(item) is not dict:
+                    raise LiveSafeLineageContractError(CONTRACT_ERROR)
+                if item.get("evidence_id") == evidence_id:
+                    match_count += 1
+                    match = item
+            if match_count == 0:
+                raise LiveSafeLineageUnavailable("live_safe_lineage_unavailable")
+            if match_count != 1:
+                raise LiveSafeLineageAmbiguous("live_safe_lineage_ambiguous")
+            if match.get("case_id") != case_id:
+                raise LiveSafeLineageContractError(CONTRACT_ERROR)
+            raw_source = match.get("raw_data_safe")
+            if type(raw_source) is not dict:
+                raise LiveSafeLineageContractError(CONTRACT_ERROR)
+            detached = {field: raw_source.get(field) for field in SOURCE_FIELDS}
+            return validate_live_safe_source(detached)
 
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
         with self._lock:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 import re
 
@@ -19,7 +20,9 @@ from app.schemas.notification import NotificationOutboxItem
 from app.schemas.report import PublicOpinionReport
 from app.schemas.scheduler import MonitoringScheduleConfig
 from app.schemas.visualization import VisualizationResponse
+from app.services.internal_alpha_live_safe_selected_item_lineage_projection import LiveSafeLineageUnavailable
 from app.services.storage.base_store import CaseStore
+from app.services.storage.local_json_store import LocalJsonCaseStore
 
 
 BASE_TIME = datetime(2026, 5, 14, 9, 0, 0, tzinfo=timezone.utc)
@@ -58,6 +61,14 @@ class CaseRepository:
 
     def get_case(self, case_id: str) -> AnalysisCaseDetail | None:
         return self.store.get_case(case_id)
+
+    def read_exact_live_safe_selected_item_lineage(
+        self, case_id: str, evidence_id: str
+    ) -> Mapping[str, str | bool]:
+        """Expose only the LocalJson safe-reader, never the full case API."""
+        if not isinstance(self.store, LocalJsonCaseStore):
+            raise LiveSafeLineageUnavailable("live_safe_lineage_unavailable")
+        return self.store.read_exact_live_safe_selected_item_lineage(case_id, evidence_id)
 
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
         return self.store.update_case(case)
