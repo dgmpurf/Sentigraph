@@ -1054,6 +1054,110 @@ export async function getInternalAlphaSelectedItemLineageFixture() {
   return normalizeInternalAlphaSelectedItemLineageFixture(data, status)
 }
 
+export const INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS = Object.freeze([
+  'projection_schema', 'projection_mode', 'binding_mode',
+  'reviewed_batch_safe_hash', 'fresh_batch_safe_hash', 'persisted_selected_safe_hash',
+  'selected_binding_evidence_present', 'reply_content_acquired',
+  'author_identity_omitted_at_production', 'transport_source_provenance_only',
+  'human_review_required', 'no_automatic_trust_upgrade', 'synthetic_fixture_only',
+  'live_persisted_record_connected',
+])
+
+export const INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS = Object.freeze([
+  'response_schema', 'route_mode', 'status', 'projection',
+  'safe_metadata_only', 'human_review_required', 'no_automatic_trust_upgrade',
+  'synthetic_fixture_only', 'live_persisted_record_connected', 'actual_write_enabled',
+  'production_object_enabled', 'review_queue_runtime_enabled', 'public_ready',
+  'production_ready',
+])
+
+const LIVE_SAFE_SELECTED_ITEM_LINEAGE_CONTRACT_ERROR =
+  'frontend_live_safe_selected_item_lineage_contract_mismatch'
+const LIVE_SAFE_SELECTED_ITEM_LINEAGE_SELECTOR_PATTERN =
+  /^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,255}$/
+
+/** Accept only the detached live-safe projection, never an evidence row or selector echo. */
+export function normalizeInternalAlphaLiveSafeSelectedItemLineage(data, httpStatus = 200) {
+  const contractError = () => {
+    throw new Error(LIVE_SAFE_SELECTED_ITEM_LINEAGE_CONTRACT_ERROR)
+  }
+  if (
+    httpStatus !== 200 ||
+    !hasExactSelectedItemLineageFields(
+      data, INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS,
+    ) ||
+    data.response_schema !==
+      'sentigraph_internal_alpha_live_safe_selected_item_lineage_response_v0_1' ||
+    data.route_mode !== 'disabled_by_default_internal_live_safe_read_only' ||
+    data.status !== 'available'
+  ) contractError()
+
+  const trueWrapperFields = [
+    'safe_metadata_only', 'human_review_required', 'no_automatic_trust_upgrade',
+    'live_persisted_record_connected',
+  ]
+  const falseWrapperFields = [
+    'synthetic_fixture_only', 'actual_write_enabled', 'production_object_enabled',
+    'review_queue_runtime_enabled', 'public_ready', 'production_ready',
+  ]
+  if (
+    trueWrapperFields.some((field) => data[field] !== true) ||
+    falseWrapperFields.some((field) => data[field] !== false)
+  ) contractError()
+
+  const projection = data.projection
+  if (
+    !hasExactSelectedItemLineageFields(
+      projection, INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS,
+    ) ||
+    projection.projection_schema !==
+      'sentigraph_internal_alpha_live_safe_selected_item_lineage_projection_v0_1' ||
+    projection.projection_mode !== 'persisted_exact_one_safe_attestation_only' ||
+    projection.binding_mode !== 'selected_item_v1' ||
+    ['reviewed_batch_safe_hash', 'fresh_batch_safe_hash', 'persisted_selected_safe_hash'].some(
+      (field) => typeof projection[field] !== 'string' ||
+        !SELECTED_ITEM_LINEAGE_HASH_PATTERN.test(projection[field]),
+    ) ||
+    [
+      'selected_binding_evidence_present', 'author_identity_omitted_at_production',
+      'transport_source_provenance_only', 'human_review_required',
+      'no_automatic_trust_upgrade', 'live_persisted_record_connected',
+    ].some((field) => projection[field] !== true) ||
+    ['reply_content_acquired', 'synthetic_fixture_only'].some(
+      (field) => projection[field] !== false,
+    )
+  ) contractError()
+
+  const safeProjection = Object.freeze(Object.fromEntries(
+    INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS.map(
+      (field) => [field, projection[field]],
+    ),
+  ))
+  return Object.freeze(Object.fromEntries(
+    INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS.map(
+      (field) => [field, field === 'projection' ? safeProjection : data[field]],
+    ),
+  ))
+}
+
+/** Fetch one exact internal persisted selector only after an explicit caller action. */
+export async function getInternalAlphaLiveSafeSelectedItemLineage(caseId, evidenceId) {
+  if (
+    typeof caseId !== 'string' ||
+    typeof evidenceId !== 'string' ||
+    !LIVE_SAFE_SELECTED_ITEM_LINEAGE_SELECTOR_PATTERN.test(caseId) ||
+    !LIVE_SAFE_SELECTED_ITEM_LINEAGE_SELECTOR_PATTERN.test(evidenceId)
+  ) {
+    throw new Error(LIVE_SAFE_SELECTED_ITEM_LINEAGE_CONTRACT_ERROR)
+  }
+  const { data, status } = await apiClient.get(
+    `${API_PREFIX}/internal/alpha/${INTERNAL_ALPHA_REVIEW_CONSOLE_ROUTE_SEGMENT}` +
+      `/v0.1/live-selected-item-lineage/${encodeURIComponent(caseId)}` +
+      `/${encodeURIComponent(evidenceId)}`,
+  )
+  return normalizeInternalAlphaLiveSafeSelectedItemLineage(data, status)
+}
+
 function isPlainInternalAlphaProjectionObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)

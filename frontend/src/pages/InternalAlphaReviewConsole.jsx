@@ -10,7 +10,9 @@ import {
   getInternalAlphaLocalExchangeProjection,
   getInternalAlphaLocalExchangeSampleCatalog,
   getInternalAlphaReviewConsoleProjection,
+  getInternalAlphaLiveSafeSelectedItemLineage,
   getInternalAlphaSelectedItemLineageFixture,
+  INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS,
   INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS,
   INTERNAL_ALPHA_LOCAL_EXCHANGE_IDENTITY_READY_V02_SAMPLE_HANDLE,
   INTERNAL_ALPHA_GOVERNED_REVIEW_DECISION_TYPES,
@@ -39,6 +41,7 @@ const LOCAL_EXCHANGE_IDENTITY_READY_V02_REVIEW_VIEW =
 const IDENTITY_READY_DURABLE_DECISION_AUDIT_READBACK_VIEW =
   'identityReadyDurableDecisionAuditReadback'
 const SELECTED_ITEM_LINEAGE_AUDIT_VIEW = 'selectedItemLineageAudit'
+const LIVE_SAFE_SELECTED_ITEM_LINEAGE_VIEW = 'liveSafeSelectedItemLineage'
 
 const INITIAL_LOCAL_EXCHANGE_CATALOG_STATE = Object.freeze({
   catalogPhase: 'loading',
@@ -85,6 +88,10 @@ const REVIEW_SURFACE_OPTIONS = Object.freeze([
   {
     value: SELECTED_ITEM_LINEAGE_AUDIT_VIEW,
     label: 'Selected-item v1 lineage audit (synthetic contract)',
+  },
+  {
+    value: LIVE_SAFE_SELECTED_ITEM_LINEAGE_VIEW,
+    label: 'Live-safe selected-item lineage (exact persisted lookup)',
   },
 ])
 
@@ -324,7 +331,12 @@ export function InternalAlphaReviewConsole() {
     useState({ phase: 'not_loaded', result: null })
   const [selectedItemLineageState, setSelectedItemLineageState] =
     useState({ phase: 'idle', result: null })
+  const [liveSafeCaseIdInput, setLiveSafeCaseIdInput] = useState('')
+  const [liveSafeEvidenceIdInput, setLiveSafeEvidenceIdInput] = useState('')
+  const [liveSafeLineageState, setLiveSafeLineageState] =
+    useState({ phase: 'idle', result: null })
   const selectedItemLineageGetStarted = useRef(false)
+  const liveSafeLineageGetStarted = useRef(false)
   const requestedLocalExchangeHandles = useRef(new Set())
   const localExchangeIdentityReadyV02RequestStarted = useRef(false)
   const identityReadyDecisionCandidateBuildStarted = useRef(false)
@@ -645,6 +657,26 @@ export function InternalAlphaReviewConsole() {
     }
   }
 
+  const handleLiveSafeLineageRead = async () => {
+    if (
+      liveSafeLineageGetStarted.current ||
+      !liveSafeCaseIdInput ||
+      !liveSafeEvidenceIdInput
+    ) return
+    liveSafeLineageGetStarted.current = true
+    setLiveSafeLineageState({ phase: 'loading', result: null })
+    try {
+      const result = await getInternalAlphaLiveSafeSelectedItemLineage(
+        liveSafeCaseIdInput, liveSafeEvidenceIdInput,
+      )
+      if (!pageIsMounted.current) return
+      setLiveSafeLineageState({ phase: 'ready', result })
+    } catch {
+      if (!pageIsMounted.current) return
+      setLiveSafeLineageState({ phase: 'bounded_error', result: null })
+    }
+  }
+
   const handleIdentityReadyDecisionAuditReadback = async () => {
     if (
       !identityReadyAuditDecisionIdIsValid ||
@@ -784,6 +816,85 @@ export function InternalAlphaReviewConsole() {
                   )
                 })}
               </Descriptions>
+            ) : null}
+          </Space>
+        </Card>
+      </div>
+    )
+  }
+
+  if (selectedReviewView === LIVE_SAFE_SELECTED_ITEM_LINEAGE_VIEW) {
+    return (
+      <div className="page-stack internal-alpha-review-shell-page">
+        {reviewSurfaceSelector}
+        <Card className="panel-card internal-alpha-review-card">
+          <Space direction="vertical" size={12} className="full-width">
+            <Title level={2}>Live-safe selected-item lineage read</Title>
+            <Space wrap>
+              <Tag color="cyan">persisted exact-selector read</Tag>
+              <Tag>separate from synthetic fixture</Tag>
+              <Tag>explicit action only</Tag>
+              <Tag>human review required</Tag>
+            </Space>
+            <Paragraph>
+              Read only the safe attestations for the exact case and evidence IDs entered below.
+              This is not search or discovery; transport provenance does not establish truth.
+            </Paragraph>
+            <Input
+              aria-label="Live-safe case ID"
+              placeholder="Case ID"
+              value={liveSafeCaseIdInput}
+              disabled={liveSafeLineageGetStarted.current}
+              onChange={(event) => setLiveSafeCaseIdInput(event.target.value)}
+            />
+            <Input
+              aria-label="Live-safe evidence ID"
+              placeholder="Evidence ID"
+              value={liveSafeEvidenceIdInput}
+              disabled={liveSafeLineageGetStarted.current}
+              onChange={(event) => setLiveSafeEvidenceIdInput(event.target.value)}
+            />
+            <Button
+              onClick={handleLiveSafeLineageRead}
+              disabled={
+                liveSafeLineageGetStarted.current ||
+                !liveSafeCaseIdInput ||
+                !liveSafeEvidenceIdInput
+              }
+              loading={liveSafeLineageState.phase === 'loading'}
+            >
+              Read live-safe persisted lineage
+            </Button>
+            {liveSafeLineageState.phase === 'idle' ? (
+              <Text>No live-safe lineage read requested.</Text>
+            ) : null}
+            {liveSafeLineageState.phase === 'bounded_error' ? (
+              <Alert type="warning" showIcon message="Live-safe lineage unavailable or invalid." />
+            ) : null}
+            {liveSafeLineageState.phase === 'ready' ? (
+              <>
+                <Descriptions title="Live-safe persisted lineage projection" column={1} size="small">
+                  {INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS.map((field) => {
+                    const value = liveSafeLineageState.result.projection[field]
+                    return (
+                      <Descriptions.Item key={field} label={field}>
+                        <Text code>{typeof value === 'boolean' ? (value ? 'true' : 'false') : value}</Text>
+                      </Descriptions.Item>
+                    )
+                  })}
+                </Descriptions>
+                <Descriptions title="Live-safe response boundaries" column={1} size="small">
+                  {[
+                    'safe_metadata_only', 'human_review_required',
+                    'no_automatic_trust_upgrade', 'live_persisted_record_connected',
+                    'public_ready', 'production_ready',
+                  ].map((field) => (
+                    <Descriptions.Item key={field} label={field}>
+                      <Text code>{liveSafeLineageState.result[field] ? 'true' : 'false'}</Text>
+                    </Descriptions.Item>
+                  ))}
+                </Descriptions>
+              </>
             ) : null}
           </Space>
         </Card>

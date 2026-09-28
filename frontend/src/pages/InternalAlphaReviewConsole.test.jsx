@@ -74,11 +74,15 @@ import {
   INTERNAL_ALPHA_LOCAL_EXCHANGE_SAMPLE_FIELDS,
   INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS,
   INTERNAL_ALPHA_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS,
+  INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS,
+  INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS,
   getInternalAlphaGovernedReviewFormalState,
   getInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory,
   getInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
   getInternalAlphaSelectedItemLineageFixture,
+  getInternalAlphaLiveSafeSelectedItemLineage,
   normalizeInternalAlphaSelectedItemLineageFixture,
+  normalizeInternalAlphaLiveSafeSelectedItemLineage,
   normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditHistory,
   normalizeInternalAlphaIdentityReadyGovernedReviewDecisionAuditProjection,
   normalizeInternalAlphaGovernedReviewFormalStateProjection,
@@ -854,6 +858,216 @@ describe('InternalAlphaReviewConsole synthetic selected-item lineage audit', () 
     await expect(getInternalAlphaSelectedItemLineageFixture()).rejects.toThrow(RAW_ERROR_MARKER)
     expect(apiMocks.apiClientGet).toHaveBeenCalledTimes(1)
     expect(apiMocks.apiClientGet.mock.calls[0][0]).toBe(SELECTED_LINEAGE_ENDPOINT)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+})
+
+const LIVE_SAFE_LINEAGE_OPTION = 'Live-safe selected-item lineage (exact persisted lookup)'
+const LIVE_SAFE_CASE_ID = 'synthetic:case.001'
+const LIVE_SAFE_EVIDENCE_ID = 'synthetic:evidence-01'
+const LIVE_SAFE_LINEAGE_ENDPOINT =
+  '/api/v1/internal/alpha/review-console/v0.1/live-selected-item-lineage/' +
+  'synthetic%3Acase.001/synthetic%3Aevidence-01'
+const LIVE_SAFE_LINEAGE_CONTRACT_ERROR =
+  'frontend_live_safe_selected_item_lineage_contract_mismatch'
+
+function createLiveSafeLineageResponse() {
+  return {
+    status: 200,
+    data: {
+      response_schema: 'sentigraph_internal_alpha_live_safe_selected_item_lineage_response_v0_1',
+      route_mode: 'disabled_by_default_internal_live_safe_read_only',
+      status: 'available',
+      projection: {
+        projection_schema: 'sentigraph_internal_alpha_live_safe_selected_item_lineage_projection_v0_1',
+        projection_mode: 'persisted_exact_one_safe_attestation_only',
+        binding_mode: 'selected_item_v1',
+        reviewed_batch_safe_hash: 'a'.repeat(64),
+        fresh_batch_safe_hash: 'b'.repeat(64),
+        persisted_selected_safe_hash: 'c'.repeat(64),
+        selected_binding_evidence_present: true,
+        reply_content_acquired: false,
+        author_identity_omitted_at_production: true,
+        transport_source_provenance_only: true,
+        human_review_required: true,
+        no_automatic_trust_upgrade: true,
+        synthetic_fixture_only: false,
+        live_persisted_record_connected: true,
+      },
+      safe_metadata_only: true,
+      human_review_required: true,
+      no_automatic_trust_upgrade: true,
+      synthetic_fixture_only: false,
+      live_persisted_record_connected: true,
+      actual_write_enabled: false,
+      production_object_enabled: false,
+      review_queue_runtime_enabled: false,
+      public_ready: false,
+      production_ready: false,
+    },
+  }
+}
+
+function liveSafeLineageGetCalls() {
+  return apiMocks.apiClientGet.mock.calls.filter(([url]) =>
+    url.startsWith('/api/v1/internal/alpha/review-console/v0.1/live-selected-item-lineage/'),
+  )
+}
+
+function prepareLiveSafeLineageView(loader = () => Promise.resolve(createLiveSafeLineageResponse())) {
+  apiMocks.getInternalAlphaLocalExchangeSampleCatalog.mockResolvedValue(SYNTHETIC_CATALOG)
+  apiMocks.apiClientGet.mockImplementation((url) => {
+    if (url === LIVE_SAFE_LINEAGE_ENDPOINT) return loader()
+    if (url === SELECTED_LINEAGE_ENDPOINT) return Promise.resolve(createSelectedLineageResponse())
+    return Promise.resolve(createGovernedFormalStateResponse())
+  })
+}
+
+async function openLiveSafeLineageView() {
+  await chooseAntDesignOption('Read-only review surface', LIVE_SAFE_LINEAGE_OPTION)
+}
+
+function enterLiveSafeSelectors() {
+  fireEvent.change(screen.getByRole('textbox', { name: 'Live-safe case ID' }), {
+    target: { value: LIVE_SAFE_CASE_ID },
+  })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Live-safe evidence ID' }), {
+    target: { value: LIVE_SAFE_EVIDENCE_ID },
+  })
+}
+
+describe('InternalAlphaReviewConsole live-safe exact persisted lineage', () => {
+  it('normalizes only the exact detached live-safe response and immutable projection', () => {
+    const raw = createLiveSafeLineageResponse()
+    const safe = normalizeInternalAlphaLiveSafeSelectedItemLineage(raw.data, raw.status)
+    expect(safe).toEqual(raw.data)
+    expect(Object.keys(safe)).toEqual(INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_RESPONSE_FIELDS)
+    expect(Object.keys(safe.projection)).toEqual(
+      INTERNAL_ALPHA_LIVE_SAFE_SELECTED_ITEM_LINEAGE_PROJECTION_FIELDS,
+    )
+    expect(Object.isFrozen(safe)).toBe(true)
+    expect(Object.isFrozen(safe.projection)).toBe(true)
+    raw.data.projection.persisted_selected_safe_hash = 'd'.repeat(64)
+    expect(safe.projection.persisted_selected_safe_hash).toBe('c'.repeat(64))
+  })
+
+  it.each([
+    ['synthetic fixture', (data) => { data.synthetic_fixture_only = true }],
+    ['not connected', (data) => { data.live_persisted_record_connected = false }],
+    ['write enabled', (data) => { data.actual_write_enabled = true }],
+    ['production object enabled', (data) => { data.production_object_enabled = true }],
+    ['review queue enabled', (data) => { data.review_queue_runtime_enabled = true }],
+    ['public ready', (data) => { data.public_ready = true }],
+    ['production ready', (data) => { data.production_ready = true }],
+    ['wrong status', (data) => { data.status = 'disabled' }],
+    ['wrong schema', (data) => { data.response_schema = 'unknown' }],
+    ['extra wrapper', (data) => { data.raw_data_safe = { secret: RAW_CONFIGURATION_MARKER } }],
+    ['selector echo', (data) => { data.case_id = LIVE_SAFE_CASE_ID }],
+    ['evidence collection', (data) => { data.evidence_items = [] }],
+    ['missing wrapper', (data) => { delete data.safe_metadata_only }],
+    ['extra projection', (data) => { data.projection.body_text = RAW_CONFIGURATION_MARKER }],
+    ['projection selector echo', (data) => { data.projection.evidence_id = LIVE_SAFE_EVIDENCE_ID }],
+    ['missing projection', (data) => { delete data.projection.binding_mode }],
+    ['wrong hash', (data) => { data.projection.reviewed_batch_safe_hash = 'A'.repeat(64) }],
+    ['reply acquired', (data) => { data.projection.reply_content_acquired = true }],
+    ['author retained', (data) => { data.projection.author_identity_omitted_at_production = false }],
+    ['automatic trust', (data) => { data.projection.no_automatic_trust_upgrade = false }],
+    ['projection synthetic', (data) => { data.projection.synthetic_fixture_only = true }],
+    ['projection not connected', (data) => { data.projection.live_persisted_record_connected = false }],
+    ['wrong type', (data) => { data.projection.selected_binding_evidence_present = 1 }],
+  ])('rejects %s without exposing content', (_label, mutate) => {
+    const raw = createLiveSafeLineageResponse()
+    mutate(raw.data)
+    expect(() => normalizeInternalAlphaLiveSafeSelectedItemLineage(raw.data, raw.status))
+      .toThrow(LIVE_SAFE_LINEAGE_CONTRACT_ERROR)
+  })
+
+  it('rejects getters without evaluating them and rejects non-200 HTTP', () => {
+    const raw = createLiveSafeLineageResponse()
+    const getter = vi.fn(() => RAW_CONFIGURATION_MARKER)
+    Object.defineProperty(raw.data.projection, 'binding_mode', { enumerable: true, get: getter })
+    expect(() => normalizeInternalAlphaLiveSafeSelectedItemLineage(raw.data))
+      .toThrow(LIVE_SAFE_LINEAGE_CONTRACT_ERROR)
+    expect(getter).toHaveBeenCalledTimes(0)
+    expect(() => normalizeInternalAlphaLiveSafeSelectedItemLineage(
+      createLiveSafeLineageResponse().data, 500,
+    )).toThrow(LIVE_SAFE_LINEAGE_CONTRACT_ERROR)
+  })
+
+  it('encodes both exact selectors and never requests an invalid selector', async () => {
+    prepareLiveSafeLineageView()
+    const safe = await getInternalAlphaLiveSafeSelectedItemLineage(
+      LIVE_SAFE_CASE_ID, LIVE_SAFE_EVIDENCE_ID,
+    )
+    expect(safe.status).toBe('available')
+    expect(liveSafeLineageGetCalls()).toHaveLength(1)
+    expect(liveSafeLineageGetCalls()[0][0]).toBe(LIVE_SAFE_LINEAGE_ENDPOINT)
+    await expect(getInternalAlphaLiveSafeSelectedItemLineage('bad/case', LIVE_SAFE_EVIDENCE_ID))
+      .rejects.toThrow(LIVE_SAFE_LINEAGE_CONTRACT_ERROR)
+    expect(liveSafeLineageGetCalls()).toHaveLength(1)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it('has no live GET on mount, selection, or typing; explicit action makes one request', async () => {
+    prepareLiveSafeLineageView()
+    render(<InternalAlphaReviewConsole />)
+    expect(liveSafeLineageGetCalls()).toHaveLength(0)
+    await openLiveSafeLineageView()
+    expect(liveSafeLineageGetCalls()).toHaveLength(0)
+    enterLiveSafeSelectors()
+    expect(liveSafeLineageGetCalls()).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Read live-safe persisted lineage' }))
+    await screen.findByText('Live-safe persisted lineage projection', { exact: true })
+    expect(liveSafeLineageGetCalls()).toHaveLength(1)
+    expect(liveSafeLineageGetCalls()[0][0]).toBe(LIVE_SAFE_LINEAGE_ENDPOINT)
+    expect(screen.getByText('c'.repeat(64), { exact: true })).toBeTruthy()
+    const boundary = screen.getByText('Live-safe response boundaries', { exact: true }).closest('.ant-descriptions')
+    expect(within(boundary).getByText('public_ready', { exact: true })).toBeTruthy()
+    expect(within(boundary).getByText('production_ready', { exact: true })).toBeTruthy()
+    expect(within(boundary).getAllByText('false', { exact: true })).toHaveLength(2)
+    expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
+  })
+
+  it('keeps one pending GET under StrictMode and repeated clicks', async () => {
+    const pending = deferred()
+    prepareLiveSafeLineageView(() => pending.promise)
+    render(<React.StrictMode><InternalAlphaReviewConsole /></React.StrictMode>)
+    await openLiveSafeLineageView()
+    enterLiveSafeSelectors()
+    const button = screen.getByRole('button', { name: 'Read live-safe persisted lineage' })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    expect(liveSafeLineageGetCalls()).toHaveLength(1)
+    await act(async () => { pending.resolve(createLiveSafeLineageResponse()) })
+    await screen.findByText('Live-safe persisted lineage projection', { exact: true })
+    fireEvent.click(button)
+    expect(liveSafeLineageGetCalls()).toHaveLength(1)
+  })
+
+  it('keeps synthetic action independent and never treats its fixture as live', async () => {
+    prepareLiveSafeLineageView()
+    render(<InternalAlphaReviewConsole />)
+    await openSelectedLineageView()
+    fireEvent.click(screen.getByRole('button', { name: 'Read safe lineage projection' }))
+    await screen.findByText('Safe synthetic producer attestation', { exact: true })
+    expect(liveSafeLineageGetCalls()).toHaveLength(0)
+    await openLiveSafeLineageView()
+    expect(liveSafeLineageGetCalls()).toHaveLength(0)
+    expect(screen.getByText('No live-safe lineage read requested.', { exact: true })).toBeTruthy()
+  })
+
+  it('fails closed without retry, fallback, or raw backend error display', async () => {
+    prepareLiveSafeLineageView(() => Promise.reject(new Error(RAW_ERROR_MARKER)))
+    render(<InternalAlphaReviewConsole />)
+    await openLiveSafeLineageView()
+    enterLiveSafeSelectors()
+    const button = screen.getByRole('button', { name: 'Read live-safe persisted lineage' })
+    fireEvent.click(button)
+    await screen.findByText('Live-safe lineage unavailable or invalid.', { exact: true })
+    fireEvent.click(button)
+    expect(liveSafeLineageGetCalls()).toHaveLength(1)
+    expect(selectedLineageGetCalls()).toHaveLength(0)
+    expect(screen.queryByText(RAW_ERROR_MARKER, { exact: false })).toBeNull()
     expect(apiMocks.apiClientPost).toHaveBeenCalledTimes(0)
   })
 })
