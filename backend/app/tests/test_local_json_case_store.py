@@ -20,7 +20,7 @@ def test_local_json_store_create_list_get_update_and_reload(tmp_path) -> None:
         AnalysisCaseCreateRequest(keyword="Tesla", platforms=["reddit", "weibo"], title="Tesla Demo")
     )
     running = created.model_copy(update={"status": "running", "updated_at": repository.next_timestamp()})
-    repository.update_case(running)
+    repository.replace_case_if_revision_matches(running, created.case_revision)
 
     reloaded_repository = CaseRepository(LocalJsonCaseStore(store_path))
     cases = reloaded_repository.list_cases()
@@ -74,15 +74,22 @@ def test_local_json_store_saves_analysis_result_report_and_markdown(tmp_path) ->
         report_language="zh-CN",
     )
 
-    repository.save_analysis_result(
-        case.case_id,
-        analysis_result=pipeline.analysis,
-        visualization_data=visualization,
-        risk_score=pipeline.topic_risk_result.overall_risk,
-        risk_level=pipeline.topic_risk_result.risk_level,
-        risk_model_version=pipeline.topic_risk_result.risk_model_version,
+    saved = repository.replace_case_if_revision_matches(
+        case.model_copy(update={
+            "status": "completed",
+            "analysis_revision": 1,
+            "analysis_run_id": "synthetic-storage-test",
+            "analysis_result": pipeline.analysis,
+            "visualization_data": visualization,
+            "risk_score": pipeline.topic_risk_result.overall_risk,
+            "risk_level": pipeline.topic_risk_result.risk_level,
+            "risk_model_version": pipeline.topic_risk_result.risk_model_version,
+            "report": report,
+            "markdown_available": True,
+        }, deep=True),
+        case.case_revision,
     )
-    repository.save_report(case.case_id, report=report)
+    assert saved is not None
     repository.save_markdown_report(
         case.case_id,
         MarkdownExportResponse(
@@ -119,6 +126,7 @@ def test_local_json_store_persists_attached_raw_crawl_data_after_reload(tmp_path
 
     attached = repository.save_case_raw_data(
         case.case_id,
+        base_case=case,
         raw_posts=[_raw_post()],
         raw_comments=[_raw_comment()],
         crawl_metadata=[

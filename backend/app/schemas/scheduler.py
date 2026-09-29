@@ -49,6 +49,7 @@ class SchedulerRunDueResponse(BaseModel):
     due_case_count: int
     executed_case_count: int
     skipped_case_count: int
+    conflict_case_count: int = 0
     monitoring_results: list[MonitoringStatus] = Field(default_factory=list)
     job_states: list[MonitoringJobState] = Field(default_factory=list)
     message: str

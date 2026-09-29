@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 from typing import Callable, Iterable
+from uuid import uuid4
 
-from app.repositories.case_repository import CaseRepository
+from app.repositories.case_repository import CaseRepository, analysis_invalidation_update
 from app.schemas.alert import AlertEvent, AlertThresholdConfig, AnalysisSnapshot, MonitoringStatus
 from app.schemas.case import (
     AnalysisCaseCreateRequest,
@@ -80,7 +81,7 @@ from app.services.search_discovery import (
     search_discovery_candidates_to_evidence_items,
     youtube_public_discussion_items_to_evidence_items,
 )
-from app.services.storage.base_store import CaseStore
+from app.services.storage.base_store import CaseRevisionConflict, CaseStore
 from app.services.storage.store_factory import create_case_store_from_env
 from app.services.visualization.chart_data_builder import build_visualization_response
 
@@ -142,8 +143,19 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
     if not case:
         return None
 
-    running_case = case.model_copy(update={"status": "running", "updated_at": repository.next_timestamp()})
-    repository.update_case(running_case)
+    run_id = uuid4().hex
+    start_candidate = case.model_copy(
+        update={
+            **analysis_invalidation_update(),
+            "status": "running",
+            "analysis_run_id": run_id,
+            "updated_at": repository.next_timestamp(),
+        },
+        deep=True,
+    )
+    running_case = repository.replace_case_if_revision_matches(start_candidate, case.case_revision)
+    if running_case is None:
+        return None
 
     if running_case.evidence_items:
         pipeline = build_pipeline_from_evidence_items(
@@ -185,6 +197,8 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
     completed_case = running_case.model_copy(
         update={
             "status": "completed",
+            "analysis_revision": running_case.case_revision + 1,
+            "analysis_run_id": run_id,
             "updated_at": repository.next_timestamp(),
             "analysis_result": pipeline.analysis,
             "visualization_data": visualization,
@@ -200,7 +214,26 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
         },
         deep=True,
     )
-    repository.update_case(completed_case)
+    try:
+        completed_case = repository.replace_case_if_revision_matches(
+            completed_case, running_case.case_revision
+        )
+    except CaseRevisionConflict as conflict:
+        # A losing run cannot publish its auxiliary artifacts or replay analysis.
+        try:
+            current = repository.get_case(case_id)
+            if current is not None and current.status == "running" and current.analysis_run_id == run_id:
+                abort_candidate = current.model_copy(
+                    update=analysis_invalidation_update(),
+                    deep=True,
+                )
+                repository.replace_case_if_revision_matches(abort_candidate, current.case_revision)
+        except Exception:
+            # Cleanup is best-effort; retain the original completion conflict.
+            pass
+        raise conflict
+    if completed_case is None:
+        return None
     repository.save_markdown_report(
         completed_case.case_id,
         MarkdownExportResponse(
@@ -241,6 +274,7 @@ def run_case_crawl(case_id: str, payload: CaseCrawlStartRequest | None = None) -
     )
     return repository.save_case_raw_data(
         case.case_id,
+        base_case=case,
         raw_posts=crawl_result.raw_posts,
         raw_comments=crawl_result.raw_comments,
         crawl_metadata=crawl_result.platform_metadata,
@@ -404,25 +438,20 @@ def review_case_evidence_item(
         return None
     updated_items, result = decision
     # The review decision and all derived-output invalidation form one case write.
-    repository.update_case(
+    saved_case = repository.replace_case_if_revision_matches(
         case.model_copy(
             update={
                 "evidence_items": updated_items,
                 "evidence_item_count": len(updated_items),
                 "updated_at": repository.next_timestamp(),
-                "status": "draft",
-                "analysis_result": None,
-                "visualization_data": None,
-                "report": None,
-                "markdown_available": False,
-                "analysis_input_source": None,
-                "risk_score": None,
-                "risk_level": None,
-                "risk_model_version": None,
+                **analysis_invalidation_update(),
             },
             deep=True,
-        )
+        ),
+        case.case_revision,
     )
+    if saved_case is None:
+        return None
     return result
 
 
@@ -465,6 +494,7 @@ def attach_case_evidence(case_id: str, payload: EvidenceIngestionBatch) -> Evide
     )
     saved_case = repository.save_case_evidence(
         case_id,
+        base_case=case,
         evidence_items=total_items,
         evidence_ingestion_jobs=_prepend_evidence_job(case.evidence_ingestion_jobs, job),
         updated_at=timestamp,
@@ -521,6 +551,7 @@ def attach_search_discovery_candidates(
     )
     saved_case = repository.save_case_evidence(
         case_id,
+        base_case=case,
         evidence_items=total_items,
         evidence_ingestion_jobs=_prepend_evidence_job(case.evidence_ingestion_jobs, job),
         updated_at=timestamp,
@@ -672,6 +703,7 @@ def attach_youtube_reviewed_public_discussion(
     )
     saved_case = repository.save_case_evidence(
         case_id,
+        base_case=case,
         evidence_items=total_items,
         evidence_ingestion_jobs=_prepend_evidence_job(
             case.evidence_ingestion_jobs,
@@ -751,6 +783,7 @@ def commit_case_evidence_import(case_id: str, payload: EvidenceImportCommitReque
     )
     saved_case = repository.save_case_evidence(
         case_id,
+        base_case=case,
         evidence_items=total_items,
         evidence_ingestion_jobs=_prepend_evidence_job(case.evidence_ingestion_jobs, job),
         updated_at=timestamp,

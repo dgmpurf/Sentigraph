@@ -1,15 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import datetime
-
-from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
-from app.schemas.common import RiskLevel
 from app.schemas.notification import NotificationOutboxItem
-from app.schemas.report import PublicOpinionReport
-from app.schemas.visualization import VisualizationResponse
 
 
 class CaseRevisionConflict(RuntimeError):
@@ -51,7 +45,7 @@ class CaseStore(ABC):
 
     @abstractmethod
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
-        """Replace an existing case detail."""
+        """Legacy test/administrative replacement; never use for business writes."""
 
     @abstractmethod
     def replace_case_if_revision_matches(
@@ -62,31 +56,6 @@ class CaseStore(ABC):
     @abstractmethod
     def delete_case(self, case_id: str) -> bool:
         """Delete one case and its store-owned auxiliary records."""
-
-    @abstractmethod
-    def save_analysis_result(
-        self,
-        case_id: str,
-        *,
-        analysis_result: AnalysisResultResponse,
-        visualization_data: VisualizationResponse | None = None,
-        risk_score: float | None = None,
-        risk_level: RiskLevel | None = None,
-        risk_model_version: str | None = None,
-        updated_at: datetime | None = None,
-    ) -> AnalysisCaseDetail | None:
-        """Attach analysis/visualization output to a case."""
-
-    @abstractmethod
-    def save_report(
-        self,
-        case_id: str,
-        *,
-        report: PublicOpinionReport,
-        updated_at: datetime | None = None,
-        markdown_available: bool = True,
-    ) -> AnalysisCaseDetail | None:
-        """Attach a structured report to a case."""
 
     @abstractmethod
     def save_markdown_report(self, case_id: str, report: MarkdownExportResponse) -> MarkdownExportResponse:

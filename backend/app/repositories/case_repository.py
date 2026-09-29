@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 import re
 
-from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import (
     AnalysisCaseCreateRequest,
@@ -13,13 +12,10 @@ from app.schemas.case import (
     MarkdownExportResponse,
 )
 from app.schemas.comment import RawComment, RawPost
-from app.schemas.common import RiskLevel
 from app.schemas.crawl import PlatformCrawlMetadata
 from app.schemas.evidence import EvidenceIngestionJob, EvidenceItem
 from app.schemas.notification import NotificationOutboxItem
-from app.schemas.report import PublicOpinionReport
 from app.schemas.scheduler import MonitoringScheduleConfig
-from app.schemas.visualization import VisualizationResponse
 from app.services.internal_alpha_live_safe_selected_item_lineage_projection import LiveSafeLineageUnavailable
 from app.services.storage.base_store import CaseStore
 from app.services.storage.local_json_store import LocalJsonCaseStore
@@ -70,9 +66,6 @@ class CaseRepository:
             raise LiveSafeLineageUnavailable("live_safe_lineage_unavailable")
         return self.store.read_exact_live_safe_selected_item_lineage(case_id, evidence_id)
 
-    def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
-        return self.store.update_case(case)
-
     def replace_case_if_revision_matches(
         self, case: AnalysisCaseDetail, expected_revision: int
     ) -> AnalysisCaseDetail | None:
@@ -86,6 +79,7 @@ class CaseRepository:
         self,
         case_id: str,
         *,
+        base_case: AnalysisCaseDetail,
         raw_posts: list[RawPost],
         raw_comments: list[RawComment],
         crawl_metadata: list[PlatformCrawlMetadata],
@@ -94,11 +88,9 @@ class CaseRepository:
         evidence_items: list[EvidenceItem] | None = None,
         attached_at: datetime | None = None,
     ) -> AnalysisCaseDetail | None:
-        case = self.get_case(case_id)
-        if not case:
-            return None
+        _validate_base_case(case_id, base_case)
         timestamp = attached_at or self.next_timestamp()
-        updated_case = case.model_copy(
+        updated_case = base_case.model_copy(
             update={
                 "raw_posts": raw_posts,
                 "raw_comments": raw_comments,
@@ -108,38 +100,39 @@ class CaseRepository:
                 "raw_data_status": raw_data_status,
                 "raw_post_count": len(raw_posts),
                 "raw_comment_count": len(raw_comments),
-                "evidence_items": evidence_items if evidence_items is not None else case.evidence_items,
-                "evidence_item_count": len(evidence_items) if evidence_items is not None else case.evidence_item_count,
+                "evidence_items": evidence_items if evidence_items is not None else base_case.evidence_items,
+                "evidence_item_count": len(evidence_items) if evidence_items is not None else base_case.evidence_item_count,
                 "updated_at": timestamp,
+                **analysis_invalidation_update(),
             },
             deep=True,
         )
-        return self.update_case(updated_case)
+        return self.replace_case_if_revision_matches(updated_case, base_case.case_revision)
 
     def save_case_evidence(
         self,
         case_id: str,
         *,
+        base_case: AnalysisCaseDetail,
         evidence_items: list[EvidenceItem],
         evidence_ingestion_jobs: list[EvidenceIngestionJob] | None = None,
         updated_at: datetime | None = None,
     ) -> AnalysisCaseDetail | None:
-        case = self.get_case(case_id)
-        if not case:
-            return None
+        _validate_base_case(case_id, base_case)
         timestamp = updated_at or self.next_timestamp()
-        updated_case = case.model_copy(
+        updated_case = base_case.model_copy(
             update={
                 "evidence_items": evidence_items,
                 "evidence_item_count": len(evidence_items),
                 "evidence_ingestion_jobs": evidence_ingestion_jobs
                 if evidence_ingestion_jobs is not None
-                else case.evidence_ingestion_jobs,
+                else base_case.evidence_ingestion_jobs,
                 "updated_at": timestamp,
+                **analysis_invalidation_update(),
             },
             deep=True,
         )
-        return self.update_case(updated_case)
+        return self.replace_case_if_revision_matches(updated_case, base_case.case_revision)
 
     def get_monitoring_config(self, case_id: str) -> MonitoringScheduleConfig | None:
         case = self.get_case(case_id)
@@ -150,55 +143,18 @@ class CaseRepository:
         case_id: str,
         config: MonitoringScheduleConfig,
         *,
+        base_case: AnalysisCaseDetail,
         updated_at: datetime | None = None,
     ) -> AnalysisCaseDetail | None:
-        case = self.get_case(case_id)
-        if not case:
-            return None
-        updated_case = case.model_copy(
+        _validate_base_case(case_id, base_case)
+        updated_case = base_case.model_copy(
             update={
                 "monitoring_config": config,
                 "updated_at": updated_at or self.next_timestamp(),
             },
             deep=True,
         )
-        return self.update_case(updated_case)
-
-    def save_analysis_result(
-        self,
-        case_id: str,
-        *,
-        analysis_result: AnalysisResultResponse,
-        visualization_data: VisualizationResponse | None = None,
-        risk_score: float | None = None,
-        risk_level: RiskLevel | None = None,
-        risk_model_version: str | None = None,
-        updated_at: datetime | None = None,
-    ) -> AnalysisCaseDetail | None:
-        return self.store.save_analysis_result(
-            case_id,
-            analysis_result=analysis_result,
-            visualization_data=visualization_data,
-            risk_score=risk_score,
-            risk_level=risk_level,
-            risk_model_version=risk_model_version,
-            updated_at=updated_at or self.next_timestamp(),
-        )
-
-    def save_report(
-        self,
-        case_id: str,
-        *,
-        report: PublicOpinionReport,
-        updated_at: datetime | None = None,
-        markdown_available: bool = True,
-    ) -> AnalysisCaseDetail | None:
-        return self.store.save_report(
-            case_id,
-            report=report,
-            updated_at=updated_at or self.next_timestamp(),
-            markdown_available=markdown_available,
-        )
+        return self.replace_case_if_revision_matches(updated_case, base_case.case_revision)
 
     def save_markdown_report(self, case_id: str, report: MarkdownExportResponse) -> MarkdownExportResponse:
         return self.store.save_markdown_report(case_id, report)
@@ -307,3 +263,25 @@ def _ensure_aware(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _validate_base_case(case_id: str, base_case: AnalysisCaseDetail) -> None:
+    if base_case.case_id != case_id:
+        raise ValueError("base_case.case_id must match case_id")
+
+
+def analysis_invalidation_update() -> dict[str, object]:
+    """Clear current analysis in the same CAS as an input/governance change."""
+    return {
+        "status": "draft",
+        "analysis_revision": None,
+        "analysis_run_id": None,
+        "analysis_result": None,
+        "visualization_data": None,
+        "report": None,
+        "markdown_available": False,
+        "analysis_input_source": None,
+        "risk_score": None,
+        "risk_level": None,
+        "risk_model_version": None,
+    }

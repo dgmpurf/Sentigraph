@@ -11,6 +11,7 @@ from app.schemas.scheduler import (
     SchedulerStatus,
 )
 from app.services.case_store import get_case_repository, run_monitoring_check
+from app.services.storage.base_store import CaseRevisionConflict
 
 
 def get_scheduler_status() -> SchedulerStatus:
@@ -49,7 +50,7 @@ def update_case_monitoring_config(
 
     now = repository.next_timestamp()
     normalized = _normalize_config(config, now=now)
-    updated = repository.save_monitoring_config(case_id, normalized, updated_at=now)
+    updated = repository.save_monitoring_config(case_id, normalized, base_case=case, updated_at=now)
     return updated.monitoring_config if updated else None
 
 
@@ -69,7 +70,7 @@ def enable_case_monitoring(case_id: str) -> MonitoringScheduleConfig | None:
         },
         deep=True,
     )
-    updated = repository.save_monitoring_config(case_id, config, updated_at=now)
+    updated = repository.save_monitoring_config(case_id, config, base_case=case, updated_at=now)
     return updated.monitoring_config if updated else None
 
 
@@ -88,7 +89,7 @@ def disable_case_monitoring(case_id: str) -> MonitoringScheduleConfig | None:
         },
         deep=True,
     )
-    updated = repository.save_monitoring_config(case_id, config, updated_at=now)
+    updated = repository.save_monitoring_config(case_id, config, base_case=case, updated_at=now)
     return updated.monitoring_config if updated else None
 
 
@@ -105,13 +106,17 @@ def run_due_monitoring_jobs() -> SchedulerRunDueResponse:
         and _is_due(case.monitoring_config, checked_at)
     ]
     monitoring_results = []
+    conflict_case_count = 0
 
     for case in due_cases:
         status = run_monitoring_check(case.case_id, threshold_config=case.monitoring_config.threshold_config)
         if not status:
             continue
         monitoring_results.append(status)
-        _mark_case_schedule_ran(repository, case.case_id, case.monitoring_config, status.latest_snapshot.created_at)
+        try:
+            _mark_case_schedule_ran(repository, case, status.latest_snapshot.created_at)
+        except CaseRevisionConflict:
+            conflict_case_count += 1
 
     refreshed_states = _list_job_states(repository, checked_at)
 
@@ -120,6 +125,7 @@ def run_due_monitoring_jobs() -> SchedulerRunDueResponse:
         due_case_count=len(due_cases),
         executed_case_count=len(monitoring_results),
         skipped_case_count=skipped_count,
+        conflict_case_count=conflict_case_count,
         monitoring_results=monitoring_results,
         job_states=refreshed_states,
         message=(
@@ -132,10 +138,10 @@ def run_due_monitoring_jobs() -> SchedulerRunDueResponse:
 
 def _mark_case_schedule_ran(
     repository: CaseRepository,
-    case_id: str,
-    config: MonitoringScheduleConfig,
+    case: AnalysisCaseDetail,
     last_run_at: datetime,
 ) -> None:
+    config = case.monitoring_config
     next_run_at = _as_utc(last_run_at) + timedelta(minutes=config.interval_minutes)
     updated_config = config.model_copy(
         update={
@@ -146,7 +152,9 @@ def _mark_case_schedule_ran(
         },
         deep=True,
     )
-    repository.save_monitoring_config(case_id, updated_config, updated_at=last_run_at)
+    repository.save_monitoring_config(
+        case.case_id, updated_config, base_case=case, updated_at=last_run_at
+    )
 
 
 def _normalize_config(config: MonitoringScheduleConfig, *, now: datetime) -> MonitoringScheduleConfig:

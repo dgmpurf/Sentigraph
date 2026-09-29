@@ -130,15 +130,22 @@ def test_mongodb_store_case_report_markdown_snapshot_alert_and_notification() ->
         report_language="zh-CN",
     )
 
-    repository.save_analysis_result(
-        case.case_id,
-        analysis_result=pipeline.analysis,
-        visualization_data=visualization,
-        risk_score=pipeline.topic_risk_result.overall_risk,
-        risk_level=pipeline.topic_risk_result.risk_level,
-        risk_model_version=pipeline.topic_risk_result.risk_model_version,
+    saved = repository.replace_case_if_revision_matches(
+        case.model_copy(update={
+            "status": "completed",
+            "analysis_revision": 1,
+            "analysis_run_id": "synthetic-storage-test",
+            "analysis_result": pipeline.analysis,
+            "visualization_data": visualization,
+            "risk_score": pipeline.topic_risk_result.overall_risk,
+            "risk_level": pipeline.topic_risk_result.risk_level,
+            "risk_model_version": pipeline.topic_risk_result.risk_model_version,
+            "report": report,
+            "markdown_available": True,
+        }, deep=True),
+        case.case_revision,
     )
-    repository.save_report(case.case_id, report=report)
+    assert saved is not None
     repository.save_markdown_report(
         case.case_id,
         MarkdownExportResponse(
@@ -217,6 +224,7 @@ def test_mongodb_store_persists_attached_raw_crawl_data() -> None:
 
     attached = repository.save_case_raw_data(
         case.case_id,
+        base_case=case,
         raw_posts=[_raw_post()],
         raw_comments=[_raw_comment()],
         crawl_metadata=[

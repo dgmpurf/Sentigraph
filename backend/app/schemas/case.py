@@ -34,6 +34,8 @@ class CaseCrawlStartRequest(BaseModel):
 class AnalysisCase(BaseModel):
     case_id: str
     case_revision: int = Field(default=0, ge=0)
+    analysis_revision: int | None = Field(default=None, ge=0)
+    analysis_run_id: str | None = None
     project_id: str
     title: str
     keyword: str

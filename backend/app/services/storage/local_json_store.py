@@ -13,13 +13,9 @@ if os.name == "nt":
 else:  # pragma: no cover - the current-host concurrency proof is Windows-only.
     import fcntl
 
-from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
-from app.schemas.common import RiskLevel
 from app.schemas.notification import NotificationOutboxItem
-from app.schemas.report import PublicOpinionReport
-from app.schemas.visualization import VisualizationResponse
 from app.services.internal_alpha_live_safe_selected_item_lineage_projection import (
     CONTRACT_ERROR,
     SOURCE_FIELDS,
@@ -141,6 +137,7 @@ class LocalJsonCaseStore(CaseStore):
             return validate_live_safe_source(detached)
 
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
+        """Legacy test/administrative replacement; business writers use CAS."""
         with self._write_transaction():
             data = self._read_data()
             if case.case_id not in data["cases"]:
@@ -186,57 +183,6 @@ class LocalJsonCaseStore(CaseStore):
             }
             self._write_data(data)
         return True
-
-    def save_analysis_result(
-        self,
-        case_id: str,
-        *,
-        analysis_result: AnalysisResultResponse,
-        visualization_data: VisualizationResponse | None = None,
-        risk_score: float | None = None,
-        risk_level: RiskLevel | None = None,
-        risk_model_version: str | None = None,
-        updated_at: Any | None = None,
-    ) -> AnalysisCaseDetail | None:
-        case = self.get_case(case_id)
-        if not case:
-            return None
-        updated_case = case.model_copy(
-            update={
-                "analysis_result": analysis_result,
-                "visualization_data": visualization_data,
-                "risk_score": risk_score,
-                "risk_level": risk_level,
-                "risk_model_version": risk_model_version,
-                "updated_at": updated_at or case.updated_at,
-            },
-            deep=True,
-        )
-        return self.update_case(updated_case)
-
-    def save_report(
-        self,
-        case_id: str,
-        *,
-        report: PublicOpinionReport,
-        updated_at: Any | None = None,
-        markdown_available: bool = True,
-    ) -> AnalysisCaseDetail | None:
-        case = self.get_case(case_id)
-        if not case:
-            return None
-        updated_case = case.model_copy(
-            update={
-                "report": report,
-                "markdown_available": markdown_available,
-                "risk_score": float(report.overall_risk if report.overall_risk is not None else report.risk_score),
-                "risk_level": report.risk_level,
-                "risk_model_version": report.risk_model_version,
-                "updated_at": updated_at or case.updated_at,
-            },
-            deep=True,
-        )
-        return self.update_case(updated_case)
 
     def save_markdown_report(self, case_id: str, report: MarkdownExportResponse) -> MarkdownExportResponse:
         with self._write_transaction():

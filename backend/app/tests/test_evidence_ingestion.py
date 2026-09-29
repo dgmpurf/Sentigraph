@@ -819,9 +819,12 @@ def test_exact_review_history_cannot_bind_transient_raw_data_fallback() -> None:
     transient_item = build_evidence_items_from_raw_data(
         case_id=case_id, raw_posts=[raw_post], raw_comments=[], crawl_metadata=[]
     )[0]
-    repository.update_case(case.model_copy(update={
-        "raw_posts": [raw_post], "evidence_items": [], "evidence_item_count": 0,
-    }, deep=True))
+    repository.replace_case_if_revision_matches(
+        case.model_copy(update={
+            "raw_posts": [raw_post], "evidence_items": [], "evidence_item_count": 0,
+        }, deep=True),
+        case.case_revision,
+    )
 
     exact = client.get(f"/api/v1/cases/{case_id}/evidence/{transient_item.evidence_id}/review-history")
     assert exact.status_code == 404
@@ -848,7 +851,9 @@ def test_exact_review_history_rejects_ambiguous_persisted_evidence_id() -> None:
     case = repository.get_case(case_id)
     assert case is not None
     item = case.evidence_items[0]
-    repository.save_case_evidence(case_id, evidence_items=[item, item.model_copy(deep=True)])
+    repository.save_case_evidence(
+        case_id, base_case=case, evidence_items=[item, item.model_copy(deep=True)]
+    )
 
     exact = client.get(f"/api/v1/cases/{case_id}/evidence/{evidence_id}/review-history")
     assert exact.status_code == 404
@@ -1012,8 +1017,12 @@ def test_case_without_evidence_still_falls_back_to_mock_data() -> None:
 
 def test_raw_only_case_retains_raw_data_analysis_source() -> None:
     case_id = _create_case(platforms=["youtube"])
-    get_case_repository().save_case_raw_data(
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    assert case is not None
+    repository.save_case_raw_data(
         case_id,
+        base_case=case,
         raw_posts=[_youtube_post()],
         raw_comments=[_youtube_comment()],
         crawl_metadata=[],

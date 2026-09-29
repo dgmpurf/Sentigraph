@@ -3,13 +3,9 @@ from __future__ import annotations
 import os
 from typing import Any, Protocol
 
-from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
-from app.schemas.common import RiskLevel
 from app.schemas.notification import NotificationOutboxItem
-from app.schemas.report import PublicOpinionReport
-from app.schemas.visualization import VisualizationResponse
 from app.services.storage.base_store import (
     CaseRevisionConflict,
     CaseStore,
@@ -103,6 +99,7 @@ class MongoDbCaseStore(CaseStore):
         return AnalysisCaseDetail.model_validate(_strip_mongo_id(raw_case)) if raw_case else None
 
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
+        """Legacy test/administrative replacement; business writers use CAS."""
         if not self.get_case(case.case_id):
             raise KeyError(f"Analysis case '{case.case_id}' does not exist.")
         self._cases.replace_one({"case_id": case.case_id}, _case_to_document(case), upsert=False)
@@ -150,58 +147,6 @@ class MongoDbCaseStore(CaseStore):
         ):
             collection.delete_many({"case_id": case_id})
         return True
-
-    def save_analysis_result(
-        self,
-        case_id: str,
-        *,
-        analysis_result: AnalysisResultResponse,
-        visualization_data: VisualizationResponse | None = None,
-        risk_score: float | None = None,
-        risk_level: RiskLevel | None = None,
-        risk_model_version: str | None = None,
-        updated_at: Any | None = None,
-    ) -> AnalysisCaseDetail | None:
-        case = self.get_case(case_id)
-        if not case:
-            return None
-        updated_case = case.model_copy(
-            update={
-                "analysis_result": analysis_result,
-                "visualization_data": visualization_data,
-                "risk_score": risk_score,
-                "risk_level": risk_level,
-                "risk_model_version": risk_model_version,
-                "updated_at": updated_at or case.updated_at,
-            },
-            deep=True,
-        )
-        return self.update_case(updated_case)
-
-    def save_report(
-        self,
-        case_id: str,
-        *,
-        report: PublicOpinionReport,
-        updated_at: Any | None = None,
-        markdown_available: bool = True,
-    ) -> AnalysisCaseDetail | None:
-        case = self.get_case(case_id)
-        if not case:
-            return None
-        risk_value = report.overall_risk if report.overall_risk is not None else report.risk_score
-        updated_case = case.model_copy(
-            update={
-                "report": report,
-                "markdown_available": markdown_available,
-                "risk_score": float(risk_value or 0.0),
-                "risk_level": report.risk_level,
-                "risk_model_version": report.risk_model_version,
-                "updated_at": updated_at or case.updated_at,
-            },
-            deep=True,
-        )
-        return self.update_case(updated_case)
 
     def save_markdown_report(self, case_id: str, report: MarkdownExportResponse) -> MarkdownExportResponse:
         self._markdown_reports.replace_one(
