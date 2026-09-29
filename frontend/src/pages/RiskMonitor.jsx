@@ -31,6 +31,7 @@ import {
 import { PlatformHeatmapChart } from '../components/charts/PlatformHeatmapChart.jsx'
 import { RiskRadarChart } from '../components/charts/RiskRadarChart.jsx'
 import { SentimentTrendChart } from '../components/charts/SentimentTrendChart.jsx'
+import { getCaseAnalysisPair, sameAnalysisPair } from '../api/sentigraphApi.js'
 import { formatPercent, riskTone } from '../utils/formatters.js'
 import { buildPublicOpinionReportModel } from '../utils/reportModel.js'
 
@@ -182,13 +183,11 @@ function normalizeTopic(topic, index = 0) {
   }
 }
 
-function getLatestSnapshot(caseSnapshots = [], monitoringStatus) {
-  if (monitoringStatus?.latest_snapshot) return monitoringStatus.latest_snapshot
+function getLatestSnapshot(caseSnapshots = []) {
   return caseSnapshots.length ? caseSnapshots[caseSnapshots.length - 1] : null
 }
 
-function getPreviousSnapshot(caseSnapshots = [], monitoringStatus) {
-  if (monitoringStatus?.previous_snapshot) return monitoringStatus.previous_snapshot
+function getPreviousSnapshot(caseSnapshots = []) {
   return caseSnapshots.length > 1 ? caseSnapshots[caseSnapshots.length - 2] : null
 }
 
@@ -569,6 +568,73 @@ function ForecastPanel({ forecast, loading = false, onRunForecast }) {
   )
 }
 
+function historyLabel(item) {
+  return item?.lineage_status === 'HISTORICAL' ? '历史' : '未绑定旧记录'
+}
+
+function HistoryArtifacts({ snapshots, alerts, notifications }) {
+  if (!snapshots.length && !alerts.length && !notifications.length) return null
+  return (
+    <Card className="panel-card" title="历史与未绑定旧记录">
+      <Paragraph>以下记录仅供追溯，不参与当前风险、预警或通知操作。</Paragraph>
+      {snapshots.length ? (
+        <List
+          data-testid="historical-snapshot-list"
+          header="历史快照"
+          dataSource={snapshots}
+          renderItem={(item) => (
+            <List.Item>
+              <Space wrap>
+                <Tag>{historyLabel(item)}</Tag>
+                <Text>{getSnapshotTime(item)}</Text>
+                <Text>{scoreText(item.risk_score)}/100</Text>
+              </Space>
+            </List.Item>
+          )}
+        />
+      ) : null}
+      {alerts.length ? (
+        <List
+          data-testid="historical-alert-list"
+          header="历史预警"
+          dataSource={alerts}
+          renderItem={(item) => (
+            <List.Item>
+              <Space direction="vertical">
+                <Tag>{historyLabel(item)}</Tag>
+                <Text>{item.message}</Text>
+                <Text type="secondary">{item.reason}</Text>
+              </Space>
+            </List.Item>
+          )}
+        />
+      ) : null}
+      {notifications.length ? (
+        <List
+          data-testid="historical-notification-list"
+          header="历史通知"
+          dataSource={notifications}
+          renderItem={(item) => (
+            <List.Item>
+              <Space direction="vertical">
+                <Space wrap>
+                  <Tag>{historyLabel(item)}</Tag>
+                  <Text>{item.title}</Text>
+                  <Text>{notificationStatusLabels[item.status] || item.status}</Text>
+                </Space>
+                <Space>
+                  <Button data-testid="historical-notification-mark-read-button" disabled size="small">标记已读</Button>
+                  <Button data-testid="historical-notification-simulate-send-button" disabled size="small">模拟发送</Button>
+                </Space>
+              </Space>
+            </List.Item>
+          )}
+        />
+      ) : null}
+    </Card>
+  )
+}
+
 export function RiskMonitor({
   alerts = [],
   analysis,
@@ -598,22 +664,37 @@ export function RiskMonitor({
   summary,
   visualization,
 }) {
-  const report = buildPublicOpinionReportModel({ analysis, recommendation, summary, visualization })
-  const latestSnapshot = getLatestSnapshot(caseSnapshots, monitoringStatus)
-  const previousSnapshot = getPreviousSnapshot(caseSnapshots, monitoringStatus)
-  const riskRadar = visualization?.risk_radar
-  const sentimentTrend = visualization?.sentiment_trend || []
-  const visibleAlerts = alerts.length ? alerts : monitoringStatus?.alerts || []
+  const hasCurrentCase = Boolean(getCaseAnalysisPair(currentCase))
+  const currentVisualization = hasCurrentCase ? visualization : null
+  const report = buildPublicOpinionReportModel({
+    analysis: hasCurrentCase ? analysis : null,
+    recommendation: hasCurrentCase ? recommendation : null,
+    summary: hasCurrentCase ? summary : null,
+    visualization: currentVisualization,
+  })
+  const currentSnapshots = hasCurrentCase ? caseSnapshots.filter((item) => item?.lineage_status === 'CURRENT') : []
+  const historicalOrUnboundSnapshots = caseSnapshots.filter((item) => item?.lineage_status !== 'CURRENT')
+  const currentAlerts = hasCurrentCase ? alerts.filter((item) => item?.lineage_status === 'CURRENT') : []
+  const historicalOrUnboundAlerts = alerts.filter((item) => item?.lineage_status !== 'CURRENT')
+  const currentNotifications = hasCurrentCase ? notifications.filter((item) => item?.lineage_status === 'CURRENT') : []
+  const historicalOrUnboundNotifications = notifications.filter((item) => item?.lineage_status !== 'CURRENT')
+  const validMonitoringStatus = sameAnalysisPair(currentCase, monitoringStatus) ? monitoringStatus : null
+  const validForecast = sameAnalysisPair(currentCase, caseForecast) ? caseForecast : null
+  const latestSnapshot = getLatestSnapshot(currentSnapshots)
+  const previousSnapshot = getPreviousSnapshot(currentSnapshots)
+  const riskRadar = currentVisualization?.risk_radar
+  const sentimentTrend = currentVisualization?.sentiment_trend || []
+  const visibleAlerts = currentAlerts
   const riskScore = Number(
-    latestSnapshot?.risk_score ?? report.overallRisk ?? report.riskScore ?? visualization?.risk_score ?? 0,
+    latestSnapshot?.risk_score ?? report.overallRisk ?? report.riskScore ?? currentVisualization?.risk_score ?? 0,
   )
-  const riskLevel = latestSnapshot?.risk_level || report.riskLevel || visualization?.risk_level || 'low'
+  const riskLevel = latestSnapshot?.risk_level || report.riskLevel || currentVisualization?.risk_level || 'low'
   const riskModelVersion =
-    latestSnapshot?.risk_model_version || report.riskModelVersion || visualization?.risk_model_version || 'v1_static_mvp'
+    latestSnapshot?.risk_model_version || report.riskModelVersion || currentVisualization?.risk_model_version || 'v1_static_mvp'
   const realCrisisRisk = Number(latestSnapshot?.real_crisis_risk ?? report.realCrisisRisk ?? 0)
   const manipulationRisk = Number(latestSnapshot?.manipulation_risk ?? report.manipulationRisk ?? 0)
   const riskDelta = Number(
-    monitoringStatus?.latest_risk_delta ??
+    validMonitoringStatus?.latest_risk_delta ??
       (latestSnapshot && previousSnapshot ? latestSnapshot.risk_score - previousSnapshot.risk_score : 0),
   )
   const topDrivers = buildTopDrivers(report, latestSnapshot, riskRadar)
@@ -633,28 +714,37 @@ export function RiskMonitor({
   const scheduleLabel = scheduleStatusLabels[scheduleStatus] || scheduleStatus
   const schedulerDueCases = Number(schedulerStatus?.due_cases || 0)
   const schedulerEnabledCases = Number(schedulerStatus?.enabled_cases || 0)
-  const visibleNotifications = notifications.slice(0, 6)
-  const unreadNotifications = notifications.filter((item) => !item.read_at).length
+  const visibleNotifications = currentNotifications.slice(0, 6)
+  const unreadNotifications = notificationOutboxStatus?.current_unread ?? currentNotifications.filter((item) => !item.read_at).length
   const pendingNotifications =
-    notificationOutboxStatus?.pending ?? notifications.filter((item) => item.status === 'pending').length
+    notificationOutboxStatus?.current_pending ?? currentNotifications.filter((item) => item.status === 'pending').length
+  const hasHistory = Boolean(
+    historicalOrUnboundSnapshots.length || historicalOrUnboundAlerts.length || historicalOrUnboundNotifications.length,
+  )
+  const hasCurrentBaseline = Boolean(hasCurrentCase && (analysis || summary || recommendation || currentVisualization))
 
-  if (!visualization && !latestSnapshot && !caseForecast) {
+  if (!hasCurrentBaseline && !latestSnapshot && !validForecast && !validMonitoringStatus) {
     return (
-      <Card className="panel-card">
-        {error ? <Alert message="风险监控数据加载失败" description={error} type="error" showIcon /> : null}
-        <Alert
-          message="风险口径：基础分析风险 / 当前监控风险 / 预测风险"
-          description="Risk Monitor 只展示本地 mock 监控检查和 deterministic/local forecast；不会启动真实后台调度、不会抓取近期真实数据、不会调用真实平台 API，也不会自动改写 Analysis Result、Cases 或 Summary Report。"
-          showIcon
-          type="info"
-          style={{ marginBottom: 16 }}
+      <div className="page-stack">
+        <Card className="panel-card">
+          {error ? <Alert message="风险监控数据加载失败" description={error} type="error" showIcon /> : null}
+          <Alert
+            message={hasHistory ? '当前分析没有可用的 current 监控产物；下方仅保留历史记录。' : '风险口径：基础分析风险 / 当前监控风险 / 预测风险'}
+            description="Risk Monitor 只展示本地 mock 监控检查和 deterministic/local forecast；不会启动真实后台调度、抓取近期真实数据或调用真实平台 API。"
+            showIcon
+            type="info"
+            style={{ marginBottom: 16 }}
+          />
+          {loading ? <Skeleton active paragraph={{ rows: 8 }} title /> : (
+            <Empty description="暂无当前风险监控数据，请先创建并运行一个 mock 分析案例。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          )}
+        </Card>
+        <HistoryArtifacts
+          snapshots={historicalOrUnboundSnapshots}
+          alerts={historicalOrUnboundAlerts}
+          notifications={historicalOrUnboundNotifications}
         />
-        {loading ? (
-          <Skeleton active paragraph={{ rows: 8 }} title />
-        ) : (
-          <Empty description="暂无风险监控数据，请先创建并运行一个 mock 分析案例。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        )}
-      </Card>
+      </div>
     )
   }
 
@@ -774,7 +864,7 @@ export function RiskMonitor({
             <Text type="secondary">
               {currentCase?.title || '默认 mock 项目'} · {riskLevelLabels[riskLevel] || riskLevel}
             </Text>
-            {monitoringStatus?.message ? (
+            {validMonitoringStatus?.message ? (
               <Text type="secondary">
                 已手动运行本地 mock 检查；未调用真实平台 API，未抓取近期真实数据。
               </Text>
@@ -793,7 +883,7 @@ export function RiskMonitor({
               suffix="分"
               valueStyle={{ color: riskDelta >= 10 ? '#ff5d8f' : '#42f5d7' }}
             />
-            <Text>{monitoringStatus?.message || '尚未运行本轮监控检查。'}</Text>
+            <Text>{validMonitoringStatus?.message || '尚未运行本轮监控检查。'}</Text>
           </Card>
         </Col>
         <Col span={6}>
@@ -825,7 +915,7 @@ export function RiskMonitor({
         </Col>
       </Row>
 
-      <ForecastPanel forecast={caseForecast} loading={forecastLoading} onRunForecast={onRunForecast} />
+      <ForecastPanel forecast={validForecast} loading={forecastLoading} onRunForecast={onRunForecast} />
 
       <Row gutter={[16, 16]}>
         <Col span={14}>
@@ -866,10 +956,10 @@ export function RiskMonitor({
                 <Gauge size={18} />
                 <Title level={4}>最新快照</Title>
               </Space>
-              <Tag color="geekblue">{caseSnapshots.length}</Tag>
+              <Tag color="geekblue">{currentSnapshots.length}</Tag>
             </div>
-            {caseSnapshots.length ? (
-              <Timeline className="snapshot-timeline" items={buildSnapshotTrend(caseSnapshots)} />
+            {currentSnapshots.length ? (
+              <Timeline className="snapshot-timeline" items={buildSnapshotTrend(currentSnapshots)} />
             ) : (
               <Empty description="暂无监控快照" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
@@ -895,6 +985,7 @@ export function RiskMonitor({
             <Space wrap style={{ marginBottom: 12 }}>
               <Button
                 data-testid="notification-send-pending-button"
+                disabled={pendingNotifications === 0}
                 icon={<Send size={15} />}
                 loading={notificationLoading}
                 onClick={onSimulateSendPendingNotifications}
@@ -926,20 +1017,24 @@ export function RiskMonitor({
                       <Space wrap>
                         <Button
                           data-testid="notification-mark-read-button"
-                          disabled={Boolean(item.read_at)}
+                          disabled={item.lineage_status !== 'CURRENT' || Boolean(item.read_at)}
                           icon={<CheckCircle size={15} />}
                           loading={notificationLoading}
-                          onClick={() => onMarkNotificationRead?.(item.notification_id)}
+                          onClick={() => {
+                            if (item.lineage_status === 'CURRENT') onMarkNotificationRead?.(item.notification_id)
+                          }}
                           size="small"
                         >
                           标记已读
                         </Button>
                         <Button
                           data-testid="notification-simulate-send-button"
-                          disabled={item.status === 'simulated_sent'}
+                          disabled={item.lineage_status !== 'CURRENT' || item.status === 'simulated_sent'}
                           icon={<Send size={15} />}
                           loading={notificationLoading}
-                          onClick={() => onSimulateSendNotification?.(item.notification_id)}
+                          onClick={() => {
+                            if (item.lineage_status === 'CURRENT') onSimulateSendNotification?.(item.notification_id)
+                          }}
                           size="small"
                         >
                           模拟发送
@@ -961,7 +1056,7 @@ export function RiskMonitor({
         </Col>
 
         <Col span={14}>
-          <PlatformHeatmapChart data={visualization?.heatmap || []} />
+          <PlatformHeatmapChart data={currentVisualization?.heatmap || []} />
         </Col>
         <Col span={10}>
           <Card className="panel-card">
@@ -1028,6 +1123,11 @@ export function RiskMonitor({
           </Card>
         </Col>
       </Row>
+      <HistoryArtifacts
+        snapshots={historicalOrUnboundSnapshots}
+        alerts={historicalOrUnboundAlerts}
+        notifications={historicalOrUnboundNotifications}
+      />
     </div>
   )
 }

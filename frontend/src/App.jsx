@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  caseAnalysisIdentity,
   createAnalysisCase,
   disableCaseMonitoring,
   enableCaseMonitoring,
@@ -29,6 +30,7 @@ import {
   runAnalysisCase,
   runCaseForecast,
   runCaseMonitoringCheck,
+  sameAnalysisPair,
   simulateSendNotification,
   simulateSendPendingNotifications,
 } from './api/sentigraphApi.js'
@@ -151,6 +153,7 @@ function App() {
   const [platformRegistry, setPlatformRegistry] = useState([])
   const [cases, setCases] = useState([])
   const [currentCase, setCurrentCase] = useState(null)
+  const currentCaseRef = useRef(null)
   const [markdownReport, setMarkdownReport] = useState(null)
   const [markdownLoading, setMarkdownLoading] = useState(false)
   const [caseSnapshots, setCaseSnapshots] = useState([])
@@ -188,12 +191,20 @@ function App() {
 
   const applyCaseDetail = useCallback((caseDetail) => {
     if (!caseDetail) return
+    const identityChanged = caseAnalysisIdentity(currentCaseRef.current) !== caseAnalysisIdentity(caseDetail)
+    currentCaseRef.current = caseDetail
     setCurrentCase(caseDetail)
     setProjectId(caseDetail.project_id || DEFAULT_PROJECT_ID)
     setKeyword(caseDetail.keyword || 'Tesla')
-    setMarkdownReport(null)
-    setCaseForecast(null)
-    setMonitoringStatus(null)
+    if (identityChanged) {
+      setMarkdownReport(null)
+      setCaseForecast(null)
+      setMonitoringStatus(null)
+      setCaseSnapshots([])
+      setAlerts([])
+      setNotifications([])
+      setNotificationOutboxStatus(null)
+    }
     setMonitoringConfig(caseDetail.monitoring_config || null)
     setAnalysis(caseDetail.analysis_result || null)
     setVisualization(caseDetail.visualization_data || null)
@@ -208,29 +219,17 @@ function App() {
     return caseList
   }, [])
 
-  const refreshNotificationOutbox = useCallback(async (caseId) => {
+  const refreshNotificationOutbox = useCallback(async (caseId, expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)) => {
+    if (caseId && currentCaseRef.current?.case_id !== caseId) return null
     const [caseNotifications, outboxStatus] = await Promise.all([
       caseId ? listCaseNotifications(caseId) : Promise.resolve([]),
       getNotificationOutboxStatus(),
     ])
+    if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) return null
+    if (caseId && currentCaseRef.current?.case_id !== caseId) return null
     setNotifications(caseNotifications)
     setNotificationOutboxStatus(outboxStatus)
     return { notifications: caseNotifications, outboxStatus }
-  }, [])
-
-  const refreshCaseForecast = useCallback(async (caseId) => {
-    if (!caseId) {
-      setCaseForecast(null)
-      return null
-    }
-    try {
-      const forecast = await getCaseForecast(caseId)
-      setCaseForecast(forecast)
-      return forecast
-    } catch {
-      setCaseForecast(null)
-      return null
-    }
   }, [])
 
   const loadCaseMonitoring = useCallback(async (caseId) => {
@@ -245,20 +244,31 @@ function App() {
       return { snapshots: [], alerts: [] }
     }
 
-    const [snapshots, caseAlertEvents, config, notificationState, forecast] = await Promise.all([
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
+    if (currentCaseRef.current?.case_id !== caseId) return { snapshots: [], alerts: [], discarded: true }
+    const [snapshots, caseAlertEvents, config, caseNotifications, outboxStatus, forecast] = await Promise.all([
       listCaseSnapshots(caseId),
       listCaseAlerts(caseId),
       getCaseMonitoringConfig(caseId),
-      refreshNotificationOutbox(caseId),
-      refreshCaseForecast(caseId),
+      listCaseNotifications(caseId),
+      getNotificationOutboxStatus(),
+      getCaseForecast(caseId).catch(() => null),
     ])
+    if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) {
+      return { snapshots: [], alerts: [], discarded: true }
+    }
     setCaseSnapshots(snapshots)
     setAlerts(caseAlertEvents)
+    setNotifications(caseNotifications)
+    setNotificationOutboxStatus(outboxStatus)
+    const currentForecast = sameAnalysisPair(currentCaseRef.current, forecast) ? forecast : null
+    setCaseForecast(currentForecast)
     setMonitoringConfig(config)
-    return { snapshots, alerts: caseAlertEvents, notifications: notificationState.notifications, forecast }
-  }, [refreshCaseForecast, refreshNotificationOutbox])
+    return { snapshots, alerts: caseAlertEvents, notifications: caseNotifications, forecast: currentForecast }
+  }, [])
 
   const loadProjectData = useCallback(async (nextProjectId = DEFAULT_PROJECT_ID) => {
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
     setLoading(true)
     setError('')
     try {
@@ -268,7 +278,7 @@ function App() {
         date_range: DEFAULT_DATE_RANGE,
         platforms: selectedPlatforms,
       }
-      const [analysisData, visualizationData, summaryData, recommendationData, propagationData, alertsData] =
+      const [analysisData, visualizationData, summaryData, recommendationData, propagationData, alertsData, outboxStatus] =
         await Promise.all([
           getAnalysisResult(nextProjectId),
           getVisualizationData(request),
@@ -285,7 +295,9 @@ function App() {
           }),
           getPropagation(nextProjectId),
           getAlerts(nextProjectId),
+          getNotificationOutboxStatus(),
         ])
+      if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) return
       setAnalysis(analysisData)
       setVisualization(visualizationData)
       setSummary(summaryData)
@@ -293,13 +305,15 @@ function App() {
       setPropagation(propagationData)
       setAlerts(alertsData.alerts || [])
       setNotifications([])
-      setNotificationOutboxStatus(await getNotificationOutboxStatus())
+      setNotificationOutboxStatus(outboxStatus)
       setCaseSnapshots([])
       setCaseForecast(null)
       setMonitoringConfig(null)
       setMonitoringStatus(null)
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to load mock analysis data.')
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        setError(requestError?.message || 'Unable to load mock analysis data.')
+      }
     } finally {
       setLoading(false)
     }
@@ -455,10 +469,14 @@ function App() {
       }
 
       try {
+        const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
         const forecast = await runCaseForecast(caseDetail.case_id)
-        setCaseForecast(forecast)
+        if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity &&
+            sameAnalysisPair(currentCaseRef.current, forecast)) {
+          setCaseForecast(forecast)
+        }
       } catch {
-        setCaseForecast(null)
+        if (currentCaseRef.current?.case_id === caseDetail.case_id) setCaseForecast(null)
       }
 
       const refreshedCase = await getAnalysisCase(caseDetail.case_id)
@@ -525,14 +543,20 @@ function App() {
     }
     setMonitoringLoading(true)
     setError('')
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
     try {
       const status = await runCaseMonitoringCheck(currentCase.case_id)
+      if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity ||
+          !sameAnalysisPair(currentCaseRef.current, status)) return null
       setMonitoringStatus(status)
       await loadCaseMonitoring(currentCase.case_id)
-      setSchedulerStatus(await getSchedulerStatus())
+      const scheduler = await getSchedulerStatus()
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) setSchedulerStatus(scheduler)
       return status
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to run mock monitoring check.')
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        setError(requestError?.message || 'Unable to run mock monitoring check.')
+      }
       return null
     } finally {
       setMonitoringLoading(false)
@@ -546,12 +570,17 @@ function App() {
     }
     setForecastLoading(true)
     setError('')
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
     try {
       const forecast = await runCaseForecast(currentCase.case_id)
+      if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity ||
+          !sameAnalysisPair(currentCaseRef.current, forecast)) return null
       setCaseForecast(forecast)
       return forecast
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to run deterministic risk forecast.')
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        setError(requestError?.message || 'Unable to run deterministic risk forecast.')
+      }
       return null
     } finally {
       setForecastLoading(false)
@@ -565,14 +594,20 @@ function App() {
     }
     setSchedulerLoading(true)
     setError('')
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
     try {
       const config = await enableCaseMonitoring(currentCase.case_id)
+      if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) return null
       setMonitoringConfig(config)
-      setSchedulerStatus(await getSchedulerStatus())
+      const scheduler = await getSchedulerStatus()
+      if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) return null
+      setSchedulerStatus(scheduler)
       await refreshCases()
       return config
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to enable scheduled monitoring.')
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        setError(requestError?.message || 'Unable to enable scheduled monitoring.')
+      }
       return null
     } finally {
       setSchedulerLoading(false)
@@ -586,14 +621,20 @@ function App() {
     }
     setSchedulerLoading(true)
     setError('')
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
     try {
       const config = await disableCaseMonitoring(currentCase.case_id)
+      if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) return null
       setMonitoringConfig(config)
-      setSchedulerStatus(await getSchedulerStatus())
+      const scheduler = await getSchedulerStatus()
+      if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) return null
+      setSchedulerStatus(scheduler)
       await refreshCases()
       return config
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to disable scheduled monitoring.')
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        setError(requestError?.message || 'Unable to disable scheduled monitoring.')
+      }
       return null
     } finally {
       setSchedulerLoading(false)
@@ -603,22 +644,28 @@ function App() {
   const handleRunDueMonitoringJobs = useCallback(async () => {
     setSchedulerLoading(true)
     setError('')
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
     try {
       const response = await runDueMonitoringJobs()
-      setSchedulerStatus(await getSchedulerStatus())
-      if (currentCase?.case_id) {
+      const scheduler = await getSchedulerStatus()
+      if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) return response
+      setSchedulerStatus(scheduler)
+      if (currentCase?.case_id && currentCaseRef.current?.case_id === currentCase.case_id) {
         const currentResult = response.monitoring_results?.find((item) => item.case_id === currentCase.case_id)
         const refreshedCase = await getAnalysisCase(currentCase.case_id)
+        if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) return response
         applyCaseDetail(refreshedCase)
         await loadCaseMonitoring(currentCase.case_id)
-        if (currentResult) {
+        if (currentResult && sameAnalysisPair(currentCaseRef.current, currentResult)) {
           setMonitoringStatus(currentResult)
         }
       }
       await refreshCases()
       return response
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to run due monitoring jobs.')
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        setError(requestError?.message || 'Unable to run due monitoring jobs.')
+      }
       return null
     } finally {
       setSchedulerLoading(false)
@@ -627,50 +674,68 @@ function App() {
 
   const handleMarkNotificationRead = useCallback(async (notificationId) => {
     if (!notificationId) return null
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
+    const caseId = currentCaseRef.current?.case_id
     setNotificationLoading(true)
     setError('')
     try {
       const notification = await markNotificationRead(notificationId)
-      await refreshNotificationOutbox(currentCase?.case_id)
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        await refreshNotificationOutbox(caseId, expectedIdentity)
+      }
       return notification
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to mark notification as read.')
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        setError(requestError?.message || 'Unable to mark notification as read.')
+      }
       return null
     } finally {
       setNotificationLoading(false)
     }
-  }, [currentCase, refreshNotificationOutbox])
+  }, [refreshNotificationOutbox])
 
   const handleSimulateSendNotification = useCallback(async (notificationId) => {
     if (!notificationId) return null
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
+    const caseId = currentCaseRef.current?.case_id
     setNotificationLoading(true)
     setError('')
     try {
       const result = await simulateSendNotification(notificationId)
-      await refreshNotificationOutbox(currentCase?.case_id)
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        await refreshNotificationOutbox(caseId, expectedIdentity)
+      }
       return result
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to simulate notification send.')
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        setError(requestError?.message || 'Unable to simulate notification send.')
+      }
       return null
     } finally {
       setNotificationLoading(false)
     }
-  }, [currentCase, refreshNotificationOutbox])
+  }, [refreshNotificationOutbox])
 
   const handleSimulateSendPendingNotifications = useCallback(async () => {
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
+    const caseId = currentCaseRef.current?.case_id
     setNotificationLoading(true)
     setError('')
     try {
       const results = await simulateSendPendingNotifications()
-      await refreshNotificationOutbox(currentCase?.case_id)
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        await refreshNotificationOutbox(caseId, expectedIdentity)
+      }
       return results
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to simulate pending notification send.')
+      if (caseAnalysisIdentity(currentCaseRef.current) === expectedIdentity) {
+        setError(requestError?.message || 'Unable to simulate pending notification send.')
+      }
       return []
     } finally {
       setNotificationLoading(false)
     }
-  }, [currentCase, refreshNotificationOutbox])
+  }, [refreshNotificationOutbox])
 
   const handleGetMarkdownReport = useCallback(async () => {
     if (!currentCase?.case_id) {
@@ -679,13 +744,18 @@ function App() {
     if (currentCase.status !== 'completed' || !currentCase.report || !currentCase.markdown_available) {
       throw new Error('请先显式重新运行案例分析，再获取当前 Markdown 报告。')
     }
-    if (markdownReport?.case_id === currentCase.case_id) {
+    const expectedIdentity = caseAnalysisIdentity(currentCaseRef.current)
+    if (markdownReport?.case_id === currentCase.case_id && sameAnalysisPair(currentCaseRef.current, markdownReport)) {
       return markdownReport
     }
 
     setMarkdownLoading(true)
     try {
       const report = await getCaseMarkdownReport(currentCase.case_id)
+      if (caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity ||
+          !sameAnalysisPair(currentCaseRef.current, report)) {
+        throw new Error('当前分析已变化，请重新获取 Markdown 报告。')
+      }
       setMarkdownReport(report)
       return report
     } finally {
@@ -846,7 +916,7 @@ function App() {
       <AntApp>
         <AppShell
           activePage={activePage}
-          alertsCount={alerts.length}
+          alertsCount={currentCase ? alerts.filter((item) => item.lineage_status === 'CURRENT').length : alerts.length}
           caseTitle={currentCase?.title}
           loading={loading}
           onNavigate={handleNavigate}

@@ -2550,7 +2550,7 @@ export async function previewCaseSimulationInitialization(caseId) {
 
 export async function listAnalysisCases() {
   const { data } = await apiClient.get(`${API_PREFIX}/cases`)
-  return Array.isArray(data) ? data : []
+  return Array.isArray(data) ? data.map(normalizeCaseDetail) : []
 }
 
 export async function createAnalysisCase(payload) {
@@ -2670,12 +2670,12 @@ export function getEvidenceImportTemplateCsvUrl() {
 
 export async function getCaseMarkdownReport(caseId) {
   const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/report/markdown`)
-  return data
+  return normalizeMarkdownReport(data)
 }
 
 export async function listCaseSnapshots(caseId) {
   const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/snapshots`)
-  return Array.isArray(data) ? data : []
+  return Array.isArray(data) ? data.map(normalizeSnapshot).filter(Boolean) : []
 }
 
 export async function getCaseForecast(caseId) {
@@ -2695,7 +2695,7 @@ export async function runCaseMonitoringCheck(caseId) {
 
 export async function listCaseAlerts(caseId) {
   const { data } = await apiClient.get(`${API_PREFIX}/cases/${caseId}/alerts`)
-  return Array.isArray(data) ? data : []
+  return Array.isArray(data) ? data.map(normalizeAlertEvent).filter(Boolean) : []
 }
 
 export async function listNotifications() {
@@ -2848,6 +2848,9 @@ function normalizeCaseDetail(data) {
   if (!data || typeof data !== 'object') return data
   return {
     ...data,
+    case_revision: Number(data.case_revision ?? 0),
+    analysis_revision: normalizeNullableAnalysisRevision(data.analysis_revision),
+    analysis_run_id: data.analysis_run_id == null ? null : String(data.analysis_run_id),
     analysis_result: normalizeRiskExtension(data.analysis_result),
     visualization_data: normalizeRiskExtension(data.visualization_data),
     report: normalizeRiskExtension(data.report),
@@ -5584,9 +5587,64 @@ function normalizeMonitoringStatus(data) {
   if (!data || typeof data !== 'object') return data
   return {
     ...data,
+    source_analysis_revision: normalizeNullableAnalysisRevision(data.source_analysis_revision),
+    source_analysis_run_id: data.source_analysis_run_id == null ? null : String(data.source_analysis_run_id),
     latest_snapshot: normalizeSnapshot(data.latest_snapshot),
     previous_snapshot: normalizeSnapshot(data.previous_snapshot),
-    alerts: Array.isArray(data.alerts) ? data.alerts : [],
+    alerts: Array.isArray(data.alerts) ? data.alerts.map(normalizeAlertEvent).filter(Boolean) : [],
+  }
+}
+
+const AUXILIARY_LINEAGE_STATUSES = new Set(['CURRENT', 'HISTORICAL', 'UNBOUND_LEGACY'])
+
+function normalizeAuxiliaryLineageStatus(value) {
+  return AUXILIARY_LINEAGE_STATUSES.has(value) ? value : 'UNBOUND_LEGACY'
+}
+
+function normalizeNullableAnalysisRevision(value) {
+  if (value == null) return null
+  const revision = Number(value)
+  return Number.isInteger(revision) && revision >= 0 ? revision : null
+}
+
+export function getCaseAnalysisPair(caseDetail) {
+  if (caseDetail?.status !== 'completed') return null
+  const revision = normalizeNullableAnalysisRevision(caseDetail.analysis_revision)
+  if (revision === null || caseDetail.analysis_run_id == null) return null
+  return { analysis_revision: revision, analysis_run_id: String(caseDetail.analysis_run_id) }
+}
+
+export function caseAnalysisIdentity(caseDetail) {
+  if (!caseDetail?.case_id) return null
+  return JSON.stringify([
+    String(caseDetail.case_id),
+    String(caseDetail.status || ''),
+    normalizeNullableAnalysisRevision(caseDetail.analysis_revision),
+    caseDetail.analysis_run_id == null ? null : String(caseDetail.analysis_run_id),
+  ])
+}
+
+export function sameAnalysisPair(caseDetail, response) {
+  const pair = getCaseAnalysisPair(caseDetail)
+  return Boolean(
+    pair && response &&
+    response.case_id === caseDetail.case_id &&
+    normalizeNullableAnalysisRevision(response.source_analysis_revision) === pair.analysis_revision &&
+    response.source_analysis_run_id === pair.analysis_run_id,
+  )
+}
+
+function normalizeAlertEvent(data) {
+  if (!data || typeof data !== 'object') return null
+  return { ...data, lineage_status: normalizeAuxiliaryLineageStatus(data.lineage_status) }
+}
+
+function normalizeMarkdownReport(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    source_analysis_revision: normalizeNullableAnalysisRevision(data.source_analysis_revision),
+    source_analysis_run_id: data.source_analysis_run_id == null ? null : String(data.source_analysis_run_id),
   }
 }
 
@@ -5594,6 +5652,7 @@ function normalizeNotification(data) {
   if (!data || typeof data !== 'object') return data
   return {
     ...data,
+    lineage_status: normalizeAuxiliaryLineageStatus(data.lineage_status),
     notification_id: String(data.notification_id || ''),
     alert_id: String(data.alert_id || ''),
     case_id: String(data.case_id || ''),
@@ -5631,6 +5690,12 @@ function normalizeNotificationOutboxStatus(data) {
       pending: 0,
       simulated_sent: 0,
       failed: 0,
+      current_total: 0,
+      current_unread: 0,
+      current_pending: 0,
+      current_simulated_sent: 0,
+      current_failed: 0,
+      historical_or_unbound_total: 0,
       mock_only: true,
       channels: [],
       message: '通知出箱仅用于本地模拟。',
@@ -5643,6 +5708,12 @@ function normalizeNotificationOutboxStatus(data) {
     pending: Number(data.pending || 0),
     simulated_sent: Number(data.simulated_sent || 0),
     failed: Number(data.failed || 0),
+    current_total: Number(data.current_total ?? 0),
+    current_unread: Number(data.current_unread ?? 0),
+    current_pending: Number(data.current_pending ?? 0),
+    current_simulated_sent: Number(data.current_simulated_sent ?? 0),
+    current_failed: Number(data.current_failed ?? 0),
+    historical_or_unbound_total: Number(data.historical_or_unbound_total ?? 0),
     mock_only: data.mock_only !== false,
     channels: Array.isArray(data.channels) ? data.channels : [],
     message: String(data.message || ''),
@@ -5653,6 +5724,9 @@ function normalizeSnapshot(data) {
   if (!data || typeof data !== 'object') return data
   return {
     ...data,
+    lineage_status: normalizeAuxiliaryLineageStatus(data.lineage_status),
+    source_analysis_revision: normalizeNullableAnalysisRevision(data.source_analysis_revision),
+    source_analysis_run_id: data.source_analysis_run_id == null ? null : String(data.source_analysis_run_id),
     top_risk_topics: Array.isArray(data.top_risk_topics) ? data.top_risk_topics : [],
     risk_score: normalizeOptionalScore(data.risk_score) ?? 0,
     overall_risk: normalizeOptionalScore(data.overall_risk) ?? 0,
@@ -5666,6 +5740,8 @@ function normalizeForecast(data) {
     return {
       case_id: '',
       forecast_status: 'insufficient_history',
+      source_analysis_revision: null,
+      source_analysis_run_id: null,
       generated_at: null,
       risk_model_version: null,
       snapshot_count: 0,
@@ -5695,6 +5771,8 @@ function normalizeForecast(data) {
     ...data,
     case_id: String(data.case_id || ''),
     forecast_status: String(data.forecast_status || 'insufficient_history'),
+    source_analysis_revision: normalizeNullableAnalysisRevision(data.source_analysis_revision),
+    source_analysis_run_id: data.source_analysis_run_id == null ? null : String(data.source_analysis_run_id),
     generated_at: data.generated_at ? String(data.generated_at) : null,
     risk_model_version: data.risk_model_version ? String(data.risk_model_version) : null,
     snapshot_count: Number(data.snapshot_count || 0),
