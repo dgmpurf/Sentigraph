@@ -338,7 +338,7 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
                   <Title level={4}>Evidence Ingestion</Title>
                 </Space>
                 <Text type="secondary">
-                  Normalized event evidence provides source distribution, evidence type counts, acquisition mode labels, and representative public text for offline analysis. Attachment does not fetch external sources or expose credentials.
+                  This card summarizes the persisted case Evidence audit inventory, including items excluded by review. Only the backend-governed eligible subset enters the current deterministic analysis. Attachment does not fetch external sources or expose credentials.
                 </Text>
                 <Space size={[8, 8]} wrap>
                   <Tag color="cyan">evidence_items: {evidenceSummary.count}</Tag>
@@ -383,7 +383,7 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
                   <Text>Top titles: {evidenceSummary.titles.join(' / ')}</Text>
                 ) : null}
                 {evidenceSummary.comments.length ? (
-                  <Text type="secondary">Representative evidence: {evidenceSummary.comments[0]}</Text>
+                  <Text type="secondary">Persisted evidence sample (audit inventory; not necessarily analysis input): {evidenceSummary.comments[0]}</Text>
                 ) : null}
               </Space>
             </Card>

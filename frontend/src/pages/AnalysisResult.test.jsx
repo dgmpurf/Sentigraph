@@ -1,6 +1,6 @@
 import React from 'react'
 import { App as AntApp } from 'antd'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../components/charts/SentimentTrendChart.jsx', () => ({
@@ -50,6 +50,50 @@ describe('AnalysisResult case currentness', () => {
     expect(screen.getByText('当前案例分析不再有效')).toBeTruthy()
     expect(screen.getByText(/Run analysis 重新运行/)).toBeTruthy()
     expect(screen.queryByText('Old analysis must be hidden')).toBeNull()
+  })
+
+  it('labels a rejected persisted sample as audit inventory, not analysis input', () => {
+    const analysis = {
+      ...baseAnalysis,
+      evidence_item_count: 1,
+      evidence_review_excluded_count: 1,
+    }
+    const report = {
+      overall_summary: 'Current synthetic report',
+      representative_comments: ['E1R5_KEEP_REPORT_COMMENT'],
+    }
+    render(
+      <AntApp>
+        <AnalysisResult
+          analysis={analysis}
+          currentCase={{
+            case_id: 'case_1',
+            status: 'completed',
+            report,
+            analysis_result: analysis,
+            evidence_item_count: 2,
+            evidence_items: [
+              { evidence_id: 'rejected', comment_text: 'E1R5_REJECTED_AUDIT_SAMPLE', review_status: 'rejected' },
+              { evidence_id: 'retained', comment_text: 'E1R5_KEEP_REPORT_COMMENT', review_status: 'not_reviewed' },
+            ],
+          }}
+          summary={report}
+        />
+      </AntApp>,
+    )
+
+    expect(screen.queryByText(/Representative evidence/)).toBeNull()
+    expect(screen.getByText(/persisted case Evidence audit inventory, including items excluded by review/)).toBeTruthy()
+    expect(screen.getByText(/Only the backend-governed eligible subset enters the current deterministic analysis/)).toBeTruthy()
+    expect(screen.getByText(/Persisted evidence sample \(audit inventory; not necessarily analysis input\): E1R5_REJECTED_AUDIT_SAMPLE/)).toBeTruthy()
+    expect(screen.getByText('rejected excluded: 1')).toBeTruthy()
+    expect(screen.getByText('Rejected evidence was excluded from this deterministic analysis by default.')).toBeTruthy()
+
+    const reportCard = screen.getByRole('heading', { name: '代表性评论' }).closest('.panel-card')
+    expect(within(reportCard).getByText('E1R5_KEEP_REPORT_COMMENT')).toBeTruthy()
+    expect(within(reportCard).queryByText(/E1R5_REJECTED_AUDIT_SAMPLE/)).toBeNull()
+    expect(screen.queryByText('当前案例分析不再有效')).toBeNull()
+    expect(screen.getByText('analysis_input_source=case_evidence_items')).toBeTruthy()
   })
 
   it.each(['case_evidence_items', 'case_raw_data', 'mock_data_fallback'])(
