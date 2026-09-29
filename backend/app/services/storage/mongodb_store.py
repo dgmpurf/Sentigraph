@@ -10,7 +10,11 @@ from app.schemas.common import RiskLevel
 from app.schemas.notification import NotificationOutboxItem
 from app.schemas.report import PublicOpinionReport
 from app.schemas.visualization import VisualizationResponse
-from app.services.storage.base_store import CaseStore
+from app.services.storage.base_store import (
+    CaseRevisionConflict,
+    CaseStore,
+    validate_case_revision_precondition,
+)
 
 
 DEFAULT_MONGODB_URI = "mongodb://localhost:27017"
@@ -86,8 +90,9 @@ class MongoDbCaseStore(CaseStore):
         )
 
     def create_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
-        self._cases.replace_one({"case_id": case.case_id}, _case_to_document(case), upsert=True)
-        return case.model_copy(deep=True)
+        saved_case = case.model_copy(update={"case_revision": 0}, deep=True)
+        self._cases.replace_one({"case_id": saved_case.case_id}, _case_to_document(saved_case), upsert=True)
+        return saved_case.model_copy(deep=True)
 
     def list_cases(self) -> list[AnalysisCaseDetail]:
         cases = [AnalysisCaseDetail.model_validate(_strip_mongo_id(item)) for item in self._cases.find({})]
@@ -102,6 +107,36 @@ class MongoDbCaseStore(CaseStore):
             raise KeyError(f"Analysis case '{case.case_id}' does not exist.")
         self._cases.replace_one({"case_id": case.case_id}, _case_to_document(case), upsert=False)
         return case.model_copy(deep=True)
+
+    def replace_case_if_revision_matches(
+        self, case: AnalysisCaseDetail, expected_revision: int
+    ) -> AnalysisCaseDetail | None:
+        validate_case_revision_precondition(case, expected_revision)
+        revision_filter: dict[str, Any]
+        if expected_revision == 0:
+            revision_filter = {
+                "case_id": case.case_id,
+                "$or": [
+                    {"case_revision": {"$exists": False}},
+                    {"case_revision": 0},
+                ],
+            }
+        else:
+            revision_filter = {"case_id": case.case_id, "case_revision": expected_revision}
+        saved_case = case.model_copy(update={"case_revision": expected_revision + 1}, deep=True)
+        result = self._cases.replace_one(revision_filter, _case_to_document(saved_case), upsert=False)
+        if result.matched_count == 1:
+            return saved_case.model_copy(deep=True)
+        if result.matched_count != 0:
+            raise RuntimeError("case_revision_cas_unexpected_match_count")
+        # This read classifies a failed conditional write; it never authorizes replay.
+        persisted = self._cases.find_one({"case_id": case.case_id})
+        if persisted is None:
+            return None
+        current_revision = persisted.get("case_revision", 0)
+        if type(current_revision) is not int or current_revision < 0:
+            current_revision = None
+        raise CaseRevisionConflict(case.case_id, expected_revision, current_revision)
 
     def delete_case(self, case_id: str) -> bool:
         if not self.get_case(case_id):

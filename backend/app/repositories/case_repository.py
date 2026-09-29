@@ -73,6 +73,12 @@ class CaseRepository:
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
         return self.store.update_case(case)
 
+    def replace_case_if_revision_matches(
+        self, case: AnalysisCaseDetail, expected_revision: int
+    ) -> AnalysisCaseDetail | None:
+        """Forward the caller's exact CAS precondition without a silent reread."""
+        return self.store.replace_case_if_revision_matches(case, expected_revision)
+
     def delete_case(self, case_id: str) -> bool:
         return self.store.delete_case(case_id)
 
@@ -277,6 +283,7 @@ class CaseRepository:
 def _to_list_item(case: AnalysisCaseDetail) -> AnalysisCaseListItem:
     return AnalysisCaseListItem(
         case_id=case.case_id,
+        case_revision=case.case_revision,
         project_id=case.project_id,
         title=case.title,
         keyword=case.keyword,

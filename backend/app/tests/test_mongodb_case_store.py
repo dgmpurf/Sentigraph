@@ -16,6 +16,7 @@ from app.services.mock_pipeline import build_mock_pipeline
 from app.services.mock_service import _pipeline_representative_comments
 from app.services.recommendation.report_builder import build_public_opinion_report
 from app.services.storage.local_json_store import LocalJsonCaseStore
+from app.services.storage.base_store import CaseRevisionConflict
 from app.services.storage.mongodb_store import (
     MongoDbCaseStore,
     MongoDbStoreConfigError,
@@ -313,6 +314,85 @@ def test_mongodb_safe_document_converts_nested_keys_to_strings() -> None:
     }
 
 
+def test_mongodb_case_revision_cas_winner_conflict_and_second_winner() -> None:
+    fake_database = FakeMongoDatabase()
+    store = MongoDbCaseStore(database=fake_database)
+    repository = CaseRepository(store)
+    created = repository.create_case(AnalysisCaseCreateRequest(keyword="synthetic"))
+    collection = fake_database["analysis_cases"]
+    assert created.case_revision == 0
+
+    reads_before = len(collection.find_one_queries)
+    first = repository.replace_case_if_revision_matches(
+        created.model_copy(update={"title": "first winner"}, deep=True), 0
+    )
+    assert first is not None and first.case_revision == 1
+    assert collection.replace_queries[-1] == {
+        "case_id": created.case_id,
+        "$or": [{"case_revision": {"$exists": False}}, {"case_revision": 0}],
+    }
+    assert len(collection.find_one_queries) == reads_before
+
+    before_conflict = deepcopy(collection.documents)
+    with pytest.raises(CaseRevisionConflict) as error:
+        repository.replace_case_if_revision_matches(created, 0)
+    assert error.value.current_revision == 1
+    assert error.value.expected_revision == 0
+    assert len(collection.find_one_queries) == reads_before + 1
+    assert collection.documents == before_conflict
+
+    second = repository.replace_case_if_revision_matches(
+        first.model_copy(update={"title": "second winner"}, deep=True), 1
+    )
+    assert second is not None and second.case_revision == 2
+    assert collection.replace_queries[-1] == {"case_id": created.case_id, "case_revision": 1}
+    assert repository.get_case(created.case_id).title == "second winner"
+    assert repository.list_cases()[0].case_revision == 2
+
+
+def test_mongodb_legacy_missing_and_explicit_zero_revision_match_only_zero() -> None:
+    fake_database = FakeMongoDatabase()
+    repository = CaseRepository(MongoDbCaseStore(database=fake_database))
+    legacy = repository.create_case(AnalysisCaseCreateRequest(keyword="legacy"))
+    collection = fake_database["analysis_cases"]
+    del collection.documents[0]["case_revision"]
+    assert repository.get_case(legacy.case_id).case_revision == 0
+    first = repository.replace_case_if_revision_matches(legacy, 0)
+    assert first is not None and first.case_revision == 1
+    assert collection.documents[0]["case_revision"] == 1
+
+    explicit = repository.create_case(AnalysisCaseCreateRequest(keyword="explicit"))
+    assert collection.find_one({"case_id": explicit.case_id})["case_revision"] == 0
+    saved = repository.replace_case_if_revision_matches(explicit, 0)
+    assert saved is not None and saved.case_revision == 1
+
+    missing = explicit.model_copy(update={"case_id": "case_missing"}, deep=True)
+    assert repository.replace_case_if_revision_matches(missing, 0) is None
+
+
+def test_mongodb_fake_matched_count_or_exists_and_invalid_precondition() -> None:
+    collection = FakeMongoCollection()
+    document = {"case_id": "case_001", "case_revision": 0}
+    assert collection.replace_one({"case_id": "case_001"}, document, upsert=True).matched_count == 0
+    zero_filter = {
+        "case_id": "case_001",
+        "$or": [{"case_revision": {"$exists": False}}, {"case_revision": 0}],
+    }
+    assert collection.replace_one(zero_filter, {**document, "case_revision": 1}).matched_count == 1
+    assert collection.replace_one(zero_filter, {**document, "case_revision": 2}).matched_count == 0
+    assert _matches({"case_id": "case_001"}, zero_filter)
+    assert not _matches({"case_id": "case_001", "case_revision": 1}, zero_filter)
+
+    database = FakeMongoDatabase()
+    repository = CaseRepository(MongoDbCaseStore(database=database))
+    created = repository.create_case(AnalysisCaseCreateRequest(keyword="guard"))
+    before = deepcopy(database["analysis_cases"].documents)
+    for invalid in (True, -1, 1):
+        with pytest.raises(ValueError):
+            repository.replace_case_if_revision_matches(created, invalid)
+    assert database["analysis_cases"].documents == before
+
+
 class FakeAdmin:
     def __init__(self, client: "FakeMongoClient") -> None:
         self.client = client
@@ -360,23 +440,30 @@ class FakeMongoCollection:
     def __init__(self) -> None:
         self.documents: list[dict[str, Any]] = []
         self.indexes: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+        self.replace_queries: list[dict[str, Any]] = []
+        self.find_one_queries: list[dict[str, Any]] = []
 
     def create_index(self, *args: Any, **kwargs: Any) -> None:
         self.indexes.append((args, kwargs))
 
-    def replace_one(self, filter_query: dict[str, Any], document: dict[str, Any], *, upsert: bool = False) -> None:
+    def replace_one(
+        self, filter_query: dict[str, Any], document: dict[str, Any], *, upsert: bool = False
+    ) -> "FakeReplaceResult":
+        self.replace_queries.append(deepcopy(filter_query))
         for index, existing in enumerate(self.documents):
             if _matches(existing, filter_query):
                 replacement = deepcopy(document)
                 replacement.setdefault("_id", existing.get("_id", f"fake_id_{index}"))
                 self.documents[index] = replacement
-                return
+                return FakeReplaceResult(matched_count=1)
         if upsert:
             replacement = deepcopy(document)
             replacement.setdefault("_id", f"fake_id_{len(self.documents)}")
             self.documents.append(replacement)
+        return FakeReplaceResult(matched_count=0)
 
     def find_one(self, filter_query: dict[str, Any]) -> dict[str, Any] | None:
+        self.find_one_queries.append(deepcopy(filter_query))
         for document in self.documents:
             if _matches(document, filter_query):
                 return deepcopy(document)
@@ -416,8 +503,22 @@ def _seed_case_owned_mongodb_records(
     )
 
 
+class FakeReplaceResult:
+    def __init__(self, matched_count: int) -> None:
+        self.matched_count = matched_count
+
+
 def _matches(document: dict[str, Any], filter_query: dict[str, Any]) -> bool:
-    return all(document.get(key) == value for key, value in filter_query.items())
+    for key, value in filter_query.items():
+        if key == "$or":
+            if not isinstance(value, list) or not any(_matches(document, clause) for clause in value):
+                return False
+        elif isinstance(value, dict) and set(value) == {"$exists"}:
+            if (key in document) is not value["$exists"]:
+                return False
+        elif key not in document or document[key] != value:
+            return False
+    return True
 
 
 def _index_args(collection: FakeMongoCollection) -> set[tuple[Any, ...]]:

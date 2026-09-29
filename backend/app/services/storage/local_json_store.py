@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from threading import RLock
-from typing import Any, Mapping
+from threading import Lock, RLock
+from typing import Any, Iterator, Mapping
+
+if os.name == "nt":
+    import msvcrt
+else:  # pragma: no cover - the current-host concurrency proof is Windows-only.
+    import fcntl
 
 from app.schemas.analysis import AnalysisResultResponse
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
@@ -22,11 +29,45 @@ from app.services.internal_alpha_live_safe_selected_item_lineage_projection impo
     validate_live_safe_selector,
     validate_live_safe_source,
 )
-from app.services.storage.base_store import CaseStore
+from app.services.storage.base_store import (
+    CaseRevisionConflict,
+    CaseStore,
+    validate_case_revision_precondition,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_CASE_STORE_PATH = PROJECT_ROOT / "backend" / "data" / "cases.json"
+_PATH_LOCK_REGISTRY: dict[str, RLock] = {}
+_PATH_LOCK_REGISTRY_MUTEX = Lock()
+
+
+def _canonical_store_key(path: Path) -> str:
+    return os.path.normcase(str(path.resolve(strict=False)))
+
+
+def _path_scoped_lock(path: Path) -> RLock:
+    key = _canonical_store_key(path)
+    with _PATH_LOCK_REGISTRY_MUTEX:
+        if key not in _PATH_LOCK_REGISTRY:
+            _PATH_LOCK_REGISTRY[key] = RLock()
+        return _PATH_LOCK_REGISTRY[key]
+
+
+def _lock_file_descriptor(fd: int) -> None:
+    os.lseek(fd, 0, os.SEEK_SET)
+    if os.name == "nt":
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+    else:  # pragma: no cover - POSIX fallback has no F1R3 runtime proof.
+        fcntl.lockf(fd, fcntl.LOCK_EX, 1, 0, os.SEEK_SET)
+
+
+def _unlock_file_descriptor(fd: int) -> None:
+    os.lseek(fd, 0, os.SEEK_SET)
+    if os.name == "nt":
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:  # pragma: no cover - POSIX fallback has no F1R3 runtime proof.
+        fcntl.lockf(fd, fcntl.LOCK_UN, 1, 0, os.SEEK_SET)
 
 
 class LocalJsonCaseStore(CaseStore):
@@ -34,18 +75,19 @@ class LocalJsonCaseStore(CaseStore):
 
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = _resolve_store_path(path or DEFAULT_CASE_STORE_PATH)
-        self._lock = RLock()
+        self._lock = _path_scoped_lock(self.path)
 
     @classmethod
     def from_env(cls) -> "LocalJsonCaseStore":
         return cls(os.getenv("CASE_STORE_PATH") or DEFAULT_CASE_STORE_PATH)
 
     def create_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
-        with self._lock:
+        saved_case = case.model_copy(update={"case_revision": 0}, deep=True)
+        with self._write_transaction():
             data = self._read_data()
-            data["cases"][case.case_id] = _case_to_json(case)
+            data["cases"][saved_case.case_id] = _case_to_json(saved_case)
             self._write_data(data)
-        return case.model_copy(deep=True)
+        return saved_case.model_copy(deep=True)
 
     def list_cases(self) -> list[AnalysisCaseDetail]:
         with self._lock:
@@ -99,7 +141,7 @@ class LocalJsonCaseStore(CaseStore):
             return validate_live_safe_source(detached)
 
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
-        with self._lock:
+        with self._write_transaction():
             data = self._read_data()
             if case.case_id not in data["cases"]:
                 raise KeyError(f"Analysis case '{case.case_id}' does not exist.")
@@ -107,8 +149,29 @@ class LocalJsonCaseStore(CaseStore):
             self._write_data(data)
         return case.model_copy(deep=True)
 
+    def replace_case_if_revision_matches(
+        self, case: AnalysisCaseDetail, expected_revision: int
+    ) -> AnalysisCaseDetail | None:
+        validate_case_revision_precondition(case, expected_revision)
+        with self._write_transaction():
+            data = self._read_data()
+            raw_case = data["cases"].get(case.case_id)
+            if raw_case is None:
+                return None
+            if not isinstance(raw_case, dict) or raw_case.get("case_id") != case.case_id:
+                raise ValueError("persisted case_id does not match requested case_id")
+            current_revision = raw_case.get("case_revision", 0)
+            if type(current_revision) is not int or current_revision < 0:
+                raise ValueError("persisted case_revision must be a nonnegative integer")
+            if current_revision != expected_revision:
+                raise CaseRevisionConflict(case.case_id, expected_revision, current_revision)
+            saved_case = case.model_copy(update={"case_revision": expected_revision + 1}, deep=True)
+            data["cases"][case.case_id] = _case_to_json(saved_case)
+            self._write_data(data)
+        return saved_case.model_copy(deep=True)
+
     def delete_case(self, case_id: str) -> bool:
-        with self._lock:
+        with self._write_transaction():
             data = self._read_data()
             if case_id not in data["cases"]:
                 return False
@@ -176,7 +239,7 @@ class LocalJsonCaseStore(CaseStore):
         return self.update_case(updated_case)
 
     def save_markdown_report(self, case_id: str, report: MarkdownExportResponse) -> MarkdownExportResponse:
-        with self._lock:
+        with self._write_transaction():
             data = self._read_data()
             data["markdown_reports"][case_id] = report.model_dump(mode="json")
             self._write_data(data)
@@ -194,7 +257,7 @@ class LocalJsonCaseStore(CaseStore):
         return [MarkdownExportResponse.model_validate(item) for item in data["markdown_reports"].values()]
 
     def save_analysis_snapshot(self, case_id: str, snapshot: AnalysisSnapshot) -> AnalysisSnapshot:
-        with self._lock:
+        with self._write_transaction():
             data = self._read_data()
             data["snapshots"].setdefault(case_id, [])
             data["snapshots"][case_id].append(snapshot.model_dump(mode="json"))
@@ -211,7 +274,7 @@ class LocalJsonCaseStore(CaseStore):
     def save_alert_events(self, case_id: str, alerts: list[AlertEvent]) -> list[AlertEvent]:
         if not alerts:
             return []
-        with self._lock:
+        with self._write_transaction():
             data = self._read_data()
             data["alerts"].setdefault(case_id, [])
             data["alerts"][case_id].extend(alert.model_dump(mode="json") for alert in alerts)
@@ -237,7 +300,7 @@ class LocalJsonCaseStore(CaseStore):
         return sorted(alerts, key=lambda alert: alert.created_at, reverse=True)
 
     def save_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem:
-        with self._lock:
+        with self._write_transaction():
             data = self._read_data()
             data["notifications"][notification.notification_id] = notification.model_dump(mode="json")
             self._write_data(data)
@@ -250,7 +313,7 @@ class LocalJsonCaseStore(CaseStore):
         return NotificationOutboxItem.model_validate(raw_notification) if raw_notification else None
 
     def update_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem | None:
-        with self._lock:
+        with self._write_transaction():
             data = self._read_data()
             if notification.notification_id not in data["notifications"]:
                 return None
@@ -270,9 +333,29 @@ class LocalJsonCaseStore(CaseStore):
         return sorted(notifications, key=lambda item: item.created_at, reverse=True)
 
     def reset(self) -> None:
-        with self._lock:
+        with self._write_transaction():
             if self.path.exists():
                 self.path.unlink()
+
+    @contextmanager
+    def _write_transaction(self) -> Iterator[None]:
+        """Serialize one complete JSON mutation across local instances/processes."""
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            lock_path = self.path.with_name(self.path.name + ".lock")
+            fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                if os.fstat(fd).st_size < 1:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    os.write(fd, b"0")
+                    os.fsync(fd)
+                _lock_file_descriptor(fd)
+                try:
+                    yield
+                finally:
+                    _unlock_file_descriptor(fd)
+            finally:
+                os.close(fd)
 
     def _read_data(self) -> dict[str, Any]:
         if not self.path.exists():
@@ -296,11 +379,16 @@ class LocalJsonCaseStore(CaseStore):
 
     def _write_data(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
-        with tmp_path.open("w", encoding="utf-8") as file:
-            json.dump(data, file, ensure_ascii=False, indent=2, sort_keys=True)
-            file.write("\n")
-        tmp_path.replace(self.path)
+        tmp_path = self.path.with_name(f"{self.path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+        try:
+            with tmp_path.open("x", encoding="utf-8") as file:
+                json.dump(data, file, ensure_ascii=False, indent=2, sort_keys=True)
+                file.write("\n")
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(tmp_path, self.path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
 
 def _empty_data() -> dict[str, Any]:

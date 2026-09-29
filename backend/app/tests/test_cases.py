@@ -34,6 +34,7 @@ def test_create_and_list_cases() -> None:
     assert create_response.status_code == 200
     created = create_response.json()
     assert created["case_id"] == "case_001"
+    assert created["case_revision"] == 0
     assert created["project_id"] == "project_001"
     assert created["title"] == "Tesla Demo Case"
     assert created["keyword"] == "Tesla"
@@ -46,7 +47,26 @@ def test_create_and_list_cases() -> None:
     cases = list_response.json()
     assert len(cases) == 1
     assert cases[0]["case_id"] == "case_001"
+    assert cases[0]["case_revision"] == 0
     assert cases[0]["status"] == "draft"
+
+
+def test_case_revision_advanced_by_storage_cas_is_visible_in_list_and_detail(case_store_path) -> None:
+    case_id = _create_case()
+    store = LocalJsonCaseStore(case_store_path)
+    current = store.get_case(case_id)
+    assert current is not None and current.case_revision == 0
+    saved = store.replace_case_if_revision_matches(
+        current.model_copy(update={"title": "Revision one"}, deep=True), 0
+    )
+    assert saved is not None and saved.case_revision == 1
+
+    detail_response = client.get(f"/api/v1/cases/{case_id}")
+    list_response = client.get("/api/v1/cases")
+    assert detail_response.status_code == 200
+    assert list_response.status_code == 200
+    assert detail_response.json()["case_revision"] == 1
+    assert list_response.json()[0]["case_revision"] == 1
 
 
 def test_run_case_attaches_mock_pipeline_outputs() -> None:
@@ -88,6 +108,7 @@ def test_case_detail_defaults_keep_old_case_documents_loadable() -> None:
     )
 
     assert old_case.raw_posts == []
+    assert old_case.case_revision == 0
     assert old_case.raw_comments == []
     assert old_case.evidence_items == []
     assert old_case.crawl_metadata == []

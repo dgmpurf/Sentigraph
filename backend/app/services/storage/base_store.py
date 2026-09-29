@@ -12,6 +12,24 @@ from app.schemas.report import PublicOpinionReport
 from app.schemas.visualization import VisualizationResponse
 
 
+class CaseRevisionConflict(RuntimeError):
+    """A persisted case no longer matches a caller's expected revision."""
+
+    def __init__(self, case_id: str, expected_revision: int, current_revision: int | None = None) -> None:
+        self.case_id = case_id
+        self.expected_revision = expected_revision
+        self.current_revision = current_revision
+        super().__init__("case_revision_conflict")
+
+
+def validate_case_revision_precondition(case: AnalysisCaseDetail, expected_revision: int) -> None:
+    """Reject malformed CAS requests before either storage backend writes."""
+    if type(expected_revision) is not int or expected_revision < 0:
+        raise ValueError("expected_revision must be a nonnegative integer")
+    if case.case_revision != expected_revision:
+        raise ValueError("case.case_revision must equal expected_revision")
+
+
 class CaseStore(ABC):
     """Persistence interface for Sentigraph analysis cases.
 
@@ -34,6 +52,12 @@ class CaseStore(ABC):
     @abstractmethod
     def update_case(self, case: AnalysisCaseDetail) -> AnalysisCaseDetail:
         """Replace an existing case detail."""
+
+    @abstractmethod
+    def replace_case_if_revision_matches(
+        self, case: AnalysisCaseDetail, expected_revision: int
+    ) -> AnalysisCaseDetail | None:
+        """Atomically replace an existing case only at its expected revision."""
 
     @abstractmethod
     def delete_case(self, case_id: str) -> bool:
