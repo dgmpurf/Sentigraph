@@ -6,6 +6,11 @@ from app.api.v1.api import api_router
 from app.core.config import settings
 from app.api.v1.routes.health import health_check
 from app.services.storage.base_store import CaseRevisionConflict
+from app.services.monitoring.analysis_lineage_currentness import (
+    AuxiliaryGuardUnavailable,
+    AuxiliaryIdentityConflict,
+    AuxiliaryLineageStale,
+)
 
 
 def create_app() -> FastAPI:
@@ -34,6 +39,32 @@ def create_app() -> FastAPI:
                 "current_revision": exc.current_revision,
             }},
         )
+
+    @app.exception_handler(AuxiliaryLineageStale)
+    async def auxiliary_lineage_stale_handler(request: Request, exc: AuxiliaryLineageStale) -> JSONResponse:
+        detail = {
+            "error": "case_auxiliary_lineage_stale",
+            "case_id": exc.case_id,
+            "artifact_type": exc.artifact_type,
+        }
+        if exc.artifact_id is not None:
+            detail["artifact_id"] = exc.artifact_id
+        return JSONResponse(status_code=409, content={"detail": detail})
+
+    @app.exception_handler(AuxiliaryIdentityConflict)
+    async def auxiliary_identity_conflict_handler(request: Request, exc: AuxiliaryIdentityConflict) -> JSONResponse:
+        detail = {
+            "error": "case_auxiliary_identity_conflict",
+            "case_id": exc.case_id,
+            "artifact_type": exc.artifact_type,
+        }
+        if exc.artifact_id is not None:
+            detail["artifact_id"] = exc.artifact_id
+        return JSONResponse(status_code=409, content={"detail": detail})
+
+    @app.exception_handler(AuxiliaryGuardUnavailable)
+    async def auxiliary_guard_unavailable_handler(request: Request, exc: AuxiliaryGuardUnavailable) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"detail": {"error": "case_auxiliary_guard_unavailable"}})
 
     app.get("/health", tags=["health"])(health_check)
 

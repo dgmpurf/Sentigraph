@@ -12,6 +12,7 @@ from app.schemas.scheduler import (
 )
 from app.services.case_store import get_case_repository, run_monitoring_check
 from app.services.storage.base_store import CaseRevisionConflict
+from app.services.monitoring.analysis_lineage_currentness import AuxiliaryLineageStale
 
 
 def get_scheduler_status() -> SchedulerStatus:
@@ -109,7 +110,11 @@ def run_due_monitoring_jobs() -> SchedulerRunDueResponse:
     conflict_case_count = 0
 
     for case in due_cases:
-        status = run_monitoring_check(case.case_id, threshold_config=case.monitoring_config.threshold_config)
+        try:
+            status = run_monitoring_check(case.case_id, threshold_config=case.monitoring_config.threshold_config)
+        except AuxiliaryLineageStale:
+            conflict_case_count += 1
+            continue
         if not status:
             continue
         monitoring_results.append(status)
@@ -202,8 +207,8 @@ def _build_job_state(repository: CaseRepository, case: AnalysisCaseDetail, now: 
         next_run_at=config.next_run_at,
         status=status,
         is_due=is_due,
-        snapshot_count=len(repository.list_analysis_snapshots(case.case_id)),
-        alert_count=len(repository.list_case_alerts(case.case_id)),
+        snapshot_count=len(repository.list_current_snapshots(case)),
+        alert_count=len(repository.list_current_alerts(case)),
     )
 
 

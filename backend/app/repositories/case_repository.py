@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 import re
 
-from app.schemas.alert import AlertEvent, AnalysisSnapshot
+from app.schemas.alert import AlertEvent, AlertEventView, AnalysisSnapshot, AnalysisSnapshotView
 from app.schemas.case import (
     AnalysisCaseCreateRequest,
     AnalysisCaseDetail,
@@ -14,7 +14,12 @@ from app.schemas.case import (
 from app.schemas.comment import RawComment, RawPost
 from app.schemas.crawl import PlatformCrawlMetadata
 from app.schemas.evidence import EvidenceIngestionJob, EvidenceItem
-from app.schemas.notification import NotificationOutboxItem
+from app.schemas.notification import NotificationOutboxItem, NotificationOutboxItemView
+from app.services.monitoring.analysis_lineage_currentness import (
+    classify_alert,
+    classify_notification,
+    classify_snapshot,
+)
 from app.schemas.scheduler import MonitoringScheduleConfig
 from app.services.internal_alpha_live_safe_selected_item_lineage_projection import LiveSafeLineageUnavailable
 from app.services.storage.base_store import CaseStore
@@ -168,6 +173,25 @@ class CaseRepository:
     def list_analysis_snapshots(self, case_id: str) -> list[AnalysisSnapshot]:
         return self.store.list_analysis_snapshots(case_id)
 
+    def get_analysis_snapshot(self, snapshot_id: str) -> AnalysisSnapshot | None:
+        return self.store.get_analysis_snapshot(snapshot_id)
+
+    def list_current_snapshots(self, case: AnalysisCaseDetail) -> list[AnalysisSnapshot]:
+        return [
+            snapshot for snapshot in self.store.list_analysis_snapshots(case.case_id)
+            if classify_snapshot(case, snapshot) == "CURRENT"
+        ]
+
+    def list_snapshot_views(self, case_id: str) -> list[AnalysisSnapshotView]:
+        case = self.get_case(case_id)
+        return [
+            AnalysisSnapshotView.model_validate({
+                **snapshot.model_dump(mode="json"),
+                "lineage_status": classify_snapshot(case, snapshot),
+            })
+            for snapshot in self.store.list_analysis_snapshots(case_id)
+        ]
+
     def save_alert_events(self, case_id: str, alerts: list[AlertEvent]) -> list[AlertEvent]:
         return self.store.save_alert_events(case_id, alerts)
 
@@ -177,6 +201,25 @@ class CaseRepository:
     def list_all_alert_events(self) -> list[AlertEvent]:
         return self.store.list_all_alert_events()
 
+    def get_alert_event(self, alert_id: str) -> AlertEvent | None:
+        return self.store.get_alert_event(alert_id)
+
+    def classify_alert_event(self, case: AnalysisCaseDetail | None, alert: AlertEvent) -> str:
+        return classify_alert(case, alert, self.store.get_analysis_snapshot(alert.snapshot_id))
+
+    def list_current_alerts(self, case: AnalysisCaseDetail) -> list[AlertEvent]:
+        return [
+            alert for alert in self.store.list_case_alerts(case.case_id)
+            if self.classify_alert_event(case, alert) == "CURRENT"
+        ]
+
+    def alert_view(self, alert: AlertEvent) -> AlertEventView:
+        case = self.get_case(alert.case_id)
+        return AlertEventView.model_validate({
+            **alert.model_dump(mode="json"),
+            "lineage_status": self.classify_alert_event(case, alert),
+        })
+
     def save_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem:
         return self.store.save_notification(notification)
 
@@ -185,6 +228,29 @@ class CaseRepository:
 
     def update_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem | None:
         return self.store.update_notification(notification)
+
+    def mutate_notification_if_current(
+        self, notification_id: str, action: str, at: datetime
+    ) -> NotificationOutboxItem | None:
+        return self.store.mutate_notification_if_current(notification_id, action, at)
+
+    def classify_notification_item(self, notification: NotificationOutboxItem) -> str:
+        case = self.get_case(notification.case_id)
+        alert = self.store.get_alert_event(notification.alert_id)
+        snapshot = self.store.get_analysis_snapshot(alert.snapshot_id) if alert else None
+        return classify_notification(case, notification, alert, snapshot)
+
+    def list_current_notifications(self, case: AnalysisCaseDetail) -> list[NotificationOutboxItem]:
+        return [
+            notification for notification in self.store.list_case_notifications(case.case_id)
+            if self.classify_notification_item(notification) == "CURRENT"
+        ]
+
+    def notification_view(self, notification: NotificationOutboxItem) -> NotificationOutboxItemView:
+        return NotificationOutboxItemView.model_validate({
+            **notification.model_dump(mode="json"),
+            "lineage_status": self.classify_notification_item(notification),
+        })
 
     def list_notifications(self) -> list[NotificationOutboxItem]:
         return self.store.list_notifications()

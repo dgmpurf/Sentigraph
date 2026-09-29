@@ -94,14 +94,18 @@ def test_reviewed_case_monitoring_requires_explicit_analysis_and_preserves_histo
     assert stale_monitor.json()["detail"]["error"] == "case_analysis_required"
     assert due.status_code == 200
     assert due.json()["executed_case_count"] == 0
-    assert client.get(f"/api/v1/cases/{case_id}/snapshots").json() == historical
-    assert client.get(f"/api/v1/cases/{case_id}/alerts").json() == alerts_before
+    snapshots_after_review = client.get(f"/api/v1/cases/{case_id}/snapshots").json()
+    alerts_after_review = client.get(f"/api/v1/cases/{case_id}/alerts").json()
+    assert [item["snapshot_id"] for item in snapshots_after_review] == [item["snapshot_id"] for item in historical]
+    assert all(item["lineage_status"] == "HISTORICAL" for item in snapshots_after_review)
+    assert [item["alert_id"] for item in alerts_after_review] == [item["alert_id"] for item in alerts_before]
+    assert all(item["lineage_status"] == "HISTORICAL" for item in alerts_after_review)
     assert client.post("/api/v1/cases/missing/monitor/run").status_code == 404
 
     assert client.post(f"/api/v1/cases/{case_id}/run").status_code == 200
     fresh_monitor = client.post(f"/api/v1/cases/{case_id}/monitor/run")
     assert fresh_monitor.status_code == 200
-    assert fresh_monitor.json()["snapshot_count"] == len(historical) + 2
+    assert fresh_monitor.json()["snapshot_count"] == 2
 
 
 def test_all_alerts_endpoint_returns_persisted_events() -> None:

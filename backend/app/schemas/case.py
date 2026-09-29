@@ -79,3 +79,5 @@ class MarkdownExportResponse(BaseModel):
     filename: str
     markdown: str
     generated_at: datetime
+    source_analysis_revision: int | None = Field(default=None, ge=0)
+    source_analysis_run_id: str | None = None

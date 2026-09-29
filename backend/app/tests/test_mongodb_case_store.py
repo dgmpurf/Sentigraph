@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
 
 import pytest
+from pymongo.errors import DuplicateKeyError
 
 from app.repositories.case_repository import CaseRepository
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
@@ -423,6 +425,34 @@ class FakeMongoClient:
         self.databases.setdefault(database_name, FakeMongoDatabase())
         return self.databases[database_name]
 
+    def start_session(self) -> "FakeMongoSession":
+        return FakeMongoSession(self)
+
+
+class FakeMongoSession:
+    def __init__(self, client: FakeMongoClient) -> None:
+        self.client = client
+
+    def __enter__(self) -> "FakeMongoSession":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+    @contextmanager
+    def start_transaction(self):
+        before = {
+            name: {collection_name: deepcopy(collection.documents) for collection_name, collection in db.collections.items()}
+            for name, db in self.client.databases.items()
+        }
+        try:
+            yield
+        except Exception:
+            for name, collections in before.items():
+                for collection_name, documents in collections.items():
+                    self.client.databases[name][collection_name].documents = documents
+            raise
+
 
 class FailingAdmin:
     def command(self, command_name: str) -> dict[str, int]:
@@ -455,7 +485,8 @@ class FakeMongoCollection:
         self.indexes.append((args, kwargs))
 
     def replace_one(
-        self, filter_query: dict[str, Any], document: dict[str, Any], *, upsert: bool = False
+        self, filter_query: dict[str, Any], document: dict[str, Any], *, upsert: bool = False,
+        session: Any | None = None,
     ) -> "FakeReplaceResult":
         self.replace_queries.append(deepcopy(filter_query))
         for index, existing in enumerate(self.documents):
@@ -470,7 +501,28 @@ class FakeMongoCollection:
             self.documents.append(replacement)
         return FakeReplaceResult(matched_count=0)
 
-    def find_one(self, filter_query: dict[str, Any]) -> dict[str, Any] | None:
+    def insert_one(self, document: dict[str, Any], *, session: Any | None = None) -> None:
+        for args, kwargs in self.indexes:
+            if not kwargs.get("unique"):
+                continue
+            key = args[0]
+            if any(existing.get(key) == document.get(key) for existing in self.documents):
+                raise DuplicateKeyError(f"duplicate {key}")
+        inserted = deepcopy(document)
+        inserted.setdefault("_id", f"fake_id_{len(self.documents)}")
+        self.documents.append(inserted)
+
+    def update_one(
+        self, filter_query: dict[str, Any], update: dict[str, Any], *, session: Any | None = None
+    ) -> "FakeReplaceResult":
+        for document in self.documents:
+            if _matches(document, filter_query):
+                for key, amount in update.get("$inc", {}).items():
+                    document[key] = document.get(key, 0) + amount
+                return FakeReplaceResult(matched_count=1)
+        return FakeReplaceResult(matched_count=0)
+
+    def find_one(self, filter_query: dict[str, Any], *, session: Any | None = None) -> dict[str, Any] | None:
         self.find_one_queries.append(deepcopy(filter_query))
         for document in self.documents:
             if _matches(document, filter_query):

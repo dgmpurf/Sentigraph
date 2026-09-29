@@ -4,6 +4,7 @@ import json
 import os
 import uuid
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from threading import Lock, RLock
 from typing import Any, Iterator, Mapping
@@ -16,6 +17,11 @@ else:  # pragma: no cover - the current-host concurrency proof is Windows-only.
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
 from app.schemas.notification import NotificationOutboxItem
+from app.services.monitoring.analysis_lineage_currentness import (
+    AuxiliaryIdentityConflict,
+    AuxiliaryLineageStale,
+    classify_notification,
+)
 from app.services.internal_alpha_live_safe_selected_item_lineage_projection import (
     CONTRACT_ERROR,
     SOURCE_FIELDS,
@@ -185,8 +191,24 @@ class LocalJsonCaseStore(CaseStore):
         return True
 
     def save_markdown_report(self, case_id: str, report: MarkdownExportResponse) -> MarkdownExportResponse:
+        if report.case_id != case_id:
+            raise AuxiliaryIdentityConflict(case_id, "markdown")
+        if (report.source_analysis_revision is None) != (report.source_analysis_run_id is None):
+            raise AuxiliaryIdentityConflict(case_id, "markdown")
         with self._write_transaction():
             data = self._read_data()
+            raw_existing = data["markdown_reports"].get(case_id)
+            if raw_existing:
+                existing = MarkdownExportResponse.model_validate(raw_existing)
+                old_revision = existing.source_analysis_revision
+                new_revision = report.source_analysis_revision
+                if old_revision is not None:
+                    if new_revision is None or new_revision < old_revision:
+                        raise AuxiliaryIdentityConflict(case_id, "markdown")
+                    if new_revision == old_revision:
+                        if report.source_analysis_run_id != existing.source_analysis_run_id:
+                            raise AuxiliaryIdentityConflict(case_id, "markdown")
+                        return existing
             data["markdown_reports"][case_id] = report.model_dump(mode="json")
             self._write_data(data)
         return report.model_copy(deep=True)
@@ -203,8 +225,15 @@ class LocalJsonCaseStore(CaseStore):
         return [MarkdownExportResponse.model_validate(item) for item in data["markdown_reports"].values()]
 
     def save_analysis_snapshot(self, case_id: str, snapshot: AnalysisSnapshot) -> AnalysisSnapshot:
+        if snapshot.case_id != case_id:
+            raise AuxiliaryIdentityConflict(case_id, "snapshot", snapshot.snapshot_id)
         with self._write_transaction():
             data = self._read_data()
+            if any(
+                item.get("snapshot_id") == snapshot.snapshot_id
+                for group in data["snapshots"].values() for item in group
+            ):
+                raise AuxiliaryIdentityConflict(case_id, "snapshot", snapshot.snapshot_id)
             data["snapshots"].setdefault(case_id, [])
             data["snapshots"][case_id].append(snapshot.model_dump(mode="json"))
             self._write_data(data)
@@ -217,13 +246,39 @@ class LocalJsonCaseStore(CaseStore):
         snapshots = [AnalysisSnapshot.model_validate(item) for item in raw_snapshots]
         return sorted(snapshots, key=lambda snapshot: snapshot.created_at)
 
+    def get_analysis_snapshot(self, snapshot_id: str) -> AnalysisSnapshot | None:
+        with self._lock:
+            data = self._read_data()
+        matches = [
+            item for group in data["snapshots"].values() for item in group
+            if item.get("snapshot_id") == snapshot_id
+        ]
+        return AnalysisSnapshot.model_validate(matches[0]) if len(matches) == 1 else None
+
     def save_alert_events(self, case_id: str, alerts: list[AlertEvent]) -> list[AlertEvent]:
         if not alerts:
             return []
         with self._write_transaction():
             data = self._read_data()
+            existing = {
+                item.get("alert_id"): item
+                for group in data["alerts"].values() for item in group
+            }
+            to_append = []
+            for alert in alerts:
+                if alert.case_id != case_id:
+                    raise AuxiliaryIdentityConflict(case_id, "alert", alert.alert_id)
+                raw = alert.model_dump(mode="json")
+                if alert.alert_id in existing:
+                    if existing[alert.alert_id] != raw:
+                        raise AuxiliaryIdentityConflict(case_id, "alert", alert.alert_id)
+                    continue
+                existing[alert.alert_id] = raw
+                to_append.append(raw)
+            if not to_append:
+                return [alert.model_copy(deep=True) for alert in alerts]
             data["alerts"].setdefault(case_id, [])
-            data["alerts"][case_id].extend(alert.model_dump(mode="json") for alert in alerts)
+            data["alerts"][case_id].extend(to_append)
             self._write_data(data)
         return [alert.model_copy(deep=True) for alert in alerts]
 
@@ -245,9 +300,25 @@ class LocalJsonCaseStore(CaseStore):
         ]
         return sorted(alerts, key=lambda alert: alert.created_at, reverse=True)
 
+    def get_alert_event(self, alert_id: str) -> AlertEvent | None:
+        with self._lock:
+            data = self._read_data()
+        matches = [
+            item for group in data["alerts"].values() for item in group
+            if item.get("alert_id") == alert_id
+        ]
+        return AlertEvent.model_validate(matches[0]) if len(matches) == 1 else None
+
     def save_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem:
         with self._write_transaction():
             data = self._read_data()
+            existing = data["notifications"].get(notification.notification_id)
+            if existing is not None:
+                if existing != notification.model_dump(mode="json"):
+                    raise AuxiliaryIdentityConflict(
+                        notification.case_id, "notification", notification.notification_id
+                    )
+                return NotificationOutboxItem.model_validate(existing)
             data["notifications"][notification.notification_id] = notification.model_dump(mode="json")
             self._write_data(data)
         return notification.model_copy(deep=True)
@@ -266,6 +337,43 @@ class LocalJsonCaseStore(CaseStore):
             data["notifications"][notification.notification_id] = notification.model_dump(mode="json")
             self._write_data(data)
         return notification.model_copy(deep=True)
+
+    def mutate_notification_if_current(
+        self, notification_id: str, action: str, at: datetime
+    ) -> NotificationOutboxItem | None:
+        if action not in {"mark_read", "simulate_send"}:
+            raise ValueError("Unsupported notification action")
+        with self._write_transaction():
+            data = self._read_data()
+            raw = data["notifications"].get(notification_id)
+            if raw is None:
+                return None
+            notification = NotificationOutboxItem.model_validate(raw)
+            alerts = [
+                item for group in data["alerts"].values() for item in group
+                if item.get("alert_id") == notification.alert_id
+            ]
+            alert = AlertEvent.model_validate(alerts[0]) if len(alerts) == 1 else None
+            snapshots = [
+                item for group in data["snapshots"].values() for item in group
+                if alert is not None and item.get("snapshot_id") == alert.snapshot_id
+            ]
+            snapshot = AnalysisSnapshot.model_validate(snapshots[0]) if len(snapshots) == 1 else None
+            raw_case = data["cases"].get(notification.case_id)
+            case = AnalysisCaseDetail.model_validate(raw_case) if raw_case is not None else None
+            if classify_notification(case, notification, alert, snapshot) != "CURRENT":
+                raise AuxiliaryLineageStale(notification.case_id, "notification", notification_id)
+            if action == "mark_read" and notification.read_at is None:
+                notification = notification.model_copy(update={"read_at": at}, deep=True)
+            elif action == "simulate_send" and notification.status != "simulated_sent":
+                notification = notification.model_copy(
+                    update={"status": "simulated_sent", "simulated_sent_at": at}, deep=True
+                )
+            else:
+                return notification
+            data["notifications"][notification_id] = notification.model_dump(mode="json")
+            self._write_data(data)
+            return notification.model_copy(deep=True)
 
     def list_notifications(self) -> list[NotificationOutboxItem]:
         with self._lock:

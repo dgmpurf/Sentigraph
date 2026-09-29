@@ -70,6 +70,12 @@ from app.services.mock_pipeline import (
 )
 from app.services.mock_service import _pipeline_representative_comments
 from app.services.monitoring.alert_evaluator import evaluate_alerts
+from app.services.monitoring.analysis_lineage_currentness import (
+    AuxiliaryIdentityConflict,
+    AuxiliaryLineageStale,
+    classify_source_pair,
+    current_case_pair,
+)
 from app.services.monitoring.snapshot_builder import build_analysis_snapshot
 from app.services.notifications.notification_service import create_notifications_from_alerts
 from app.services.recommendation.report_builder import build_public_opinion_report
@@ -234,6 +240,9 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
         raise conflict
     if completed_case is None:
         return None
+    completed_pair = current_case_pair(completed_case)
+    if completed_pair is None or current_case_pair(repository.get_case(case_id)) != completed_pair:
+        raise AuxiliaryLineageStale(case_id, "analysis")
     repository.save_markdown_report(
         completed_case.case_id,
         MarkdownExportResponse(
@@ -242,8 +251,12 @@ def run_case(case_id: str) -> AnalysisCaseDetail | None:
             filename=f"{_safe_filename(completed_case.title)}_{completed_case.case_id}.md",
             markdown=_build_markdown(completed_case),
             generated_at=repository.next_timestamp(),
+            source_analysis_revision=completed_pair[0],
+            source_analysis_run_id=completed_pair[1],
         ),
     )
+    if current_case_pair(repository.get_case(case_id)) != completed_pair:
+        raise AuxiliaryLineageStale(case_id, "snapshot")
     _save_case_snapshot(repository, completed_case, apply_mock_shift=False)
     return completed_case.model_copy(deep=True)
 
@@ -833,18 +846,29 @@ def run_monitoring_check(
     if case.status != "completed" or not case.report or not case.analysis_result:
         return None
 
-    previous_snapshots = repository.list_analysis_snapshots(case_id)
+    pair = current_case_pair(case)
+    if pair is None:
+        raise AuxiliaryLineageStale(case_id, "monitoring")
+
+    previous_snapshots = repository.list_current_snapshots(case)
     previous_snapshot = previous_snapshots[-1] if previous_snapshots else None
     latest_snapshot = _save_case_snapshot(repository, case, apply_mock_shift=True)
+    if current_case_pair(repository.get_case(case_id)) != pair:
+        raise AuxiliaryLineageStale(case_id, "snapshot", latest_snapshot.snapshot_id)
     alerts = evaluate_alerts(previous_snapshot, latest_snapshot, config=threshold_config)
     saved_alerts = repository.save_alert_events(case_id, alerts)
+    if current_case_pair(repository.get_case(case_id)) != pair:
+        raise AuxiliaryLineageStale(case_id, "alert")
     create_notifications_from_alerts(saved_alerts, repository=repository)
+    if current_case_pair(repository.get_case(case_id)) != pair:
+        raise AuxiliaryLineageStale(case_id, "notification")
     return _build_monitoring_status(
         case_id,
         latest_snapshot=latest_snapshot,
         previous_snapshot=previous_snapshot,
         alerts=saved_alerts,
         snapshot_count=len(previous_snapshots) + 1,
+        source_pair=pair,
     )
 
 
@@ -854,8 +878,16 @@ def export_case_markdown(case_id: str) -> MarkdownExportResponse | None:
     if not case or case.status != "completed" or not case.report or not case.markdown_available:
         return None
 
+    pair = current_case_pair(case)
+    if pair is None:
+        raise AuxiliaryLineageStale(case_id, "markdown")
+
     persisted_report = repository.get_markdown_report(case_id)
-    if persisted_report:
+    if persisted_report and classify_source_pair(
+        case, persisted_report.source_analysis_revision, persisted_report.source_analysis_run_id
+    ) == "CURRENT":
+        if current_case_pair(repository.get_case(case_id)) != pair:
+            raise AuxiliaryLineageStale(case_id, "markdown")
         return persisted_report
 
     report = MarkdownExportResponse(
@@ -864,8 +896,16 @@ def export_case_markdown(case_id: str) -> MarkdownExportResponse | None:
         filename=f"{_safe_filename(case.title)}_{case.case_id}.md",
         markdown=_build_markdown(case),
         generated_at=repository.next_timestamp(),
+        source_analysis_revision=pair[0],
+        source_analysis_run_id=pair[1],
     )
-    return repository.save_markdown_report(case_id, report)
+    try:
+        saved = repository.save_markdown_report(case_id, report)
+    except AuxiliaryIdentityConflict as exc:
+        raise AuxiliaryLineageStale(case_id, "markdown") from exc
+    if current_case_pair(repository.get_case(case_id)) != pair:
+        raise AuxiliaryLineageStale(case_id, "markdown")
+    return saved
 
 
 def _case_summary_evidence_items(case: AnalysisCaseDetail):
@@ -996,10 +1036,10 @@ def _save_case_snapshot(
     *,
     apply_mock_shift: bool,
 ) -> AnalysisSnapshot:
-    run_index = repository.next_snapshot_number(case.case_id)
+    run_index = len(repository.list_analysis_snapshots(case.case_id)) + 1
     snapshot = build_analysis_snapshot(
         case,
-        snapshot_id=f"{case.case_id}_snapshot_{run_index:03d}",
+        snapshot_id=f"{case.case_id}_snapshot_{uuid4().hex}",
         created_at=repository.next_timestamp(),
         run_index=run_index,
         apply_mock_shift=apply_mock_shift,
@@ -1014,6 +1054,7 @@ def _build_monitoring_status(
     previous_snapshot: AnalysisSnapshot | None,
     alerts: list[AlertEvent],
     snapshot_count: int,
+    source_pair: tuple[int, str],
 ) -> MonitoringStatus:
     if previous_snapshot is None:
         status = "baseline_created"
@@ -1038,6 +1079,8 @@ def _build_monitoring_status(
         latest_risk_delta=round(latest_risk_delta, 2),
         latest_risk_level=latest_snapshot.risk_level,
         message=message,
+        source_analysis_revision=source_pair[0],
+        source_analysis_run_id=source_pair[1],
     )
 
 

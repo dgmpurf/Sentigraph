@@ -10,6 +10,7 @@ from app.schemas.notification import (
     NotificationOutboxStatus,
     NotificationSendResult,
 )
+from app.services.monitoring.analysis_lineage_currentness import AuxiliaryLineageStale
 
 if TYPE_CHECKING:
     from app.repositories.case_repository import CaseRepository
@@ -126,13 +127,7 @@ def mark_notification_read(
     repository: "CaseRepository | None" = None,
 ) -> NotificationOutboxItem | None:
     repo = _get_repository(repository)
-    notification = repo.get_notification(notification_id)
-    if not notification:
-        return None
-    if notification.read_at:
-        return notification
-    updated = notification.model_copy(update={"read_at": repo.next_timestamp()}, deep=True)
-    return repo.update_notification(updated)
+    return repo.mutate_notification_if_current(notification_id, "mark_read", repo.next_timestamp())
 
 
 def simulate_send(
@@ -141,18 +136,11 @@ def simulate_send(
     repository: "CaseRepository | None" = None,
 ) -> NotificationSendResult | None:
     repo = _get_repository(repository)
-    notification = repo.get_notification(notification_id)
+    notification = repo.mutate_notification_if_current(
+        notification_id, "simulate_send", repo.next_timestamp()
+    )
     if not notification:
         return None
-    if notification.status != "simulated_sent":
-        notification = notification.model_copy(
-            update={
-                "status": "simulated_sent",
-                "simulated_sent_at": repo.next_timestamp(),
-            },
-            deep=True,
-        )
-        notification = repo.update_notification(notification) or notification
 
     return NotificationSendResult(
         notification_id=notification.notification_id,
@@ -172,15 +160,21 @@ def simulate_send_all_pending(
     repo = _get_repository(repository)
     results: list[NotificationSendResult] = []
     for notification in repo.list_notifications():
-        if notification.status == "pending":
+        if notification.status != "pending" or repo.classify_notification_item(notification) != "CURRENT":
+            continue
+        try:
             result = simulate_send(notification.notification_id, repository=repo)
-            if result:
-                results.append(result)
+        except AuxiliaryLineageStale:
+            continue
+        if result:
+            results.append(result)
     return results
 
 
 def get_outbox_status(*, repository: "CaseRepository | None" = None) -> NotificationOutboxStatus:
-    notifications = _get_repository(repository).list_notifications()
+    repo = _get_repository(repository)
+    notifications = repo.list_notifications()
+    current = [item for item in notifications if repo.classify_notification_item(item) == "CURRENT"]
     pending = sum(1 for item in notifications if item.status == "pending")
     simulated_sent = sum(1 for item in notifications if item.status == "simulated_sent")
     failed = sum(1 for item in notifications if item.status == "failed")
@@ -192,6 +186,12 @@ def get_outbox_status(*, repository: "CaseRepository | None" = None) -> Notifica
         pending=pending,
         simulated_sent=simulated_sent,
         failed=failed,
+        current_total=len(current),
+        current_unread=sum(1 for item in current if item.read_at is None),
+        current_pending=sum(1 for item in current if item.status == "pending"),
+        current_simulated_sent=sum(1 for item in current if item.status == "simulated_sent"),
+        current_failed=sum(1 for item in current if item.status == "failed"),
+        historical_or_unbound_total=len(notifications) - len(current),
         mock_only=True,
         channels=DEFAULT_CHANNELS,
         message="通知出箱仅用于本地模拟，不会发送真实外部消息。",

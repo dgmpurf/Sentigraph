@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from typing import Any, Protocol
+
+from pymongo.errors import DuplicateKeyError
 
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
 from app.schemas.notification import NotificationOutboxItem
+from app.services.monitoring.analysis_lineage_currentness import (
+    AuxiliaryGuardUnavailable,
+    AuxiliaryIdentityConflict,
+    AuxiliaryLineageStale,
+    classify_notification,
+)
 from app.services.storage.base_store import (
     CaseRevisionConflict,
     CaseStore,
@@ -149,11 +158,34 @@ class MongoDbCaseStore(CaseStore):
         return True
 
     def save_markdown_report(self, case_id: str, report: MarkdownExportResponse) -> MarkdownExportResponse:
-        self._markdown_reports.replace_one(
-            {"case_id": case_id},
-            _safe_document(report.model_dump(mode="json")),
-            upsert=True,
-        )
+        if report.case_id != case_id:
+            raise AuxiliaryIdentityConflict(case_id, "markdown")
+        if (report.source_analysis_revision is None) != (report.source_analysis_run_id is None):
+            raise AuxiliaryIdentityConflict(case_id, "markdown")
+        incoming = _safe_document(report.model_dump(mode="json"))
+        existing = self._markdown_reports.find_one({"case_id": case_id})
+        if existing is None:
+            try:
+                self._markdown_reports.insert_one(incoming)
+            except DuplicateKeyError as exc:
+                raise AuxiliaryIdentityConflict(case_id, "markdown") from exc
+            return report.model_copy(deep=True)
+        persisted = MarkdownExportResponse.model_validate(_strip_mongo_id(existing))
+        old_revision = persisted.source_analysis_revision
+        new_revision = report.source_analysis_revision
+        if old_revision is not None:
+            if new_revision is None or new_revision < old_revision:
+                raise AuxiliaryIdentityConflict(case_id, "markdown")
+            if new_revision == old_revision:
+                if persisted.source_analysis_run_id != report.source_analysis_run_id:
+                    raise AuxiliaryIdentityConflict(case_id, "markdown")
+                return persisted
+        guard: dict[str, Any] = {"case_id": case_id}
+        for field in ("source_analysis_revision", "source_analysis_run_id"):
+            guard[field] = existing[field] if field in existing else {"$exists": False}
+        replaced = self._markdown_reports.replace_one(guard, incoming, upsert=False)
+        if replaced.matched_count != 1:
+            raise AuxiliaryIdentityConflict(case_id, "markdown")
         return report.model_copy(deep=True)
 
     def get_markdown_report(self, case_id: str) -> MarkdownExportResponse | None:
@@ -168,11 +200,12 @@ class MongoDbCaseStore(CaseStore):
         return sorted(reports, key=lambda item: item.generated_at, reverse=True)
 
     def save_analysis_snapshot(self, case_id: str, snapshot: AnalysisSnapshot) -> AnalysisSnapshot:
-        self._snapshots.replace_one(
-            {"snapshot_id": snapshot.snapshot_id},
-            _safe_document(snapshot.model_dump(mode="json")),
-            upsert=True,
-        )
+        if snapshot.case_id != case_id:
+            raise AuxiliaryIdentityConflict(case_id, "snapshot", snapshot.snapshot_id)
+        try:
+            self._snapshots.insert_one(_safe_document(snapshot.model_dump(mode="json")))
+        except DuplicateKeyError as exc:
+            raise AuxiliaryIdentityConflict(case_id, "snapshot", snapshot.snapshot_id) from exc
         return snapshot.model_copy(deep=True)
 
     def list_analysis_snapshots(self, case_id: str) -> list[AnalysisSnapshot]:
@@ -182,13 +215,24 @@ class MongoDbCaseStore(CaseStore):
         ]
         return sorted(snapshots, key=lambda snapshot: snapshot.created_at)
 
+    def get_analysis_snapshot(self, snapshot_id: str) -> AnalysisSnapshot | None:
+        raw = self._snapshots.find_one({"snapshot_id": snapshot_id})
+        return AnalysisSnapshot.model_validate(_strip_mongo_id(raw)) if raw else None
+
     def save_alert_events(self, case_id: str, alerts: list[AlertEvent]) -> list[AlertEvent]:
         for alert in alerts:
-            self._alerts.replace_one(
-                {"alert_id": alert.alert_id},
-                _safe_document(alert.model_dump(mode="json")),
-                upsert=True,
-            )
+            if alert.case_id != case_id:
+                raise AuxiliaryIdentityConflict(case_id, "alert", alert.alert_id)
+            raw = _safe_document(alert.model_dump(mode="json"))
+            existing = self._alerts.find_one({"alert_id": alert.alert_id})
+            if existing is not None:
+                if _strip_mongo_id(existing) != raw:
+                    raise AuxiliaryIdentityConflict(case_id, "alert", alert.alert_id)
+                continue
+            try:
+                self._alerts.insert_one(raw)
+            except DuplicateKeyError as exc:
+                raise AuxiliaryIdentityConflict(case_id, "alert", alert.alert_id) from exc
         return [alert.model_copy(deep=True) for alert in alerts]
 
     def list_case_alerts(self, case_id: str) -> list[AlertEvent]:
@@ -202,12 +246,25 @@ class MongoDbCaseStore(CaseStore):
         alerts = [AlertEvent.model_validate(_strip_mongo_id(item)) for item in self._alerts.find({})]
         return sorted(alerts, key=lambda alert: alert.created_at, reverse=True)
 
+    def get_alert_event(self, alert_id: str) -> AlertEvent | None:
+        raw = self._alerts.find_one({"alert_id": alert_id})
+        return AlertEvent.model_validate(_strip_mongo_id(raw)) if raw else None
+
     def save_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem:
-        self._notifications.replace_one(
-            {"notification_id": notification.notification_id},
-            _safe_document(notification.model_dump(mode="json")),
-            upsert=True,
-        )
+        raw = _safe_document(notification.model_dump(mode="json"))
+        existing = self._notifications.find_one({"notification_id": notification.notification_id})
+        if existing is not None:
+            if _strip_mongo_id(existing) != raw:
+                raise AuxiliaryIdentityConflict(
+                    notification.case_id, "notification", notification.notification_id
+                )
+            return NotificationOutboxItem.model_validate(_strip_mongo_id(existing))
+        try:
+            self._notifications.insert_one(raw)
+        except DuplicateKeyError as exc:
+            raise AuxiliaryIdentityConflict(
+                notification.case_id, "notification", notification.notification_id
+            ) from exc
         return notification.model_copy(deep=True)
 
     def get_notification(self, notification_id: str) -> NotificationOutboxItem | None:
@@ -223,6 +280,68 @@ class MongoDbCaseStore(CaseStore):
             upsert=False,
         )
         return notification.model_copy(deep=True)
+
+    def mutate_notification_if_current(
+        self, notification_id: str, action: str, at: datetime
+    ) -> NotificationOutboxItem | None:
+        if action not in {"mark_read", "simulate_send"}:
+            raise ValueError("Unsupported notification action")
+        if self._client is None or not callable(getattr(self._client, "start_session", None)):
+            raise AuxiliaryGuardUnavailable("case_auxiliary_guard_unavailable")
+        try:
+            with self._client.start_session() as session:
+                with session.start_transaction():
+                    raw = self._notifications.find_one({"notification_id": notification_id}, session=session)
+                    if raw is None:
+                        return None
+                    notification = NotificationOutboxItem.model_validate(_strip_mongo_id(raw))
+                    raw_alert = self._alerts.find_one({"alert_id": notification.alert_id}, session=session)
+                    alert = AlertEvent.model_validate(_strip_mongo_id(raw_alert)) if raw_alert else None
+                    raw_snapshot = (
+                        self._snapshots.find_one({"snapshot_id": alert.snapshot_id}, session=session)
+                        if alert else None
+                    )
+                    snapshot = AnalysisSnapshot.model_validate(_strip_mongo_id(raw_snapshot)) if raw_snapshot else None
+                    raw_case = self._cases.find_one({"case_id": notification.case_id}, session=session)
+                    case = AnalysisCaseDetail.model_validate(_strip_mongo_id(raw_case)) if raw_case else None
+                    if classify_notification(case, notification, alert, snapshot) != "CURRENT":
+                        raise AuxiliaryLineageStale(notification.case_id, "notification", notification_id)
+                    if action == "mark_read" and notification.read_at is None:
+                        updated = notification.model_copy(update={"read_at": at}, deep=True)
+                    elif action == "simulate_send" and notification.status != "simulated_sent":
+                        updated = notification.model_copy(
+                            update={"status": "simulated_sent", "simulated_sent_at": at}, deep=True
+                        )
+                    else:
+                        return notification
+                    # Touch the case in the same transaction to force a write conflict
+                    # with any concurrent case invalidation; a read alone permits write skew.
+                    fenced = self._cases.update_one(
+                        {
+                            "case_id": notification.case_id,
+                            "status": "completed",
+                            "case_revision": case.case_revision,
+                            "analysis_revision": case.analysis_revision,
+                            "analysis_run_id": case.analysis_run_id,
+                        },
+                        {"$inc": {"auxiliary_action_guard_counter": 1}},
+                        session=session,
+                    )
+                    if fenced.matched_count != 1:
+                        raise AuxiliaryLineageStale(notification.case_id, "notification", notification_id)
+                    replaced = self._notifications.replace_one(
+                        {"notification_id": notification_id},
+                        _safe_document(updated.model_dump(mode="json")),
+                        upsert=False,
+                        session=session,
+                    )
+                    if replaced.matched_count != 1:
+                        raise AuxiliaryIdentityConflict(notification.case_id, "notification", notification_id)
+                    return updated
+        except (AuxiliaryLineageStale, AuxiliaryIdentityConflict):
+            raise
+        except Exception as exc:
+            raise AuxiliaryGuardUnavailable("case_auxiliary_guard_unavailable") from exc
 
     def list_notifications(self) -> list[NotificationOutboxItem]:
         notifications = [

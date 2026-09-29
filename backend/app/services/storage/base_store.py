@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail, MarkdownExportResponse
 from app.schemas.notification import NotificationOutboxItem
@@ -78,6 +79,10 @@ class CaseStore(ABC):
         """Return persisted monitoring snapshots for a case."""
 
     @abstractmethod
+    def get_analysis_snapshot(self, snapshot_id: str) -> AnalysisSnapshot | None:
+        """Return one unambiguous snapshot by immutable ID."""
+
+    @abstractmethod
     def save_alert_events(self, case_id: str, alerts: list[AlertEvent]) -> list[AlertEvent]:
         """Persist alert events for a case."""
 
@@ -90,6 +95,10 @@ class CaseStore(ABC):
         """Return all persisted alert events."""
 
     @abstractmethod
+    def get_alert_event(self, alert_id: str) -> AlertEvent | None:
+        """Return one unambiguous alert by immutable ID."""
+
+    @abstractmethod
     def save_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem:
         """Persist one notification outbox item."""
 
@@ -100,6 +109,12 @@ class CaseStore(ABC):
     @abstractmethod
     def update_notification(self, notification: NotificationOutboxItem) -> NotificationOutboxItem | None:
         """Replace an existing notification outbox item."""
+
+    @abstractmethod
+    def mutate_notification_if_current(
+        self, notification_id: str, action: str, at: datetime
+    ) -> NotificationOutboxItem | None:
+        """Atomically verify the parent analysis lineage and apply one local action."""
 
     @abstractmethod
     def list_notifications(self) -> list[NotificationOutboxItem]:

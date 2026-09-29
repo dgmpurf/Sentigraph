@@ -80,6 +80,8 @@ def build_analysis_snapshot(
         manipulation_risk=manipulation_risk,
         top_risk_topics=shifted_topics,
         summary=getattr(report, "overall_summary", None) or getattr(analysis, "summary", None),
+        source_analysis_revision=case.analysis_revision,
+        source_analysis_run_id=case.analysis_run_id,
     )
 
 

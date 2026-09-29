@@ -90,22 +90,19 @@ def test_simulate_send_endpoint() -> None:
 
 def test_simulate_send_all_pending(case_store_path) -> None:
     repository = CaseRepository(LocalJsonCaseStore(case_store_path))
-    case = repository.create_case(AnalysisCaseCreateRequest(keyword="Tesla", platforms=["reddit"]))
-    create_notifications_from_alerts(
-        [
-            _alert(case.case_id, alert_id="alert_case_001_snapshot_002_001"),
-            _alert(case.case_id, alert_id="alert_case_001_snapshot_002_002", level="critical"),
-        ],
-        repository=repository,
-    )
+    case_id = _create_case()
+    assert client.post(f"/api/v1/cases/{case_id}/run").status_code == 200
+    assert client.post(f"/api/v1/cases/{case_id}/monitor/run").status_code == 200
+    pending_before = [item for item in repository.list_notifications() if item.status == "pending"]
 
     results = simulate_send_all_pending(repository=repository)
     status = get_outbox_status(repository=repository)
 
-    assert len(results) == 2
+    assert len(results) == len(pending_before)
     assert all(result.status == "simulated_sent" for result in results)
     assert status.pending == 0
-    assert status.simulated_sent == 2
+    assert status.simulated_sent == len(pending_before)
+    assert status.current_simulated_sent == len(pending_before)
 
 
 def test_duplicate_alert_does_not_create_duplicate_notification(case_store_path) -> None:

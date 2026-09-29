@@ -7,6 +7,11 @@ from typing import Any
 from app.schemas.alert import AlertEvent, AnalysisSnapshot
 from app.schemas.case import AnalysisCaseDetail
 from app.schemas.forecast import ForecastResult
+from app.services.monitoring.analysis_lineage_currentness import (
+    AuxiliaryLineageStale,
+    classify_snapshot,
+    current_case_pair,
+)
 from app.services.simulation.intervention_library import ALLOWED_INTERVENTION_TYPES
 from app.services.simulation.network_builder import build_homophilous_network
 from app.services.simulation.schemas import (
@@ -43,13 +48,23 @@ def build_case_simulation_initialization(
     config: CaseSimulationInitializerConfig | None = None,
 ) -> CaseSimulationInitializationResult:
     config = config or CaseSimulationInitializerConfig()
-    if case.analysis_result is None:
+    pair = current_case_pair(case)
+    if case.analysis_result is None or pair is None:
         raise CaseAnalysisRequiredError("case_analysis_required")
 
     warnings: list[str] = []
     generated_at = datetime.now(timezone.utc)
     snapshots = snapshots or []
     alerts = alerts or []
+    if any(classify_snapshot(case, snapshot) != "CURRENT" for snapshot in snapshots):
+        raise AuxiliaryLineageStale(case.case_id, "snapshot")
+    snapshot_ids = {snapshot.snapshot_id for snapshot in snapshots}
+    if any(alert.case_id != case.case_id or alert.snapshot_id not in snapshot_ids for alert in alerts):
+        raise AuxiliaryLineageStale(case.case_id, "alert")
+    if forecast is not None and (
+        forecast.source_analysis_revision, forecast.source_analysis_run_id
+    ) != pair:
+        raise AuxiliaryLineageStale(case.case_id, "forecast")
     analysis = case.analysis_result
     analysis_data = _model_data(analysis)
 

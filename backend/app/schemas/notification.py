@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.alert import AlertLevel
+from app.schemas.alert import AlertLevel, AuxiliaryLineageStatus
 
 
 NotificationChannelType = Literal[
@@ -47,6 +47,10 @@ class NotificationOutboxItem(NotificationMessage):
     pass
 
 
+class NotificationOutboxItemView(NotificationOutboxItem):
+    lineage_status: AuxiliaryLineageStatus
+
+
 class NotificationSendResult(BaseModel):
     notification_id: str
     channel_type: NotificationChannelType = "in_app"
@@ -63,6 +67,12 @@ class NotificationOutboxStatus(BaseModel):
     pending: int
     simulated_sent: int
     failed: int
+    current_total: int = 0
+    current_unread: int = 0
+    current_pending: int = 0
+    current_simulated_sent: int = 0
+    current_failed: int = 0
+    historical_or_unbound_total: int = 0
     mock_only: bool = True
     channels: list[NotificationChannel] = Field(default_factory=list)
     message: str

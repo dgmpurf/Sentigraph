@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.alert import AlertEvent, AnalysisSnapshot, MonitoringStatus
+from app.schemas.alert import AlertEventView, AnalysisSnapshotView, MonitoringStatus
 from app.schemas.case import (
     AnalysisCaseCreateRequest,
     AnalysisCaseDetail,
@@ -35,7 +35,7 @@ from app.schemas.search_discovery import (
 from app.services.evidence_import import EvidenceImportError
 from app.services.evidence_ingestion import EvidenceValidationError
 from app.schemas.forecast import ForecastResult
-from app.schemas.notification import NotificationOutboxItem
+from app.schemas.notification import NotificationOutboxItemView
 from app.schemas.scheduler import MonitoringScheduleConfig
 from app.services.simulation.case_initializer import (
     CaseAnalysisRequiredError,
@@ -53,6 +53,7 @@ from app.services.case_store import (
     create_case,
     export_case_markdown,
     get_case,
+    get_case_repository,
     get_case_evidence_batch_summary,
     get_case_evidence_coverage,
     get_case_evidence_dedup_summary,
@@ -92,6 +93,10 @@ from app.services.monitoring.scheduler_service import (
 )
 from app.services.forecasting.forecast_service import get_case_forecast, run_case_forecast
 from app.services.notifications.notification_service import list_case_notifications
+from app.services.monitoring.analysis_lineage_currentness import (
+    AuxiliaryLineageStale,
+    current_case_pair,
+)
 
 router = APIRouter()
 
@@ -366,12 +371,12 @@ def commit_evidence_import_for_case(case_id: str, payload: EvidenceImportCommitR
     return result
 
 
-@router.get("/{case_id}/snapshots", response_model=list[AnalysisSnapshot])
-def get_case_snapshots(case_id: str) -> list[AnalysisSnapshot]:
+@router.get("/{case_id}/snapshots", response_model=list[AnalysisSnapshotView])
+def get_case_snapshots(case_id: str) -> list[AnalysisSnapshotView]:
     snapshots = list_case_snapshots(case_id)
     if snapshots is None:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
-    return snapshots
+    return get_case_repository().list_snapshot_views(case_id)
 
 
 @router.get("/{case_id}/forecast", response_model=ForecastResult)
@@ -449,19 +454,21 @@ def disable_monitoring(case_id: str) -> MonitoringScheduleConfig:
     return config
 
 
-@router.get("/{case_id}/alerts", response_model=list[AlertEvent])
-def get_case_alerts(case_id: str) -> list[AlertEvent]:
+@router.get("/{case_id}/alerts", response_model=list[AlertEventView])
+def get_case_alerts(case_id: str) -> list[AlertEventView]:
     alerts = list_case_alerts(case_id)
     if alerts is None:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
-    return alerts
+    repository = get_case_repository()
+    return [repository.alert_view(alert) for alert in alerts]
 
 
-@router.get("/{case_id}/notifications", response_model=list[NotificationOutboxItem])
-def get_case_notifications(case_id: str) -> list[NotificationOutboxItem]:
+@router.get("/{case_id}/notifications", response_model=list[NotificationOutboxItemView])
+def get_case_notifications(case_id: str) -> list[NotificationOutboxItemView]:
     if not get_case(case_id):
         raise HTTPException(status_code=404, detail="Analysis case not found.")
-    return list_case_notifications(case_id)
+    repository = get_case_repository()
+    return [repository.notification_view(item) for item in list_case_notifications(case_id)]
 
 
 @router.get("/{case_id}/report/markdown", response_model=MarkdownExportResponse)
@@ -476,16 +483,30 @@ def _case_simulation_initialization(case_id: str) -> CaseSimulationInitializatio
     case = get_case(case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Analysis case not found.")
-    snapshots = list_case_snapshots(case_id) or []
-    alerts = list_case_alerts(case_id) or []
+    pair = current_case_pair(case)
+    if pair is None:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "case_analysis_required", "case_id": case_id},
+        )
+    repository = get_case_repository()
+    snapshots = repository.list_current_snapshots(case)
+    alerts = repository.list_current_alerts(case)
     forecast = get_case_forecast(case_id)
+    if forecast is None or (
+        forecast.source_analysis_revision, forecast.source_analysis_run_id
+    ) != pair:
+        raise AuxiliaryLineageStale(case_id, "forecast")
     try:
-        return build_case_simulation_initialization(
+        result = build_case_simulation_initialization(
             case,
             snapshots=snapshots,
             alerts=alerts,
             forecast=forecast,
         )
+        if current_case_pair(repository.get_case(case_id)) != pair:
+            raise AuxiliaryLineageStale(case_id, "simulation")
+        return result
     except CaseAnalysisRequiredError as exc:
         raise HTTPException(
             status_code=400,

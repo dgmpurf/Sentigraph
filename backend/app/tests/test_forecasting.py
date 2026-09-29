@@ -31,6 +31,7 @@ def case_store_path(tmp_path):
 
 def test_forecast_endpoint_no_snapshots_returns_insufficient_history() -> None:
     case_id = _create_case()
+    _complete_without_snapshots(case_id)
 
     response = client.get(f"/api/v1/cases/{case_id}/forecast")
 
@@ -44,6 +45,7 @@ def test_forecast_endpoint_no_snapshots_returns_insufficient_history() -> None:
 
 def test_one_snapshot_forecast_has_low_confidence() -> None:
     case_id = _create_case()
+    _complete_without_snapshots(case_id)
     _save_snapshots(case_id, [42])
 
     response = client.post(f"/api/v1/cases/{case_id}/forecast/run")
@@ -162,8 +164,22 @@ def _create_case() -> str:
 
 def _save_snapshots(case_id: str, scores: list[float]) -> None:
     repository = get_case_repository()
+    case = repository.get_case(case_id)
     for snapshot in _snapshots(scores, case_id=case_id):
-        repository.save_analysis_snapshot(case_id, snapshot)
+        repository.save_analysis_snapshot(case_id, snapshot.model_copy(update={
+            "source_analysis_revision": case.analysis_revision,
+            "source_analysis_run_id": case.analysis_run_id,
+        }))
+
+
+def _complete_without_snapshots(case_id: str) -> None:
+    repository = get_case_repository()
+    case = repository.get_case(case_id)
+    repository.replace_case_if_revision_matches(case.model_copy(update={
+        "status": "completed",
+        "analysis_revision": case.case_revision + 1,
+        "analysis_run_id": "synthetic_forecast_run",
+    }, deep=True), case.case_revision)
 
 
 def _snapshots(

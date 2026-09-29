@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.schemas.notification import (
     NotificationOutboxItem,
+    NotificationOutboxItemView,
     NotificationOutboxStatus,
     NotificationSendResult,
 )
@@ -12,13 +13,15 @@ from app.services.notifications.notification_service import (
     simulate_send,
     simulate_send_all_pending,
 )
+from app.services.case_store import get_case_repository
 
 router = APIRouter()
 
 
-@router.get("", response_model=list[NotificationOutboxItem])
-def list_all_notifications() -> list[NotificationOutboxItem]:
-    return list_notifications()
+@router.get("", response_model=list[NotificationOutboxItemView])
+def list_all_notifications() -> list[NotificationOutboxItemView]:
+    repository = get_case_repository()
+    return [repository.notification_view(item) for item in list_notifications(repository=repository)]
 
 
 @router.get("/outbox/status", response_model=NotificationOutboxStatus)

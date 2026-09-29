@@ -27,6 +27,8 @@ class ForecastInputSnapshot(BaseModel):
     real_crisis_risk: float = 0.0
     manipulation_risk: float = 0.0
     top_risk_topics: list[TopicRiskScore] = Field(default_factory=list)
+    source_analysis_revision: int | None = Field(default=None, ge=0)
+    source_analysis_run_id: str | None = None
 
 
 class TrendFeatures(BaseModel):
@@ -89,3 +91,5 @@ class ForecastResult(BaseModel):
     input_snapshots: list[ForecastInputSnapshot] = Field(default_factory=list)
     recommended_action: str
     message: str
+    source_analysis_revision: int | None = Field(default=None, ge=0)
+    source_analysis_run_id: str | None = None

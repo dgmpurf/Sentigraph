@@ -44,6 +44,15 @@ class AnalysisSnapshot(BaseModel):
     manipulation_risk: float = 0.0
     top_risk_topics: list[TopicRiskScore] = Field(default_factory=list)
     summary: str | None = None
+    source_analysis_revision: int | None = Field(default=None, ge=0)
+    source_analysis_run_id: str | None = None
+
+
+AuxiliaryLineageStatus = Literal["CURRENT", "HISTORICAL", "UNBOUND_LEGACY"]
+
+
+class AnalysisSnapshotView(AnalysisSnapshot):
+    lineage_status: AuxiliaryLineageStatus
 
 
 class AlertEvent(BaseModel):
@@ -59,6 +68,10 @@ class AlertEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AlertEventView(AlertEvent):
+    lineage_status: AuxiliaryLineageStatus
+
+
 class MonitoringStatus(BaseModel):
     case_id: str
     status: Literal["baseline_created", "alerts_detected", "stable"]
@@ -69,3 +82,5 @@ class MonitoringStatus(BaseModel):
     latest_risk_delta: float = 0.0
     latest_risk_level: RiskLevel
     message: str
+    source_analysis_revision: int | None = Field(default=None, ge=0)
+    source_analysis_run_id: str | None = None

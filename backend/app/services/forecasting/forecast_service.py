@@ -3,6 +3,10 @@ from __future__ import annotations
 from app.schemas.alert import AnalysisSnapshot
 from app.schemas.forecast import ForecastInputSnapshot, ForecastResult
 from app.services.case_store import get_case_repository
+from app.services.monitoring.analysis_lineage_currentness import (
+    AuxiliaryLineageStale,
+    current_case_pair,
+)
 from app.services.forecasting.risk_forecaster import build_risk_forecasts
 from app.services.forecasting.topic_forecaster import build_topic_forecasts
 from app.services.forecasting.trend_features import build_trend_features, confidence_from_snapshot_count
@@ -23,7 +27,12 @@ def run_case_forecast(case_id: str) -> ForecastResult | None:
     return _compute_case_forecast(case_id)
 
 
-def compute_forecast_from_snapshots(case_id: str, snapshots: list[AnalysisSnapshot]) -> ForecastResult:
+def compute_forecast_from_snapshots(
+    case_id: str,
+    snapshots: list[AnalysisSnapshot],
+    *,
+    source_pair: tuple[int, str] | None = None,
+) -> ForecastResult:
     sorted_snapshots = sorted(snapshots, key=lambda snapshot: snapshot.created_at)
     snapshot_count = len(sorted_snapshots)
     confidence = confidence_from_snapshot_count(snapshot_count)
@@ -31,6 +40,8 @@ def compute_forecast_from_snapshots(case_id: str, snapshots: list[AnalysisSnapsh
         return ForecastResult(
             case_id=case_id,
             forecast_status="insufficient_history",
+            source_analysis_revision=source_pair[0] if source_pair else None,
+            source_analysis_run_id=source_pair[1] if source_pair else None,
             forecast_confidence=confidence,
             recommended_action="请先运行案例分析或监控检查，生成监控快照后再运行风险预测。",
             message="历史不足，需更多监控快照。当前没有可用于预测的监控快照。",
@@ -51,6 +62,8 @@ def compute_forecast_from_snapshots(case_id: str, snapshots: list[AnalysisSnapsh
     return ForecastResult(
         case_id=case_id,
         forecast_status="ready",
+        source_analysis_revision=source_pair[0] if source_pair else None,
+        source_analysis_run_id=source_pair[1] if source_pair else None,
         generated_at=latest.created_at,
         risk_model_version=latest.risk_model_version,
         snapshot_count=snapshot_count,
@@ -79,9 +92,18 @@ def compute_forecast_from_snapshots(case_id: str, snapshots: list[AnalysisSnapsh
 
 def _compute_case_forecast(case_id: str) -> ForecastResult | None:
     repository = get_case_repository()
-    if not repository.get_case(case_id):
+    case = repository.get_case(case_id)
+    if case is None:
         return None
-    return compute_forecast_from_snapshots(case_id, repository.list_analysis_snapshots(case_id))
+    pair = current_case_pair(case)
+    if pair is None:
+        raise AuxiliaryLineageStale(case_id, "forecast")
+    result = compute_forecast_from_snapshots(
+        case_id, repository.list_current_snapshots(case), source_pair=pair
+    )
+    if current_case_pair(repository.get_case(case_id)) != pair:
+        raise AuxiliaryLineageStale(case_id, "forecast")
+    return result
 
 
 def _to_input_snapshot(snapshot: AnalysisSnapshot) -> ForecastInputSnapshot:
