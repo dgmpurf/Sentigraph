@@ -110,13 +110,45 @@ def test_reviewed_case_monitoring_requires_explicit_analysis_and_preserves_histo
 
 def test_all_alerts_endpoint_returns_persisted_events() -> None:
     case_id = _create_case()
-    client.post(f"/api/v1/cases/{case_id}/run")
-    client.post(f"/api/v1/cases/{case_id}/monitor/run")
+    attached = client.post(
+        f"/api/v1/cases/{case_id}/evidence/attach",
+        json={"evidence_items": [{"evidence_type": "comment", "comment_text": "Synthetic alert evidence."}]},
+    )
+    assert attached.status_code == 200
+    evidence_id = attached.json()["evidence_items"][0]["evidence_id"]
+    assert client.post(f"/api/v1/cases/{case_id}/run").status_code == 200
+    assert client.post(f"/api/v1/cases/{case_id}/monitor/run").status_code == 200
 
-    response = client.get("/api/v1/alerts")
+    current_global = client.get("/api/v1/alerts")
+    current_case = client.get(f"/api/v1/cases/{case_id}/alerts")
+    mock_before = client.get("/api/v1/alerts/project_001")
+    assert current_global.status_code == current_case.status_code == mock_before.status_code == 200
+    assert current_global.json() == current_case.json()
+    assert current_global.json()
+    assert {item["lineage_status"] for item in current_global.json()} == {"CURRENT"}
 
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+    reviewed = client.post(
+        f"/api/v1/cases/{case_id}/evidence/{evidence_id}/review",
+        json={"decision": "reject"},
+    )
+    assert reviewed.status_code == 200
+    historical_global = client.get("/api/v1/alerts")
+    historical_case = client.get(f"/api/v1/cases/{case_id}/alerts")
+    mock_after = client.get("/api/v1/alerts/project_001")
+    assert historical_global.status_code == historical_case.status_code == mock_after.status_code == 200
+    assert historical_global.json() == historical_case.json()
+    assert [item["alert_id"] for item in historical_global.json()] == [
+        item["alert_id"] for item in current_global.json()
+    ]
+    assert {item["lineage_status"] for item in historical_global.json()} == {"HISTORICAL"}
+    assert [
+        {key: value for key, value in item.items() if key != "lineage_status"}
+        for item in historical_global.json()
+    ] == [
+        {key: value for key, value in item.items() if key != "lineage_status"}
+        for item in current_global.json()
+    ]
+    assert mock_after.json() == mock_before.json()
 
 
 def test_alert_evaluator_with_no_previous_snapshot_returns_baseline_info() -> None:
