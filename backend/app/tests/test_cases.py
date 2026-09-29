@@ -35,6 +35,8 @@ def test_create_and_list_cases() -> None:
     created = create_response.json()
     assert created["case_id"] == "case_001"
     assert created["case_revision"] == 0
+    assert created["analysis_revision"] is None
+    assert created["analysis_run_id"] is None
     assert created["project_id"] == "project_001"
     assert created["title"] == "Tesla Demo Case"
     assert created["keyword"] == "Tesla"
@@ -48,7 +50,45 @@ def test_create_and_list_cases() -> None:
     assert len(cases) == 1
     assert cases[0]["case_id"] == "case_001"
     assert cases[0]["case_revision"] == 0
+    assert cases[0]["analysis_revision"] is None
+    assert cases[0]["analysis_run_id"] is None
     assert cases[0]["status"] == "draft"
+
+
+def test_case_list_preserves_analysis_lineage_across_run_and_config_mutation() -> None:
+    case_id = _create_case()
+
+    run_response = client.post(f"/api/v1/cases/{case_id}/run")
+    detail_response = client.get(f"/api/v1/cases/{case_id}")
+    list_response = client.get("/api/v1/cases")
+
+    assert run_response.status_code == 200
+    assert detail_response.status_code == 200
+    assert list_response.status_code == 200
+    completed = detail_response.json()
+    listed = list_response.json()[0]
+    for field in ("case_revision", "analysis_revision", "analysis_run_id", "status"):
+        assert listed[field] == completed[field]
+    assert completed["status"] == "completed"
+    assert completed["analysis_revision"] is not None
+    assert completed["analysis_revision"] == completed["case_revision"]
+    assert completed["analysis_run_id"]
+
+    config_response = client.post(f"/api/v1/cases/{case_id}/monitoring/enable")
+    later_detail_response = client.get(f"/api/v1/cases/{case_id}")
+    later_list_response = client.get("/api/v1/cases")
+
+    assert config_response.status_code == 200
+    assert later_detail_response.status_code == 200
+    assert later_list_response.status_code == 200
+    later = later_detail_response.json()
+    later_listed = later_list_response.json()[0]
+    assert later["case_revision"] == completed["case_revision"] + 1
+    assert later["analysis_revision"] == completed["analysis_revision"]
+    assert later["analysis_run_id"] == completed["analysis_run_id"]
+    assert later["analysis_revision"] != later["case_revision"]
+    for field in ("case_revision", "analysis_revision", "analysis_run_id", "status"):
+        assert later_listed[field] == later[field]
 
 
 def test_case_revision_advanced_by_storage_cas_is_visible_in_list_and_detail(case_store_path) -> None:
@@ -109,6 +149,8 @@ def test_case_detail_defaults_keep_old_case_documents_loadable() -> None:
 
     assert old_case.raw_posts == []
     assert old_case.case_revision == 0
+    assert old_case.analysis_revision is None
+    assert old_case.analysis_run_id is None
     assert old_case.raw_comments == []
     assert old_case.evidence_items == []
     assert old_case.crawl_metadata == []

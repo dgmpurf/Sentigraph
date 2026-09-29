@@ -240,6 +240,8 @@ def _to_list_item(case: AnalysisCaseDetail) -> AnalysisCaseListItem:
     return AnalysisCaseListItem(
         case_id=case.case_id,
         case_revision=case.case_revision,
+        analysis_revision=case.analysis_revision,
+        analysis_run_id=case.analysis_run_id,
         project_id=case.project_id,
         title=case.title,
         keyword=case.keyword,
