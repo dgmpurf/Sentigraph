@@ -31,22 +31,26 @@ const FALLBACK_PROVIDER_OPTIONS = [
   { value: 'youtube_official_api', label: 'YouTube Official API — offline mocked response (Phase 1)' },
 ]
 const LIVE_PROVIDER_ID = 'youtube_official_api_live'
-const LIVE_PROVIDER_OPTION = Object.freeze({
-  value: LIVE_PROVIDER_ID,
-  label: 'YouTube Official API — guarded live preview',
+const LIVE_SEARCH_ERRORS = Object.freeze({
+  youtube_live_search_discovery_route_disabled: 'The backend live search route is disabled.',
+  youtube_live_search_discovery_credential_missing: 'The backend live search credential is missing.',
+  youtube_live_search_discovery_quota_error: 'The official API reported a quota error.',
+  youtube_live_search_discovery_auth_error: 'The official API reported an authentication or authorization failure.',
+  youtube_live_search_discovery_network_error: 'The official API request failed at the network boundary.',
+  youtube_live_search_discovery_parsing_error: 'The official API response could not be parsed.',
+  youtube_live_search_discovery_provider_error: 'The official API reported a provider failure.',
 })
-const LIVE_PROVIDER_STATUS = Object.freeze({
-  provider_id: LIVE_PROVIDER_ID,
-  provider_type: LIVE_PROVIDER_ID,
-  display_name: LIVE_PROVIDER_OPTION.label,
-  status: 'guarded_live_preview',
-  safety_notes: Object.freeze([
-    'Official API metadata only',
-    'URL content not fetched',
-    'Human review required',
-    'Attachment requires the separate reviewed-evidence gate',
-  ]),
-})
+
+function normalizeDiscoveryQuery(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function safeLiveSearchError(error) {
+  const code = error?.response?.data?.detail
+  return typeof code === 'string' && Object.hasOwn(LIVE_SEARCH_ERRORS, code)
+    ? LIVE_SEARCH_ERRORS[code]
+    : 'Unable to complete the official API metadata search.'
+}
 
 function getYouTubeWatchVideoId(candidateUrl) {
   try {
@@ -85,6 +89,7 @@ export function SearchDiscovery({
   const [targetCaseId, setTargetCaseId] = useState(currentCase?.case_id || '')
   const [batch, setBatch] = useState(null)
   const [generatedProvider, setGeneratedProvider] = useState(null)
+  const [generatedQuery, setGeneratedQuery] = useState(null)
   const [candidateStatusById, setCandidateStatusById] = useState({})
   const [loading, setLoading] = useState(false)
   const [attaching, setAttaching] = useState(false)
@@ -136,19 +141,25 @@ export function SearchDiscovery({
 
   const providerOptions = useMemo(() => {
     const options = providers
-      .filter((item) => MOCK_PROVIDER_TYPES.includes(item.provider_type || item.provider_id))
+      .filter((item) => item.provider_id !== LIVE_PROVIDER_ID && MOCK_PROVIDER_TYPES.includes(item.provider_type || item.provider_id))
       .map((item) => ({
         value: item.provider_id,
         label: item.display_name || item.provider_id,
       }))
     const offlineOptions = options.length ? options : FALLBACK_PROVIDER_OPTIONS
-    return liveRouteFrontendEnabled
-      ? [...offlineOptions, LIVE_PROVIDER_OPTION]
+    const liveDescriptor = providers.find(
+      (item) => item.provider_id === LIVE_PROVIDER_ID && item.provider_type === 'youtube_official_api',
+    )
+    return liveRouteFrontendEnabled && liveDescriptor
+      ? [...offlineOptions, {
+        value: LIVE_PROVIDER_ID,
+        label: liveDescriptor.display_name,
+        disabled: liveDescriptor.live_fetch_enabled !== true,
+      }]
       : offlineOptions
   }, [liveRouteFrontendEnabled, providers])
 
   const selectedProviderStatus = useMemo(() => {
-    if (provider === LIVE_PROVIDER_ID) return LIVE_PROVIDER_STATUS
     return providers.find((item) => item.provider_id === provider) || null
   }, [provider, providers])
 
@@ -168,13 +179,20 @@ export function SearchDiscovery({
   const acceptedCount = acceptedCandidates.length
   const rejectedCount = candidates.filter((candidate) => candidate.status === 'rejected').length
   const liveBatchPreviewOnly = generatedProvider === LIVE_PROVIDER_ID
+  const liveSelected = provider === LIVE_PROVIDER_ID
+  const backendLiveDescriptor = providers.find(
+    (item) => item.provider_id === LIVE_PROVIDER_ID && item.provider_type === 'youtube_official_api',
+  )
+  const liveSearchAvailable = liveRouteFrontendEnabled && backendLiveDescriptor?.live_fetch_enabled === true
   const generatedBatchMatchesProvider = Boolean(generatedProvider) && generatedProvider === provider
-  const acceptedLiveCandidate = liveBatchPreviewOnly && generatedBatchMatchesProvider
+  const generatedBatchMatchesQuery = generatedQuery !== null && generatedQuery === normalizeDiscoveryQuery(query)
+  const generatedLiveBatchCurrent = liveBatchPreviewOnly && generatedBatchMatchesProvider && generatedBatchMatchesQuery
+  const acceptedLiveCandidate = generatedLiveBatchCurrent
     ? acceptedCandidates[0] || null
     : null
   const acceptedLiveVideoId = getYouTubeWatchVideoId(acceptedLiveCandidate?.url)
   const providerDiscussionLoadAvailable = Boolean(
-    liveRouteFrontendEnabled &&
+    liveSearchAvailable &&
     publicDiscussionReviewFrontendEnabled &&
     acceptedLiveCandidate &&
     acceptedLiveVideoId,
@@ -187,6 +205,8 @@ export function SearchDiscovery({
   )
   const publicDiscussionAttachAvailable = Boolean(
     publicDiscussionAttachFrontendEnabled &&
+    providerDiscussionLoadAvailable &&
+    publicDiscussionBatch?.video_id === acceptedLiveVideoId &&
     publicDiscussionSource === 'provider-backed' &&
     targetCaseId &&
     /^[0-9a-f]{64}$/.test(publicDiscussionBatch?.review_batch_safe_hash || '') &&
@@ -196,6 +216,9 @@ export function SearchDiscovery({
   )
 
   async function handleGenerateCandidates() {
+    if (loading) return
+    const submittedProvider = provider
+    const submittedQuery = normalizeDiscoveryQuery(query)
     setLoading(true)
     setError('')
     setAttachResult(null)
@@ -203,19 +226,40 @@ export function SearchDiscovery({
     setPublicDiscussionDecisionById({})
     setPublicDiscussionSource(null)
     setPublicDiscussionAttachResult(null)
+    setBatch(null)
+    setGeneratedProvider(null)
+    setGeneratedQuery(null)
+    setCandidateStatusById({})
     try {
-      const result = provider === LIVE_PROVIDER_ID
-        ? await getYouTubeOfficialApiLiveCandidates(query, 1)
-        : provider === 'youtube_official_api'
+      if (submittedProvider === LIVE_PROVIDER_ID) {
+        if (!liveSearchAvailable) {
+          setError('Live search is unavailable: a backend-enabled descriptor and the frontend gate are required.')
+          return
+        }
+        if (!submittedQuery) {
+          setError('Enter a non-blank query before searching YouTube Official API metadata.')
+          return
+        }
+      }
+      const result = submittedProvider === LIVE_PROVIDER_ID
+        ? await getYouTubeOfficialApiLiveCandidates(submittedQuery, 5)
+        : submittedProvider === 'youtube_official_api'
           ? await getYouTubeOfficialApiMockCandidates(query, 5)
-          : await getMockSearchDiscoveryCandidates(query, provider)
+          : await getMockSearchDiscoveryCandidates(query, submittedProvider)
+      if (submittedProvider === LIVE_PROVIDER_ID && normalizeDiscoveryQuery(result.query) !== submittedQuery) {
+        setError('The returned metadata batch does not match the submitted query. Run a new explicit search.')
+        return
+      }
       setBatch(result)
-      setGeneratedProvider(provider)
+      setGeneratedProvider(submittedProvider)
+      setGeneratedQuery(submittedQuery)
       setCandidateStatusById(
         Object.fromEntries((result.candidates || []).map((candidate) => [candidate.candidate_id, 'pending_review'])),
       )
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to generate mock Search Discovery candidates.')
+      setError(submittedProvider === LIVE_PROVIDER_ID
+        ? safeLiveSearchError(requestError)
+        : requestError?.message || 'Unable to generate mock Search Discovery candidates.')
     } finally {
       setLoading(false)
     }
@@ -309,7 +353,7 @@ export function SearchDiscovery({
 
   async function handleAttachAcceptedCandidates() {
     if (liveBatchPreviewOnly) {
-      setError('Guarded live candidates are preview-only and cannot be attached in this phase.')
+      setError('Live metadata leads cannot be attached through the generic candidate action.')
       return
     }
     if (!generatedBatchMatchesProvider) {
@@ -437,18 +481,20 @@ export function SearchDiscovery({
             <div>
               <Title level={2}>Search Discovery / 搜索发现</Title>
               <Text type="secondary">
-                {liveRouteFrontendEnabled
-                  ? 'Offline review with a disabled-by-default guarded live metadata preview.'
+                {liveSelected
+                  ? 'Intentional internal real YouTube Official API metadata search.'
                   : 'Mock-only candidate review for future all-web discovery workflows.'}
               </Text>
             </div>
           </Space>
           <Space wrap>
-            <Tag color="purple">Mock/static only</Tag>
+            <Tag color={liveSelected ? 'cyan' : 'purple'}>
+              {liveSelected ? 'Real official-API metadata lane' : 'Offline/mock fixtures'}
+            </Tag>
             <Tag color="purple">RSS/GDELT fixtures</Tag>
             <Tag color="purple">YouTube official-shaped offline fixture</Tag>
             {liveRouteFrontendEnabled ? (
-              <Tag color="cyan">Guarded live preview option exposed</Tag>
+              <Tag color="cyan">Guarded internal capability; readiness not established</Tag>
             ) : (
               <Tag color="green">No real search API</Tag>
             )}
@@ -461,12 +507,13 @@ export function SearchDiscovery({
           <Alert
             type="warning"
             showIcon
-            message="Guarded live metadata preview"
+            message="Internal real YouTube Official API metadata search"
             description={(
               <Space wrap size={6}>
                 <Tag>Official API metadata only</Tag>
                 <Tag>URL content not fetched</Tag>
                 <Tag>Human review required</Tag>
+                <Tag>Metadata lead only; official API provenance is not truth verification</Tag>
                 <Tag>
                   {publicDiscussionAttachFrontendEnabled
                     ? 'Reviewed public comments may be attached through a separate guarded action'
@@ -486,6 +533,13 @@ export function SearchDiscovery({
         )}
       </Card>
 
+      {liveRouteFrontendEnabled && !backendLiveDescriptor ? (
+        <Alert type="warning" showIcon message="Live search unavailable: backend capability descriptor is absent." />
+      ) : null}
+      {liveRouteFrontendEnabled && backendLiveDescriptor?.live_fetch_enabled !== true && backendLiveDescriptor ? (
+        <Alert type="warning" showIcon message="Backend live search route is disabled; the live lane is unavailable." />
+      ) : null}
+
       <Card className="panel-card">
         <Form layout="vertical">
           <Form.Item label="Discovery provider / 发现来源">
@@ -493,7 +547,7 @@ export function SearchDiscovery({
               value={provider}
               onChange={setProvider}
               options={providerOptions}
-              placeholder="Select a mock provider"
+              placeholder="Select a discovery lane"
             />
           </Form.Item>
           <Form.Item label="Keyword / Event query">
@@ -519,10 +573,11 @@ export function SearchDiscovery({
               type="primary"
               icon={<RefreshCw size={16} />}
               loading={loading}
+              disabled={liveSelected && !liveSearchAvailable}
               onClick={handleGenerateCandidates}
             >
               {provider === LIVE_PROVIDER_ID
-                ? 'Generate guarded live preview / 生成受控实时预览'
+                ? 'Search YouTube Official API metadata / 搜索官方 API 元数据'
                 : 'Generate mock candidates / 生成模拟候选'}
             </Button>
             <Button
@@ -565,8 +620,9 @@ export function SearchDiscovery({
             <Tag color="blue">{selectedProviderStatus?.status || 'mock_only'}</Tag>
             {provider === LIVE_PROVIDER_ID ? (
               <>
-                <Tag color="cyan">frontend_preview_option=true</Tag>
-                <Tag color="gold">backend_route_independently_gated=true</Tag>
+                <Tag color="cyan">frontend_gate={String(liveRouteFrontendEnabled)}</Tag>
+                <Tag color="gold">backend_route_enabled={String(backendLiveDescriptor?.live_fetch_enabled === true)}</Tag>
+                <Tag>Credentials not checked; provider availability not established</Tag>
               </>
             ) : (
               <Tag color="green">live_fetch_enabled=false</Tag>
@@ -578,7 +634,7 @@ export function SearchDiscovery({
         </div>
         <Paragraph type="secondary">
           {provider === LIVE_PROVIDER_ID
-            ? `${selectedProviderStatus.display_name} · This local UI choice can request one guarded metadata preview only when the independently gated backend route is available. URL content is not fetched. Reviewed public comments can be attached only when the separate attach gate is enabled; analysis always remains a separate action.`
+            ? `${selectedProviderStatus?.display_name || 'Unavailable live lane'} · One explicit internal metadata search requests at most five candidates. Enablement is not credential/provider readiness. URL content is not fetched. Generic metadata attachment is disabled; public discussion review requires its separate gates and a current query/lane selection.`
             : `${selectedProviderStatus?.display_name || 'Selected provider'} · RSS/GDELT and the Phase-1 YouTube official-shaped response are offline fixtures. Future real providers may return URL/title/snippet metadata only; full content extraction requires a separate reviewed public parser, official API route, licensed vendor payload, or user-provided text.`}
         </Paragraph>
         <Space wrap size={6}>
@@ -803,6 +859,13 @@ export function SearchDiscovery({
           </Space>
           <Text type="secondary">Users must later supplement full text/comments or route sources through a compliant parser.</Text>
         </div>
+        {liveBatchPreviewOnly ? (
+          <Alert
+            type={generatedLiveBatchCurrent ? 'info' : 'warning'}
+            message={`${generatedLiveBatchCurrent ? 'Current' : 'Historical'} real official-API metadata batch for query: ${generatedQuery}`}
+            description="Metadata leads only; human review required. URL content not fetched; API transport provenance is not claim-truth verification. Historical results cannot load discussion for a changed query/lane."
+          />
+        ) : null}
         {candidates.length ? (
           <Table
             rowKey="candidate_id"
@@ -811,7 +874,11 @@ export function SearchDiscovery({
             pagination={false}
           />
         ) : (
-          <Empty description="Generate mock candidates to start the review flow." />
+          <Empty description={liveBatchPreviewOnly
+            ? `No official API metadata candidates returned for query: ${generatedQuery}`
+            : liveSelected
+              ? 'Click the explicit official API search action to begin.'
+              : 'Generate offline/mock candidates to start the review flow.'} />
         )}
       </Card>
 

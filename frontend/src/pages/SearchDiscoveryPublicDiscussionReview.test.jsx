@@ -36,7 +36,16 @@ vi.mock('../api/sentigraphApi.js', () => apiMocks)
 import { SearchDiscovery } from './SearchDiscovery.jsx'
 import { PUBLIC_DISCUSSION_REVIEW_FIXTURE } from '../fixtures/publicDiscussionReviewFixture.js'
 
-const LIVE_PROVIDER_LABEL = 'YouTube Official API — guarded live preview'
+const LIVE_PROVIDER_LABEL = 'YouTube Official API — internal live metadata search'
+
+const LIVE_PROVIDER = {
+  provider_id: 'youtube_official_api_live',
+  provider_type: 'youtube_official_api',
+  display_name: LIVE_PROVIDER_LABEL,
+  status: 'guarded_internal',
+  live_fetch_enabled: true,
+  safety_notes: ['Credentials not checked; provider availability not established'],
+}
 
 const LIVE_BATCH = {
   query: 'Current launch',
@@ -195,7 +204,8 @@ async function renderProviderDiscussion(props = {}) {
   )
   await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
   await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
-  fireEvent.click(screen.getByRole('button', { name: /Generate guarded live preview/ }))
+  fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+  fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
   await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
   fireEvent.click(screen.getByRole('button', { name: '接受' }))
   const panel = screen.getByTestId('public-discussion-review-panel')
@@ -210,7 +220,7 @@ async function renderProviderDiscussion(props = {}) {
 beforeEach(() => {
   installFailClosedBrowserNetworkSentinels()
   Object.values(apiMocks).forEach((mock) => mock.mockReset())
-  apiMocks.getSearchDiscoveryProviders.mockResolvedValue([])
+  apiMocks.getSearchDiscoveryProviders.mockResolvedValue([LIVE_PROVIDER])
   apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue(LIVE_BATCH)
   apiMocks.getYouTubeOfficialApiLivePublicDiscussion.mockResolvedValue(LIVE_DISCUSSION_BATCH)
   apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion.mockResolvedValue(ATTACH_RESULT)
@@ -413,7 +423,7 @@ describe('SearchDiscovery provider-backed public-discussion bridge Phase 2E3D', 
     await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
     await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
     fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
-    fireEvent.click(screen.getByRole('button', { name: /Generate guarded live preview/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
     await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
 
     expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).toHaveBeenCalledTimes(0)
@@ -471,7 +481,8 @@ describe('SearchDiscovery provider-backed public-discussion bridge Phase 2E3D', 
 
     await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
     await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
-    fireEvent.click(screen.getByRole('button', { name: /Generate guarded live preview/ }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+  fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
     await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
     fireEvent.click(screen.getByRole('button', { name: '接受' }))
 
@@ -488,7 +499,8 @@ describe('SearchDiscovery provider-backed public-discussion bridge Phase 2E3D', 
 
     await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
     await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
-    fireEvent.click(screen.getByRole('button', { name: /Generate guarded live preview/ }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+  fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
     await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
     fireEvent.click(screen.getByRole('button', { name: '接受' }))
     fireEvent.click(screen.getByRole('button', { name: /Load provider-backed public discussion/ }))
@@ -497,6 +509,38 @@ describe('SearchDiscovery provider-backed public-discussion bridge Phase 2E3D', 
     expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).toHaveBeenCalledTimes(1)
     expect(screen.queryByText(PUBLIC_DISCUSSION_REVIEW_FIXTURE.items[0].body_text)).toBeNull()
     expect(screen.queryAllByTestId('public-discussion-review-item')).toHaveLength(0)
+  })
+})
+
+describe('RDS1 current-query discussion eligibility', () => {
+  it('revokes discussion loading after query drift, with no implicit provider action', async () => {
+    render(<SearchDiscovery liveRouteFrontendEnabled publicDiscussionReviewFrontendEnabled />)
+    await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
+    await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+    fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
+    await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    expect(screen.getByRole('button', { name: /Load provider-backed public discussion/ })).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'New event' } })
+    expect(screen.queryByRole('button', { name: /Load provider-backed public discussion/ })).toBeNull()
+    expect(screen.getByText('Historical real official-API metadata batch for query: Current launch')).toBeTruthy()
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).not.toHaveBeenCalled()
+    expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
+  })
+
+  it('revokes reviewed-attach eligibility when the displayed search is no longer current', async () => {
+    const panel = await renderProviderDiscussion({
+      publicDiscussionAttachFrontendEnabled: true,
+      cases: [TARGET_CASE], currentCase: TARGET_CASE,
+    })
+    fireEvent.click(within(panel).getByRole('button', { name: `Accept ${LIVE_DISCUSSION_BATCH.items[0].discussion_id}` }))
+    const attach = within(panel).getByRole('button', { name: 'Attach reviewed public discussion to case' })
+    expect(attach.disabled).toBe(false)
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'New event' } })
+    expect(attach.disabled).toBe(true)
+    fireEvent.click(attach)
+    expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
   })
 })
 

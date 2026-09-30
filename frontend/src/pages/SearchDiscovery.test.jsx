@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   attachSearchDiscoveryCandidates: vi.fn(),
+  attachYouTubeOfficialApiReviewedPublicDiscussion: vi.fn(),
   getAnalysisCase: vi.fn(),
   getMockSearchDiscoveryCandidates: vi.fn(),
   getSearchDiscoveryProviders: vi.fn(),
   getYouTubeOfficialApiLiveCandidates: vi.fn(),
+  getYouTubeOfficialApiLivePublicDiscussion: vi.fn(),
   getYouTubeOfficialApiMockCandidates: vi.fn(),
 }))
 
@@ -42,10 +44,12 @@ vi.mock('../api/sentigraphApi.js', async (importOriginal) => {
   return {
     ...actual,
     attachSearchDiscoveryCandidates: apiMocks.attachSearchDiscoveryCandidates,
+    attachYouTubeOfficialApiReviewedPublicDiscussion: apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion,
     getAnalysisCase: apiMocks.getAnalysisCase,
     getMockSearchDiscoveryCandidates: apiMocks.getMockSearchDiscoveryCandidates,
     getSearchDiscoveryProviders: apiMocks.getSearchDiscoveryProviders,
     getYouTubeOfficialApiLiveCandidates: apiMocks.getYouTubeOfficialApiLiveCandidates,
+    getYouTubeOfficialApiLivePublicDiscussion: apiMocks.getYouTubeOfficialApiLivePublicDiscussion,
     getYouTubeOfficialApiMockCandidates: apiMocks.getYouTubeOfficialApiMockCandidates,
   }
 })
@@ -98,7 +102,16 @@ const OFFLINE_BATCH = {
   },
 }
 
-const LIVE_PROVIDER_LABEL = 'YouTube Official API — guarded live preview'
+const LIVE_PROVIDER_LABEL = 'YouTube Official API — internal live metadata search'
+
+const LIVE_PROVIDER = {
+  provider_id: 'youtube_official_api_live',
+  provider_type: 'youtube_official_api',
+  display_name: LIVE_PROVIDER_LABEL,
+  status: 'guarded_internal',
+  live_fetch_enabled: true,
+  safety_notes: ['Credentials not checked; provider availability not established'],
+}
 
 const LIVE_BATCH = {
   query: 'Current launch',
@@ -162,7 +175,7 @@ function selectFirstComboboxOption(label) {
 beforeEach(() => {
   installFailClosedBrowserNetworkSentinels()
   Object.values(apiMocks).forEach((mock) => mock.mockReset())
-  apiMocks.getSearchDiscoveryProviders.mockResolvedValue([OFFLINE_PROVIDER])
+  apiMocks.getSearchDiscoveryProviders.mockResolvedValue([OFFLINE_PROVIDER, LIVE_PROVIDER])
   apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue(LIVE_BATCH)
   apiMocks.getYouTubeOfficialApiMockCandidates.mockResolvedValue(OFFLINE_BATCH)
   apiMocks.attachSearchDiscoveryCandidates.mockResolvedValue(ATTACH_RESULT)
@@ -273,7 +286,7 @@ describe('SearchDiscovery offline YouTube official API Phase 1', () => {
   })
 })
 
-describe('SearchDiscovery guarded live preview Phase 2D3A', () => {
+describe('SearchDiscovery intentional guarded internal official API metadata', () => {
   it('uses the exact guarded live helper route and existing batch normalizer', async () => {
     const actualApi = await vi.importActual('../api/sentigraphApi.js')
     expect(typeof actualApi.getYouTubeOfficialApiLiveCandidates).toBe('function')
@@ -322,10 +335,10 @@ describe('SearchDiscovery guarded live preview Phase 2D3A', () => {
     await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
     await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
     fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
-    fireEvent.click(screen.getByRole('button', { name: /Generate guarded live preview/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
 
     await waitFor(() => {
-      expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledWith('Current launch', 1)
+      expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledWith('Current launch', 5)
     })
     expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(1)
     expect(apiMocks.getYouTubeOfficialApiMockCandidates).toHaveBeenCalledTimes(0)
@@ -333,7 +346,7 @@ describe('SearchDiscovery guarded live preview Phase 2D3A', () => {
     expect(await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })).toBeTruthy()
 
     for (const text of [
-      'Guarded live metadata preview',
+      'Internal real YouTube Official API metadata search',
       'Official API metadata only',
       'URL content not fetched',
       'Human review required',
@@ -368,7 +381,8 @@ describe('SearchDiscovery guarded live preview Phase 2D3A', () => {
 
     await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
     await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
-    fireEvent.click(screen.getByRole('button', { name: /Generate guarded live preview/ }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+  fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
     await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
     fireEvent.click(screen.getByRole('button', { name: '接受' }))
 
@@ -385,5 +399,130 @@ describe('SearchDiscovery guarded live preview Phase 2D3A', () => {
     expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(1)
     expect(apiMocks.getYouTubeOfficialApiMockCandidates).toHaveBeenCalledTimes(1)
     expect(apiMocks.getMockSearchDiscoveryCandidates).toHaveBeenCalledTimes(0)
+  })
+})
+
+describe('RDS1 intentional live search boundaries', () => {
+  async function renderLive(props = {}) {
+    render(<SearchDiscovery liveRouteFrontendEnabled publicDiscussionReviewFrontendEnabled {...props} />)
+    await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
+    await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+  }
+
+  function expectNoDownstreamActions() {
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).not.toHaveBeenCalled()
+    expect(apiMocks.attachSearchDiscoveryCandidates).not.toHaveBeenCalled()
+    expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
+    expect(apiMocks.getMockSearchDiscoveryCandidates).not.toHaveBeenCalled()
+    expect(apiMocks.getYouTubeOfficialApiMockCandidates).not.toHaveBeenCalled()
+  }
+
+  it('fails closed when the backend live descriptor is missing', async () => {
+    apiMocks.getSearchDiscoveryProviders.mockResolvedValue([OFFLINE_PROVIDER])
+    render(<SearchDiscovery liveRouteFrontendEnabled />)
+    await screen.findByText('Live search unavailable: backend capability descriptor is absent.')
+    fireEvent.mouseDown(screen.getAllByRole('combobox')[0])
+    expect(screen.queryByText(LIVE_PROVIDER_LABEL, { exact: true })).toBeNull()
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).not.toHaveBeenCalled()
+  })
+
+  it('shows the backend-disabled descriptor as an unavailable lane', async () => {
+    apiMocks.getSearchDiscoveryProviders.mockResolvedValue([OFFLINE_PROVIDER, { ...LIVE_PROVIDER, live_fetch_enabled: false }])
+    render(<SearchDiscovery liveRouteFrontendEnabled />)
+    await screen.findByText('Backend live search route is disabled; the live lane is unavailable.')
+    fireEvent.mouseDown(screen.getAllByRole('combobox')[0])
+    const option = (await screen.findByText(LIVE_PROVIDER_LABEL, { exact: true })).closest('.ant-select-item-option')
+    expect(option.className).toContain('ant-select-item-option-disabled')
+    fireEvent.click(option)
+    expect(screen.queryByRole('button', { name: /Search YouTube Official API metadata/ })).toBeNull()
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).not.toHaveBeenCalled()
+  })
+
+  it('normalizes a submitted query, requests five once, and never auto invokes downstream actions', async () => {
+    const onRunCase = vi.fn()
+    await renderLive({ onRunCase })
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: '  Current   launch  ' } })
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
+    await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledWith('Current launch', 5)
+    expect(screen.queryByText('Mock/static only', { exact: true })).toBeNull()
+    expect(screen.getByText('Current real official-API metadata batch for query: Current launch')).toBeTruthy()
+    expectNoDownstreamActions()
+    expect(onRunCase).not.toHaveBeenCalled()
+  })
+
+  it('rejects a blank explicit query without substituting Tesla or retaining an old current batch', async () => {
+    await renderLive()
+    fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
+    await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    expect(screen.getByRole('button', { name: /Load provider-backed public discussion/ })).toBeTruthy()
+    apiMocks.getYouTubeOfficialApiLiveCandidates.mockClear()
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: '   \t ' } })
+    expect(screen.queryByRole('button', { name: /Load provider-backed public discussion/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
+    await screen.findByText('Enter a non-blank query before searching YouTube Official API metadata.')
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).not.toHaveBeenCalled()
+    expect(screen.queryByText(LIVE_BATCH.candidates[0].title, { exact: true })).toBeNull()
+    expectNoDownstreamActions()
+  })
+
+  it('shows successful zero results for the submitted query without fallback or retry', async () => {
+    apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue({ ...LIVE_BATCH, candidates: [], candidate_count: 0 })
+    await renderLive()
+    fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
+    await screen.findByText('No official API metadata candidates returned for query: Current launch')
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(1)
+    expectNoDownstreamActions()
+  })
+
+  it.each([
+    ['route_disabled', 'The backend live search route is disabled.'],
+    ['credential_missing', 'The backend live search credential is missing.'],
+    ['quota_error', 'The official API reported a quota error.'],
+    ['auth_error', 'The official API reported an authentication or authorization failure.'],
+    ['network_error', 'The official API request failed at the network boundary.'],
+    ['parsing_error', 'The official API response could not be parsed.'],
+    ['provider_error', 'The official API reported a provider failure.'],
+    ['unexpected', 'Unable to complete the official API metadata search.'],
+  ])('renders safe %s failures once without exposing raw responses or falling back', async (suffix, message) => {
+    apiMocks.getYouTubeOfficialApiLiveCandidates.mockRejectedValue({
+      message: 'synthetic-sensitive-raw-message',
+      response: { data: { detail: 'youtube_live_search_discovery_' + suffix, raw: 'synthetic-private-response' } },
+    })
+    await renderLive()
+    fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
+    await screen.findByText(message)
+    expect(screen.queryByText(/synthetic-sensitive-raw-message|synthetic-private-response/)).toBeNull()
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(1)
+    expectNoDownstreamActions()
+  })
+
+  it('keeps an in-flight result bound to its submitted query and lane after input drift', async () => {
+    let resolveSearch
+    apiMocks.getYouTubeOfficialApiLiveCandidates.mockImplementation(() => new Promise((resolve) => { resolveSearch = resolve }))
+    await renderLive()
+    fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Another event' } })
+    await selectFirstComboboxOption(OFFLINE_PROVIDER.display_name)
+    resolveSearch(LIVE_BATCH)
+    await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    expect(screen.getByText('Historical real official-API metadata batch for query: Current launch')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Load provider-backed public discussion/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Attach accepted to case/ }).disabled).toBe(true)
+    expectNoDownstreamActions()
+  })
+
+  it('rejects a response for another query without authorizing any selection', async () => {
+    apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue({ ...LIVE_BATCH, query: 'Different event' })
+    await renderLive()
+    fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
+    await screen.findByText('The returned metadata batch does not match the submitted query. Run a new explicit search.')
+    expect(screen.queryByText(LIVE_BATCH.candidates[0].title, { exact: true })).toBeNull()
+    expectNoDownstreamActions()
   })
 })

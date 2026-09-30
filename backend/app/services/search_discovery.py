@@ -102,12 +102,20 @@ def get_search_discovery_status() -> SearchDiscoveryStatusResponse:
             "No automatic page fetching happens in the discovery step.",
         ],
         next_actions=[
-            "Use the mock Search Discovery UI for safe candidate-review demos.",
+            "Use offline fixtures for demos, or explicitly select the separately gated internal official-API metadata lane.",
+            "Live route enablement is not credential validity or provider availability; status does not check credentials or call providers.",
             "Use RSS Mock and GDELT Mock providers as local fixture rehearsals only.",
             "Research real RSS/GDELT/news provider terms and quota before any live provider is added.",
             "Design real provider adapters only after provider terms, quota, and no-fetch tests are reviewed.",
             "Keep automatic scraping, URL fetching, cookies, and third-party crawler integration out of scope.",
         ],
+        safe_mode={
+            **SearchDiscoveryStatusResponse().safe_mode,
+            "mock_candidates_only": False,
+            "guarded_internal_capability_present": True,
+            "credentials_checked": False,
+            "provider_success_verified": False,
+        },
     )
 
 
@@ -115,8 +123,12 @@ def get_search_discovery_providers() -> list[SearchDiscoveryProviderStatus]:
     return get_search_discovery_provider_statuses()
 
 
-def get_search_discovery_provider_statuses() -> list[SearchDiscoveryProviderStatus]:
-    return [
+def get_search_discovery_provider_statuses(
+    *, include_guarded_live: bool = True,
+) -> list[SearchDiscoveryProviderStatus]:
+    """Describe capabilities without credentials/network; offline batches omit live gate reads."""
+
+    providers = [
         _provider_status(
             provider_id="mock_static",
             provider_type="mock_static",
@@ -219,6 +231,49 @@ def get_search_discovery_provider_statuses() -> list[SearchDiscoveryProviderStat
             next_action="Wait for a selected vendor and mocked contract fixtures.",
         ),
     ]
+    if include_guarded_live:
+        providers.append(_guarded_youtube_live_provider_status())
+    return providers
+
+
+def _guarded_youtube_live_provider_status() -> SearchDiscoveryProviderStatus:
+    """Report only route configuration, not credential or successful-provider readiness."""
+
+    enabled = os.getenv(YOUTUBE_LIVE_SEARCH_DISCOVERY_ROUTE_ENABLE_FLAG, "") == "1"
+    return SearchDiscoveryProviderStatus(
+        provider_id="youtube_official_api_live",
+        provider_type="youtube_official_api",
+        display_name="YouTube Official API — internal live metadata search",
+        status="guarded_internal",
+        live_fetch_enabled=enabled,
+        requires_api_key=True,
+        requires_network=True,
+        capabilities={"supports_live_fetch": True},
+        limits={
+            "max_candidates_per_query": 5,
+            "network_call_limit": 2,
+            "safe_limit_note": "One explicit search.list plus at most one videos.list; no pagination or retry.",
+        },
+        safety_boundary={"live_fetch_enabled": enabled, "secrets_required": True},
+        safety_notes=[
+            "Real YouTube Official API metadata capability; internal/nonproduction only",
+            "Backend route enabled" if enabled else "Backend route disabled",
+            "Credentials not checked; provider availability and quota not established",
+            "URL content not fetched",
+            "Human review required; official API provenance is not truth verification",
+            "Live metadata cannot be attached through the generic candidate action",
+        ],
+        provider_class="guarded_internal_official_api",
+        allowed_use="One intentional bounded official-API metadata search when both independent product gates allow it.",
+        forbidden_use="No URL fetching, scraping, cookies, automatic Evidence/analysis/report, or truth upgrade.",
+        data_returned=["url", "title", "snippet", "source_name", "published_at"],
+        credential_present=None,
+        current_sentigraph_status=(
+            "internal_route_enabled_credentials_not_checked"
+            if enabled else "internal_route_disabled_credentials_not_checked"
+        ),
+        next_action="Configure the independent default-off gates before explicit internal search; enablement is not readiness proof.",
+    )
 
 
 def get_mock_search_discovery_candidates(query: str = "Tesla", provider: str = "mock_static") -> SearchDiscoveryBatch:
@@ -231,7 +286,7 @@ def get_mock_search_discovery_candidates(query: str = "Tesla", provider: str = "
         generated_at=datetime.now(timezone.utc),
         candidates=candidates,
         candidate_count=len(candidates),
-        provider_statuses=[provider_status for provider_status in get_search_discovery_provider_statuses() if provider_status.provider_id == selected_provider],
+        provider_statuses=[provider_status for provider_status in get_search_discovery_provider_statuses(include_guarded_live=False) if provider_status.provider_id == selected_provider],
     )
 
 
@@ -255,7 +310,7 @@ def get_youtube_official_api_mock_candidates(
     ]
     provider_status = next(
         status
-        for status in get_search_discovery_provider_statuses()
+        for status in get_search_discovery_provider_statuses(include_guarded_live=False)
         if status.provider_id == "youtube_official_api"
     )
     return SearchDiscoveryBatch(

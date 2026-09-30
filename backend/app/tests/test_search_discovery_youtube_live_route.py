@@ -40,6 +40,57 @@ PHASE1_ROUTE_PATH = "/youtube-official-api/mock-candidates"
 SYNTHETIC_CREDENTIAL = "synthetic-route-credential-marker"
 
 
+@pytest.mark.parametrize("flag", [None, "0", "true", " 1", "1 ", "1"])
+def test_inventory_reports_only_exact_gate_without_credentials_or_network(monkeypatch, hard_zero_guards, flag):
+    if flag is None:
+        monkeypatch.delenv(ENABLE_FLAG, raising=False)
+    else:
+        monkeypatch.setenv(ENABLE_FLAG, flag)
+
+    def fail_credentials(*args, **kwargs):
+        raise AssertionError("Capability discovery must not resolve credentials.")
+
+    monkeypatch.setattr(YouTubeCredentials, "from_env", fail_credentials)
+    for providers in (
+        service_module.get_search_discovery_providers(),
+        service_module.get_search_discovery_status().provider_statuses,
+    ):
+        by_id = {item.provider_id: item for item in providers}
+        offline = by_id["youtube_official_api"]
+        live = by_id["youtube_official_api_live"]
+        assert offline.status == "mock_only"
+        assert offline.live_fetch_enabled is False
+        assert offline.requires_api_key is False
+        assert "offline mocked" in offline.display_name
+        assert live.provider_type == "youtube_official_api"
+        assert live.status == "guarded_internal"
+        assert live.live_fetch_enabled is (flag == "1")
+        assert live.capabilities.supports_live_fetch is True
+        assert live.limits.max_candidates_per_query == 5
+        assert live.limits.network_call_limit == 2
+        assert live.credential_present is None
+        assert live.returns_full_content is False
+        assert any("not checked" in note for note in live.safety_notes)
+        assert live.safety_boundary.real_search_api_calls is False
+        assert live.safety_boundary.url_fetching is False
+    assert hard_zero_guards["real_network"] == 0
+    assert hard_zero_guards["real_credential_reads"] == 0
+
+
+def test_offline_batches_never_read_even_the_live_gate(monkeypatch):
+    def fail_env(*args, **kwargs):
+        raise AssertionError("Offline candidate routes must not read environment or credentials.")
+
+    monkeypatch.setattr(service_module.os, "getenv", fail_env)
+    for batch in (
+        service_module.get_mock_search_discovery_candidates("Synthetic event"),
+        service_module.get_youtube_official_api_mock_candidates("Synthetic event", 5),
+    ):
+        assert batch.safe_mode["mock_candidates_only"] is True
+        assert batch.safe_mode["real_search_api_calls"] is False
+        assert all(item.live_fetch_enabled is False for item in batch.provider_statuses)
+
+
 class FakeOfficialSearchClient:
     def __init__(self, *, failure: Exception | None = None) -> None:
         self.failure = failure

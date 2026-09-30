@@ -1,4 +1,5 @@
 import ast
+import os
 from pathlib import Path
 import socket
 import urllib.request
@@ -17,7 +18,22 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def configure_temp_case_store(tmp_path) -> None:
+def configure_temp_case_store(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_ROUTE_ENABLED", raising=False)
+    original_getenv = os.getenv
+
+    def guarded_getenv(key, default=None):
+        if key == "YOUTUBE_API_KEY":
+            raise AssertionError("Focused static tests must not read a real provider credential.")
+        return original_getenv(key, default)
+
+    def fail_network(*args, **kwargs):
+        raise AssertionError("Focused static tests must not make real network requests.")
+
+    monkeypatch.setattr(os, "getenv", guarded_getenv)
+    monkeypatch.setattr(socket, "create_connection", fail_network)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fail_network)
+    monkeypatch.setattr(urllib.request, "urlopen", fail_network)
     configure_case_repository(CaseRepository(LocalJsonCaseStore(tmp_path / "cases.json")))
     reset_case_store()
 
@@ -32,7 +48,7 @@ def test_search_discovery_status_is_static_and_safe(monkeypatch) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "planning_mock_only"
+    assert body["status"] == "mock_and_guarded_internal_capability"
     provider_ids = {provider["provider_id"] for provider in body["provider_statuses"]}
     assert {
         "mock_static",
@@ -47,6 +63,12 @@ def test_search_discovery_status_is_static_and_safe(monkeypatch) -> None:
         assert provider["returns_full_content"] is False
         assert provider["returns_title_snippet_url"] is True
     assert body["safe_mode"]["static_metadata_only"] is True
+    assert body["safe_mode"]["mock_candidates_only"] is False
+    assert body["safe_mode"]["credentials_checked"] is False
+    live = next(item for item in body["provider_statuses"] if item["provider_id"] == "youtube_official_api_live")
+    assert live["provider_type"] == "youtube_official_api"
+    assert live["live_fetch_enabled"] is False
+    assert live["credential_present"] is None
     assert body["safe_mode"]["real_search_api_calls"] is False
     assert body["safe_mode"]["url_fetching"] is False
     assert body["safe_mode"]["scraping"] is False

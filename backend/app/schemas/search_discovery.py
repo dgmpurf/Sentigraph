@@ -23,6 +23,7 @@ SearchDiscoveryProviderLifecycleStatus = Literal[
     "planned",
     "disabled",
     "future_real_provider",
+    "guarded_internal",
 ]
 
 
@@ -240,7 +241,7 @@ class SearchDiscoveryProviderStatus(SearchDiscoveryProvider):
     forbidden_use: str
     data_returned: list[str] = Field(default_factory=list)
     full_content_available: bool = False
-    credential_present: bool = False
+    credential_present: bool | None = False
     user_review_required: bool = True
     current_sentigraph_status: str
 
@@ -309,7 +310,9 @@ class SearchDiscoveryBatch(BaseModel):
 
 
 class SearchDiscoveryStatusResponse(BaseModel):
-    status: Literal["planning_mock_only"] = "planning_mock_only"
+    status: Literal["planning_mock_only", "mock_and_guarded_internal_capability"] = (
+        "mock_and_guarded_internal_capability"
+    )
     provider_statuses: list[SearchDiscoveryProviderStatus] = Field(default_factory=list)
     review_flow: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
