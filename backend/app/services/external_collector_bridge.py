@@ -4,10 +4,13 @@ import json
 import os
 import re
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from app.schemas.external_collector_bridge import (
+    ExternalCollectorDiscoveryResponse,
+    ExternalCollectorDiscoveryResult,
     ExternalCollectorPackageDetail,
     ExternalCollectorPackageSummary,
     ExternalCollectorStatus,
@@ -20,6 +23,12 @@ SUGGESTED_LOCAL_PATH = r"G:\AICODING\网页端任务二\exports\sentigraph-evide
 PACKAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 WINDOWS_DRIVE_PATTERN = re.compile(r"^[A-Za-z]:")
 DOT_ONLY_SEGMENT_PATTERN = re.compile(r"^\.+$")
+DISCOVERY_UNSAFE_TEXT_PATTERN = re.compile(
+    r"(?:\b(?:api[_\s-]?key|access[_\s-]?token|refresh[_\s-]?token|client[_\s-]?secret|"
+    r"password|cookie|authorization|session|secret|token)\b[\"']?\s*[:=])"
+    r"|(?:https?://|file://|[A-Za-z]:[\\/]|(?:^|\s)(?:/|\\\\))",
+    re.IGNORECASE,
+)
 PACKAGE_INDEX_FILE = "package_index.json"
 PACKAGE_ROLE_PRIORITY = {
     "recommended_demo_sample": 0,
@@ -108,7 +117,9 @@ def get_external_collector_status() -> ExternalCollectorStatus:
     )
 
 
-def list_external_collector_packages() -> list[ExternalCollectorPackageSummary]:
+def list_external_collector_packages(
+    *, discovery_metadata_only: bool = False
+) -> list[ExternalCollectorPackageSummary]:
     exports_dir = _configured_exports_dir()
     if not exports_dir or not exports_dir.exists() or not exports_dir.is_dir():
         return []
@@ -119,10 +130,95 @@ def list_external_collector_packages() -> list[ExternalCollectorPackageSummary]:
             index_entry=index_entries.get(package_dir.name),
             index_available=index_available,
             index_warning=index_warning,
+            discovery_metadata_only=discovery_metadata_only,
         )
         for package_dir in _direct_package_dirs(exports_dir)
     ]
     return sorted(summaries, key=_package_sort_key)
+
+
+def discover_external_collector_packages(
+    query: str, max_results: int = 5
+) -> ExternalCollectorDiscoveryResponse:
+    """Filter bounded stored summaries, without validating or reading evidence."""
+
+    normalized_query = " ".join(query.split())
+    if not normalized_query:
+        raise ExternalCollectorBridgeLookupError("external_collector_query_required", 400)
+    if len(query) > 120 or isinstance(max_results, bool) or not 1 <= max_results <= 5:
+        raise ExternalCollectorBridgeLookupError("external_collector_query_invalid", 400)
+    try:
+        exports_dir = _configured_exports_dir()
+        if exports_dir is None:
+            raise ExternalCollectorBridgeLookupError("external_collector_bridge_not_configured", 404)
+        if not exports_dir.exists() or not exports_dir.is_dir():
+            raise ExternalCollectorBridgeLookupError("external_collector_configured_root_missing", 404)
+        results: list[ExternalCollectorDiscoveryResult] = []
+        needle = normalized_query.casefold()
+        for summary in list_external_collector_packages(discovery_metadata_only=True):
+            result = _discovery_result(summary)
+            if result is None:
+                continue
+            match_values = {
+                "package_name": [result.package_name],
+                "case_id": [result.case_id],
+                "case_title": [result.case_title],
+                "sample_labels": result.sample_labels,
+                "sample_quality_label": [result.sample_quality_label],
+            }
+            result.matched_fields = [
+                field for field, values in match_values.items()
+                if any(needle in " ".join(value.split()).casefold() for value in values)
+            ]
+            if result.matched_fields:
+                results.append(result)
+                if len(results) == max_results:
+                    break
+        return ExternalCollectorDiscoveryResponse(
+            query=normalized_query, result_count=len(results), results=results
+        )
+    except ExternalCollectorBridgeLookupError:
+        raise
+    except (OSError, RuntimeError, ValueError, TypeError, OverflowError) as exc:
+        raise ExternalCollectorBridgeLookupError("external_collector_internal_failure", 500) from exc
+
+
+def _discovery_text(value: str, limit: int) -> str:
+    """Exclude path/URL/secret-like assignments before matching or projection."""
+
+    if DISCOVERY_UNSAFE_TEXT_PATTERN.search(value):
+        return ""
+    return " ".join(value.split())[:limit]
+
+
+def _discovery_result(summary: ExternalCollectorPackageSummary) -> ExternalCollectorDiscoveryResult | None:
+    package_name = _discovery_text(summary.package_name, 255)
+    if not package_name or package_name != summary.package_name:
+        return None
+    exported_at = _discovery_text(summary.exported_at or "", 40)
+    try:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}T", exported_at):
+            raise ValueError("not an export timestamp")
+        datetime.fromisoformat(exported_at.replace("Z", "+00:00"))
+    except ValueError:
+        exported_at = ""
+    labels = [_discovery_text(label, 80) for label in summary.sample_labels]
+    return ExternalCollectorDiscoveryResult(
+        package_name=package_name,
+        case_id=_discovery_text(summary.case_id, 120),
+        case_title=_discovery_text(summary.case_title, 200),
+        sample_labels=list(dict.fromkeys(label for label in labels if label))[:8],
+        package_role=_discovery_text(summary.package_role, 80),
+        validation_status=_discovery_text(summary.validation_status, 40) or "unknown",
+        exported_at=exported_at or None,
+        evidence_count=min(summary.evidence_count, 1_000_000_000),
+        source_count=min(summary.source_count, 1_000_000_000),
+        comment_count=min(summary.comment_count, 1_000_000_000),
+        root_count=min(summary.root_count, 1_000_000_000),
+        recommended_for_sentigraph_demo=summary.recommended_for_sentigraph_demo,
+        sample_quality_label=_discovery_text(summary.sample_quality_label, 120),
+        recommended_next_action=_discovery_text(summary.recommended_next_action, 80),
+    )
 
 
 def get_external_collector_package_detail(package_name: str) -> ExternalCollectorPackageDetail:
@@ -354,6 +450,7 @@ def _package_summary(
     index_entry: dict[str, Any] | None = None,
     index_available: bool = False,
     index_warning: str = "",
+    discovery_metadata_only: bool = False,
 ) -> ExternalCollectorPackageSummary:
     index_entry = index_entry if isinstance(index_entry, dict) else {}
     manifest = manifest if manifest is not None else _read_json(package_dir / "manifest.json")
@@ -369,10 +466,10 @@ def _package_summary(
     data_scope = manifest.get("data_scope") if isinstance(manifest.get("data_scope"), dict) else {}
     coverage_note = str(manifest.get("coverage_note") or "")
     sample_labels = [label for label in manifest.get("labels", []) if isinstance(label, str)]
-    if "selected public sample" in coverage_note.lower() and "selected public sample" not in sample_labels:
+    if not discovery_metadata_only and "selected public sample" in coverage_note.lower() and "selected public sample" not in sample_labels:
         sample_labels.append("selected public sample")
-    coverage_warnings = [warning for warning in manifest.get("warnings", []) if isinstance(warning, str)]
-    if coverage_note:
+    coverage_warnings = [] if discovery_metadata_only else [warning for warning in manifest.get("warnings", []) if isinstance(warning, str)]
+    if coverage_note and not discovery_metadata_only:
         coverage_warnings.append(_truncate(coverage_note, 220))
     status_for_action = "fail" if errors_count else ("warn" if warnings_count else "pass")
     return ExternalCollectorPackageSummary(

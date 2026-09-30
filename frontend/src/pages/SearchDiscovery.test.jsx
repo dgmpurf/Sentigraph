@@ -6,6 +6,11 @@ const apiMocks = vi.hoisted(() => ({
   attachSearchDiscoveryCandidates: vi.fn(),
   attachYouTubeOfficialApiReviewedPublicDiscussion: vi.fn(),
   getAnalysisCase: vi.fn(),
+  getExternalCollectorStatus: vi.fn(),
+  getExternalCollectorDiscovery: vi.fn(),
+  listExternalCollectorPackages: vi.fn(),
+  getExternalCollectorPackage: vi.fn(),
+  validateExternalCollectorPackage: vi.fn(),
   getMockSearchDiscoveryCandidates: vi.fn(),
   getSearchDiscoveryProviders: vi.fn(),
   getYouTubeOfficialApiLiveCandidates: vi.fn(),
@@ -46,6 +51,11 @@ vi.mock('../api/sentigraphApi.js', async (importOriginal) => {
     attachSearchDiscoveryCandidates: apiMocks.attachSearchDiscoveryCandidates,
     attachYouTubeOfficialApiReviewedPublicDiscussion: apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion,
     getAnalysisCase: apiMocks.getAnalysisCase,
+    getExternalCollectorStatus: apiMocks.getExternalCollectorStatus,
+    getExternalCollectorDiscovery: apiMocks.getExternalCollectorDiscovery,
+    listExternalCollectorPackages: apiMocks.listExternalCollectorPackages,
+    getExternalCollectorPackage: apiMocks.getExternalCollectorPackage,
+    validateExternalCollectorPackage: apiMocks.validateExternalCollectorPackage,
     getMockSearchDiscoveryCandidates: apiMocks.getMockSearchDiscoveryCandidates,
     getSearchDiscoveryProviders: apiMocks.getSearchDiscoveryProviders,
     getYouTubeOfficialApiLiveCandidates: apiMocks.getYouTubeOfficialApiLiveCandidates,
@@ -176,6 +186,7 @@ beforeEach(() => {
   installFailClosedBrowserNetworkSentinels()
   Object.values(apiMocks).forEach((mock) => mock.mockReset())
   apiMocks.getSearchDiscoveryProviders.mockResolvedValue([OFFLINE_PROVIDER, LIVE_PROVIDER])
+  apiMocks.getExternalCollectorStatus.mockResolvedValue({ configured: false, exists: false })
   apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue(LIVE_BATCH)
   apiMocks.getYouTubeOfficialApiMockCandidates.mockResolvedValue(OFFLINE_BATCH)
   apiMocks.attachSearchDiscoveryCandidates.mockResolvedValue(ATTACH_RESULT)
@@ -400,6 +411,275 @@ describe('SearchDiscovery intentional guarded internal official API metadata', (
     expect(apiMocks.getYouTubeOfficialApiMockCandidates).toHaveBeenCalledTimes(1)
     expect(apiMocks.getMockSearchDiscoveryCandidates).toHaveBeenCalledTimes(0)
   })
+})
+
+const COLLECTOR_LABEL = 'External Collector Handoff — already-produced local packages'
+const COLLECTOR_FLAGS = {
+  stored_validation_not_fresh: true,
+  human_review_required: true,
+  collector_job_run: false,
+  package_validation_performed: false,
+  evidence_content_read: false,
+  url_fetching: false,
+  scraping: false,
+  full_web_coverage: false,
+  full_platform_coverage: false,
+}
+const COLLECTOR_BATCH = {
+  query: 'Synthetic launch',
+  result_count: 1,
+  results: [{
+    package_name: 'synthetic_package_001',
+    case_id: 'synthetic_case_001',
+    case_title: 'Synthetic collector package summary',
+    sample_labels: ['synthetic sample'],
+    package_role: 'controlled_public_sample',
+    validation_status: 'warn',
+    exported_at: '2026-09-30T00:00:00Z',
+    evidence_count: 3,
+    source_count: 2,
+    comment_count: 1,
+    root_count: 1,
+    recommended_for_sentigraph_demo: false,
+    sample_quality_label: 'synthetic quality',
+    recommended_next_action: 'needs_manual_review',
+    matched_fields: ['case_title'],
+    provenance: 'external_collector_handoff',
+    ...COLLECTOR_FLAGS,
+  }],
+  safe_mode: { ...COLLECTOR_FLAGS, local_only: true, metadata_only: true, evidence_write: false, analysis_run: false },
+}
+
+describe('RDS1 external collector handoff query lane', () => {
+  async function renderCollector(props = {}) {
+    apiMocks.getExternalCollectorStatus.mockResolvedValue({
+      configured: true, exists: true, exports_dir: 'synthetic-private-path', index_warning: 'synthetic-private-note',
+    })
+    apiMocks.getExternalCollectorDiscovery.mockResolvedValue(COLLECTOR_BATCH)
+    render(<SearchDiscovery liveRouteFrontendEnabled publicDiscussionReviewFrontendEnabled {...props} />)
+    await waitFor(() => expect(apiMocks.getExternalCollectorStatus).toHaveBeenCalledTimes(1))
+    await selectFirstComboboxOption(COLLECTOR_LABEL)
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Synthetic launch' } })
+  }
+
+  function expectNoCollectorSideEffects() {
+    for (const name of [
+      'getYouTubeOfficialApiLiveCandidates', 'getYouTubeOfficialApiMockCandidates',
+      'getMockSearchDiscoveryCandidates', 'getYouTubeOfficialApiLivePublicDiscussion',
+      'attachSearchDiscoveryCandidates', 'attachYouTubeOfficialApiReviewedPublicDiscussion',
+      'listExternalCollectorPackages', 'getExternalCollectorPackage', 'validateExternalCollectorPackage',
+    ]) expect(apiMocks[name]).not.toHaveBeenCalled()
+  }
+
+  it.each([
+    { configured: false, exists: false },
+    { configured: true, exists: false },
+  ])('does not offer discovery for an unavailable collector bridge %j', async (status) => {
+    apiMocks.getExternalCollectorStatus.mockResolvedValue(status)
+    render(<SearchDiscovery />)
+    await waitFor(() => expect(apiMocks.getExternalCollectorStatus).toHaveBeenCalledTimes(1))
+    fireEvent.mouseDown(screen.getAllByRole('combobox')[0])
+    expect(screen.queryByText(COLLECTOR_LABEL, { exact: true })).toBeNull()
+    expect(apiMocks.getExternalCollectorDiscovery).not.toHaveBeenCalled()
+    expectNoCollectorSideEffects()
+  })
+
+  it('fails closed on an availability error without displaying private status fields', async () => {
+    apiMocks.getExternalCollectorStatus.mockRejectedValue(new Error('synthetic-private-path'))
+    render(<SearchDiscovery />)
+    await waitFor(() => expect(apiMocks.getExternalCollectorStatus).toHaveBeenCalledTimes(1))
+    fireEvent.mouseDown(screen.getAllByRole('combobox')[0])
+    expect(screen.queryByText(COLLECTOR_LABEL, { exact: true })).toBeNull()
+    expect(screen.queryByText(/synthetic-private-path/)).toBeNull()
+    expect(apiMocks.getExternalCollectorDiscovery).not.toHaveBeenCalled()
+    expectNoCollectorSideEffects()
+  })
+
+  it('requires one explicit action and keeps package metadata separate from candidate controls', async () => {
+    const onRunCase = vi.fn()
+    await renderCollector({ onRunCase })
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: '  Synthetic   launch  ' } })
+    expect(apiMocks.getExternalCollectorDiscovery).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await screen.findByText(COLLECTOR_BATCH.results[0].case_title, { exact: true })
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledWith('Synthetic launch', 5)
+    expect(screen.getByText('Current external collector package results for query: Synthetic launch')).toBeTruthy()
+    expect(screen.getAllByTestId('external-collector-package-result')).toHaveLength(1)
+    expect(screen.getByText('provenance=external_collector_handoff')).toBeTruthy()
+    expect(screen.getByText('Stored validation: warn')).toBeTruthy()
+    expect(screen.getByText(/Stored validation is not fresh/)).toBeTruthy()
+    expect(screen.queryByText(/synthetic-private-path|synthetic-private-note/)).toBeNull()
+    expect(screen.queryByText('Candidate review list')).toBeNull()
+    for (const name of [/Attach accepted to case/, /Run analysis/, /Load.*discussion/, '接受', '拒绝']) {
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    }
+    expectNoCollectorSideEffects()
+    expect(onRunCase).not.toHaveBeenCalled()
+  })
+
+  it('returns a valid explicit zero-result state without a fallback or retry', async () => {
+    await renderCollector()
+    apiMocks.getExternalCollectorDiscovery.mockResolvedValue({ ...COLLECTOR_BATCH, results: [], result_count: 0 })
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await screen.findByText('No matching external collector packages for query: Synthetic launch')
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('external-collector-package-result')).toBeNull()
+    expectNoCollectorSideEffects()
+  })
+
+  it('rejects a blank query before any helper call and clears a previous batch', async () => {
+    await renderCollector()
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await screen.findByText(COLLECTOR_BATCH.results[0].case_title, { exact: true })
+    apiMocks.getExternalCollectorDiscovery.mockClear()
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: '  \t ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await screen.findByText('Enter a non-blank query before searching external collector packages.')
+    expect(apiMocks.getExternalCollectorDiscovery).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('external-collector-package-result')).toBeNull()
+    expectNoCollectorSideEffects()
+  })
+
+  it.each([
+    ['not_configured', 'The external collector bridge is not configured.'],
+    ['configured_root_missing', 'The configured external collector root is unavailable.'],
+    ['query_invalid', 'Use a valid query of at most 120 characters.'],
+    ['query_required', 'Enter a non-blank query before searching external collector packages.'],
+    ['internal_failure', 'Unable to search the local external collector package summaries.'],
+    ['unknown', 'Unable to search the local external collector package summaries.'],
+  ])('renders bounded %s errors without raw paths or retries', async (suffix, message) => {
+    await renderCollector()
+    apiMocks.getExternalCollectorDiscovery.mockRejectedValue({
+      message: 'synthetic-private-path',
+      response: { data: { detail: suffix === 'configured_root_missing'
+        ? 'external_collector_configured_root_missing' : `external_collector_${suffix === 'not_configured' ? 'bridge_not_configured' : suffix}`,
+      raw: 'synthetic-private-backend-error' } },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await screen.findByText(message)
+    expect(screen.queryByText(/synthetic-private-path|synthetic-private-backend-error/)).toBeNull()
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
+    expectNoCollectorSideEffects()
+  })
+
+  it('handles framework query bounds as a safe invalid-query error', async () => {
+    await renderCollector()
+    apiMocks.getExternalCollectorDiscovery.mockRejectedValue({ response: { status: 422, data: { detail: ['synthetic-private-path'] } } })
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await screen.findByText('Use a valid query of at most 120 characters.')
+    expect(screen.queryByText(/synthetic-private-path/)).toBeNull()
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
+    expectNoCollectorSideEffects()
+  })
+
+  it('historicalizes a batch when the query changes without issuing another request', async () => {
+    await renderCollector()
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await screen.findByText(COLLECTOR_BATCH.results[0].case_title, { exact: true })
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Another event' } })
+    expect(screen.getByText('Historical external collector package results for query: Synthetic launch')).toBeTruthy()
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
+    expectNoCollectorSideEffects()
+  })
+
+  it('keeps an in-flight response bound to its submitted lane and query', async () => {
+    await renderCollector()
+    let resolveSearch
+    apiMocks.getExternalCollectorDiscovery.mockImplementation(() => new Promise((resolve) => { resolveSearch = resolve }))
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Another event' } })
+    await selectFirstComboboxOption(OFFLINE_PROVIDER.display_name)
+    resolveSearch(COLLECTOR_BATCH)
+    await screen.findByText(COLLECTOR_BATCH.results[0].case_title, { exact: true })
+    expect(screen.getByText('Historical external collector package results for query: Synthetic launch')).toBeTruthy()
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
+    expectNoCollectorSideEffects()
+  })
+
+  it('rejects a response for another query without rendering package results', async () => {
+    await renderCollector()
+    apiMocks.getExternalCollectorDiscovery.mockResolvedValue({ ...COLLECTOR_BATCH, query: 'Different event' })
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await screen.findByText('The returned collector packages do not match the submitted query. Run a new explicit search.')
+    expect(screen.queryByTestId('external-collector-package-result')).toBeNull()
+    expectNoCollectorSideEffects()
+  })
+
+  it.each([['official', LIVE_PROVIDER_LABEL], ['offline', OFFLINE_PROVIDER.display_name]])(
+    'clears collector state when a new %s candidate batch starts', async (kind, label) => {
+      await renderCollector()
+      fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+      await screen.findByText(COLLECTOR_BATCH.results[0].case_title, { exact: true })
+      await selectFirstComboboxOption(label)
+      const official = kind === 'official'
+      if (official) fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+      fireEvent.click(screen.getByRole('button', { name: official ? /Search YouTube Official API metadata/ : /Generate mock candidates/ }))
+      await screen.findByText((official ? LIVE_BATCH : OFFLINE_BATCH).candidates[0].title, { exact: true })
+      expect(screen.queryByTestId('external-collector-discovery-panel')).toBeNull()
+      expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
+      expect(apiMocks.getExternalCollectorPackage).not.toHaveBeenCalled()
+      expect(apiMocks.validateExternalCollectorPackage).not.toHaveBeenCalled()
+      expect(apiMocks.attachSearchDiscoveryCandidates).not.toHaveBeenCalled()
+    },
+  )
+
+  it('clears candidate state when a new collector search starts', async () => {
+    await renderCollector()
+    await selectFirstComboboxOption(OFFLINE_PROVIDER.display_name)
+    fireEvent.click(screen.getByRole('button', { name: /Generate mock candidates/ }))
+    await screen.findByText(OFFLINE_BATCH.candidates[0].title, { exact: true })
+    await selectFirstComboboxOption(COLLECTOR_LABEL)
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await screen.findByText(COLLECTOR_BATCH.results[0].case_title, { exact: true })
+    await selectFirstComboboxOption(OFFLINE_PROVIDER.display_name)
+    expect(screen.queryByText(OFFLINE_BATCH.candidates[0].title, { exact: true })).toBeNull()
+    expect(screen.queryByRole('button', { name: '接受' })).toBeNull()
+    expect(apiMocks.getYouTubeOfficialApiMockCandidates).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
+    expect(apiMocks.attachSearchDiscoveryCandidates).not.toHaveBeenCalled()
+  })
+
+  it('projects only safe package metadata through the exact discovery client route', async () => {
+    const actualApi = await vi.importActual('../api/sentigraphApi.js')
+    const raw = { ...COLLECTOR_BATCH, results: [{
+      ...COLLECTOR_BATCH.results[0], package_path: 'C:\\synthetic\\private',
+      index_notes: 'synthetic private note', coverage_warnings: ['synthetic private note'],
+      case_title: 'api_key=synthetic_not_a_real_secret',
+      sample_labels: ['synthetic sample', 'authorization: synthetic', 'https://synthetic.invalid'],
+      evidence_count: 2000000000, source_count: -1,
+      candidate_id: 'must_not_exist', url: 'https://synthetic.invalid', snippet: 'must_not_exist', confidence: 1,
+    }] }
+    const getSpy = vi.spyOn((await import('../api/client.js')).apiClient, 'get').mockResolvedValue({ data: raw })
+    const result = await actualApi.getExternalCollectorDiscovery('Synthetic launch', 5)
+    expect(getSpy).toHaveBeenCalledTimes(1)
+    expect(getSpy).toHaveBeenCalledWith('/api/v1/external-collector/discovery', { params: { query: 'Synthetic launch', max_results: 5 } })
+    expect(result.results[0].case_title).toBe('')
+    expect(result.results[0].sample_labels).toEqual(['synthetic sample'])
+    expect(result.results[0].evidence_count).toBe(1000000000)
+    expect(result.results[0].source_count).toBe(0)
+    for (const field of ['package_path', 'index_notes', 'coverage_warnings', 'candidate_id', 'url', 'snippet', 'confidence']) {
+      expect(result.results[0]).not.toHaveProperty(field)
+    }
+    expect(result.safe_mode.evidence_write).toBe(false)
+    expect(result.safe_mode.analysis_run).toBe(false)
+  })
+
+  it.each(['provenance', 'evidence_content_read', 'analysis_run', 'count', 'package_name', 'blank_query'])(
+    'rejects a malformed or unsafe %s client response without retry', async (field) => {
+      const actualApi = await vi.importActual('../api/sentigraphApi.js')
+      const raw = { ...COLLECTOR_BATCH, safe_mode: { ...COLLECTOR_BATCH.safe_mode }, results: [{ ...COLLECTOR_BATCH.results[0] }] }
+      if (field === 'provenance') raw.results[0].provenance = 'youtube_official_api'
+      if (field === 'evidence_content_read') raw.results[0].evidence_content_read = true
+      if (field === 'analysis_run') raw.safe_mode.analysis_run = true
+      if (field === 'count') raw.result_count = 2
+      if (field === 'package_name') raw.results[0].package_name = '../synthetic'
+      if (field === 'blank_query') raw.query = '  '
+      const getSpy = vi.spyOn((await import('../api/client.js')).apiClient, 'get').mockResolvedValue({ data: raw })
+      await expect(actualApi.getExternalCollectorDiscovery('Synthetic launch', 5)).rejects.toThrow('external_collector_response_invalid')
+      expect(getSpy).toHaveBeenCalledTimes(1)
+    },
+  )
 })
 
 describe('RDS1 intentional live search boundaries', () => {

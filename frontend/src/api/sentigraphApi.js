@@ -2449,6 +2449,72 @@ export async function listExternalCollectorPackages() {
   return Array.isArray(data) ? data : []
 }
 
+export async function getExternalCollectorDiscovery(query, maxResults = 5) {
+  const { data } = await apiClient.get(`${API_PREFIX}/external-collector/discovery`, {
+    params: { query, max_results: maxResults },
+  })
+  return normalizeExternalCollectorDiscovery(data)
+}
+
+function normalizeExternalCollectorDiscovery(data) {
+  const requiredTrue = ['stored_validation_not_fresh', 'human_review_required']
+  const requiredFalse = [
+    'collector_job_run', 'package_validation_performed', 'evidence_content_read',
+    'url_fetching', 'scraping', 'full_web_coverage', 'full_platform_coverage',
+  ]
+  const isSafe = (value) => value &&
+    requiredTrue.every((key) => value[key] === true) &&
+    requiredFalse.every((key) => value[key] === false)
+  const normalizedQuery = typeof data?.query === 'string' ? data.query.replace(/\s+/g, ' ').trim() : ''
+  if (!data || typeof data.query !== 'string' || !Array.isArray(data.results) ||
+    !normalizedQuery || normalizedQuery.length > 120 ||
+    data.results.length > 5 || data.result_count !== data.results.length || !isSafe(data.safe_mode) ||
+    data.safe_mode.local_only !== true || data.safe_mode.metadata_only !== true ||
+    data.safe_mode.evidence_write !== false || data.safe_mode.analysis_run !== false ||
+    data.results.some((item) => typeof item?.package_name !== 'string' ||
+      !/^[A-Za-z0-9._-]{1,255}$/.test(item.package_name) || /^\.+$/.test(item.package_name)) ||
+    data.results.some((item) => item?.provenance !== 'external_collector_handoff' || !isSafe(item))) {
+    throw new Error('external_collector_response_invalid')
+  }
+  const safeText = (value, limit) => {
+    if (typeof value !== 'string' ||
+      /\b(api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|client[\s_-]?secret|password|cookie|authorization|session|secret|token)\b["']?\s*[:=]|https?:\/\/|file:\/\/|[A-Za-z]:[\\/]|(^|\s)(\/|\\\\)/i.test(value)) return ''
+    return value.replace(/\s+/g, ' ').trim().slice(0, limit)
+  }
+  const count = (value) => Number.isFinite(Number(value))
+    ? Math.min(1000000000, Math.max(0, Math.trunc(Number(value)))) : 0
+  const matchingFields = ['package_name', 'case_id', 'case_title', 'sample_labels', 'sample_quality_label']
+  return {
+    query: normalizedQuery,
+    result_count: data.results.length,
+    results: data.results.map((item) => ({
+      package_name: safeText(item.package_name, 255),
+      case_id: safeText(item.case_id, 120),
+      case_title: safeText(item.case_title, 200),
+      sample_labels: Array.isArray(item.sample_labels)
+        ? [...new Set(item.sample_labels.map((label) => safeText(label, 80)).filter(Boolean))].slice(0, 8) : [],
+      package_role: safeText(item.package_role, 80),
+      validation_status: safeText(item.validation_status, 40) || 'unknown',
+      exported_at: safeText(item.exported_at, 40) || null,
+      evidence_count: count(item.evidence_count),
+      source_count: count(item.source_count),
+      comment_count: count(item.comment_count),
+      root_count: count(item.root_count),
+      recommended_for_sentigraph_demo: item.recommended_for_sentigraph_demo === true,
+      sample_quality_label: safeText(item.sample_quality_label, 120),
+      recommended_next_action: safeText(item.recommended_next_action, 80),
+      matched_fields: Array.isArray(item.matched_fields)
+        ? matchingFields.filter((field) => item.matched_fields.includes(field)) : [],
+      provenance: item.provenance,
+      ...Object.fromEntries([...requiredTrue, ...requiredFalse].map((key) => [key, item[key]])),
+    })),
+    safe_mode: Object.fromEntries(
+      [...requiredTrue, ...requiredFalse, 'local_only', 'metadata_only', 'evidence_write', 'analysis_run']
+        .map((key) => [key, data.safe_mode[key]]),
+    ),
+  }
+}
+
 export async function getExternalCollectorPackage(packageName) {
   const { data } = await apiClient.get(`${API_PREFIX}/external-collector/packages/${encodeURIComponent(packageName)}`)
   return data

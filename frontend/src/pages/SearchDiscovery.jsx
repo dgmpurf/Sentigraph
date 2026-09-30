@@ -6,6 +6,8 @@ import {
   attachSearchDiscoveryCandidates,
   attachYouTubeOfficialApiReviewedPublicDiscussion,
   getAnalysisCase,
+  getExternalCollectorDiscovery,
+  getExternalCollectorStatus,
   getMockSearchDiscoveryCandidates,
   getSearchDiscoveryProviders,
   getYouTubeOfficialApiLiveCandidates,
@@ -31,6 +33,15 @@ const FALLBACK_PROVIDER_OPTIONS = [
   { value: 'youtube_official_api', label: 'YouTube Official API — offline mocked response (Phase 1)' },
 ]
 const LIVE_PROVIDER_ID = 'youtube_official_api_live'
+const COLLECTOR_LANE_ID = 'external_collector_handoff'
+const COLLECTOR_LANE_LABEL = 'External Collector Handoff — already-produced local packages'
+const COLLECTOR_SEARCH_ERRORS = Object.freeze({
+  external_collector_bridge_not_configured: 'The external collector bridge is not configured.',
+  external_collector_configured_root_missing: 'The configured external collector root is unavailable.',
+  external_collector_query_required: 'Enter a non-blank query before searching external collector packages.',
+  external_collector_query_invalid: 'Use a valid query of at most 120 characters.',
+  external_collector_internal_failure: 'Unable to search the local external collector package summaries.',
+})
 const LIVE_SEARCH_ERRORS = Object.freeze({
   youtube_live_search_discovery_route_disabled: 'The backend live search route is disabled.',
   youtube_live_search_discovery_credential_missing: 'The backend live search credential is missing.',
@@ -50,6 +61,14 @@ function safeLiveSearchError(error) {
   return typeof code === 'string' && Object.hasOwn(LIVE_SEARCH_ERRORS, code)
     ? LIVE_SEARCH_ERRORS[code]
     : 'Unable to complete the official API metadata search.'
+}
+
+function safeCollectorSearchError(error) {
+  const code = error?.response?.data?.detail
+  if (error?.response?.status === 422) return COLLECTOR_SEARCH_ERRORS.external_collector_query_invalid
+  return typeof code === 'string' && Object.hasOwn(COLLECTOR_SEARCH_ERRORS, code)
+    ? COLLECTOR_SEARCH_ERRORS[code]
+    : 'Unable to search the local external collector package summaries.'
 }
 
 function getYouTubeWatchVideoId(candidateUrl) {
@@ -86,6 +105,10 @@ export function SearchDiscovery({
   const [query, setQuery] = useState('Tesla')
   const [provider, setProvider] = useState('mock_static')
   const [providers, setProviders] = useState([])
+  const [collectorStatus, setCollectorStatus] = useState({ configured: false, exists: false })
+  const [collectorBatch, setCollectorBatch] = useState(null)
+  const [generatedCollectorQuery, setGeneratedCollectorQuery] = useState(null)
+  const [generatedCollectorLane, setGeneratedCollectorLane] = useState(null)
   const [targetCaseId, setTargetCaseId] = useState(currentCase?.case_id || '')
   const [batch, setBatch] = useState(null)
   const [generatedProvider, setGeneratedProvider] = useState(null)
@@ -114,6 +137,27 @@ export function SearchDiscovery({
     return () => {
       isMounted = false
     }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+    // Only the two availability booleans are retained; no paths/notes enter page state.
+    const unavailable = () => {
+      if (isMounted) setCollectorStatus({ configured: false, exists: false })
+    }
+    try {
+      Promise.resolve(getExternalCollectorStatus())
+        .then((status) => {
+          if (isMounted) setCollectorStatus({
+            configured: status?.configured === true,
+            exists: status?.exists === true,
+          })
+        })
+        .catch(unavailable)
+    } catch {
+      unavailable()
+    }
+    return () => { isMounted = false }
   }, [])
 
   useEffect(() => {
@@ -150,14 +194,17 @@ export function SearchDiscovery({
     const liveDescriptor = providers.find(
       (item) => item.provider_id === LIVE_PROVIDER_ID && item.provider_type === 'youtube_official_api',
     )
-    return liveRouteFrontendEnabled && liveDescriptor
+    const candidateOptions = liveRouteFrontendEnabled && liveDescriptor
       ? [...offlineOptions, {
         value: LIVE_PROVIDER_ID,
         label: liveDescriptor.display_name,
         disabled: liveDescriptor.live_fetch_enabled !== true,
       }]
       : offlineOptions
-  }, [liveRouteFrontendEnabled, providers])
+    return collectorStatus.configured && collectorStatus.exists
+      ? [...candidateOptions, { value: COLLECTOR_LANE_ID, label: COLLECTOR_LANE_LABEL }]
+      : candidateOptions
+  }, [liveRouteFrontendEnabled, providers, collectorStatus.configured, collectorStatus.exists])
 
   const selectedProviderStatus = useMemo(() => {
     return providers.find((item) => item.provider_id === provider) || null
@@ -180,6 +227,10 @@ export function SearchDiscovery({
   const rejectedCount = candidates.filter((candidate) => candidate.status === 'rejected').length
   const liveBatchPreviewOnly = generatedProvider === LIVE_PROVIDER_ID
   const liveSelected = provider === LIVE_PROVIDER_ID
+  const collectorSelected = provider === COLLECTOR_LANE_ID
+  const collectorAvailable = collectorStatus.configured && collectorStatus.exists
+  const collectorBatchCurrent = Boolean(collectorBatch) && generatedCollectorLane === provider &&
+    generatedCollectorQuery === normalizeDiscoveryQuery(query)
   const backendLiveDescriptor = providers.find(
     (item) => item.provider_id === LIVE_PROVIDER_ID && item.provider_type === 'youtube_official_api',
   )
@@ -230,7 +281,29 @@ export function SearchDiscovery({
     setGeneratedProvider(null)
     setGeneratedQuery(null)
     setCandidateStatusById({})
+    setCollectorBatch(null)
+    setGeneratedCollectorQuery(null)
+    setGeneratedCollectorLane(null)
     try {
+      if (submittedProvider === COLLECTOR_LANE_ID) {
+        if (!collectorAvailable) {
+          setError('External Collector Handoff is unavailable: the local bridge must be configured and available.')
+          return
+        }
+        if (!submittedQuery) {
+          setError(COLLECTOR_SEARCH_ERRORS.external_collector_query_required)
+          return
+        }
+        const result = await getExternalCollectorDiscovery(submittedQuery, 5)
+        if (normalizeDiscoveryQuery(result.query) !== submittedQuery) {
+          setError('The returned collector packages do not match the submitted query. Run a new explicit search.')
+          return
+        }
+        setCollectorBatch(result)
+        setGeneratedCollectorQuery(submittedQuery)
+        setGeneratedCollectorLane(submittedProvider)
+        return
+      }
       if (submittedProvider === LIVE_PROVIDER_ID) {
         if (!liveSearchAvailable) {
           setError('Live search is unavailable: a backend-enabled descriptor and the frontend gate are required.')
@@ -257,7 +330,9 @@ export function SearchDiscovery({
         Object.fromEntries((result.candidates || []).map((candidate) => [candidate.candidate_id, 'pending_review'])),
       )
     } catch (requestError) {
-      setError(submittedProvider === LIVE_PROVIDER_ID
+      setError(submittedProvider === COLLECTOR_LANE_ID
+        ? safeCollectorSearchError(requestError)
+        : submittedProvider === LIVE_PROVIDER_ID
         ? safeLiveSearchError(requestError)
         : requestError?.message || 'Unable to generate mock Search Discovery candidates.')
     } finally {
@@ -481,16 +556,19 @@ export function SearchDiscovery({
             <div>
               <Title level={2}>Search Discovery / 搜索发现</Title>
               <Text type="secondary">
-                {liveSelected
+                {collectorSelected
+                  ? 'Search already-produced local external collector export package summaries.'
+                  : liveSelected
                   ? 'Intentional internal real YouTube Official API metadata search.'
                   : 'Mock-only candidate review for future all-web discovery workflows.'}
               </Text>
             </div>
           </Space>
           <Space wrap>
-            <Tag color={liveSelected ? 'cyan' : 'purple'}>
-              {liveSelected ? 'Real official-API metadata lane' : 'Offline/mock fixtures'}
+            <Tag color={collectorSelected ? 'gold' : liveSelected ? 'cyan' : 'purple'}>
+              {collectorSelected ? 'External collector handoff lane' : liveSelected ? 'Real official-API metadata lane' : 'Offline/mock fixtures'}
             </Tag>
+            {!collectorSelected ? <>
             <Tag color="purple">RSS/GDELT fixtures</Tag>
             <Tag color="purple">YouTube official-shaped offline fixture</Tag>
             {liveRouteFrontendEnabled ? (
@@ -501,9 +579,20 @@ export function SearchDiscovery({
             <Tag color="green">No URL fetch</Tag>
             <Tag color="green">No scraping</Tag>
             <Tag color="blue">Evidence metadata only</Tag>
+            </> : <>
+              <Tag>No collector job</Tag><Tag>No fresh package validation</Tag>
+              <Tag>No Evidence ingestion</Tag><Tag>No full-web/full-platform coverage</Tag>
+            </>}
           </Space>
         </div>
-        {provider === LIVE_PROVIDER_ID ? (
+        {collectorSelected ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="External collector handoff packages"
+            description="Already-produced local exports only. Stored validation is not a fresh validation. Selected/available samples are not full-web/full-platform coverage or official truth verification. Human review required."
+          />
+        ) : provider === LIVE_PROVIDER_ID ? (
           <Alert
             type="warning"
             showIcon
@@ -542,7 +631,7 @@ export function SearchDiscovery({
 
       <Card className="panel-card">
         <Form layout="vertical">
-          <Form.Item label="Discovery provider / 发现来源">
+          <Form.Item label="Discovery lane / 发现入口">
             <Select
               value={provider}
               onChange={setProvider}
@@ -558,7 +647,7 @@ export function SearchDiscovery({
               placeholder="Tesla"
             />
           </Form.Item>
-          <Form.Item label="Target case">
+          {!collectorSelected ? <Form.Item label="Target case">
             <Select
               showSearch
               value={targetCaseId || undefined}
@@ -567,19 +656,22 @@ export function SearchDiscovery({
               placeholder="Select a case"
               optionFilterProp="label"
             />
-          </Form.Item>
+          </Form.Item> : null}
           <Space wrap>
             <Button
               type="primary"
               icon={<RefreshCw size={16} />}
               loading={loading}
-              disabled={liveSelected && !liveSearchAvailable}
+              disabled={(liveSelected && !liveSearchAvailable) || (collectorSelected && !collectorAvailable)}
               onClick={handleGenerateCandidates}
             >
-              {provider === LIVE_PROVIDER_ID
+              {collectorSelected
+                ? 'Search external collector handoff packages'
+                : provider === LIVE_PROVIDER_ID
                 ? 'Search YouTube Official API metadata / 搜索官方 API 元数据'
                 : 'Generate mock candidates / 生成模拟候选'}
             </Button>
+            {!collectorSelected ? <>
             <Button
               icon={<ShieldCheck size={16} />}
               loading={attaching}
@@ -604,12 +696,13 @@ export function SearchDiscovery({
             >
               Run analysis after attach
             </Button>
+            </> : null}
           </Space>
         </Form>
         {error ? <Alert className="section-alert" type="error" showIcon message={error} /> : null}
       </Card>
 
-      <Card className="panel-card">
+      {!collectorSelected ? <Card className="panel-card">
         <div className="panel-heading">
           <Space>
             <ShieldCheck size={18} />
@@ -647,9 +740,47 @@ export function SearchDiscovery({
             <Tag key={note}>{note}</Tag>
           ))}
         </Space>
-      </Card>
+      </Card> : null}
 
-      {publicDiscussionReviewFrontendEnabled ? (
+      {collectorSelected || collectorBatch ? (
+        <Card className="panel-card" data-testid="external-collector-discovery-panel">
+          <Title level={4}>External Collector Handoff / 外部抓取包交接</Title>
+          <Paragraph>Package-level metadata results, not Search Discovery candidates. No Evidence attach or analysis action.</Paragraph>
+          <Alert
+            type={collectorBatch && !collectorBatchCurrent ? 'warning' : 'info'}
+            message={collectorBatch
+              ? `${collectorBatchCurrent ? 'Current' : 'Historical'} external collector package results for query: ${generatedCollectorQuery}`
+              : 'Use one explicit collector package search to begin.'}
+            description="Stored validation is not fresh. Already-produced local export; selected/available sample only, not full-web/full-platform coverage, not official truth verification. Human review required."
+          />
+          {collectorBatch?.results?.length ? collectorBatch.results.map((item) => (
+            <Card key={item.package_name} size="small" data-testid="external-collector-package-result">
+              <Space direction="vertical" size={6}>
+                <Text strong>{item.case_title || item.package_name}</Text>
+                <Text>{item.package_name}</Text>
+                <Text>Case: {item.case_id || 'unavailable'}</Text>
+                <Space wrap>
+                  <Tag>provenance=external_collector_handoff</Tag>
+                  <Tag>role={item.package_role || 'unknown'}</Tag>
+                  <Tag>Stored validation: {item.validation_status}</Tag>
+                  <Tag>exported={item.exported_at || 'unavailable'}</Tag>
+                  <Tag>evidence={item.evidence_count}</Tag><Tag>sources={item.source_count}</Tag>
+                  <Tag>comments={item.comment_count}</Tag><Tag>roots={item.root_count}</Tag>
+                  <Tag>{item.sample_quality_label || 'sample quality not established'}</Tag>
+                  <Tag>next={item.recommended_next_action}</Tag>
+                  <Tag>recommended demo={String(item.recommended_for_sentigraph_demo)}</Tag>
+                  <Tag>matched fields: {(item.matched_fields || []).join(', ')}</Tag>
+                  {(item.sample_labels || []).map((label) => <Tag key={label}>{label}</Tag>)}
+                </Space>
+              </Space>
+            </Card>
+          )) : <Empty description={collectorBatch
+            ? `No matching external collector packages for query: ${generatedCollectorQuery}`
+            : 'No collector discovery has been requested.'} />}
+        </Card>
+      ) : null}
+
+      {publicDiscussionReviewFrontendEnabled && !collectorSelected ? (
         <Card className="panel-card" data-testid="public-discussion-review-panel">
           <div className="panel-heading">
             <Space>
@@ -829,6 +960,7 @@ export function SearchDiscovery({
         </Card>
       ) : null}
 
+      {!collectorSelected ? <>
       <div className="metric-grid">
         <Card className="metric-card">
           <Statistic title="Candidates" value={candidates.length} />
@@ -881,8 +1013,9 @@ export function SearchDiscovery({
               : 'Generate offline/mock candidates to start the review flow.'} />
         )}
       </Card>
+      </> : null}
 
-      {attachResult ? (
+      {!collectorSelected && attachResult ? (
         <Card className="panel-card">
           <div className="panel-heading">
             <Title level={4}>Attach result</Title>

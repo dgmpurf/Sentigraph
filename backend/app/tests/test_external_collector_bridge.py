@@ -14,6 +14,30 @@ from app.services import external_collector_bridge as bridge
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def isolated_collector_and_network(monkeypatch):
+    """Every case uses no root or an explicitly synthetic tmp_path root."""
+    import httpx
+    import requests
+    import socket
+    import urllib.request
+
+    monkeypatch.delenv(bridge.EXPORTS_ENV_VAR, raising=False)
+    attempts = []
+
+    def blocked_network(*args, **kwargs):
+        attempts.append("network")
+        raise AssertionError("External network is forbidden in collector fixture tests")
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", blocked_network)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", blocked_network)
+    monkeypatch.setattr(requests.sessions.Session, "request", blocked_network)
+    monkeypatch.setattr(socket, "create_connection", blocked_network)
+    monkeypatch.setattr(urllib.request, "urlopen", blocked_network)
+    yield
+    assert attempts == []
+
+
 def test_external_collector_status_returns_not_configured(monkeypatch) -> None:
     monkeypatch.delenv("SENTIGRAPH_EXTERNAL_COLLECTOR_EXPORTS_DIR", raising=False)
 
@@ -380,6 +404,207 @@ def test_external_collector_internal_path_failure_is_bounded(monkeypatch) -> Non
     assert response.json() == {"detail": "external_collector_internal_failure"}
     assert "must-not-leak" not in response.text
     assert "C:" not in response.text
+
+
+def _guard_discovery_reads(monkeypatch):
+    reads = []
+    original_read_text = Path.read_text
+
+    def metadata_only(path: Path, *args, **kwargs):
+        assert path.name in {"package_index.json", "manifest.json", "validation_report.json"}
+        reads.append(path.name)
+        return original_read_text(path, *args, **kwargs)
+
+    def never_validate(*args, **kwargs):
+        pytest.fail("Discovery must not invoke package validation or content readers")
+
+    monkeypatch.setattr(Path, "read_text", metadata_only)
+    monkeypatch.setattr(bridge, "validate_external_collector_package", never_validate)
+    monkeypatch.setattr(bridge, "_read_jsonl", never_validate)
+    monkeypatch.setattr(bridge, "_safe_excerpt", never_validate)
+    return reads
+
+
+@pytest.mark.parametrize("missing_root", [False, True])
+def test_discovery_configuration_failures_do_not_read_or_enumerate(tmp_path, monkeypatch, missing_root):
+    if missing_root:
+        monkeypatch.setenv(bridge.EXPORTS_ENV_VAR, str(tmp_path / "absent"))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Rejected query must not read or enumerate package metadata")
+
+    monkeypatch.setattr(Path, "read_text", forbidden)
+    monkeypatch.setattr(Path, "iterdir", forbidden)
+    response = client.get("/api/v1/external-collector/discovery", params={"query": "event"})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "external_collector_configured_root_missing" if missing_root
+                               else "external_collector_bridge_not_configured"}
+    assert str(tmp_path) not in response.text
+
+
+@pytest.mark.parametrize("params, status", [
+    ({"query": " \t  "}, 400),
+    ({"query": ""}, 422),
+    ({"query": "x" * 121}, 422),
+    ({"query": "event", "max_results": 0}, 422),
+    ({"query": "event", "max_results": 6}, 422),
+])
+def test_discovery_blank_and_framework_bounds_precede_enumeration(tmp_path, monkeypatch, params, status):
+    monkeypatch.setenv(bridge.EXPORTS_ENV_VAR, str(tmp_path))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Blank/out-of-bounds query must not enumerate packages")
+
+    monkeypatch.setattr(Path, "iterdir", forbidden)
+    monkeypatch.setattr(Path, "read_text", forbidden)
+    response = client.get("/api/v1/external-collector/discovery", params=params)
+    assert response.status_code == status
+    if status == 400:
+        assert response.json() == {"detail": "external_collector_query_required"}
+
+
+@pytest.mark.parametrize("matched_field", [
+    "package_name", "case_id", "case_title", "sample_labels", "sample_quality_label",
+])
+def test_discovery_matches_only_safe_normalized_summary_fields(tmp_path, monkeypatch, matched_field):
+    root = tmp_path / "exports"
+    name = "synthetic_package" if matched_field == "package_name" else "query_package"
+    package_dir = root / name
+    _write_package(package_dir)
+    manifest = json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
+    if matched_field == "sample_labels":
+        manifest["labels"] = ["Synthetic event label"]
+    elif matched_field in {"case_id", "case_title"}:
+        manifest[matched_field] = "Synthetic event"
+    (package_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    if matched_field == "sample_quality_label":
+        (root / "package_index.json").write_text(json.dumps({"packages": [{
+            "package_name": name, "sample_quality_label": "Synthetic quality",
+        }]}), encoding="utf-8")
+    monkeypatch.setenv(bridge.EXPORTS_ENV_VAR, str(root))
+    reads = _guard_discovery_reads(monkeypatch)
+    response = client.get("/api/v1/external-collector/discovery", params={"query": "  sYnThEtIc  "})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["query"] == "sYnThEtIc"
+    assert body["result_count"] == 1
+    assert body["results"][0]["matched_fields"] == [matched_field]
+    assert body["results"][0]["provenance"] == "external_collector_handoff"
+    assert "manifest.json" in reads
+
+
+@pytest.mark.parametrize("needle", ["private_marker_unique", "selected public sample"])
+def test_discovery_does_not_search_paths_notes_coverage_or_content(tmp_path, monkeypatch, needle):
+    root = tmp_path / "private_marker_unique"
+    package_dir = root / "safe_package"
+    _write_package(package_dir)
+    manifest = json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest["coverage_note"] += " private_marker_unique"
+    (package_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (root / "package_index.json").write_text(json.dumps({"packages": [{
+        "package_name": "safe_package", "notes": "private_marker_unique",
+        "package_path": "private_marker_unique",
+    }]}), encoding="utf-8")
+    for file_name in ["README.md", "coverage_note.md", "evidence_items.jsonl", "source_manifest.jsonl"]:
+        (package_dir / file_name).write_text("private_marker_unique selected public sample", encoding="utf-8")
+    monkeypatch.setenv(bridge.EXPORTS_ENV_VAR, str(root))
+    _guard_discovery_reads(monkeypatch)
+    response = client.get("/api/v1/external-collector/discovery", params={"query": needle})
+    assert response.status_code == 200
+    assert response.json()["results"] == []
+    assert response.json()["result_count"] == 0
+
+
+@pytest.mark.parametrize("unsafe_value", [
+    "api_key=synthetic_private", "access_token = synthetic_private", "refresh_token: synthetic_private",
+    "client_secret=synthetic_private", "password=synthetic_private", "cookie=synthetic_private",
+    "Authorization: synthetic_private", r"C:\private\synthetic_private", "https://example.test/synthetic_private",
+])
+def test_discovery_excludes_sensitive_metadata_before_projection_and_matching(tmp_path, monkeypatch, unsafe_value):
+    root = tmp_path / "exports"
+    package_dir = root / "safe_package"
+    _write_package(package_dir, case_id=unsafe_value, case_title=unsafe_value)
+    manifest = json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest["labels"] = [unsafe_value, "safe label"]
+    (package_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (root / "package_index.json").write_text(json.dumps({"packages": [{
+        "package_name": "safe_package", "package_role": unsafe_value,
+        "validation_status": unsafe_value, "sample_quality_label": unsafe_value,
+        "exported_at": unsafe_value, "notes": unsafe_value,
+    }]}), encoding="utf-8")
+    monkeypatch.setenv(bridge.EXPORTS_ENV_VAR, str(root))
+    _guard_discovery_reads(monkeypatch)
+    response = client.get("/api/v1/external-collector/discovery", params={"query": "safe_package"})
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["case_id"] == result["case_title"] == result["package_role"] == ""
+    assert result["sample_quality_label"] == ""
+    assert result["sample_labels"] == ["safe label"]
+    assert result["exported_at"] is None
+    assert result["validation_status"] == "unknown"
+    assert "synthetic_private" not in response.text
+    assert str(root) not in response.text
+    assert not set(result).intersection({"package_path", "index_notes", "url", "snippet", "confidence",
+                                         "coverage_note", "source_url", "evidence_text", "author_name"})
+
+
+def test_discovery_caps_five_preserves_summary_order_and_stored_semantics(tmp_path, monkeypatch):
+    root = tmp_path / "exports"
+    entries = []
+    for index in range(7):
+        name = f"sample_{index:02d}"
+        _write_package(root / name)
+        entries.append({"package_name": name, "recommended_for_sentigraph_demo": index == 6})
+    (root / "package_index.json").write_text(json.dumps({"packages": entries}), encoding="utf-8")
+    monkeypatch.setenv(bridge.EXPORTS_ENV_VAR, str(root))
+    _guard_discovery_reads(monkeypatch)
+    response = client.get("/api/v1/external-collector/discovery", params={"query": "sample"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result_count"] == 5
+    assert [item["package_name"] for item in body["results"]] == ["sample_06", "sample_00", "sample_01", "sample_02", "sample_03"]
+    for item in [body["safe_mode"], *body["results"]]:
+        assert item["stored_validation_not_fresh"] is True
+        assert item["human_review_required"] is True
+        for key in ["collector_job_run", "package_validation_performed", "evidence_content_read",
+                    "url_fetching", "scraping", "full_web_coverage", "full_platform_coverage"]:
+            assert item[key] is False
+
+
+def test_discovery_bounded_strings_and_counts(tmp_path, monkeypatch):
+    root = tmp_path / "exports"
+    package_dir = root / "safe_package"
+    _write_package(package_dir, case_id="i" * 1000, case_title="t" * 1000)
+    (root / "package_index.json").write_text(json.dumps({"packages": [{
+        "package_name": "safe_package", "sample_quality_label": "q" * 1000,
+        "package_role": "r" * 1000, "evidence_count": 2_000_000_000,
+    }]}), encoding="utf-8")
+    manifest = json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest["labels"] = [str(index) + "l" * 200 for index in range(20)]
+    (package_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setenv(bridge.EXPORTS_ENV_VAR, str(root))
+    _guard_discovery_reads(monkeypatch)
+    response = client.get("/api/v1/external-collector/discovery", params={"query": "safe_package", "max_results": 1})
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert len(result["case_id"]) == 120
+    assert len(result["case_title"]) == 200
+    assert len(result["sample_quality_label"]) == 120
+    assert len(result["package_role"]) == 80
+    assert len(result["sample_labels"]) == 8
+    assert all(len(label) <= 80 for label in result["sample_labels"])
+    assert result["evidence_count"] == 1_000_000_000
+
+
+def test_discovery_internal_failure_has_no_raw_path(monkeypatch):
+    def fail_configuration():
+        raise OSError(r"C:\private\must-not-leak")
+
+    monkeypatch.setattr(bridge, "_configured_exports_dir", fail_configuration)
+    response = client.get("/api/v1/external-collector/discovery", params={"query": "event"})
+    assert response.status_code == 500
+    assert response.json() == {"detail": "external_collector_internal_failure"}
+    assert "must-not-leak" not in response.text
 
 
 def _write_package(
