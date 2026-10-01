@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
@@ -180,6 +180,16 @@ function selectFirstComboboxOption(label) {
     expect(options).toHaveLength(1)
     fireEvent.click(options[0])
   })
+}
+
+function deferred() {
+  let resolve
+  let reject
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }
 
 beforeEach(() => {
@@ -583,16 +593,15 @@ describe('RDS1 external collector handoff query lane', () => {
     expectNoCollectorSideEffects()
   })
 
-  it('keeps an in-flight response bound to its submitted lane and query', async () => {
+  it('discards an in-flight collector response after its submitted context is invalidated', async () => {
     await renderCollector()
     let resolveSearch
     apiMocks.getExternalCollectorDiscovery.mockImplementation(() => new Promise((resolve) => { resolveSearch = resolve }))
     fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
     fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Another event' } })
     await selectFirstComboboxOption(OFFLINE_PROVIDER.display_name)
-    resolveSearch(COLLECTOR_BATCH)
-    await screen.findByText(COLLECTOR_BATCH.results[0].case_title, { exact: true })
-    expect(screen.getByText('Historical external collector package results for query: Synthetic launch')).toBeTruthy()
+    await act(async () => { resolveSearch(COLLECTOR_BATCH); await Promise.resolve() })
+    expect(screen.queryByText(COLLECTOR_BATCH.results[0].case_title, { exact: true })).toBeNull()
     expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
     expectNoCollectorSideEffects()
   })
@@ -781,17 +790,15 @@ describe('RDS1 intentional live search boundaries', () => {
     expectNoDownstreamActions()
   })
 
-  it('keeps an in-flight result bound to its submitted query and lane after input drift', async () => {
+  it('discards an in-flight live result after query and lane drift', async () => {
     let resolveSearch
     apiMocks.getYouTubeOfficialApiLiveCandidates.mockImplementation(() => new Promise((resolve) => { resolveSearch = resolve }))
     await renderLive()
     fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
     fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Another event' } })
     await selectFirstComboboxOption(OFFLINE_PROVIDER.display_name)
-    resolveSearch(LIVE_BATCH)
-    await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
-    fireEvent.click(screen.getByRole('button', { name: '接受' }))
-    expect(screen.getByText('Historical real official-API metadata batch for query: Current launch')).toBeTruthy()
+    await act(async () => { resolveSearch(LIVE_BATCH); await Promise.resolve() })
+    expect(screen.queryByText(LIVE_BATCH.candidates[0].title, { exact: true })).toBeNull()
     expect(screen.queryByRole('button', { name: /Load provider-backed public discussion/ })).toBeNull()
     expect(screen.getByRole('button', { name: /Attach accepted to case/ }).disabled).toBe(true)
     expectNoDownstreamActions()
@@ -804,5 +811,159 @@ describe('RDS1 intentional live search boundaries', () => {
     await screen.findByText('The returned metadata batch does not match the submitted query. Run a new explicit search.')
     expect(screen.queryByText(LIVE_BATCH.candidates[0].title, { exact: true })).toBeNull()
     expectNoDownstreamActions()
+  })
+})
+
+describe('RIE1R2 exact-one live candidate and monotonic search context', () => {
+  async function renderLiveSearch() {
+    render(<SearchDiscovery liveRouteFrontendEnabled publicDiscussionReviewFrontendEnabled />)
+    await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
+    await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+  }
+
+  const searchName = /Search YouTube Official API metadata/
+  const loadName = /Load provider-backed public discussion/
+  const secondCandidate = {
+    ...LIVE_BATCH.candidates[0], candidate_id: 'youtube_official_api_live_current_002',
+    title: 'Second guarded live metadata candidate', url: 'https://www.youtube.com/watch?v=current_002',
+  }
+
+  it('requires exactly one accepted candidate without rewriting the other user decisions', async () => {
+    apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue({
+      ...LIVE_BATCH, candidate_count: 2, candidates: [LIVE_BATCH.candidates[0], secondCandidate],
+    })
+    await renderLiveSearch()
+    fireEvent.click(screen.getByRole('button', { name: searchName }))
+    await screen.findByText(secondCandidate.title, { exact: true })
+    const firstRow = screen.getByText(LIVE_BATCH.candidates[0].title, { exact: true }).closest('tr')
+    const secondRow = screen.getByText(secondCandidate.title, { exact: true }).closest('tr')
+    expect(screen.queryByRole('button', { name: loadName })).toBeNull()
+    fireEvent.click(within(firstRow).getByRole('button', { name: '接受' }))
+    expect(screen.getByRole('button', { name: loadName })).toBeTruthy()
+    fireEvent.click(within(secondRow).getByRole('button', { name: '接受' }))
+    expect(within(firstRow).getByText('accepted', { exact: true })).toBeTruthy()
+    expect(within(secondRow).getByText('accepted', { exact: true })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: loadName })).toBeNull()
+    fireEvent.click(within(firstRow).getByRole('button', { name: '忽略' }))
+    expect(screen.getByRole('button', { name: loadName })).toBeTruthy()
+    expect(within(secondRow).getByText('accepted', { exact: true })).toBeTruthy()
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).not.toHaveBeenCalled()
+    expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['missing candidate id', { candidate_id: '' }],
+    ['another candidate query', { query: 'Different event' }],
+  ])('does not grant discussion authority to %s', async (_, override) => {
+    apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue({
+      ...LIVE_BATCH, candidates: [{ ...LIVE_BATCH.candidates[0], ...override }],
+    })
+    await renderLiveSearch()
+    fireEvent.click(screen.getByRole('button', { name: searchName }))
+    await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    expect(screen.queryByRole('button', { name: loadName })).toBeNull()
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).not.toHaveBeenCalled()
+  })
+
+  it.each(['success', 'error'])('fences old search %s and loading completion across A-B-A', async (outcome) => {
+    const oldA = deferred()
+    const oldB = deferred()
+    const currentA = deferred()
+    apiMocks.getYouTubeOfficialApiLiveCandidates
+      .mockReturnValueOnce(oldA.promise).mockReturnValueOnce(oldB.promise).mockReturnValueOnce(currentA.promise)
+    await renderLiveSearch()
+    fireEvent.click(screen.getByRole('button', { name: searchName }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Other event' } })
+    fireEvent.click(screen.getByRole('button', { name: searchName }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+    fireEvent.click(screen.getByRole('button', { name: searchName }))
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(3)
+    await act(async () => {
+      if (outcome === 'success') oldA.resolve(LIVE_BATCH)
+      else oldA.reject({ response: { data: { detail: 'youtube_live_search_discovery_quota_error' } } })
+      oldB.resolve({ ...LIVE_BATCH, query: 'Other event' })
+      await Promise.resolve()
+    })
+    expect(screen.queryByText(LIVE_BATCH.candidates[0].title, { exact: true })).toBeNull()
+    expect(screen.queryByText('The official API reported a quota error.', { exact: true })).toBeNull()
+    expect(screen.getByRole('button', { name: searchName }).classList.contains('ant-btn-loading')).toBe(true)
+    const fresh = { ...LIVE_BATCH, candidates: [{ ...LIVE_BATCH.candidates[0], title: 'New A request candidate' }] }
+    await act(async () => { currentA.resolve(fresh); await Promise.resolve() })
+    expect(screen.getByText('New A request candidate', { exact: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: searchName }).classList.contains('ant-btn-loading')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    expect(screen.getByRole('button', { name: loadName })).toBeTruthy()
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).not.toHaveBeenCalled()
+  })
+
+  it('cannot revive an accepted historical batch merely by returning to the same query', async () => {
+    await renderLiveSearch()
+    fireEvent.click(screen.getByRole('button', { name: searchName }))
+    await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Other event' } })
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+    expect(screen.getByText('Historical real official-API metadata batch for query: Current launch')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: loadName })).toBeNull()
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).not.toHaveBeenCalled()
+  })
+
+  it('does not let a stale collector error or completion change a new live search', async () => {
+    apiMocks.getExternalCollectorStatus.mockResolvedValue({ configured: true, exists: true })
+    const oldCollector = deferred()
+    const currentLive = deferred()
+    apiMocks.getExternalCollectorDiscovery.mockReturnValueOnce(oldCollector.promise)
+    apiMocks.getYouTubeOfficialApiLiveCandidates.mockReturnValueOnce(currentLive.promise)
+    await renderLiveSearch()
+    await selectFirstComboboxOption(COLLECTOR_LABEL)
+    fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
+    fireEvent.click(screen.getByRole('button', { name: searchName }))
+    await act(async () => {
+      oldCollector.reject({ response: { data: { detail: 'external_collector_configured_root_missing' } } })
+      await Promise.resolve()
+    })
+    expect(screen.queryByText('The configured external collector root is unavailable.', { exact: true })).toBeNull()
+    expect(screen.getByRole('button', { name: searchName }).classList.contains('ant-btn-loading')).toBe(true)
+    await act(async () => { currentLive.resolve(LIVE_BATCH); await Promise.resolve() })
+    expect(screen.getByText(LIVE_BATCH.candidates[0].title, { exact: true })).toBeTruthy()
+    expect(screen.queryByTestId('external-collector-package-result')).toBeNull()
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).not.toHaveBeenCalled()
+  })
+
+  it('keeps only the newest collector package search across A-B-A', async () => {
+    apiMocks.getExternalCollectorStatus.mockResolvedValue({ configured: true, exists: true })
+    const oldA = deferred()
+    const oldB = deferred()
+    const currentA = deferred()
+    apiMocks.getExternalCollectorDiscovery
+      .mockReturnValueOnce(oldA.promise).mockReturnValueOnce(oldB.promise).mockReturnValueOnce(currentA.promise)
+    await renderLiveSearch()
+    await selectFirstComboboxOption(COLLECTOR_LABEL)
+    const searchPackages = () => fireEvent.click(screen.getByRole('button', { name: 'Search external collector handoff packages' }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Synthetic launch' } })
+    searchPackages()
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Other event' } })
+    searchPackages()
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Synthetic launch' } })
+    searchPackages()
+    const currentBatch = { ...COLLECTOR_BATCH, results: [{ ...COLLECTOR_BATCH.results[0], case_title: 'Newest collector package' }] }
+    await act(async () => { currentA.resolve(currentBatch); await Promise.resolve() })
+    await act(async () => {
+      oldA.resolve(COLLECTOR_BATCH)
+      oldB.resolve({ ...COLLECTOR_BATCH, query: 'Other event' })
+      await Promise.resolve()
+    })
+    expect(screen.getByText('Newest collector package', { exact: true })).toBeTruthy()
+    expect(screen.queryByText(COLLECTOR_BATCH.results[0].case_title, { exact: true })).toBeNull()
+    expect(screen.getByText('Current external collector package results for query: Synthetic launch')).toBeTruthy()
+    expect(apiMocks.getExternalCollectorDiscovery).toHaveBeenCalledTimes(3)
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).not.toHaveBeenCalled()
+    expect(apiMocks.attachSearchDiscoveryCandidates).not.toHaveBeenCalled()
   })
 })

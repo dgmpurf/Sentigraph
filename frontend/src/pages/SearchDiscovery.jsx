@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Empty, Form, Input, Select, Space, Statistic, Table, Tag, Typography } from 'antd'
 import { CheckCircle2, FileSearch, LinkIcon, PlayCircle, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   attachSearchDiscoveryCandidates,
@@ -113,6 +113,7 @@ export function SearchDiscovery({
   const [batch, setBatch] = useState(null)
   const [generatedProvider, setGeneratedProvider] = useState(null)
   const [generatedQuery, setGeneratedQuery] = useState(null)
+  const [generatedSearchEpoch, setGeneratedSearchEpoch] = useState(null)
   const [candidateStatusById, setCandidateStatusById] = useState({})
   const [loading, setLoading] = useState(false)
   const [attaching, setAttaching] = useState(false)
@@ -121,9 +122,52 @@ export function SearchDiscovery({
   const [publicDiscussionDecisionById, setPublicDiscussionDecisionById] = useState({})
   const [publicDiscussionLoading, setPublicDiscussionLoading] = useState(false)
   const [publicDiscussionSource, setPublicDiscussionSource] = useState(null)
+  const [publicDiscussionContextKey, setPublicDiscussionContextKey] = useState(null)
   const [publicDiscussionAttaching, setPublicDiscussionAttaching] = useState(false)
   const [publicDiscussionAttachResult, setPublicDiscussionAttachResult] = useState(null)
   const [error, setError] = useState('')
+  const searchRequestEpochRef = useRef(0)
+  const discussionRequestEpochRef = useRef(0)
+  const reviewedAttachRequestEpochRef = useRef(0)
+  const discussionContextKeyRef = useRef(null)
+
+  useEffect(() => () => {
+    searchRequestEpochRef.current += 1
+    discussionRequestEpochRef.current += 1
+    reviewedAttachRequestEpochRef.current += 1
+    discussionContextKeyRef.current = null
+  }, [])
+
+  // Revoke authority in the user event, before a pending promise can resolve.
+  function invalidatePublicDiscussion() {
+    discussionRequestEpochRef.current += 1
+    reviewedAttachRequestEpochRef.current += 1
+    discussionContextKeyRef.current = null
+    setPublicDiscussionContextKey(null)
+    setPublicDiscussionBatch(null)
+    setPublicDiscussionDecisionById({})
+    setPublicDiscussionSource(null)
+    setPublicDiscussionAttachResult(null)
+    setPublicDiscussionLoading(false)
+    setPublicDiscussionAttaching(false)
+  }
+
+  function invalidateSearchContext() {
+    searchRequestEpochRef.current += 1
+    setGeneratedSearchEpoch(null)
+    setLoading(false)
+    invalidatePublicDiscussion()
+  }
+
+  function handleQueryChange(nextQuery) {
+    if (nextQuery !== query) invalidateSearchContext()
+    setQuery(nextQuery)
+  }
+
+  function handleProviderChange(nextProvider) {
+    if (nextProvider !== provider) invalidateSearchContext()
+    setProvider(nextProvider)
+  }
 
   useEffect(() => {
     let isMounted = true
@@ -229,24 +273,37 @@ export function SearchDiscovery({
   const liveSelected = provider === LIVE_PROVIDER_ID
   const collectorSelected = provider === COLLECTOR_LANE_ID
   const collectorAvailable = collectorStatus.configured && collectorStatus.exists
+  const generatedSearchCurrent = generatedSearchEpoch !== null &&
+    generatedSearchEpoch === searchRequestEpochRef.current
   const collectorBatchCurrent = Boolean(collectorBatch) && generatedCollectorLane === provider &&
-    generatedCollectorQuery === normalizeDiscoveryQuery(query)
+    generatedCollectorQuery === normalizeDiscoveryQuery(query) && generatedSearchCurrent
   const backendLiveDescriptor = providers.find(
     (item) => item.provider_id === LIVE_PROVIDER_ID && item.provider_type === 'youtube_official_api',
   )
   const liveSearchAvailable = liveRouteFrontendEnabled && backendLiveDescriptor?.live_fetch_enabled === true
   const generatedBatchMatchesProvider = Boolean(generatedProvider) && generatedProvider === provider
   const generatedBatchMatchesQuery = generatedQuery !== null && generatedQuery === normalizeDiscoveryQuery(query)
-  const generatedLiveBatchCurrent = liveBatchPreviewOnly && generatedBatchMatchesProvider && generatedBatchMatchesQuery
-  const acceptedLiveCandidate = generatedLiveBatchCurrent
+  const generatedLiveBatchCurrent = liveBatchPreviewOnly && generatedBatchMatchesProvider &&
+    generatedBatchMatchesQuery && generatedSearchCurrent
+  const acceptedLiveCandidate = generatedLiveBatchCurrent && acceptedCandidates.length === 1
     ? acceptedCandidates[0] || null
     : null
   const acceptedLiveVideoId = getYouTubeWatchVideoId(acceptedLiveCandidate?.url)
+  const liveCandidateContextKey = acceptedLiveCandidate?.candidate_id?.trim() && acceptedLiveVideoId &&
+    normalizeDiscoveryQuery(acceptedLiveCandidate.query) === generatedQuery
+    ? JSON.stringify({
+      search_epoch: generatedSearchEpoch,
+      submitted_query: generatedQuery,
+      lane: generatedProvider,
+      candidate_id: acceptedLiveCandidate.candidate_id,
+      video_id: acceptedLiveVideoId,
+    })
+    : null
   const providerDiscussionLoadAvailable = Boolean(
     liveSearchAvailable &&
     publicDiscussionReviewFrontendEnabled &&
     acceptedLiveCandidate &&
-    acceptedLiveVideoId,
+    liveCandidateContextKey,
   )
   const acceptedPublicDiscussionIds = useMemo(
     () => (publicDiscussionBatch?.items || [])
@@ -254,15 +311,24 @@ export function SearchDiscovery({
       .map((item) => item.discussion_id),
     [publicDiscussionBatch, publicDiscussionDecisionById],
   )
+  const selectedDiscussionSafeHashes = Object.fromEntries(acceptedPublicDiscussionIds.map((id) => [
+    id, Object.hasOwn(publicDiscussionBatch?.review_item_safe_hashes || {}, id)
+      ? publicDiscussionBatch.review_item_safe_hashes[id] : undefined,
+  ]))
   const publicDiscussionAttachAvailable = Boolean(
     publicDiscussionAttachFrontendEnabled &&
     providerDiscussionLoadAvailable &&
     publicDiscussionBatch?.video_id === acceptedLiveVideoId &&
     publicDiscussionSource === 'provider-backed' &&
+    publicDiscussionContextKey === liveCandidateContextKey &&
+    discussionContextKeyRef.current === liveCandidateContextKey &&
     targetCaseId &&
     /^[0-9a-f]{64}$/.test(publicDiscussionBatch?.review_batch_safe_hash || '') &&
     acceptedPublicDiscussionIds.length >= 1 &&
     acceptedPublicDiscussionIds.length <= 3 &&
+    new Set(acceptedPublicDiscussionIds).size === acceptedPublicDiscussionIds.length &&
+    acceptedPublicDiscussionIds.every((id) => typeof selectedDiscussionSafeHashes[id] === 'string' &&
+      /^[0-9a-f]{64}$/.test(selectedDiscussionSafeHashes[id])) &&
     !publicDiscussionAttaching,
   )
 
@@ -270,13 +336,13 @@ export function SearchDiscovery({
     if (loading) return
     const submittedProvider = provider
     const submittedQuery = normalizeDiscoveryQuery(query)
+    const requestEpoch = ++searchRequestEpochRef.current
+    const isCurrentRequest = () => searchRequestEpochRef.current === requestEpoch
+    invalidatePublicDiscussion()
+    setGeneratedSearchEpoch(null)
     setLoading(true)
     setError('')
     setAttachResult(null)
-    setPublicDiscussionBatch(null)
-    setPublicDiscussionDecisionById({})
-    setPublicDiscussionSource(null)
-    setPublicDiscussionAttachResult(null)
     setBatch(null)
     setGeneratedProvider(null)
     setGeneratedQuery(null)
@@ -295,6 +361,7 @@ export function SearchDiscovery({
           return
         }
         const result = await getExternalCollectorDiscovery(submittedQuery, 5)
+        if (!isCurrentRequest()) return
         if (normalizeDiscoveryQuery(result.query) !== submittedQuery) {
           setError('The returned collector packages do not match the submitted query. Run a new explicit search.')
           return
@@ -302,6 +369,7 @@ export function SearchDiscovery({
         setCollectorBatch(result)
         setGeneratedCollectorQuery(submittedQuery)
         setGeneratedCollectorLane(submittedProvider)
+        setGeneratedSearchEpoch(requestEpoch)
         return
       }
       if (submittedProvider === LIVE_PROVIDER_ID) {
@@ -319,6 +387,7 @@ export function SearchDiscovery({
         : submittedProvider === 'youtube_official_api'
           ? await getYouTubeOfficialApiMockCandidates(query, 5)
           : await getMockSearchDiscoveryCandidates(query, submittedProvider)
+      if (!isCurrentRequest()) return
       if (submittedProvider === LIVE_PROVIDER_ID && normalizeDiscoveryQuery(result.query) !== submittedQuery) {
         setError('The returned metadata batch does not match the submitted query. Run a new explicit search.')
         return
@@ -326,21 +395,27 @@ export function SearchDiscovery({
       setBatch(result)
       setGeneratedProvider(submittedProvider)
       setGeneratedQuery(submittedQuery)
+      setGeneratedSearchEpoch(requestEpoch)
       setCandidateStatusById(
         Object.fromEntries((result.candidates || []).map((candidate) => [candidate.candidate_id, 'pending_review'])),
       )
     } catch (requestError) {
+      if (!isCurrentRequest()) return
       setError(submittedProvider === COLLECTOR_LANE_ID
         ? safeCollectorSearchError(requestError)
         : submittedProvider === LIVE_PROVIDER_ID
         ? safeLiveSearchError(requestError)
         : requestError?.message || 'Unable to generate mock Search Discovery candidates.')
     } finally {
-      setLoading(false)
+      if (isCurrentRequest()) setLoading(false)
     }
   }
 
   function setCandidateStatus(candidateId, status) {
+    if (generatedProvider === LIVE_PROVIDER_ID &&
+      candidates.find((item) => item.candidate_id === candidateId)?.status !== status) {
+      invalidatePublicDiscussion()
+    }
     if (status === 'accepted' && generatedProvider === LIVE_PROVIDER_ID) {
       const candidate = candidates.find((item) => item.candidate_id === candidateId)
       if (!getYouTubeWatchVideoId(candidate?.url)) {
@@ -353,6 +428,7 @@ export function SearchDiscovery({
   }
 
   function handleLoadPublicDiscussionFixture() {
+    invalidatePublicDiscussion()
     setError('')
     setPublicDiscussionAttachResult(null)
     setPublicDiscussionBatch(PUBLIC_DISCUSSION_REVIEW_FIXTURE)
@@ -365,11 +441,19 @@ export function SearchDiscovery({
   }
 
   async function handleLoadProviderPublicDiscussion() {
-    if (!providerDiscussionLoadAvailable || !acceptedLiveVideoId) {
+    if (!providerDiscussionLoadAvailable || !liveCandidateContextKey) {
       setError('Accepted live candidate does not contain a valid YouTube watch URL.')
       return
     }
 
+    invalidatePublicDiscussion()
+    const requestEpoch = ++discussionRequestEpochRef.current
+    const requestSearchEpoch = generatedSearchEpoch
+    const requestContextKey = liveCandidateContextKey
+    discussionContextKeyRef.current = requestContextKey
+    const isCurrentRequest = () => discussionRequestEpochRef.current === requestEpoch &&
+      searchRequestEpochRef.current === requestSearchEpoch &&
+      discussionContextKeyRef.current === requestContextKey
     setPublicDiscussionLoading(true)
     setError('')
     setPublicDiscussionBatch(null)
@@ -378,7 +462,13 @@ export function SearchDiscovery({
     setPublicDiscussionAttachResult(null)
     try {
       const result = await getYouTubeOfficialApiLivePublicDiscussion(acceptedLiveVideoId, 3)
+      if (!isCurrentRequest()) return
+      if (result?.video_id !== acceptedLiveVideoId) {
+        setError('The returned public discussion does not match the selected video. Use a new explicit request.')
+        return
+      }
       setPublicDiscussionBatch(result)
+      setPublicDiscussionContextKey(requestContextKey)
       setPublicDiscussionSource('provider-backed')
       setPublicDiscussionDecisionById(
         Object.fromEntries(
@@ -386,13 +476,16 @@ export function SearchDiscovery({
         ),
       )
     } catch {
+      if (!isCurrentRequest()) return
       setError('Unable to load provider-backed public discussion.')
     } finally {
-      setPublicDiscussionLoading(false)
+      if (isCurrentRequest()) setPublicDiscussionLoading(false)
     }
   }
 
   function setPublicDiscussionDecision(discussionId, decision) {
+    reviewedAttachRequestEpochRef.current += 1
+    setPublicDiscussionAttaching(false)
     setPublicDiscussionAttachResult(null)
     setPublicDiscussionDecisionById((current) => ({ ...current, [discussionId]: decision }))
   }
@@ -404,25 +497,39 @@ export function SearchDiscovery({
     }
 
     setPublicDiscussionAttaching(true)
+    const requestEpoch = ++reviewedAttachRequestEpochRef.current
+    const requestSearchEpoch = generatedSearchEpoch
+    const requestDiscussionEpoch = discussionRequestEpochRef.current
+    const requestContextKey = publicDiscussionContextKey
+    const requestCaseId = targetCaseId
+    const isCurrentRequest = () => reviewedAttachRequestEpochRef.current === requestEpoch &&
+      searchRequestEpochRef.current === requestSearchEpoch &&
+      discussionRequestEpochRef.current === requestDiscussionEpoch &&
+      discussionContextKeyRef.current === requestContextKey
     setPublicDiscussionAttachResult(null)
     setError('')
     try {
       const result = await attachYouTubeOfficialApiReviewedPublicDiscussion(
-        targetCaseId,
+        requestCaseId,
         acceptedLiveVideoId,
         {
           review_batch_safe_hash: publicDiscussionBatch.review_batch_safe_hash,
           selected_discussion_ids: acceptedPublicDiscussionIds,
+          review_binding_mode: 'selected_item_v1',
+          selected_discussion_safe_hashes: selectedDiscussionSafeHashes,
         },
       )
+      if (!isCurrentRequest()) return
       setPublicDiscussionAttachResult(result)
-      const refreshedCase = await getAnalysisCase(targetCaseId)
+      const refreshedCase = await getAnalysisCase(requestCaseId)
+      if (!isCurrentRequest()) return
       onCaseReady?.(refreshedCase)
       await onRefreshCases?.()
     } catch (requestError) {
+      if (!isCurrentRequest()) return
       setError(requestError?.message || 'Unable to attach reviewed public discussion.')
     } finally {
-      setPublicDiscussionAttaching(false)
+      if (isCurrentRequest()) setPublicDiscussionAttaching(false)
     }
   }
 
@@ -634,7 +741,7 @@ export function SearchDiscovery({
           <Form.Item label="Discovery lane / 发现入口">
             <Select
               value={provider}
-              onChange={setProvider}
+              onChange={handleProviderChange}
               options={providerOptions}
               placeholder="Select a discovery lane"
             />
@@ -642,7 +749,7 @@ export function SearchDiscovery({
           <Form.Item label="Keyword / Event query">
             <Input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => handleQueryChange(event.target.value)}
               maxLength={120}
               placeholder="Tesla"
             />
@@ -938,18 +1045,18 @@ export function SearchDiscovery({
                       <Tag color="purple">acquisition_mode=official_api_public</Tag>
                       <Tag color="blue">provenance=official_api</Tag>
                       <Tag color="gold">analysis_run=false</Tag>
+                      <Tag color="cyan">binding={publicDiscussionAttachResult.review_binding_mode}</Tag>
+                      {publicDiscussionAttachResult.safe_mode?.server_side_refetch === true ? (
+                        <Tag color="green">server-side refetch; selected binding confirmed</Tag>
+                      ) : null}
                     </Space>
                     <Text type="secondary">
                       Human-selected public comments are attached to the existing case. Official API provenance is
                       transport provenance, not truth verification.
                     </Text>
-                    <Button
-                      icon={<PlayCircle size={16} />}
-                      disabled={!publicDiscussionAttachResult.case_id}
-                      onClick={() => onRunCase?.(publicDiscussionAttachResult.case_id, 'analysis')}
-                    >
-                      Run analysis after attach
-                    </Button>
+                    <Text strong>
+                      Attached to case-local Evidence. Review the persisted Evidence before any explicit analysis.
+                    </Text>
                   </Space>
                 </Card>
               ) : null}

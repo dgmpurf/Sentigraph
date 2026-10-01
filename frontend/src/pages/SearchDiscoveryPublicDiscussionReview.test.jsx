@@ -6,6 +6,8 @@ const apiMocks = vi.hoisted(() => ({
   attachSearchDiscoveryCandidates: vi.fn(),
   attachYouTubeOfficialApiReviewedPublicDiscussion: vi.fn(),
   getAnalysisCase: vi.fn(),
+  getExternalCollectorStatus: vi.fn(),
+  getExternalCollectorDiscovery: vi.fn(),
   getMockSearchDiscoveryCandidates: vi.fn(),
   getSearchDiscoveryProviders: vi.fn(),
   getYouTubeOfficialApiLiveCandidates: vi.fn(),
@@ -82,6 +84,10 @@ const LIVE_DISCUSSION_BATCH = {
   generated_at: '2026-08-25T00:01:00Z',
   item_count: 2,
   review_batch_safe_hash: 'a'.repeat(64),
+  review_item_safe_hashes: {
+    youtube_official_api_current_001_comment_001: 'b'.repeat(64),
+    youtube_official_api_current_001_comment_002: 'c'.repeat(64),
+  },
   items: [
     {
       discussion_id: 'youtube_official_api_current_001_comment_001',
@@ -168,6 +174,13 @@ const ATTACH_RESULT = {
     evidence_item_count: 1,
   },
   review_batch_safe_hash: LIVE_DISCUSSION_BATCH.review_batch_safe_hash,
+  review_binding_mode: 'selected_item_v1',
+  reviewed_batch_safe_hash: LIVE_DISCUSSION_BATCH.review_batch_safe_hash,
+  // Unselected-item drift may change the fresh batch without invalidating the selected item.
+  fresh_batch_safe_hash: 'd'.repeat(64),
+  selected_discussion_safe_hashes: {
+    [LIVE_DISCUSSION_BATCH.items[0].discussion_id]: 'b'.repeat(64),
+  },
   safe_mode: {
     server_side_refetch: true,
     analysis_run: false,
@@ -194,7 +207,17 @@ function selectTargetCaseOption(targetCase) {
   })
 }
 
-async function renderProviderDiscussion(props = {}) {
+function deferred() {
+  let resolve
+  let reject
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+async function renderAcceptedLiveCandidate(props = {}) {
   render(
     <SearchDiscovery
       liveRouteFrontendEnabled
@@ -208,7 +231,11 @@ async function renderProviderDiscussion(props = {}) {
   fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
   await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
   fireEvent.click(screen.getByRole('button', { name: '接受' }))
-  const panel = screen.getByTestId('public-discussion-review-panel')
+  return screen.getByTestId('public-discussion-review-panel')
+}
+
+async function renderProviderDiscussion(props = {}) {
+  const panel = await renderAcceptedLiveCandidate(props)
   fireEvent.click(within(panel).getByRole('button', { name: /Load provider-backed public discussion/ }))
   await waitFor(() => {
     expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).toHaveBeenCalledTimes(1)
@@ -221,6 +248,7 @@ beforeEach(() => {
   installFailClosedBrowserNetworkSentinels()
   Object.values(apiMocks).forEach((mock) => mock.mockReset())
   apiMocks.getSearchDiscoveryProviders.mockResolvedValue([LIVE_PROVIDER])
+  apiMocks.getExternalCollectorStatus.mockResolvedValue({ configured: false, exists: false })
   apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue(LIVE_BATCH)
   apiMocks.getYouTubeOfficialApiLivePublicDiscussion.mockResolvedValue(LIVE_DISCUSSION_BATCH)
   apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion.mockResolvedValue(ATTACH_RESULT)
@@ -538,8 +566,7 @@ describe('RDS1 current-query discussion eligibility', () => {
     const attach = within(panel).getByRole('button', { name: 'Attach reviewed public discussion to case' })
     expect(attach.disabled).toBe(false)
     fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'New event' } })
-    expect(attach.disabled).toBe(true)
-    fireEvent.click(attach)
+    expect(within(panel).queryByRole('button', { name: 'Attach reviewed public discussion to case' })).toBeNull()
     expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
   })
 })
@@ -548,7 +575,9 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
   it('uses the hidden attach endpoint with the exact two-field request body', async () => {
     const actualApi = await vi.importActual('../api/sentigraphApi.js')
     const postSpy = vi.spyOn((await import('../api/client.js')).apiClient, 'post')
-      .mockResolvedValue({ data: ATTACH_RESULT })
+      .mockResolvedValue({ data: {
+        ...ATTACH_RESULT, review_binding_mode: 'batch_v1', selected_discussion_safe_hashes: {},
+      } })
     const payload = {
       review_batch_safe_hash: LIVE_DISCUSSION_BATCH.review_batch_safe_hash,
       selected_discussion_ids: [LIVE_DISCUSSION_BATCH.items[0].discussion_id],
@@ -654,7 +683,7 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
     await waitFor(() => expect(attachButton.disabled).toBe(false))
   })
 
-  it('posts only the safe hash and selected ids, never browser comment content', async () => {
+  it('posts exactly four selected-item fields using server hashes, never browser comment content', async () => {
     const onCaseReady = vi.fn()
     const onRefreshCases = vi.fn().mockResolvedValue(undefined)
     const panel = await renderProviderDiscussion({
@@ -683,12 +712,16 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
       {
         review_batch_safe_hash: LIVE_DISCUSSION_BATCH.review_batch_safe_hash,
         selected_discussion_ids: [LIVE_DISCUSSION_BATCH.items[0].discussion_id],
+        review_binding_mode: 'selected_item_v1',
+        selected_discussion_safe_hashes: ATTACH_RESULT.selected_discussion_safe_hashes,
       },
     )
     const payload = apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion.mock.calls[0][2]
     expect(Object.keys(payload).sort()).toEqual([
       'review_batch_safe_hash',
+      'review_binding_mode',
       'selected_discussion_ids',
+      'selected_discussion_safe_hashes',
     ])
     expect(JSON.stringify(payload)).not.toContain(LIVE_DISCUSSION_BATCH.items[0].body_text)
     expect(JSON.stringify(payload).toLowerCase()).not.toMatch(/author|credential|raw/)
@@ -697,7 +730,7 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
     expect(onRefreshCases).toHaveBeenCalledTimes(1)
   })
 
-  it('refreshes after attach without auto-running analysis and keeps run explicit', async () => {
+  it('requires persisted Evidence review after attach and exposes no immediate run shortcut', async () => {
     const onRunCase = vi.fn()
     const panel = await renderProviderDiscussion({
       cases: [TARGET_CASE],
@@ -721,12 +754,14 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
     expect(within(result).getByText('analysis_run=false', { exact: true })).toBeTruthy()
     expect(onRunCase).toHaveBeenCalledTimes(0)
 
-    fireEvent.click(within(result).getByRole('button', { name: 'Run analysis after attach' }))
-    expect(onRunCase).toHaveBeenCalledTimes(1)
-    expect(onRunCase).toHaveBeenCalledWith(TARGET_CASE.case_id, 'analysis')
+    expect(within(result).getByText('binding=selected_item_v1', { exact: true })).toBeTruthy()
+    expect(within(result).getByText('server-side refetch; selected binding confirmed', { exact: true })).toBeTruthy()
+    expect(within(result).getByText(/Review the persisted Evidence before any explicit analysis/)).toBeTruthy()
+    expect(within(result).queryByRole('button', { name: /Run analysis/ })).toBeNull()
+    expect(onRunCase).toHaveBeenCalledTimes(0)
   })
 
-  it('binds a delayed attach receipt run action to its immutable case id', async () => {
+  it('binds a delayed attach receipt to its immutable case id without a run action', async () => {
     let resolveAttach
     apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion.mockImplementationOnce(
       () => new Promise((resolve) => {
@@ -765,10 +800,8 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
 
     const result = await within(panel).findByTestId('public-discussion-attach-result')
     expect(within(result).getByText(`case=${TARGET_CASE.case_id}`, { exact: true })).toBeTruthy()
-    fireEvent.click(within(result).getByRole('button', { name: 'Run analysis after attach' }))
-    expect(onRunCase).toHaveBeenCalledTimes(1)
-    expect(onRunCase).toHaveBeenCalledWith(TARGET_CASE.case_id, 'analysis')
-    expect(onRunCase).not.toHaveBeenCalledWith(SECOND_TARGET_CASE.case_id, 'analysis')
+    expect(within(result).queryByRole('button', { name: /Run analysis/ })).toBeNull()
+    expect(onRunCase).not.toHaveBeenCalled()
   })
 
   it('clears a completed attach receipt when the target case changes', async () => {
@@ -798,5 +831,258 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
     })
     expect(within(panel).queryByRole('button', { name: 'Run analysis after attach' })).toBeNull()
     expect(onRunCase).toHaveBeenCalledTimes(0)
+  })
+})
+
+describe('RIE1R2 selected-item hash and receipt contracts', () => {
+  const selectedId = LIVE_DISCUSSION_BATCH.items[0].discussion_id
+  const selectedPayload = {
+    review_batch_safe_hash: LIVE_DISCUSSION_BATCH.review_batch_safe_hash,
+    selected_discussion_ids: [selectedId],
+    review_binding_mode: 'selected_item_v1',
+    selected_discussion_safe_hashes: { [selectedId]: 'b'.repeat(64) },
+  }
+
+  it('retains only safe server item hashes without reconstructing absent hashes', async () => {
+    const actualApi = await vi.importActual('../api/sentigraphApi.js')
+    const getSpy = vi.spyOn((await import('../api/client.js')).apiClient, 'get')
+      .mockResolvedValueOnce({ data: { ...LIVE_DISCUSSION_BATCH, raw_provider_payload: 'not retained' } })
+      .mockResolvedValueOnce({ data: { ...LIVE_DISCUSSION_BATCH, review_item_safe_hashes: undefined } })
+    const bound = await actualApi.getYouTubeOfficialApiLivePublicDiscussion('current_001', 3)
+    const unbound = await actualApi.getYouTubeOfficialApiLivePublicDiscussion('current_001', 3)
+    expect(bound.review_item_safe_hashes).toEqual(LIVE_DISCUSSION_BATCH.review_item_safe_hashes)
+    expect(bound).not.toHaveProperty('raw_provider_payload')
+    expect(unbound.review_item_safe_hashes).toEqual({})
+    expect(getSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    ['array', []],
+    ['malformed value', { [selectedId]: 'not-a-hash' }],
+    ['uppercase', { [selectedId]: 'B'.repeat(64) }],
+    ['non-string', { [selectedId]: 42 }],
+    ['invalid key', { 'unsafe/id': 'b'.repeat(64) }],
+  ])('does not retain attach authority from a %s hash map', async (_, hashes) => {
+    const actualApi = await vi.importActual('../api/sentigraphApi.js')
+    vi.spyOn((await import('../api/client.js')).apiClient, 'get')
+      .mockResolvedValue({ data: { ...LIVE_DISCUSSION_BATCH, review_item_safe_hashes: hashes } })
+    const result = await actualApi.getYouTubeOfficialApiLivePublicDiscussion('current_001', 3)
+    expect(result.review_item_safe_hashes).toEqual({})
+  })
+
+  it.each([
+    ['unknown mode', { review_binding_mode: 'unknown' }],
+    ['missing hashes', { selected_discussion_safe_hashes: undefined }],
+    ['missing key', { selected_discussion_safe_hashes: {} }],
+    ['extra key', { selected_discussion_safe_hashes: { [selectedId]: 'b'.repeat(64), extra: 'c'.repeat(64) } }],
+    ['uppercase hash', { selected_discussion_safe_hashes: { [selectedId]: 'B'.repeat(64) } }],
+    ['array hashes', { selected_discussion_safe_hashes: ['b'.repeat(64)] }],
+    ['empty selection', { selected_discussion_ids: [] }],
+    ['non-string selection', { selected_discussion_ids: [42], selected_discussion_safe_hashes: { 42: 'b'.repeat(64) } }],
+    ['duplicate selection', { selected_discussion_ids: [selectedId, selectedId] }],
+    ['more than three', { selected_discussion_ids: ['one', 'two', 'three', 'four'] }],
+  ])('rejects %s before any attach request, without a batch-mode fallback', async (_, override) => {
+    const actualApi = await vi.importActual('../api/sentigraphApi.js')
+    const postSpy = vi.spyOn((await import('../api/client.js')).apiClient, 'post')
+    await expect(actualApi.attachYouTubeOfficialApiReviewedPublicDiscussion(
+      TARGET_CASE.case_id, 'current_001', { ...selectedPayload, ...override },
+    )).rejects.toThrow(/^youtube_reviewed_public_discussion_/)
+    expect(postSpy).not.toHaveBeenCalled()
+  })
+
+  it('preserves selected binding and both batch hashes when only unselected items drift', async () => {
+    const actualApi = await vi.importActual('../api/sentigraphApi.js')
+    const postSpy = vi.spyOn((await import('../api/client.js')).apiClient, 'post')
+      .mockResolvedValue({ data: { ...ATTACH_RESULT, raw_provider_payload: 'not retained' } })
+    const result = await actualApi.attachYouTubeOfficialApiReviewedPublicDiscussion(
+      TARGET_CASE.case_id, 'current_001', selectedPayload,
+    )
+    expect(postSpy).toHaveBeenCalledWith(expect.stringContaining('/attach-reviewed'), selectedPayload)
+    expect(result.review_binding_mode).toBe('selected_item_v1')
+    expect(result.reviewed_batch_safe_hash).toBe('a'.repeat(64))
+    expect(result.fresh_batch_safe_hash).toBe('d'.repeat(64))
+    expect(result.selected_discussion_safe_hashes).toEqual(selectedPayload.selected_discussion_safe_hashes)
+    expect(result.safe_mode.server_side_refetch).toBe(true)
+    expect(result).not.toHaveProperty('raw_provider_payload')
+  })
+
+  it.each([1, 2, 3])('accepts an exact server-selected hash set of %i items', async (count) => {
+    const actualApi = await vi.importActual('../api/sentigraphApi.js')
+    const ids = ['one', 'two', 'three'].slice(0, count)
+    const hashes = Object.fromEntries(ids.map((id) => [id, 'b'.repeat(64)]))
+    const payload = { ...selectedPayload, selected_discussion_ids: ids, selected_discussion_safe_hashes: hashes }
+    const postSpy = vi.spyOn((await import('../api/client.js')).apiClient, 'post')
+      .mockResolvedValue({ data: { ...ATTACH_RESULT, attached_discussion_count: count, selected_discussion_safe_hashes: hashes } })
+    const result = await actualApi.attachYouTubeOfficialApiReviewedPublicDiscussion(TARGET_CASE.case_id, 'current_001', payload)
+    expect(result.selected_discussion_safe_hashes).toEqual(hashes)
+    expect(result.attached_discussion_count).toBe(count)
+    expect(postSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['legacy mode', { review_binding_mode: 'batch_v1' }],
+    ['missing reviewed hash', { reviewed_batch_safe_hash: undefined }],
+    ['another reviewed batch', { reviewed_batch_safe_hash: 'e'.repeat(64) }],
+    ['missing fresh hash', { fresh_batch_safe_hash: undefined }],
+    ['invalid fresh hash', { fresh_batch_safe_hash: 'D'.repeat(64) }],
+    ['missing selected map', { selected_discussion_safe_hashes: undefined }],
+    ['another selected key', { selected_discussion_safe_hashes: { other: 'b'.repeat(64) } }],
+    ['another selected hash', { selected_discussion_safe_hashes: { [selectedId]: 'f'.repeat(64) } }],
+    ['no server refetch', { safe_mode: { server_side_refetch: false } }],
+    ['another video', { video_id: 'current_002' }],
+    ['another case', { case_id: 'case_002' }],
+    ['invalid count', { attached_discussion_count: 0 }],
+    ['not attached', { status: 'rejected' }],
+  ])('does not expose a successful selected receipt for %s', async (_, override) => {
+    const actualApi = await vi.importActual('../api/sentigraphApi.js')
+    const postSpy = vi.spyOn((await import('../api/client.js')).apiClient, 'post')
+      .mockResolvedValue({ data: { ...ATTACH_RESULT, ...override } })
+    await expect(actualApi.attachYouTubeOfficialApiReviewedPublicDiscussion(
+      TARGET_CASE.case_id, 'current_001', selectedPayload,
+    )).rejects.toThrow('youtube_reviewed_public_discussion_attach_result_invalid')
+    expect(postSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([undefined, {}, { [selectedId]: 'malformed' }])(
+    'keeps the component attach disabled with missing or malformed selected hashes: %j', async (hashes) => {
+      apiMocks.getYouTubeOfficialApiLivePublicDiscussion.mockResolvedValue({
+        ...LIVE_DISCUSSION_BATCH, review_item_safe_hashes: hashes,
+      })
+      const panel = await renderProviderDiscussion({
+        cases: [TARGET_CASE], publicDiscussionAttachFrontendEnabled: true,
+      })
+      fireEvent.click(within(panel).getByRole('button', { name: `Accept ${selectedId}` }))
+      const attach = within(panel).getByRole('button', { name: 'Attach reviewed public discussion to case' })
+      expect(attach.disabled).toBe(true)
+      fireEvent.click(attach)
+      expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
+    },
+  )
+})
+
+describe('RIE1R2 discussion context revocation and late-result fencing', () => {
+  const loadName = /Load provider-backed public discussion/
+  const firstId = LIVE_DISCUSSION_BATCH.items[0].discussion_id
+
+  it.each(['query A-B-A', 'lane A-B-A', 'candidate rejection', 'new search', 'synthetic fixture'])(
+    'clears provider batch, decisions and attach authority on %s without implicit discussion I/O', async (change) => {
+      const panel = await renderProviderDiscussion({
+        cases: [TARGET_CASE], publicDiscussionAttachFrontendEnabled: true,
+      })
+      fireEvent.click(within(panel).getByRole('button', { name: `Accept ${firstId}` }))
+      expect(within(panel).getByRole('button', { name: 'Attach reviewed public discussion to case' }).disabled).toBe(false)
+      if (change === 'query A-B-A') {
+        fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Other event' } })
+        fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+      } else if (change === 'lane A-B-A') {
+        await selectFirstComboboxOption('Mock Static')
+        await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
+      } else if (change === 'candidate rejection') {
+        fireEvent.click(screen.getByRole('button', { name: '忽略' }))
+      } else if (change === 'new search') {
+        fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
+        await waitFor(() => expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledTimes(2))
+      } else {
+        fireEvent.click(within(panel).getByRole('button', { name: /Load synthetic public discussion fixture/ }))
+      }
+      expect(within(panel).queryByText(LIVE_DISCUSSION_BATCH.items[0].body_text, { exact: true })).toBeNull()
+      expect(within(panel).queryByTestId(`public-discussion-decision-${firstId}`)).toBeNull()
+      expect(within(panel).queryByRole('button', { name: 'Attach reviewed public discussion to case' })).toBeNull()
+      expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).toHaveBeenCalledTimes(1)
+      expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['success', 'error'])('discards a late discussion %s even after query A-B-A', async (outcome) => {
+    const pending = deferred()
+    apiMocks.getYouTubeOfficialApiLivePublicDiscussion.mockReturnValueOnce(pending.promise)
+    const panel = await renderAcceptedLiveCandidate()
+    fireEvent.click(within(panel).getByRole('button', { name: loadName }))
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Other event' } })
+    fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
+    await act(async () => {
+      if (outcome === 'success') pending.resolve(LIVE_DISCUSSION_BATCH)
+      else pending.reject(new Error('stale private provider error'))
+      await Promise.resolve()
+    })
+    expect(within(panel).queryAllByTestId('public-discussion-review-item')).toHaveLength(0)
+    expect(within(panel).queryByRole('button', { name: loadName })).toBeNull()
+    expect(screen.queryByText('Unable to load provider-backed public discussion.')).toBeNull()
+    expect(screen.queryByText(/stale private provider error/)).toBeNull()
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let an old discussion completion clear a newer load or replace its decisions', async () => {
+    const old = deferred()
+    const current = deferred()
+    apiMocks.getYouTubeOfficialApiLivePublicDiscussion
+      .mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
+    const panel = await renderAcceptedLiveCandidate()
+    fireEvent.click(within(panel).getByRole('button', { name: loadName }))
+    fireEvent.click(screen.getByRole('button', { name: '忽略' }))
+    fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    fireEvent.click(within(panel).getByRole('button', { name: loadName }))
+    await act(async () => { old.resolve(LIVE_DISCUSSION_BATCH); await Promise.resolve() })
+    expect(within(panel).getByRole('button', { name: loadName }).classList.contains('ant-btn-loading')).toBe(true)
+    expect(within(panel).queryAllByTestId('public-discussion-review-item')).toHaveLength(0)
+    const newBatch = {
+      ...LIVE_DISCUSSION_BATCH,
+      items: LIVE_DISCUSSION_BATCH.items.map((item) => ({ ...item, body_text: `New request ${item.comment_id}` })),
+    }
+    await act(async () => { current.resolve(newBatch); await Promise.resolve() })
+    expect(within(panel).getByText('New request comment_001', { exact: true })).toBeTruthy()
+    expect(within(panel).queryByText(LIVE_DISCUSSION_BATCH.items[0].body_text, { exact: true })).toBeNull()
+    expect(within(panel).getByTestId(`public-discussion-decision-${firstId}`).textContent).toBe('local decision=pending_review')
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects discussion from another video without falling back or attaching', async () => {
+    apiMocks.getYouTubeOfficialApiLivePublicDiscussion.mockResolvedValue({ ...LIVE_DISCUSSION_BATCH, video_id: 'current_002' })
+    const panel = await renderAcceptedLiveCandidate({ cases: [TARGET_CASE], publicDiscussionAttachFrontendEnabled: true })
+    fireEvent.click(within(panel).getByRole('button', { name: loadName }))
+    await screen.findByText('The returned public discussion does not match the selected video. Use a new explicit request.')
+    expect(within(panel).queryAllByTestId('public-discussion-review-item')).toHaveLength(0)
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).toHaveBeenCalledTimes(1)
+    expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
+  })
+
+  it('keeps the collector lane outside discussion and selected-item attach authority', async () => {
+    apiMocks.getExternalCollectorStatus.mockResolvedValue({ configured: true, exists: true })
+    const panel = await renderProviderDiscussion({ cases: [TARGET_CASE], publicDiscussionAttachFrontendEnabled: true })
+    fireEvent.click(within(panel).getByRole('button', { name: `Accept ${firstId}` }))
+    await selectFirstComboboxOption('External Collector Handoff — already-produced local packages')
+    expect(screen.queryByTestId('public-discussion-review-panel')).toBeNull()
+    await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
+    expect(screen.queryAllByTestId('public-discussion-review-item')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: loadName })).toBeNull()
+    expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getExternalCollectorDiscovery).not.toHaveBeenCalled()
+    expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
+  })
+
+  it.each(['success', 'error'])('discards a late attach %s after its context is revoked', async (outcome) => {
+    const pending = deferred()
+    apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion.mockReturnValueOnce(pending.promise)
+    const onCaseReady = vi.fn()
+    const onRefreshCases = vi.fn()
+    const onRunCase = vi.fn()
+    const panel = await renderProviderDiscussion({
+      cases: [TARGET_CASE], publicDiscussionAttachFrontendEnabled: true, onCaseReady, onRefreshCases, onRunCase,
+    })
+    fireEvent.click(within(panel).getByRole('button', { name: `Accept ${firstId}` }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Attach reviewed public discussion to case' }))
+    fireEvent.click(screen.getByRole('button', { name: '忽略' }))
+    await act(async () => {
+      if (outcome === 'success') pending.resolve(ATTACH_RESULT)
+      else pending.reject(new Error('stale attach error'))
+      await Promise.resolve()
+    })
+    expect(within(panel).queryByTestId('public-discussion-attach-result')).toBeNull()
+    expect(apiMocks.getAnalysisCase).not.toHaveBeenCalled()
+    expect(onCaseReady).not.toHaveBeenCalled()
+    expect(onRefreshCases).not.toHaveBeenCalled()
+    expect(onRunCase).not.toHaveBeenCalled()
+    expect(screen.queryByText('stale attach error', { exact: true })).toBeNull()
+    expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).toHaveBeenCalledTimes(1)
   })
 })

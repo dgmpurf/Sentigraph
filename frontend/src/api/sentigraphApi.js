@@ -1717,14 +1717,47 @@ export async function attachYouTubeOfficialApiReviewedPublicDiscussion(
     throw new Error('youtube_reviewed_public_discussion_selection_invalid')
   }
 
+  const bindingMode = payload.review_binding_mode
+  if (bindingMode !== undefined && !['batch_v1', 'selected_item_v1'].includes(bindingMode)) {
+    throw new Error('youtube_reviewed_public_discussion_binding_mode_invalid')
+  }
+  const requestBody = {
+    review_batch_safe_hash: reviewBatchSafeHash,
+    selected_discussion_ids: selectedDiscussionIds,
+  }
+  let selectedHashes = null
+  if (bindingMode === 'selected_item_v1') {
+    if (payload.selected_discussion_ids.some((id) => typeof id !== 'string')) {
+      throw new Error('youtube_reviewed_public_discussion_selection_invalid')
+    }
+    selectedHashes = normalizeDiscussionSafeHashes(payload.selected_discussion_safe_hashes)
+    if (!hasExactDiscussionHashes(selectedHashes, selectedDiscussionIds)) {
+      throw new Error('youtube_reviewed_public_discussion_selected_hashes_invalid')
+    }
+    requestBody.review_binding_mode = bindingMode
+    requestBody.selected_discussion_safe_hashes = selectedHashes
+  } else if (bindingMode === 'batch_v1') {
+    if (Object.keys(payload.selected_discussion_safe_hashes || {}).length) {
+      throw new Error('youtube_reviewed_public_discussion_selected_hashes_invalid')
+    }
+    requestBody.review_binding_mode = bindingMode
+  }
+
   const { data } = await apiClient.post(
     `${API_PREFIX}/cases/${encodeURIComponent(safeCaseId)}/search-discovery/youtube-official-api/live-public-discussion/${encodeURIComponent(safeVideoId)}/attach-reviewed`,
-    {
-      review_batch_safe_hash: reviewBatchSafeHash,
-      selected_discussion_ids: selectedDiscussionIds,
-    },
+    requestBody,
   )
-  return normalizeYouTubeReviewedPublicDiscussionAttachResult(data)
+  const result = normalizeYouTubeReviewedPublicDiscussionAttachResult(data)
+  if (bindingMode === 'selected_item_v1' && (
+    result.case_id !== safeCaseId || result.video_id !== safeVideoId ||
+    result.review_binding_mode !== bindingMode ||
+    result.reviewed_batch_safe_hash !== reviewBatchSafeHash ||
+    !hasExactDiscussionHashes(result.selected_discussion_safe_hashes, selectedDiscussionIds) ||
+    selectedDiscussionIds.some((id) => result.selected_discussion_safe_hashes[id] !== selectedHashes[id])
+  )) {
+    throw new Error('youtube_reviewed_public_discussion_attach_result_invalid')
+  }
+  return result
 }
 
 export async function attachSearchDiscoveryCandidates(caseId, payload = {}) {
@@ -5536,6 +5569,20 @@ function normalizeSearchDiscoveryCandidate(candidate) {
   }
 }
 
+// Only carry server-issued hashes. Never derive persistence authority from browser text.
+function normalizeDiscussionSafeHashes(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const entries = Object.entries(value)
+  if (entries.some(([id, hash]) => !/^[A-Za-z0-9_-]{1,200}$/.test(id) ||
+    typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash))) return {}
+  return Object.fromEntries(entries)
+}
+
+function hasExactDiscussionHashes(hashes, ids) {
+  return Object.keys(hashes).length === ids.length && ids.length > 0 &&
+    ids.every((id) => Object.hasOwn(hashes, id))
+}
+
 function normalizeSearchDiscoveryDiscussionBatch(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return {
@@ -5544,6 +5591,7 @@ function normalizeSearchDiscoveryDiscussionBatch(data) {
       item_count: 0,
       items: [],
       review_batch_safe_hash: '',
+      review_item_safe_hashes: {},
       safe_mode: {},
     }
   }
@@ -5559,6 +5607,7 @@ function normalizeSearchDiscoveryDiscussionBatch(data) {
     review_batch_safe_hash: /^[0-9a-f]{64}$/.test(String(data.review_batch_safe_hash || ''))
       ? String(data.review_batch_safe_hash)
       : '',
+    review_item_safe_hashes: normalizeDiscussionSafeHashes(data.review_item_safe_hashes),
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object'
       ? normalizeBooleanMap(data.safe_mode)
       : {},
@@ -5575,8 +5624,28 @@ function normalizeYouTubeReviewedPublicDiscussionAttachResult(data) {
       attached_evidence_items: [],
       evidence_result: normalizeEvidenceIngestionResult(null),
       review_batch_safe_hash: '',
+      review_binding_mode: 'batch_v1',
+      reviewed_batch_safe_hash: '',
+      fresh_batch_safe_hash: '',
+      selected_discussion_safe_hashes: {},
       safe_mode: {},
     }
+  }
+  const bindingMode = data.review_binding_mode ?? 'batch_v1'
+  const selectedHashes = normalizeDiscussionSafeHashes(data.selected_discussion_safe_hashes)
+  const reviewedHash = typeof data.reviewed_batch_safe_hash === 'string' &&
+    /^[0-9a-f]{64}$/.test(data.reviewed_batch_safe_hash) ? data.reviewed_batch_safe_hash : ''
+  const freshHash = typeof data.fresh_batch_safe_hash === 'string' &&
+    /^[0-9a-f]{64}$/.test(data.fresh_batch_safe_hash) ? data.fresh_batch_safe_hash : ''
+  if (!['batch_v1', 'selected_item_v1'].includes(bindingMode) ||
+    (bindingMode === 'selected_item_v1' && (!reviewedHash || !freshHash ||
+      data.status !== 'attached' ||
+      !Number.isInteger(data.attached_discussion_count) ||
+      data.attached_discussion_count < 1 || data.attached_discussion_count > 3 ||
+      !Object.keys(selectedHashes).length ||
+      Object.keys(selectedHashes).length !== Number(data.attached_discussion_count) ||
+      data.safe_mode?.server_side_refetch !== true))) {
+    throw new Error('youtube_reviewed_public_discussion_attach_result_invalid')
   }
   return {
     case_id: String(data.case_id || ''),
@@ -5590,6 +5659,10 @@ function normalizeYouTubeReviewedPublicDiscussionAttachResult(data) {
     review_batch_safe_hash: /^[0-9a-f]{64}$/.test(String(data.review_batch_safe_hash || ''))
       ? String(data.review_batch_safe_hash)
       : '',
+    review_binding_mode: bindingMode,
+    reviewed_batch_safe_hash: reviewedHash,
+    fresh_batch_safe_hash: freshHash,
+    selected_discussion_safe_hashes: selectedHashes,
     safe_mode: data.safe_mode && typeof data.safe_mode === 'object'
       ? normalizeBooleanMap(data.safe_mode)
       : {},

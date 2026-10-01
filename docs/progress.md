@@ -1,5 +1,16 @@
 # Sentigraph Progress
 
+## RIE1R2 current implementation checkpoint — 2026-10-01
+
+Fresh Mainline authority 45839 / Goal `RIE1R2_SELECTED_ITEM_V1_FRONTEND_CONTEXT_BINDING_IMPLEMENTATION_V01` is a five-file frontend implementation and synthetic-validation slice, based on `main` / `f67815ae1c99dc70b9c0e55c96d40239a8dffd9b`. Historical outcomes below remain unchanged; this entry supersedes them only for the current slice.
+
+- SearchDiscovery now requires exactly one current accepted official-live candidate, fences candidate/package/discussion/receipt completion by monotonic request epochs, and synchronously revokes discussion authority on query, lane, new-search or candidate-binding changes. Historical rows do not regain authority through A-B-A equality. Collector summaries remain separate and non-ingesting.
+- The existing API adapter retains server item hashes, validates exact `selected_item_v1` key sets before I/O, and validates safe attach lineage. Legacy callers with no binding mode retain their two-field batch request. Reviewed and fresh batch hashes may differ when unselected items drift; the selected hashes must still match.
+- Reviewed public-discussion attach receipts retain case-local provenance but have no immediate Run-analysis shortcut. Persisted Evidence must be reviewed before a later explicit analysis; local comment acceptance is not factual approval. The offline/mock run flow is preserved.
+- Changed modules are limited to `frontend/src/pages/SearchDiscovery.jsx`, `frontend/src/api/sentigraphApi.js`, their two SearchDiscovery test files, and this progress record. Backend, dependencies, gates and Source are unchanged.
+- Validation: the single focused component command passed `124 passed / 0 failed / 0 skipped / 0 errors`, exit 0; the single production build passed, exit 0 (4,030 modules). Windows commands, from `frontend`: `npm run test:component -- src/pages/SearchDiscovery.test.jsx src/pages/SearchDiscoveryPublicDiscussionReview.test.jsx`, then `npm run build`. jsdom pseudo-element style diagnostics and Vite's large-chunk warning were recorded; neither caused failure. Browser-network sentinels remained zero. No install, server, real Provider, HTTP, store, Evidence review, analysis or report execution occurred.
+- Next gate: exact code/package independent Mainline review after passing validation and one scoped local commit. No push or real-data continuation is authorized by 45839. Future runtime remains separately authorized and retains two genuine human semantic checkpoints.
+
 Last updated: 2026-08-12
 
 ## 1. Current Project Status
