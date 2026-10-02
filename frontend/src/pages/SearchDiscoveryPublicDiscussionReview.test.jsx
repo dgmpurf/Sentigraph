@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -5,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   attachSearchDiscoveryCandidates: vi.fn(),
   attachYouTubeOfficialApiReviewedPublicDiscussion: vi.fn(),
+  createAnalysisCase: vi.fn(),
   getAnalysisCase: vi.fn(),
   getExternalCollectorStatus: vi.fn(),
   getExternalCollectorDiscovery: vi.fn(),
@@ -227,6 +229,8 @@ async function renderAcceptedLiveCandidate(props = {}) {
   )
   await waitFor(() => expect(apiMocks.getSearchDiscoveryProviders).toHaveBeenCalledTimes(1))
   await selectFirstComboboxOption(LIVE_PROVIDER_LABEL)
+  // Live targets are deliberate; the legacy cases[0] implicit adoption is not authority.
+  if (props.cases?.[0]) await selectTargetCaseOption(props.cases[0])
   fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: 'Current launch' } })
   fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
   await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })

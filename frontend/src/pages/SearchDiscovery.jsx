@@ -1,10 +1,11 @@
 import { Alert, Button, Card, Empty, Form, Input, Select, Space, Statistic, Table, Tag, Typography } from 'antd'
 import { CheckCircle2, FileSearch, LinkIcon, PlayCircle, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   attachSearchDiscoveryCandidates,
   attachYouTubeOfficialApiReviewedPublicDiscussion,
+  createAnalysisCase,
   getAnalysisCase,
   getExternalCollectorDiscovery,
   getExternalCollectorStatus,
@@ -15,6 +16,7 @@ import {
   getYouTubeOfficialApiMockCandidates,
 } from '../api/sentigraphApi.js'
 import { PUBLIC_DISCUSSION_REVIEW_FIXTURE } from '../fixtures/publicDiscussionReviewFixture.js'
+import { buildGuidedCaseCreatePayload, scopeFromReviewedAttach } from '../utils/guidedCaseFlow.js'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -95,6 +97,7 @@ export function SearchDiscovery({
   onCaseReady,
   onRefreshCases,
   onRunCase,
+  onOpenGuidedEvidenceReview,
   liveRouteFrontendEnabled =
     import.meta.env.VITE_SENTIGRAPH_SEARCH_DISCOVERY_YOUTUBE_LIVE_ENABLED === '1',
   publicDiscussionReviewFrontendEnabled =
@@ -110,6 +113,10 @@ export function SearchDiscovery({
   const [generatedCollectorQuery, setGeneratedCollectorQuery] = useState(null)
   const [generatedCollectorLane, setGeneratedCollectorLane] = useState(null)
   const [targetCaseId, setTargetCaseId] = useState(currentCase?.case_id || '')
+  const [liveTargetCaseId, setLiveTargetCaseId] = useState('')
+  const [createdCaseOption, setCreatedCaseOption] = useState(null)
+  const [creatingCase, setCreatingCase] = useState(false)
+  const [createNotice, setCreateNotice] = useState('')
   const [batch, setBatch] = useState(null)
   const [generatedProvider, setGeneratedProvider] = useState(null)
   const [generatedQuery, setGeneratedQuery] = useState(null)
@@ -125,18 +132,36 @@ export function SearchDiscovery({
   const [publicDiscussionContextKey, setPublicDiscussionContextKey] = useState(null)
   const [publicDiscussionAttaching, setPublicDiscussionAttaching] = useState(false)
   const [publicDiscussionAttachResult, setPublicDiscussionAttachResult] = useState(null)
+  const [guidedAttachScope, setGuidedAttachScope] = useState(null)
   const [error, setError] = useState('')
   const searchRequestEpochRef = useRef(0)
   const discussionRequestEpochRef = useRef(0)
   const reviewedAttachRequestEpochRef = useRef(0)
   const discussionContextKeyRef = useRef(null)
+  const createContextEpochRef = useRef(0)
+  const createPendingRef = useRef(false)
+  const mountedRef = useRef(true)
+  const reviewedAttachPendingRef = useRef(false)
+  const [reviewedAttachPending, setReviewedAttachPending] = useState(false)
 
-  useEffect(() => () => {
-    searchRequestEpochRef.current += 1
-    discussionRequestEpochRef.current += 1
-    reviewedAttachRequestEpochRef.current += 1
-    discussionContextKeyRef.current = null
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      createContextEpochRef.current += 1
+      searchRequestEpochRef.current += 1
+      discussionRequestEpochRef.current += 1
+      reviewedAttachRequestEpochRef.current += 1
+      discussionContextKeyRef.current = null
+    }
   }, [])
+
+  function invalidateCreateContext() {
+    createContextEpochRef.current += 1
+    setCreateNotice('')
+  }
+
+  useEffect(() => { createContextEpochRef.current += 1 }, [currentCase?.case_id])
 
   // Revoke authority in the user event, before a pending promise can resolve.
   function invalidatePublicDiscussion() {
@@ -160,12 +185,18 @@ export function SearchDiscovery({
   }
 
   function handleQueryChange(nextQuery) {
-    if (nextQuery !== query) invalidateSearchContext()
+    if (nextQuery !== query) {
+      invalidateSearchContext()
+      invalidateCreateContext()
+    }
     setQuery(nextQuery)
   }
 
   function handleProviderChange(nextProvider) {
-    if (nextProvider !== provider) invalidateSearchContext()
+    if (nextProvider !== provider) {
+      invalidateSearchContext()
+      invalidateCreateContext()
+    }
     setProvider(nextProvider)
   }
 
@@ -205,26 +236,69 @@ export function SearchDiscovery({
   }, [])
 
   useEffect(() => {
+    if (provider === LIVE_PROVIDER_ID) return
     if (targetCaseId) return
     if (currentCase?.case_id) {
       setTargetCaseId(currentCase.case_id)
     } else if (!targetCaseId && cases[0]?.case_id) {
       setTargetCaseId(cases[0].case_id)
     }
-  }, [cases, currentCase, targetCaseId])
+  }, [cases, currentCase, targetCaseId, provider])
 
   function handleTargetCaseChange(nextCaseId) {
-    setTargetCaseId(nextCaseId)
+    invalidateCreateContext()
+    if (provider === LIVE_PROVIDER_ID) setLiveTargetCaseId(nextCaseId)
+    else setTargetCaseId(nextCaseId)
     setPublicDiscussionAttachResult(null)
+  }
+
+  async function handleCreateCaseFromQuery() {
+    if (createPendingRef.current) return
+    const payload = buildGuidedCaseCreatePayload(query, provider === LIVE_PROVIDER_ID)
+    if (!payload) {
+      setError('Enter a non-blank query of at most 120 characters before creating a case.')
+      return
+    }
+    createPendingRef.current = true
+    const epoch = ++createContextEpochRef.current
+    const live = provider === LIVE_PROVIDER_ID
+    const isCurrent = () => mountedRef.current && createContextEpochRef.current === epoch
+    setCreatingCase(true)
+    setCreateNotice('')
+    setError('')
+    try {
+      const created = await createAnalysisCase(payload)
+      if (!isCurrent()) return
+      if (!/^[A-Za-z0-9_-]{1,200}$/.test(created?.case_id || '') ||
+          normalizeDiscoveryQuery(created.keyword) !== payload.keyword || created.status !== 'draft') {
+        setError('The create receipt is invalid. Any server-side draft is retained; no automatic retry or deletion.')
+        return
+      }
+      const option = { case_id: created.case_id, title: created.title || payload.title }
+      setCreatedCaseOption(option)
+      if (live) setLiveTargetCaseId(created.case_id)
+      else setTargetCaseId(created.case_id)
+      setPublicDiscussionAttachResult(null)
+      setCreateNotice(`Created draft case=${created.case_id}. Creation does not run analysis.`)
+      await onCaseReady?.(created)
+      if (!isCurrent()) return
+      await onRefreshCases?.()
+    } catch {
+      if (isCurrent()) setError('Unable to create the case. No automatic retry; any server-side draft remains intact.')
+    } finally {
+      createPendingRef.current = false
+      if (mountedRef.current) setCreatingCase(false)
+    }
   }
 
   const caseOptions = useMemo(
     () =>
-      cases.map((item) => ({
+      [...cases, ...(createdCaseOption && !cases.some((item) => item.case_id === createdCaseOption.case_id)
+        ? [createdCaseOption] : [])].map((item) => ({
         value: item.case_id,
         label: `${item.title || item.keyword || item.case_id} · ${item.case_id}`,
       })),
-    [cases],
+    [cases, createdCaseOption],
   )
 
   const providerOptions = useMemo(() => {
@@ -271,6 +345,7 @@ export function SearchDiscovery({
   const rejectedCount = candidates.filter((candidate) => candidate.status === 'rejected').length
   const liveBatchPreviewOnly = generatedProvider === LIVE_PROVIDER_ID
   const liveSelected = provider === LIVE_PROVIDER_ID
+  const effectiveTargetCaseId = liveSelected ? liveTargetCaseId : targetCaseId
   const collectorSelected = provider === COLLECTOR_LANE_ID
   const collectorAvailable = collectorStatus.configured && collectorStatus.exists
   const generatedSearchCurrent = generatedSearchEpoch !== null &&
@@ -322,14 +397,14 @@ export function SearchDiscovery({
     publicDiscussionSource === 'provider-backed' &&
     publicDiscussionContextKey === liveCandidateContextKey &&
     discussionContextKeyRef.current === liveCandidateContextKey &&
-    targetCaseId &&
+    liveTargetCaseId &&
     /^[0-9a-f]{64}$/.test(publicDiscussionBatch?.review_batch_safe_hash || '') &&
     acceptedPublicDiscussionIds.length >= 1 &&
     acceptedPublicDiscussionIds.length <= 3 &&
     new Set(acceptedPublicDiscussionIds).size === acceptedPublicDiscussionIds.length &&
     acceptedPublicDiscussionIds.every((id) => typeof selectedDiscussionSafeHashes[id] === 'string' &&
       /^[0-9a-f]{64}$/.test(selectedDiscussionSafeHashes[id])) &&
-    !publicDiscussionAttaching,
+    !publicDiscussionAttaching && !reviewedAttachPending,
   )
 
   async function handleGenerateCandidates() {
@@ -491,17 +566,21 @@ export function SearchDiscovery({
   }
 
   async function handleAttachReviewedPublicDiscussion() {
+    if (reviewedAttachPendingRef.current) return
     if (!publicDiscussionAttachAvailable || !acceptedLiveVideoId) {
       setError('Select a target case and accept one to three provider-backed comments before attaching.')
       return
     }
 
     setPublicDiscussionAttaching(true)
+    reviewedAttachPendingRef.current = true
+    setReviewedAttachPending(true)
     const requestEpoch = ++reviewedAttachRequestEpochRef.current
     const requestSearchEpoch = generatedSearchEpoch
     const requestDiscussionEpoch = discussionRequestEpochRef.current
     const requestContextKey = publicDiscussionContextKey
-    const requestCaseId = targetCaseId
+    const requestCaseId = liveTargetCaseId
+    const requestQuery = generatedQuery
     const isCurrentRequest = () => reviewedAttachRequestEpochRef.current === requestEpoch &&
       searchRequestEpochRef.current === requestSearchEpoch &&
       discussionRequestEpochRef.current === requestDiscussionEpoch &&
@@ -520,15 +599,33 @@ export function SearchDiscovery({
         },
       )
       if (!isCurrentRequest()) return
-      setPublicDiscussionAttachResult(result)
+      if (result?.case_id !== requestCaseId || result?.video_id !== acceptedLiveVideoId) {
+        setError('The attach receipt does not match its captured case and video. No retry or navigation.')
+        return
+      }
+      const scope = scopeFromReviewedAttach(result, requestQuery, requestCaseId)
+      if (scope) setGuidedAttachScope(scope)
+      // Keep a safe immutable receipt for navigation, not the provider/Evidence body.
+      setPublicDiscussionAttachResult(Object.freeze({
+        case_id: requestCaseId, attached_discussion_count: result.attached_discussion_count,
+        review_binding_mode: result.review_binding_mode,
+        safe_mode: Object.freeze({ server_side_refetch: result.safe_mode?.server_side_refetch === true }),
+        guided_scope: scope,
+      }))
       const refreshedCase = await getAnalysisCase(requestCaseId)
       if (!isCurrentRequest()) return
+      if (refreshedCase?.case_id !== requestCaseId) {
+        setError('The persisted case readback does not match the attach receipt.')
+        return
+      }
       onCaseReady?.(refreshedCase)
       await onRefreshCases?.()
     } catch (requestError) {
       if (!isCurrentRequest()) return
       setError(requestError?.message || 'Unable to attach reviewed public discussion.')
     } finally {
+      reviewedAttachPendingRef.current = false
+      if (mountedRef.current) setReviewedAttachPending(false)
       if (isCurrentRequest()) setPublicDiscussionAttaching(false)
     }
   }
@@ -757,7 +854,7 @@ export function SearchDiscovery({
           {!collectorSelected ? <Form.Item label="Target case">
             <Select
               showSearch
-              value={targetCaseId || undefined}
+              value={effectiveTargetCaseId || undefined}
               onChange={handleTargetCaseChange}
               options={caseOptions}
               placeholder="Select a case"
@@ -765,6 +862,14 @@ export function SearchDiscovery({
             />
           </Form.Item> : null}
           <Space wrap>
+            {!collectorSelected ? <Button
+              loading={creatingCase}
+              disabled={creatingCase || !buildGuidedCaseCreatePayload(query, liveSelected)}
+              onClick={handleCreateCaseFromQuery}
+            >Create case from query</Button> : null}
+            {liveSelected && currentCase?.case_id ? <Button
+              onClick={() => handleTargetCaseChange(currentCase.case_id)}
+            >Use opened current case</Button> : null}
             <Button
               type="primary"
               icon={<RefreshCw size={16} />}
@@ -783,7 +888,7 @@ export function SearchDiscovery({
               icon={<ShieldCheck size={16} />}
               loading={attaching}
               disabled={
-                liveBatchPreviewOnly ||
+                liveSelected || liveBatchPreviewOnly ||
                 !generatedBatchMatchesProvider ||
                 !acceptedCount ||
                 !targetCaseId
@@ -795,7 +900,7 @@ export function SearchDiscovery({
             <Button
               icon={<PlayCircle size={16} />}
               disabled={
-                liveBatchPreviewOnly ||
+                liveSelected || liveBatchPreviewOnly ||
                 !attachResult?.attached_candidate_count ||
                 !targetCaseId
               }
@@ -807,7 +912,21 @@ export function SearchDiscovery({
           </Space>
         </Form>
         {error ? <Alert className="section-alert" type="error" showIcon message={error} /> : null}
+        {createNotice ? <Alert type="success" showIcon message={createNotice} /> : null}
+        {liveSelected && !liveTargetCaseId ? <Alert type="info"
+          message="Choose an existing case explicitly, adopt the opened current case, or create a draft from this query. No case is selected automatically for live attachment." /> : null}
       </Card>
+
+      {guidedAttachScope && publicDiscussionAttachResult?.guided_scope !== guidedAttachScope ? (
+        <Card size="small" className="panel-card" data-testid="last-guided-attach-scope">
+          <Space direction="vertical">
+            <Text>Last completed attach receipt: case={guidedAttachScope.case_id} · query={guidedAttachScope.query}</Text>
+            <Text type="secondary">This receipt remains bound to its original case and Evidence IDs despite current query/target changes.</Text>
+            <Button disabled={!onOpenGuidedEvidenceReview}
+              onClick={() => onOpenGuidedEvidenceReview?.(guidedAttachScope)}>Open Evidence review</Button>
+          </Space>
+        </Card>
+      ) : null}
 
       {!collectorSelected ? <Card className="panel-card">
         <div className="panel-heading">
@@ -1057,6 +1176,10 @@ export function SearchDiscovery({
                     <Text strong>
                       Attached to case-local Evidence. Review the persisted Evidence before any explicit analysis.
                     </Text>
+                    <Button
+                      disabled={!publicDiscussionAttachResult.guided_scope || !onOpenGuidedEvidenceReview || reviewedAttachPending}
+                      onClick={() => onOpenGuidedEvidenceReview?.(publicDiscussionAttachResult.guided_scope)}
+                    >Open Evidence review</Button>
                   </Space>
                 </Card>
               ) : null}

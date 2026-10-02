@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +10,9 @@ const apiMocks = vi.hoisted(() => ({
   getCaseEvidenceReviewAuditSummary: vi.fn(),
   getCaseEvidenceReviewHistory: vi.fn(),
   reviewCaseEvidence: vi.fn(),
+  getCaseEvidenceSummary: vi.fn(),
+  getCaseEvidenceJobs: vi.fn(),
+  getCaseEvidenceCoverage: vi.fn(),
 }))
 
 vi.mock('../api/sentigraphApi.js', async (importOriginal) => ({
@@ -16,7 +20,8 @@ vi.mock('../api/sentigraphApi.js', async (importOriginal) => ({
   ...apiMocks,
 }))
 
-import { EvidenceReviewQueuePanel } from './Cases.jsx'
+import { Cases, EvidenceReviewQueuePanel } from './Cases.jsx'
+import { guidedAnalysisPair, makeGuidedEvidenceScope } from '../utils/guidedCaseFlow.js'
 
 const currentCase = { case_id: 'case_exact_audit', evidence_item_count: 1, updated_at: '2026-09-29T00:00:00Z' }
 const evidenceId = 'evidence_exact_audit'
@@ -60,7 +65,12 @@ function decisionButton(label) {
   return screen.getByRole('button', { name })
 }
 
+let syntheticNetworkAttempts
 beforeEach(() => {
+  syntheticNetworkAttempts = 0
+  for (const key of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource']) {
+    vi.stubGlobal(key, function blockedNetwork() { syntheticNetworkAttempts += 1; throw new Error('Synthetic-only Cases test') })
+  }
   const getComputedStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => getComputedStyle(element))
   vi.stubGlobal('ResizeObserver', class {
@@ -79,12 +89,98 @@ beforeEach(() => {
   apiMocks.getCaseEvidenceReviewAuditSummary.mockResolvedValue(audit)
   apiMocks.getCaseEvidenceReviewHistory.mockResolvedValue(emptyExactTimeline)
   apiMocks.reviewCaseEvidence.mockResolvedValue({ summary: queue, review_status: 'approved' })
+  apiMocks.getCaseEvidenceSummary.mockResolvedValue({})
+  apiMocks.getCaseEvidenceJobs.mockResolvedValue([])
+  apiMocks.getCaseEvidenceCoverage.mockResolvedValue({})
 })
 
 afterEach(() => {
   cleanup()
+  expect(syntheticNetworkAttempts).toBe(0)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+describe('guided Cases review and explicit Run UI', () => {
+  const scope = makeGuidedEvidenceScope({ case_id: currentCase.case_id, evidence_ids: [evidenceId], query: 'Synthetic query' })
+  function persisted(review_status = 'not_reviewed') {
+    return { ...currentCase, status: 'draft', platforms: ['youtube'],
+      evidence_items: [{ ...queueItem, case_id: currentCase.case_id, review_status }] }
+  }
+  function view(value = persisted(), extras = {}) {
+    return render(<Cases currentCase={value} guidedCaseFlow={{ scope, last_run_pair: null }} {...extras} />)
+  }
+  it.each(['not_reviewed', 'review_needed', 'needs_more_source', 'rejected', 'duplicate_merged'])(
+    'has no guided Run shortcut for unresolved or unusable %s', async (status) => {
+      const onRunCase = vi.fn()
+      view(persisted(status), { onRunCase })
+      await screen.findByTestId('guided-case-review')
+      expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+      fireEvent.click(screen.getByRole('button', { name: 'Run analysis' }))
+      expect(onRunCase).not.toHaveBeenCalled()
+    },
+  )
+  it.each(['approved', 'marked_weak'])('runs only on the separate explicit button for usable %s', async (status) => {
+    let resolveRun
+    const onRunCase = vi.fn(() => new Promise((resolve) => { resolveRun = resolve }))
+    view(persisted(status), { onRunCase })
+    const button = await screen.findByRole('button', { name: 'Run analysis' })
+    expect(button.disabled).toBe(false)
+    fireEvent.focus(button); fireEvent.mouseEnter(button)
+    expect(onRunCase).not.toHaveBeenCalled()
+    act(() => { fireEvent.click(button); fireEvent.click(button) })
+    expect(onRunCase).toHaveBeenCalledExactlyOnceWith(currentCase.case_id, 'analysis')
+    await act(async () => resolveRun(undefined))
+  })
+  it('does not expose the unguided list/manual/import Run for an active guided case', async () => {
+    const onRunCase = vi.fn()
+    view(persisted('approved'), { cases: [{ ...currentCase, title: 'Guided synthetic case', platforms: [] }], onRunCase })
+    const legacy = await screen.findByRole('button', { name: /运\s*行/ })
+    expect(legacy.disabled).toBe(true)
+    expect(screen.queryByText('Manual Evidence')).toBeNull()
+    fireEvent.click(legacy)
+    expect(onRunCase).not.toHaveBeenCalled()
+  })
+  it('blocks Run synchronously during a review decision and waits for fresh persisted readback', async () => {
+    let resolveDecision
+    apiMocks.reviewCaseEvidence.mockReturnValue(new Promise((resolve) => { resolveDecision = resolve }))
+    apiMocks.getCase.mockResolvedValue(persisted('not_reviewed'))
+    const onRunCase = vi.fn(), onCaseReady = vi.fn()
+    view(persisted('approved'), { onRunCase, onCaseReady })
+    await screen.findByRole('button', { name: 'View review history' })
+    act(() => { fireEvent.click(decisionButton('重置')); fireEvent.click(screen.getByRole('button', { name: 'Run analysis' })) })
+    expect(onRunCase).not.toHaveBeenCalled()
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledTimes(1)
+    await act(async () => resolveDecision({ summary: queue, review_status: 'not_reviewed' }))
+    await waitFor(() => expect(onCaseReady).toHaveBeenCalledWith(persisted('not_reviewed'), { review_readback: true }))
+  })
+  it('shows current-result navigation only for the exact completed successful pair', async () => {
+    const value = { ...persisted('approved'), status: 'completed', analysis_revision: 1,
+      analysis_run_id: 'run_ui1', analysis_result: {}, report: {} }
+    const onNavigate = vi.fn()
+    view(value, { guidedCaseFlow: { scope, last_run_pair: guidedAnalysisPair(value) }, onNavigate })
+    const button = await screen.findByRole('button', { name: 'View current result' })
+    expect(button.disabled).toBe(false)
+    fireEvent.click(button)
+    expect(onNavigate).toHaveBeenCalledExactlyOnceWith('analysis')
+  })
+  it('fences an old review response across case A→B→A and never applies it to the reopened case', async () => {
+    let resolveDecision
+    apiMocks.reviewCaseEvidence.mockReturnValue(new Promise((resolve) => { resolveDecision = resolve }))
+    const onCaseReady = vi.fn(), onReviewPendingChange = vi.fn()
+    const rendered = render(<EvidenceReviewQueuePanel currentCase={currentCase} onCaseReady={onCaseReady}
+      onReviewPendingChange={onReviewPendingChange} />)
+    await screen.findByRole('button', { name: 'View review history' })
+    act(() => { fireEvent.click(decisionButton('通过')); fireEvent.click(decisionButton('通过')) })
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledTimes(1)
+    rendered.rerender(<EvidenceReviewQueuePanel currentCase={{ ...currentCase, case_id: 'case_b' }} onCaseReady={onCaseReady}
+      onReviewPendingChange={onReviewPendingChange} />)
+    rendered.rerender(<EvidenceReviewQueuePanel currentCase={currentCase} onCaseReady={onCaseReady}
+      onReviewPendingChange={onReviewPendingChange} />)
+    await act(async () => resolveDecision({ summary: queue, review_status: 'approved' }))
+    expect(onCaseReady).not.toHaveBeenCalled()
+    expect(apiMocks.getCase).not.toHaveBeenCalled()
+  })
 })
 
 describe('EvidenceReviewQueuePanel exact persisted-item history', () => {

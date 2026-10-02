@@ -14,7 +14,7 @@ import {
   Tag,
   Typography,
 } from 'antd'
-import { useMemo } from 'react'
+import React, { useMemo } from 'react'
 import {
   AlertTriangle,
   Bot,
@@ -32,6 +32,7 @@ import { copyTextToClipboard } from '../utils/clipboard.js'
 import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
 import { formatPercent, riskTone } from '../utils/formatters.js'
 import { buildPublicOpinionReportModel, hasReportContent } from '../utils/reportModel.js'
+import { guidedResultIsCurrent } from '../utils/guidedCaseFlow.js'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -227,8 +228,15 @@ function DistributionTags({ color = 'blue', values = {} }) {
   )
 }
 
-export function AnalysisResult({ analysis, currentCase, error, loading, recommendation, summary, visualization }) {
+export function AnalysisResult({ analysis: suppliedAnalysis, currentCase, error, loading,
+  recommendation: suppliedRecommendation, summary: suppliedSummary, visualization: suppliedVisualization, guidedCaseFlow }) {
   const { message } = AntApp.useApp()
+  const guided = Boolean(guidedCaseFlow)
+  // The completed case is authoritative; old project-level props cannot impersonate a guided result.
+  const analysis = guided ? currentCase?.analysis_result : suppliedAnalysis
+  const recommendation = guided ? currentCase?.report : suppliedRecommendation
+  const summary = guided ? currentCase?.report : suppliedSummary
+  const visualization = guided ? currentCase?.visualization_data : suppliedVisualization
   const report = useMemo(
     () => buildPublicOpinionReportModel({ analysis, recommendation, summary, visualization }),
     [analysis, recommendation, summary, visualization],
@@ -245,7 +253,7 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
     () => buildEvidenceSummary({ analysis, currentCase }),
     [analysis, currentCase],
   )
-  const caseIsStale = Boolean(currentCase && (
+  const caseIsStale = (guided && !guidedResultIsCurrent(currentCase, guidedCaseFlow)) || Boolean(currentCase && (
     currentCase.status !== 'completed' || !currentCase.analysis_result || !currentCase.report
   ))
 
@@ -303,6 +311,12 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
           <Title level={2}>分析结果</Title>
           <Text>{analysis.summary || sourceStatus.analysisDescription}</Text>
           <Space wrap className="report-source-strip">
+            {currentCase ? <>
+              <Tag color="cyan">case_id={currentCase.case_id}</Tag>
+              <Tag color="blue">analysis_revision={currentCase.analysis_revision ?? 'absent'}</Tag>
+              <Tag color="purple">analysis_run_id={currentCase.analysis_run_id || 'absent'}</Tag>
+              {guided ? <Tag color="green">Current guided result</Tag> : null}
+            </> : null}
             <Tag color={sourceStatus.dataTagColor}>{sourceStatus.dataLabel}</Tag>
             <Tag color="green">{sourceStatus.analysisLabel}</Tag>
             <Tag color="purple">{sourceStatus.llmLabel}</Tag>
@@ -322,6 +336,7 @@ export function AnalysisResult({ analysis, currentCase, error, loading, recommen
           <Space direction="vertical" size={2}>
             <Text>该风险来自当前 Analysis Result，不会自动等同于 Risk Monitor 的最新监控风险或预测风险。</Text>
             <Text>analysis_input_source 表示本次分析来自 case_raw_data、case_evidence_items 或 mock_data_fallback；当前计算仍为离线 deterministic pipeline。</Text>
+            <Text>Official API provenance is transport provenance, not truth verification; LLM remains mock.</Text>
           </Space>
         }
         showIcon

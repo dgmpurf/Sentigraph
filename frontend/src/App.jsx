@@ -1,6 +1,6 @@
 import { Alert, App as AntApp, ConfigProvider, Spin, theme } from 'antd'
 import { motion } from 'framer-motion'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   caseAnalysisIdentity,
@@ -38,6 +38,7 @@ import { AppShell } from './components/layout/AppShell.jsx'
 import { ErrorBoundary } from './components/layout/ErrorBoundary.jsx'
 import { NotFound } from './pages/NotFound.jsx'
 import { getAnalysisSourceStatus } from './utils/dataSourceStatus.js'
+import { guidedAnalysisPair, guidedResultIsCurrent, guidedReviewReadiness, makeGuidedEvidenceScope } from './utils/guidedCaseFlow.js'
 
 const DEFAULT_PROJECT_ID = 'project_001'
 const DEFAULT_DATE_RANGE = { start: '2026-05-01', end: '2026-05-13' }
@@ -154,6 +155,14 @@ function App() {
   const [cases, setCases] = useState([])
   const [currentCase, setCurrentCase] = useState(null)
   const currentCaseRef = useRef(null)
+  const [guidedCaseFlow, setGuidedCaseFlow] = useState(null)
+  const guidedFlowRef = useRef(null)
+  const guidedOperationEpochRef = useRef(0)
+  const guidedOpenPendingRef = useRef(false)
+  const guidedRunPendingRef = useRef(false)
+  const guidedReviewPendingRef = useRef(false)
+  const caseOpenEpochRef = useRef(0)
+  const guidedMountedRef = useRef(true)
   const [markdownReport, setMarkdownReport] = useState(null)
   const [markdownLoading, setMarkdownLoading] = useState(false)
   const [caseSnapshots, setCaseSnapshots] = useState([])
@@ -175,6 +184,20 @@ function App() {
   const isStaticPublicPage = STATIC_PUBLIC_PAGES.includes(activePage)
   const isGuidedPublicEventFlow = currentHash.includes('guided=1')
 
+  useEffect(() => {
+    guidedMountedRef.current = true
+    return () => {
+      guidedMountedRef.current = false
+      guidedOperationEpochRef.current += 1
+      caseOpenEpochRef.current += 1
+    }
+  }, [])
+
+  const publishGuidedFlow = useCallback((flow) => {
+    guidedFlowRef.current = flow
+    setGuidedCaseFlow(flow)
+  }, [])
+
   const platformOptions = useMemo(() => {
     const enabledPlatforms = platformRegistry.filter((platform) => platform.selectable_for_mock && platform.mock_available)
     if (!enabledPlatforms.length) return FALLBACK_PLATFORM_OPTIONS
@@ -191,6 +214,12 @@ function App() {
 
   const applyCaseDetail = useCallback((caseDetail) => {
     if (!caseDetail) return
+    if (currentCaseRef.current?.case_id !== caseDetail.case_id) guidedOperationEpochRef.current += 1
+    if (guidedFlowRef.current && guidedFlowRef.current.scope.case_id !== caseDetail.case_id) {
+      guidedFlowRef.current = null
+      guidedReviewPendingRef.current = false
+      setGuidedCaseFlow(null)
+    }
     const identityChanged = caseAnalysisIdentity(currentCaseRef.current) !== caseAnalysisIdentity(caseDetail)
     currentCaseRef.current = caseDetail
     setCurrentCase(caseDetail)
@@ -327,6 +356,7 @@ function App() {
 
   useEffect(() => {
     const handleHashChange = () => {
+      guidedOperationEpochRef.current += 1
       setCurrentHash(window.location.hash)
       const nextPage = pageFromHash()
       if (nextPage !== 'dashboard') {
@@ -495,6 +525,40 @@ function App() {
   }, [applyCaseDetail, loadCaseMonitoring, refreshCases])
 
   const handleRunCase = useCallback(async (caseId, nextPage = 'dashboard') => {
+    const flow = guidedFlowRef.current
+    const guided = flow?.scope.case_id === caseId
+    if (guided) {
+      if (guidedRunPendingRef.current || guidedReviewPendingRef.current ||
+          nextPage !== 'analysis' || !guidedReviewReadiness(currentCaseRef.current, flow.scope, flow.review_readback_required).ready) return null
+      guidedRunPendingRef.current = true
+      const epoch = ++guidedOperationEpochRef.current
+      const isCurrent = () => guidedMountedRef.current && guidedOperationEpochRef.current === epoch &&
+        guidedFlowRef.current?.scope === flow.scope && currentCaseRef.current?.case_id === caseId
+      setLoading(true)
+      setError('')
+      publishGuidedFlow({ ...flow, last_run_pair: null })
+      try {
+        const completedCase = await runAnalysisCase(caseId)
+        if (!isCurrent()) return null
+        const nextFlow = { ...flow, last_run_pair: guidedAnalysisPair(completedCase), review_pending: false }
+        if (!guidedResultIsCurrent(completedCase, nextFlow)) {
+          setError('The Run receipt is not a current completed result for this reviewed case. No automatic retry.')
+          return null
+        }
+        publishGuidedFlow(nextFlow)
+        applyCaseDetail(completedCase)
+        await refreshCases()
+        if (!isCurrent()) return null
+        setActivePage('analysis')
+        return completedCase
+      } catch {
+        if (isCurrent()) setError('Guided analysis failed. Use a separate explicit action; no automatic retry.')
+        return null
+      } finally {
+        guidedRunPendingRef.current = false
+        if (guidedMountedRef.current) setLoading(false)
+      }
+    }
     setLoading(true)
     setError('')
     try {
@@ -508,10 +572,79 @@ function App() {
     } finally {
       setLoading(false)
     }
-  }, [applyCaseDetail, loadCaseMonitoring, refreshCases])
+  }, [applyCaseDetail, loadCaseMonitoring, refreshCases, publishGuidedFlow])
 
-  const handleCaseReady = useCallback(async (caseDetail) => {
+  const handleOpenGuidedEvidenceReview = useCallback(async (inputScope) => {
+    const scope = makeGuidedEvidenceScope(inputScope)
+    if (!scope || guidedOpenPendingRef.current) return null
+    guidedOpenPendingRef.current = true
+    const epoch = ++guidedOperationEpochRef.current
+    const isCurrent = () => guidedMountedRef.current && guidedOperationEpochRef.current === epoch
+    setError('')
+    try {
+      const persistedCase = await getAnalysisCase(scope.case_id)
+      if (!isCurrent()) return null
+      if (persistedCase?.case_id !== scope.case_id) {
+        setError('Evidence review readback does not match the immutable attach receipt.')
+        return null
+      }
+      applyCaseDetail(persistedCase)
+      guidedReviewPendingRef.current = false
+      publishGuidedFlow({ scope, last_run_pair: null, review_pending: false })
+      setActivePage('cases')
+      return persistedCase
+    } catch {
+      if (isCurrent()) setError('Unable to open persisted Evidence review. No automatic retry.')
+      return null
+    } finally {
+      guidedOpenPendingRef.current = false
+    }
+  }, [applyCaseDetail, publishGuidedFlow])
+
+  const handleGuidedReviewPendingChange = useCallback((caseId, pending) => {
+    const flow = guidedFlowRef.current
+    if (!flow || flow.scope.case_id !== caseId || currentCaseRef.current?.case_id !== caseId) return
+    guidedReviewPendingRef.current = pending
+    if (pending) guidedOperationEpochRef.current += 1
+    publishGuidedFlow({ ...flow, review_pending: pending,
+      review_readback_required: pending || flow.review_readback_required,
+      last_run_pair: pending ? null : flow.last_run_pair })
+  }, [publishGuidedFlow])
+
+  const handleOpenCase = useCallback(async (caseId) => {
+    const epoch = ++caseOpenEpochRef.current
+    const mayRefreshReviewReadback = !guidedReviewPendingRef.current
+    guidedOperationEpochRef.current += 1
+    if (guidedFlowRef.current?.scope.case_id !== caseId) {
+      guidedReviewPendingRef.current = false
+      publishGuidedFlow(null)
+    }
+    try {
+      const caseDetail = await getAnalysisCase(caseId)
+      if (!guidedMountedRef.current || caseOpenEpochRef.current !== epoch) return
+      if (caseDetail?.case_id !== caseId) return
+      if (mayRefreshReviewReadback && !guidedReviewPendingRef.current && guidedFlowRef.current?.scope.case_id === caseId) {
+        publishGuidedFlow({ ...guidedFlowRef.current, review_readback_required: false })
+      }
+      applyCaseDetail(caseDetail)
+      await refreshCases()
+      if (!guidedMountedRef.current || caseOpenEpochRef.current !== epoch ||
+          currentCaseRef.current?.case_id !== caseDetail.case_id) return
+      try {
+        await loadCaseMonitoring(caseDetail.case_id)
+      } catch {
+        // Auxiliary monitoring reads must not undo a successfully opened case.
+      }
+    } catch {
+      if (caseOpenEpochRef.current === epoch) setError('Unable to open the selected case.')
+    }
+  }, [applyCaseDetail, loadCaseMonitoring, publishGuidedFlow, refreshCases])
+
+  const handleCaseReady = useCallback(async (caseDetail, receipt = {}) => {
     if (!caseDetail?.case_id) return
+    if (receipt.review_readback === true && guidedFlowRef.current?.scope.case_id === caseDetail.case_id) {
+      publishGuidedFlow({ ...guidedFlowRef.current, review_readback_required: false })
+    }
     applyCaseDetail(caseDetail)
     await refreshCases()
     try {
@@ -519,7 +652,7 @@ function App() {
     } catch {
       // A just-created case can still be useful before monitoring artifacts exist.
     }
-  }, [applyCaseDetail, loadCaseMonitoring, refreshCases])
+  }, [applyCaseDetail, loadCaseMonitoring, refreshCases, publishGuidedFlow])
 
   const handleOpenCaseReport = useCallback(async (caseId) => {
     setLoading(true)
@@ -764,18 +897,25 @@ function App() {
   }, [currentCase, markdownReport])
 
   const handleRefreshCurrent = useCallback(() => {
+    if (guidedFlowRef.current && currentCase && guidedFlowRef.current.scope.case_id === currentCase.case_id) {
+      // Refresh is not a guided Run action; retain the explicit Run-only boundary.
+      void handleOpenCase(currentCase.case_id)
+      return
+    }
     if (currentCase?.case_id) {
       handleRunCase(currentCase.case_id, activePage)
       return
     }
     loadProjectData(projectId)
-  }, [activePage, currentCase, handleRunCase, loadProjectData, projectId])
+  }, [activePage, currentCase, handleRunCase, handleOpenCase, loadProjectData, projectId])
 
   const handleStaticPageRefresh = useCallback(() => {
     window.location.reload()
   }, [])
 
   const handleNavigate = useCallback((pageKey, hashOverride = null) => {
+    guidedOperationEpochRef.current += 1
+    caseOpenEpochRef.current += 1
     const hashByPage = {
       publicDemoGuide: '#/demo',
       publicEventPlaza: '#/public-events',
@@ -836,6 +976,7 @@ function App() {
     analysis,
     cases,
     currentCase,
+    guidedCaseFlow,
     error,
     expandedKeywords,
     keyword,
@@ -855,6 +996,9 @@ function App() {
     schedulerStatus,
     onGetMarkdownReport: handleGetMarkdownReport,
     onCaseReady: handleCaseReady,
+    onOpenCase: handleOpenCase,
+    onOpenGuidedEvidenceReview: handleOpenGuidedEvidenceReview,
+    onGuidedReviewPendingChange: handleGuidedReviewPendingChange,
     onLoadDemoCase: handleLoadDemoCase,
     onEnableMonitoring: handleEnableMonitoring,
     onDisableMonitoring: handleDisableMonitoring,

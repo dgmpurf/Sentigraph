@@ -3,6 +3,7 @@ import { CheckCircle2, Download, FileText, Link2, PlayCircle, PlusCircle, Refres
 
 import { riskTone } from '../utils/formatters.js'
 import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
+import { guidedResultIsCurrent, guidedReviewReadiness } from '../utils/guidedCaseFlow.js'
 import {
   attachCaseEvidence,
   commitCaseEvidenceImport,
@@ -18,7 +19,7 @@ import {
   previewCaseEvidenceImport,
   reviewCaseEvidence,
 } from '../api/sentigraphApi.js'
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 const { Text, Title } = Typography
 const { Dragger } = Upload
@@ -783,7 +784,7 @@ function matchesReviewFilter(item, filter) {
   return true
 }
 
-export function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
+export function EvidenceReviewQueuePanel({ currentCase, onCaseReady, onReviewPendingChange, decisionsDisabled = false }) {
   const [filter, setFilter] = useState('all')
   const [queueSummary, setQueueSummary] = useState(null)
   const [reviewTimeline, setReviewTimeline] = useState(null)
@@ -796,13 +797,24 @@ export function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
   const [exactHistory, setExactHistory] = useState({ status: 'unopened', evidenceId: '', entries: [] })
   const historyRequestToken = useRef(0)
   const openHistoryEvidenceId = useRef('')
+  const decisionContextEpoch = useRef(0)
+  const decisionPendingRef = useRef(null)
 
   const caseId = currentCase?.case_id
 
   useEffect(() => {
+    decisionContextEpoch.current += 1
+    decisionPendingRef.current = null
+    setDecisionLoadingId('')
+    setQueueSuccess('')
     historyRequestToken.current += 1
     openHistoryEvidenceId.current = ''
     setExactHistory({ status: 'unopened', evidenceId: '', entries: [] })
+    return () => {
+      decisionContextEpoch.current += 1
+      decisionPendingRef.current = null
+      onReviewPendingChange?.(caseId, false)
+    }
   }, [caseId])
 
   useEffect(() => {
@@ -843,12 +855,13 @@ export function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
 
   const filteredItems = (queueSummary?.queue_items || []).filter((item) => matchesReviewFilter(item, filter))
 
-  const refreshQueue = async () => {
+  const refreshQueue = async (isCurrent = () => true) => {
     const [queueResult, timelineResult, auditResult] = await Promise.all([
       getCaseEvidenceReviewQueue(caseId),
       getCaseEvidenceReviewTimeline(caseId),
       getCaseEvidenceReviewAuditSummary(caseId),
     ])
+    if (!isCurrent()) return
     setQueueSummary(queueResult)
     setReviewTimeline(timelineResult)
     setAuditSummary(auditResult)
@@ -873,6 +886,11 @@ export function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
   }
 
   const handleDecision = async (item, decision) => {
+    if (decisionPendingRef.current || decisionsDisabled) return
+    const token = { caseId, epoch: decisionContextEpoch.current }
+    decisionPendingRef.current = token
+    const isCurrent = () => decisionPendingRef.current === token && decisionContextEpoch.current === token.epoch
+    onReviewPendingChange?.(caseId, true)
     setQueueError('')
     setQueueSuccess('')
     setDecisionLoadingId(`${item.evidence_id}:${decision}`)
@@ -882,19 +900,29 @@ export function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
         reviewer_label: 'local_human_reviewer',
         notes: reviewNote.trim() || undefined,
       })
+      if (!isCurrent()) return
       setQueueSummary(result.summary)
       setQueueSuccess(`${item.evidence_id} -> ${result.review_status}`)
       setReviewNote('')
       const refreshedCase = await getCase(caseId)
-      onCaseReady?.(refreshedCase)
-      await refreshQueue()
+      if (!isCurrent()) return
+      if (refreshedCase?.case_id !== caseId) throw new Error('Persisted Evidence readback case mismatch.')
+      await onCaseReady?.(refreshedCase, { review_readback: true })
+      if (!isCurrent()) return
+      await refreshQueue(isCurrent)
+      if (!isCurrent()) return
       if (openHistoryEvidenceId.current === item.evidence_id) {
         await loadExactReviewHistory(item.evidence_id)
       }
     } catch (error) {
-      setQueueError(error?.response?.data?.detail || error?.message || 'Review decision failed.')
+      if (!isCurrent()) return
+      setQueueError('Review decision failed. No automatic retry; refresh persisted Evidence before a separate decision.')
     } finally {
-      setDecisionLoadingId('')
+      if (isCurrent()) {
+        decisionPendingRef.current = null
+        setDecisionLoadingId('')
+        onReviewPendingChange?.(caseId, false)
+      }
     }
   }
 
@@ -958,6 +986,7 @@ export function EvidenceReviewQueuePanel({ currentCase, onCaseReady }) {
           {reviewActionOptions.map((action) => (
             <Button
               danger={action.value === 'reject'}
+              disabled={Boolean(decisionLoadingId) || decisionsDisabled}
               key={action.value}
               loading={decisionLoadingId === `${record.evidence_id}:${action.value}`}
               onClick={() => handleDecision(record, action.value)}
@@ -1340,7 +1369,53 @@ export function Cases({
   onOpenCaseReport,
   onRefreshCases,
   onRunCase,
+  onOpenCase,
+  onNavigate,
+  guidedCaseFlow,
+  onGuidedReviewPendingChange,
 }) {
+  const [guidedRunPending, setGuidedRunPending] = useState(false)
+  const [guidedReviewPending, setGuidedReviewPending] = useState(false)
+  const [guidedReadbackRequired, setGuidedReadbackRequired] = useState(false)
+  const guidedRunPendingRef = useRef(false)
+  const guidedReviewPendingRef = useRef(false)
+  const guided = Boolean(guidedCaseFlow?.scope && guidedCaseFlow.scope.case_id === currentCase?.case_id)
+  const readiness = guidedReviewReadiness(currentCase, guidedCaseFlow?.scope,
+    guidedReviewPending || guidedReadbackRequired || guidedCaseFlow?.review_pending || guidedCaseFlow?.review_readback_required)
+  const resultCurrent = guidedResultIsCurrent(currentCase, guidedCaseFlow)
+
+  useEffect(() => {
+    guidedReviewPendingRef.current = false
+    setGuidedReviewPending(false)
+    setGuidedReadbackRequired(false)
+  }, [guidedCaseFlow?.scope])
+
+  const handleReviewPendingChange = (caseId, pending) => {
+    if (caseId === guidedCaseFlow?.scope?.case_id) {
+      guidedReviewPendingRef.current = pending
+      setGuidedReviewPending(pending)
+      if (pending) setGuidedReadbackRequired(true)
+    }
+    onGuidedReviewPendingChange?.(caseId, pending)
+  }
+
+  const handleReviewedCaseReady = async (detail, receipt) => {
+    if (receipt?.review_readback && detail?.case_id === guidedCaseFlow?.scope?.case_id) setGuidedReadbackRequired(false)
+    await onCaseReady?.(detail, receipt)
+  }
+
+  const handleGuidedRun = async () => {
+    if (!guided || !readiness.ready || resultCurrent || loading ||
+        guidedRunPendingRef.current || guidedReviewPendingRef.current || !onRunCase) return
+    guidedRunPendingRef.current = true
+    setGuidedRunPending(true)
+    try {
+      await onRunCase(guidedCaseFlow.scope.case_id, 'analysis')
+    } finally {
+      guidedRunPendingRef.current = false
+      setGuidedRunPending(false)
+    }
+  }
   const sourceStatus = getAnalysisSourceStatus({
     analysis: currentCase?.analysis_result,
     currentCase,
@@ -1420,7 +1495,8 @@ export function Cases({
           <Button
             icon={<Link2 size={15} />}
             onClick={() => {
-              void getCase(record.case_id).then((caseDetail) => onCaseReady?.(caseDetail))
+              if (onOpenCase) void onOpenCase(record.case_id)
+              else void getCase(record.case_id).then((caseDetail) => onCaseReady?.(caseDetail))
             }}
             size="small"
           >
@@ -1429,6 +1505,7 @@ export function Cases({
           <Button
             icon={<PlayCircle size={15} />}
             loading={loading && currentCase?.case_id === record.case_id}
+            disabled={guidedCaseFlow?.scope?.case_id === record.case_id}
             onClick={() => onRunCase(record.case_id)}
             size="small"
             type="primary"
@@ -1466,6 +1543,24 @@ export function Cases({
       </div>
 
       {error ? <Alert message="案例数据加载失败" description={error} type="error" showIcon /> : null}
+
+      {guided ? <Card className="panel-card" data-testid="guided-case-review">
+        <Space direction="vertical" className="full-width">
+          <Title level={4}>Guided Evidence review → explicit Run → current result</Title>
+          <Text>case={guidedCaseFlow.scope.case_id} · query={guidedCaseFlow.scope.query}</Text>
+          <Text>Scoped Evidence IDs: {guidedCaseFlow.scope.evidence_ids.join(', ')}</Text>
+          <Tag color={readiness.ready ? 'green' : 'gold'}>readiness={readiness.reason}; usable={readiness.usable}</Tag>
+          <Text>Resolve every scoped item below. Rejected and merged duplicates remain audited but are not usable. At least one approved or marked-weak item is required.</Text>
+          <Text type="secondary">Official API provenance is not truth verification. Analysis remains offline deterministic; LLM remains mock. Review does not run analysis automatically.</Text>
+          <Space>
+            <Button type="primary" loading={guidedRunPending}
+              disabled={!readiness.ready || resultCurrent || loading || guidedRunPending || !onRunCase}
+              onClick={handleGuidedRun}>Run analysis</Button>
+            <Button disabled={!resultCurrent || loading || !onNavigate}
+              onClick={() => onNavigate?.('analysis')}>View current result</Button>
+          </Space>
+        </Space>
+      </Card> : null}
 
       <Alert
         message="案例列表风险口径"
@@ -1537,14 +1632,16 @@ export function Cases({
       ) : null}
 
       {currentCase ? (
-        <EvidenceReviewQueuePanel currentCase={currentCase} onCaseReady={onCaseReady} />
+        <EvidenceReviewQueuePanel currentCase={currentCase} onCaseReady={handleReviewedCaseReady}
+          onReviewPendingChange={handleReviewPendingChange}
+          decisionsDisabled={guided && (loading || guidedRunPending)} />
       ) : null}
 
-      {currentCase ? (
+      {currentCase && !guided ? (
         <ManualEvidencePanel currentCase={currentCase} onCaseReady={onCaseReady} onRunCase={onRunCase} />
       ) : null}
 
-      {currentCase ? (
+      {currentCase && !guided ? (
         <EvidenceImportPanel currentCase={currentCase} onCaseReady={onCaseReady} onRunCase={onRunCase} />
       ) : null}
 

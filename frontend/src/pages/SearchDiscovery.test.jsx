@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -5,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   attachSearchDiscoveryCandidates: vi.fn(),
   attachYouTubeOfficialApiReviewedPublicDiscussion: vi.fn(),
+  createAnalysisCase: vi.fn(),
   getAnalysisCase: vi.fn(),
   getExternalCollectorStatus: vi.fn(),
   getExternalCollectorDiscovery: vi.fn(),
