@@ -741,6 +741,35 @@ describe('RDS1 intentional live search boundaries', () => {
     expect(apiMocks.getYouTubeOfficialApiLiveCandidates).toHaveBeenCalledWith('Current launch', 5)
     expect(screen.queryByText('Mock/static only', { exact: true })).toBeNull()
     expect(screen.getByText('Current real official-API metadata batch for query: Current launch')).toBeTruthy()
+    expect(screen.getAllByTestId('search-discovery-candidate-safe-binding')).toHaveLength(1)
+    const safeBinding = screen.getByTestId('search-discovery-candidate-safe-binding')
+    const safeAttributeNames = safeBinding.getAttributeNames()
+      .filter((name) => name.startsWith('data-sentigraph-'))
+    expect(safeAttributeNames.sort()).toEqual([
+      'data-sentigraph-candidate-order-index',
+      'data-sentigraph-candidate-id',
+      'data-sentigraph-video-id',
+      'data-sentigraph-local-status',
+      'data-sentigraph-current-context-valid',
+    ].sort())
+    expect(Object.fromEntries(safeAttributeNames.map((name) => [name, safeBinding.getAttribute(name)]))).toEqual({
+      'data-sentigraph-candidate-order-index': '0',
+      'data-sentigraph-candidate-id': LIVE_BATCH.candidates[0].candidate_id,
+      'data-sentigraph-video-id': 'current_001',
+      'data-sentigraph-local-status': 'pending_review',
+      'data-sentigraph-current-context-valid': 'true',
+    })
+    for (const name of safeAttributeNames) {
+      const value = safeBinding.getAttribute(name)
+      for (const excluded of [
+        LIVE_BATCH.candidates[0].title, LIVE_BATCH.candidates[0].snippet,
+        LIVE_BATCH.candidates[0].url, LIVE_BATCH.candidates[0].source_name,
+      ]) expect(value).not.toContain(excluded)
+    }
+    expect(within(safeBinding).getByTestId('search-discovery-candidate-accept'))
+      .toBe(within(safeBinding).getByRole('button', { name: '接受' }))
+    expect(within(safeBinding).getByTestId('search-discovery-candidate-reject'))
+      .toBe(within(safeBinding).getByRole('button', { name: '忽略' }))
     expectNoDownstreamActions()
     expect(onRunCase).not.toHaveBeenCalled()
   })
@@ -750,6 +779,11 @@ describe('RDS1 intentional live search boundaries', () => {
     fireEvent.click(screen.getByRole('button', { name: /Search YouTube Official API metadata/ }))
     await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
     fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    const safeBinding = screen.getByTestId('search-discovery-candidate-safe-binding')
+    expect(safeBinding.getAttribute('data-sentigraph-local-status')).toBe('accepted')
+    expect(safeBinding.getAttribute('data-sentigraph-current-context-valid')).toBe('true')
+    expect(screen.getByTestId('search-discovery-provider-discussion-load'))
+      .toBe(screen.getByRole('button', { name: /Load provider-backed public discussion/ }))
     expect(screen.getByRole('button', { name: /Load provider-backed public discussion/ })).toBeTruthy()
     apiMocks.getYouTubeOfficialApiLiveCandidates.mockClear()
     fireEvent.change(screen.getByPlaceholderText('Tesla'), { target: { value: '   \t ' } })
@@ -864,7 +898,19 @@ describe('RIE1R2 exact-one live candidate and monotonic search context', () => {
     await renderLiveSearch()
     fireEvent.click(screen.getByRole('button', { name: searchName }))
     await screen.findByText(LIVE_BATCH.candidates[0].title, { exact: true })
+    const safeBinding = screen.getByTestId('search-discovery-candidate-safe-binding')
+    expect(safeBinding.getAttribute('data-sentigraph-current-context-valid')).toBe('false')
+    if (override.candidate_id === '') {
+      expect(safeBinding.getAttribute('data-sentigraph-candidate-id')).toBe('')
+    }
     fireEvent.click(screen.getByRole('button', { name: '接受' }))
+    const acceptedSafeBinding = screen.getByTestId('search-discovery-candidate-safe-binding')
+    expect(acceptedSafeBinding.getAttribute('data-sentigraph-local-status')).toBe('accepted')
+    expect(acceptedSafeBinding.getAttribute('data-sentigraph-current-context-valid')).toBe('false')
+    if (override.candidate_id === '') {
+      expect(acceptedSafeBinding.getAttribute('data-sentigraph-candidate-id')).toBe('')
+    }
+    expect(screen.queryByTestId('search-discovery-provider-discussion-load')).toBeNull()
     expect(screen.queryByRole('button', { name: loadName })).toBeNull()
     expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).not.toHaveBeenCalled()
   })

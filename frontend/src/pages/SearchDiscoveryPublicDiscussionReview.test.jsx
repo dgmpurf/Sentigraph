@@ -248,6 +248,29 @@ async function renderProviderDiscussion(props = {}) {
   return panel
 }
 
+function expectExactSafeDiscussionAttributes(element, expected) {
+  const attributes = Object.fromEntries(
+    Array.from(element.attributes)
+      .filter((attribute) => attribute.name.startsWith('data-sentigraph-'))
+      .map((attribute) => [attribute.name, attribute.value]),
+  )
+  expect(attributes).toEqual(expected)
+  const serializedAttributes = JSON.stringify(attributes)
+  for (const field of ['body_text', 'source_url', 'published_at']) {
+    expect(serializedAttributes).not.toContain(field)
+  }
+  for (const item of LIVE_DISCUSSION_BATCH.items) {
+    for (const visibleValue of [item.body_text, item.source_url, item.published_at, ...item.safety_notes]) {
+      expect(serializedAttributes).not.toContain(visibleValue)
+    }
+  }
+  for (const candidate of LIVE_BATCH.candidates) {
+    for (const visibleValue of [candidate.title, candidate.snippet, candidate.source_name]) {
+      expect(serializedAttributes).not.toContain(visibleValue)
+    }
+  }
+}
+
 beforeEach(() => {
   installFailClosedBrowserNetworkSentinels()
   Object.values(apiMocks).forEach((mock) => mock.mockReset())
@@ -477,6 +500,30 @@ describe('SearchDiscovery provider-backed public-discussion bridge Phase 2E3D', 
     for (const item of LIVE_DISCUSSION_BATCH.items) {
       expect(within(panel).getByText(item.body_text, { exact: true })).toBeTruthy()
     }
+    const batchBinding = within(panel).getByTestId('public-discussion-safe-batch-binding')
+    expectExactSafeDiscussionAttributes(batchBinding, {
+      'data-sentigraph-video-id': LIVE_DISCUSSION_BATCH.video_id,
+      'data-sentigraph-review-batch-safe-hash': LIVE_DISCUSSION_BATCH.review_batch_safe_hash,
+      'data-sentigraph-provider-backed': 'true',
+    })
+    const itemBindings = within(batchBinding).getAllByTestId('public-discussion-safe-item-binding')
+    expect(itemBindings).toHaveLength(LIVE_DISCUSSION_BATCH.items.length)
+    expect(itemBindings.map((item) => item.getAttribute('data-sentigraph-discussion-id'))).toEqual(
+      LIVE_DISCUSSION_BATCH.items.map((item) => item.discussion_id),
+    )
+    for (const [index, item] of LIVE_DISCUSSION_BATCH.items.entries()) {
+      expectExactSafeDiscussionAttributes(itemBindings[index], {
+        'data-sentigraph-discussion-id': item.discussion_id,
+        'data-sentigraph-selected-item-safe-hash': LIVE_DISCUSSION_BATCH.review_item_safe_hashes[item.discussion_id],
+        'data-sentigraph-local-decision': 'pending_review',
+      })
+      expect(within(itemBindings[index]).getByRole('button', {
+        name: `Accept ${item.discussion_id}`,
+      })).toBeTruthy()
+      expect(within(itemBindings[index]).getByRole('button', {
+        name: `Reject ${item.discussion_id}`,
+      })).toBeTruthy()
+    }
     expect(within(panel).getAllByText('schema status=pending_review', { exact: true })).toHaveLength(2)
     for (const safetyText of [
       'Official API public comments / provider-backed review',
@@ -501,6 +548,15 @@ describe('SearchDiscovery provider-backed public-discussion bridge Phase 2E3D', 
     expect(
       within(panel).getByTestId(`public-discussion-decision-${acceptedItem.discussion_id}`).textContent,
     ).toBe('local decision=accepted')
+    for (const [index, item] of LIVE_DISCUSSION_BATCH.items.entries()) {
+      expectExactSafeDiscussionAttributes(itemBindings[index], {
+        'data-sentigraph-discussion-id': item.discussion_id,
+        'data-sentigraph-selected-item-safe-hash': LIVE_DISCUSSION_BATCH.review_item_safe_hashes[item.discussion_id],
+        'data-sentigraph-local-decision': item.discussion_id === acceptedItem.discussion_id
+          ? 'accepted'
+          : 'pending_review',
+      })
+    }
     expect(LIVE_DISCUSSION_BATCH.items.every((item) => item.status === 'pending_review')).toBe(true)
   })
 
@@ -649,6 +705,7 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
       name: 'Attach reviewed public discussion to case',
     })
 
+    expect(within(panel).getByTestId('public-discussion-attach-reviewed')).toBe(attachButton)
     expect(attachButton.disabled).toBe(true)
     expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).toHaveBeenCalledTimes(0)
   })
@@ -666,6 +723,7 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
     const attachButton = within(panel).getByRole('button', {
       name: 'Attach reviewed public discussion to case',
     })
+    expect(within(panel).getByTestId('public-discussion-attach-reviewed')).toBe(attachButton)
     expect(attachButton.disabled).toBe(true)
     expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).toHaveBeenCalledTimes(0)
   })
@@ -684,6 +742,7 @@ describe('SearchDiscovery reviewed public-discussion case evidence bridge', () =
     const attachButton = within(panel).getByRole('button', {
       name: 'Attach reviewed public discussion to case',
     })
+    expect(within(panel).getByTestId('public-discussion-attach-reviewed')).toBe(attachButton)
     await waitFor(() => expect(attachButton.disabled).toBe(false))
   })
 

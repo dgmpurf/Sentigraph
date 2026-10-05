@@ -724,13 +724,35 @@ export function SearchDiscovery({
       dataIndex: 'status',
       key: 'status',
       width: 190,
-      render: (status, record) => (
+      render: (status, record, candidateOrderIndex) => {
+        const safeCandidateId = typeof record.candidate_id === 'string' &&
+          /^[A-Za-z0-9_.:-]{1,256}$/.test(record.candidate_id) ? record.candidate_id : ''
+        const safeVideoId = getYouTubeWatchVideoId(record.url) || ''
+        const safeLocalStatus = ['pending_review', 'accepted', 'rejected'].includes(status) ? status : ''
+        const currentContextValid = Boolean(
+          generatedLiveBatchCurrent &&
+          generatedProvider === LIVE_PROVIDER_ID &&
+          normalizeDiscoveryQuery(record.query) === generatedQuery &&
+          safeCandidateId &&
+          safeVideoId,
+        )
+        return (
+          <div
+            data-testid="search-discovery-candidate-safe-binding"
+            data-sentigraph-candidate-order-index={Number.isInteger(candidateOrderIndex) &&
+              candidateOrderIndex >= 0 && candidateOrderIndex <= 4 ? candidateOrderIndex : ''}
+            data-sentigraph-candidate-id={safeCandidateId}
+            data-sentigraph-video-id={safeVideoId}
+            data-sentigraph-local-status={safeLocalStatus}
+            data-sentigraph-current-context-valid={currentContextValid ? 'true' : 'false'}
+          >
         <Space direction="vertical" size={6}>
           <Tag color={STATUS_COLORS[status] || 'default'}>{status}</Tag>
           <Space>
             <Button
               size="small"
               icon={<CheckCircle2 size={14} />}
+              data-testid="search-discovery-candidate-accept"
               onClick={() => setCandidateStatus(record.candidate_id, 'accepted')}
               disabled={status === 'attached'}
             >
@@ -740,6 +762,7 @@ export function SearchDiscovery({
               size="small"
               danger
               icon={<XCircle size={14} />}
+              data-testid="search-discovery-candidate-reject"
               onClick={() => setCandidateStatus(record.candidate_id, 'rejected')}
               disabled={status === 'attached'}
             >
@@ -747,7 +770,9 @@ export function SearchDiscovery({
             </Button>
           </Space>
         </Space>
-      ),
+          </div>
+        )
+      },
     },
   ]
 
@@ -1024,6 +1049,7 @@ export function SearchDiscovery({
               </Button>
               {providerDiscussionLoadAvailable ? (
                 <Button
+                  data-testid="search-discovery-provider-discussion-load"
                   loading={publicDiscussionLoading}
                   onClick={handleLoadProviderPublicDiscussion}
                 >
@@ -1073,6 +1099,15 @@ export function SearchDiscovery({
           )}
 
           {publicDiscussionBatch ? (
+            <div
+              data-testid="public-discussion-safe-batch-binding"
+              data-sentigraph-video-id={typeof publicDiscussionBatch.video_id === 'string' &&
+                /^[A-Za-z0-9_-]{11}$/.test(publicDiscussionBatch.video_id) ? publicDiscussionBatch.video_id : ''}
+              data-sentigraph-review-batch-safe-hash={typeof publicDiscussionBatch.review_batch_safe_hash === 'string' &&
+                /^[0-9a-f]{64}$/.test(publicDiscussionBatch.review_batch_safe_hash) ?
+                publicDiscussionBatch.review_batch_safe_hash : ''}
+              data-sentigraph-provider-backed={publicDiscussionSource === 'provider-backed' ? 'true' : 'false'}
+            >
             <Space direction="vertical" size={12} className="full-width">
               <Space wrap>
                 <Tag color="purple">items={publicDiscussionBatch.item_count}</Tag>
@@ -1085,12 +1120,25 @@ export function SearchDiscovery({
               </Space>
               {publicDiscussionBatch.items.map((item) => {
                 const localDecision = publicDiscussionDecisionById[item.discussion_id] || 'pending_review'
+                const safeDiscussionId = typeof item.discussion_id === 'string' &&
+                  /^[A-Za-z0-9_.:-]{1,256}$/.test(item.discussion_id) ? item.discussion_id : ''
+                const selectedItemSafeHash = publicDiscussionBatch.review_item_safe_hashes?.[item.discussion_id]
+                const safeSelectedItemHash = typeof selectedItemSafeHash === 'string' &&
+                  /^[0-9a-f]{64}$/.test(selectedItemSafeHash) ? selectedItemSafeHash : ''
+                const safeLocalDecision = ['pending_review', 'accepted', 'rejected'].includes(localDecision) ?
+                  localDecision : ''
                 return (
                   <Card
                     key={item.discussion_id}
                     size="small"
                     data-testid="public-discussion-review-item"
                   >
+                    <div
+                      data-testid="public-discussion-safe-item-binding"
+                      data-sentigraph-discussion-id={safeDiscussionId}
+                      data-sentigraph-selected-item-safe-hash={safeSelectedItemHash}
+                      data-sentigraph-local-decision={safeLocalDecision}
+                    >
                     <Space direction="vertical" size={8} className="full-width">
                       <Text>{item.body_text}</Text>
                       <Space wrap size={4}>
@@ -1133,6 +1181,7 @@ export function SearchDiscovery({
                         </Button>
                       </Space>
                     </Space>
+                    </div>
                   </Card>
                 )
               })}
@@ -1141,6 +1190,7 @@ export function SearchDiscovery({
                   <Button
                     type="primary"
                     icon={<ShieldCheck size={16} />}
+                    data-testid="public-discussion-attach-reviewed"
                     loading={publicDiscussionAttaching}
                     disabled={!publicDiscussionAttachAvailable}
                     onClick={handleAttachReviewedPublicDiscussion}
@@ -1184,6 +1234,7 @@ export function SearchDiscovery({
                 </Card>
               ) : null}
             </Space>
+            </div>
           ) : (
             <Empty description="Use one explicit load action to begin local review." />
           )}
