@@ -1122,6 +1122,8 @@ export function SearchDiscovery({
                 const localDecision = publicDiscussionDecisionById[item.discussion_id] || 'pending_review'
                 const safeDiscussionId = typeof item.discussion_id === 'string' &&
                   /^[A-Za-z0-9_.:-]{1,256}$/.test(item.discussion_id) ? item.discussion_id : ''
+                const safeCommentId = typeof item.comment_id === 'string' &&
+                  /^[A-Za-z0-9_.:-]{1,256}$/.exec(item.comment_id)?.[0] === item.comment_id ? item.comment_id : ''
                 const selectedItemSafeHash = publicDiscussionBatch.review_item_safe_hashes?.[item.discussion_id]
                 const safeSelectedItemHash = typeof selectedItemSafeHash === 'string' &&
                   /^[0-9a-f]{64}$/.test(selectedItemSafeHash) ? selectedItemSafeHash : ''
@@ -1136,6 +1138,7 @@ export function SearchDiscovery({
                     <div
                       data-testid="public-discussion-safe-item-binding"
                       data-sentigraph-discussion-id={safeDiscussionId}
+                      data-sentigraph-comment-id={safeCommentId}
                       data-sentigraph-selected-item-safe-hash={safeSelectedItemHash}
                       data-sentigraph-local-decision={safeLocalDecision}
                     >

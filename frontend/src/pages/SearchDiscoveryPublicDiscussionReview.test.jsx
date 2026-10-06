@@ -514,6 +514,7 @@ describe('SearchDiscovery provider-backed public-discussion bridge Phase 2E3D', 
     for (const [index, item] of LIVE_DISCUSSION_BATCH.items.entries()) {
       expectExactSafeDiscussionAttributes(itemBindings[index], {
         'data-sentigraph-discussion-id': item.discussion_id,
+        'data-sentigraph-comment-id': item.comment_id,
         'data-sentigraph-selected-item-safe-hash': LIVE_DISCUSSION_BATCH.review_item_safe_hashes[item.discussion_id],
         'data-sentigraph-local-decision': 'pending_review',
       })
@@ -551,6 +552,7 @@ describe('SearchDiscovery provider-backed public-discussion bridge Phase 2E3D', 
     for (const [index, item] of LIVE_DISCUSSION_BATCH.items.entries()) {
       expectExactSafeDiscussionAttributes(itemBindings[index], {
         'data-sentigraph-discussion-id': item.discussion_id,
+        'data-sentigraph-comment-id': item.comment_id,
         'data-sentigraph-selected-item-safe-hash': LIVE_DISCUSSION_BATCH.review_item_safe_hashes[item.discussion_id],
         'data-sentigraph-local-decision': item.discussion_id === acceptedItem.discussion_id
           ? 'accepted'
@@ -559,6 +561,42 @@ describe('SearchDiscovery provider-backed public-discussion bridge Phase 2E3D', 
     }
     expect(LIVE_DISCUSSION_BATCH.items.every((item) => item.status === 'pending_review')).toBe(true)
   })
+
+  it.each(['unsafe/comment', 'comment_001\n'])(
+    'keeps an invalid owner-SAFE_ID comment out of safe attributes: %j', async (invalidCommentId) => {
+      const invalidBatch = {
+        ...LIVE_DISCUSSION_BATCH,
+        items: LIVE_DISCUSSION_BATCH.items.map((item, index) => ({
+          ...item, comment_id: index === 0 ? invalidCommentId : item.comment_id,
+        })),
+      }
+      apiMocks.getYouTubeOfficialApiLivePublicDiscussion.mockResolvedValueOnce(invalidBatch)
+      const panel = await renderProviderDiscussion()
+      const batchBinding = within(panel).getByTestId('public-discussion-safe-batch-binding')
+      expectExactSafeDiscussionAttributes(batchBinding, {
+        'data-sentigraph-video-id': LIVE_DISCUSSION_BATCH.video_id,
+        'data-sentigraph-review-batch-safe-hash': LIVE_DISCUSSION_BATCH.review_batch_safe_hash,
+        'data-sentigraph-provider-backed': 'true',
+      })
+      const itemBindings = within(batchBinding).getAllByTestId('public-discussion-safe-item-binding')
+      expect(itemBindings).toHaveLength(invalidBatch.items.length)
+      for (const [index, item] of invalidBatch.items.entries()) {
+        expectExactSafeDiscussionAttributes(itemBindings[index], {
+          'data-sentigraph-discussion-id': item.discussion_id,
+          'data-sentigraph-comment-id': index === 0 ? '' : item.comment_id,
+          'data-sentigraph-selected-item-safe-hash': LIVE_DISCUSSION_BATCH.review_item_safe_hashes[item.discussion_id],
+          'data-sentigraph-local-decision': 'pending_review',
+        })
+        const safeValues = Array.from(itemBindings[index].attributes)
+          .filter((attribute) => attribute.name.startsWith('data-sentigraph-'))
+          .map((attribute) => attribute.value)
+        expect(safeValues).not.toContain(invalidCommentId)
+      }
+      expect(itemBindings[0].getAttribute('data-sentigraph-comment-id')).toBe('')
+      expect(apiMocks.getYouTubeOfficialApiLivePublicDiscussion).toHaveBeenCalledTimes(1)
+      expect(apiMocks.attachYouTubeOfficialApiReviewedPublicDiscussion).not.toHaveBeenCalled()
+    },
+  )
 
   it('fails an invalid non-YouTube candidate locally without exposing a load action', async () => {
     apiMocks.getYouTubeOfficialApiLiveCandidates.mockResolvedValue({
