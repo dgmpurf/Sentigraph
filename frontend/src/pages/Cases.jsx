@@ -3,7 +3,7 @@ import { CheckCircle2, Download, FileText, Link2, PlayCircle, PlusCircle, Refres
 
 import { riskTone } from '../utils/formatters.js'
 import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
-import { guidedResultIsCurrent, guidedReviewReadiness, makeGuidedEvidenceScope } from '../utils/guidedCaseFlow.js'
+import { guidedResultIsCurrent, guidedReviewReadiness, makeGuidedEvidenceScope, normalizeGuidedQuery } from '../utils/guidedCaseFlow.js'
 import {
   attachCaseEvidence,
   commitCaseEvidenceImport,
@@ -582,18 +582,121 @@ export function ManualEvidencePanel({ currentCase, onCaseReady, onOpenGuidedEvid
   )
 }
 
-function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
+function csvDraftContext(detail, caseId) {
+  const query = normalizeGuidedQuery(detail?.keyword)
+  return detail?.case_id === caseId && /^[A-Za-z0-9_-]{1,200}$/.test(caseId) &&
+    detail.status === 'draft' && query && query.length <= 120 &&
+    Number.isInteger(detail.case_revision) && detail.case_revision >= 0 &&
+    Array.isArray(detail.raw_posts) && !detail.raw_posts.length &&
+    Array.isArray(detail.raw_comments) && !detail.raw_comments.length &&
+    detail.raw_post_count === 0 && detail.raw_comment_count === 0 &&
+    !detail.analysis_result && !detail.report && !detail.markdown_available &&
+    detail.analysis_revision == null && detail.analysis_run_id == null ? query : null
+}
+
+const csvIdentityFields = ['platform', 'source_type', 'acquisition_mode', 'evidence_type',
+  'title', 'body_text', 'comment_text', 'url']
+
+// The preview must describe the whole small batch, not its first three rows.
+// Backend row numbers index parsed records from 2; blank records may leave gaps.
+function csvPreviewBatch(preview, caseId, filename) {
+  const n = preview?.valid_row_count
+  const rows = preview?.preview_rows
+  if (preview?.case_id !== caseId || preview.filename !== filename || preview.status !== 'preview_ready' ||
+      preview.detected_format !== 'csv' || !Number.isInteger(n) || n < 1 || n > 3 ||
+      preview.total_rows !== n || preview.duplicate_row_count !== 0 || preview.skipped_row_count !== 0 ||
+      !Array.isArray(rows) || rows.length !== n || !Array.isArray(preview.warnings) ||
+      preview.warnings.some((w) => w.severity === 'error') ||
+      rows.some((row) => typeof row?.evidence_id !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(row.evidence_id) ||
+        !Number.isSafeInteger(row.row_number) || row.row_number < 2 || !Array.isArray(row.warnings) ||
+        row.warnings.some((w) => w.severity === 'error') ||
+        // These fields are clipped at 180 characters by the existing preview API.
+        [row.body_text, row.comment_text].some((text) => typeof text === 'string' && text.length >= 180)) ||
+      new Set(rows.map((row) => row.evidence_id)).size !== n ||
+      rows.some((row, index) => index > 0 && row.row_number <= rows[index - 1].row_number) ||
+      new Set(rows.map((row) => row.row_number)).size !== n) return null
+  return Object.freeze(rows.map((row) => Object.freeze({ evidence_id: row.evidence_id,
+    ...Object.fromEntries(csvIdentityFields.map((key) => [key, trimValue(row[key])])) })))
+}
+
+function csvPersistedScope(before, receipt, after, batch, caseId, filename) {
+  const query = csvDraftContext(before, caseId), n = batch?.length
+  if (!query || !n || !Array.isArray(before.evidence_items) || before.evidence_items.length ||
+      before.evidence_item_count !== 0 || csvDraftContext(after, caseId) !== query ||
+      after.case_revision !== before.case_revision + 1 || receipt?.case_id !== caseId ||
+      receipt.filename !== filename || receipt.status !== 'committed' || receipt.detected_format !== 'csv' ||
+      receipt.imported_count !== n || receipt.total_evidence_item_count !== n ||
+      receipt.duplicate_row_count !== 0 || receipt.skipped_row_count !== 0 ||
+      !Array.isArray(receipt.evidence_items) || receipt.evidence_items.length !== n ||
+      !Array.isArray(after.evidence_items) || after.evidence_items.length !== n || after.evidence_item_count !== n) return null
+  const exactItems = (items) => new Map(items.map((item) => [item.evidence_id, item]))
+  const imported = exactItems(receipt.evidence_items), persisted = exactItems(after.evidence_items)
+  if (imported.size !== n || persisted.size !== n || batch.some((row) => {
+    const own = imported.get(row.evidence_id), saved = persisted.get(row.evidence_id)
+    return !own || !saved || own.case_id !== caseId || saved.case_id !== caseId ||
+      typeof own.normalized_content_hash !== 'string' || !own.normalized_content_hash ||
+      saved.normalized_content_hash !== own.normalized_content_hash ||
+      csvIdentityFields.some((key) => trimValue(own[key]) !== row[key] || trimValue(saved[key]) !== row[key])
+  })) return null
+  // The API receipt contains newly imported items, unlike a cumulative attach
+  // receipt. Full content/ID reconciliation and one case revision exclude an
+  // unexplained concurrent mutation; matching a guessed delta is insufficient.
+  return makeGuidedEvidenceScope({ case_id: caseId, evidence_ids: batch.map((row) => row.evidence_id), query })
+}
+
+export function EvidenceImportPanel({ currentCase, onCaseReady, onOpenGuidedEvidenceReview }) {
   const [filePayload, setFilePayload] = useState(null)
   const [columnMapping, setColumnMapping] = useState({})
+  const [detectedColumns, setDetectedColumns] = useState([])
   const [preview, setPreview] = useState(null)
   const [commitResult, setCommitResult] = useState(null)
   const [importLoading, setImportLoading] = useState(false)
+  const [fileLoading, setFileLoading] = useState(false)
   const [importError, setImportError] = useState('')
+  const [importScope, setImportScope] = useState(null)
+  const [importNotice, setImportNotice] = useState('')
+  const [persistenceUncertain, setPersistenceUncertain] = useState(false)
+  const pendingRef = useRef(null)
+  const preparedRef = useRef(null)
+  const fileRef = useRef(null)
+  const mappingRef = useRef({})
+  const consumedRef = useRef(false)
+  const uncertainCasesRef = useRef(new Set())
+  const epochRef = useRef(0)
+  const mountedRef = useRef(false)
+  const caseId = currentCase?.case_id
+  const queryKey = normalizeGuidedQuery(currentCase?.keyword)
+  const selectionRef = useRef(null)
+  selectionRef.current = { caseId, queryKey }
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false; epochRef.current += 1 }
+  }, [])
+  useEffect(() => {
+    epochRef.current += 1
+    fileRef.current = null
+    mappingRef.current = {}
+    preparedRef.current = null
+    consumedRef.current = false
+    setFilePayload(null)
+    setColumnMapping({})
+    setDetectedColumns([])
+    setFileLoading(false)
+    setPreview(null)
+    setCommitResult(null)
+    setImportScope(null)
+    setImportNotice('')
+    setImportError('')
+    setPersistenceUncertain(uncertainCasesRef.current.has(caseId))
+    // Keep the single-flight guard until the old request actually exits.
+    return () => { epochRef.current += 1 }
+  }, [caseId, queryKey])
 
   if (!currentCase?.case_id) return null
 
   const templateCsvUrl = getEvidenceImportTemplateCsvUrl()
-  const columnOptions = (preview?.detected_columns || []).map((column) => ({ label: column, value: column }))
+  const columnOptions = detectedColumns.map((column) => ({ label: column, value: column }))
   const previewColumns = [
     { title: 'row', dataIndex: 'row_number', key: 'row_number', width: 70 },
     {
@@ -639,55 +742,139 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
     },
   ]
 
-  const handleFile = async (file) => {
-    setImportError('')
+  const isCurrent = (op) => mountedRef.current && epochRef.current === op.epoch &&
+    selectionRef.current.caseId === op.caseId && selectionRef.current.queryKey === op.queryKey
+  const invalidatePrepared = () => {
+    epochRef.current += 1
+    preparedRef.current = null
     setPreview(null)
     setCommitResult(null)
+    setImportScope(null)
+    setImportNotice('')
+    setImportError('')
+    setPersistenceUncertain(uncertainCasesRef.current.has(caseId))
+  }
+  const finish = (op) => {
+    if (pendingRef.current !== op) return
+    pendingRef.current = null
+    if (mountedRef.current) {
+      setImportLoading(false)
+      setPersistenceUncertain(uncertainCasesRef.current.has(selectionRef.current.caseId))
+    }
+  }
+  const handleFile = async (file) => {
+    invalidatePrepared()
+    consumedRef.current = false
+    fileRef.current = null
+    mappingRef.current = {}
+    setFilePayload(null)
+    setColumnMapping({})
+    setDetectedColumns([])
+    setFileLoading(true)
+    const op = { epoch: epochRef.current, caseId, queryKey }
     try {
       const contentBase64 = await fileToBase64(file)
-      setFilePayload({
-        filename: file.name,
-        content_base64: contentBase64,
-      })
-      setColumnMapping({})
+      if (!isCurrent(op)) return
+      fileRef.current = Object.freeze({ filename: file.name, content_base64: contentBase64 })
+      setFilePayload(fileRef.current)
     } catch (error) {
-      setImportError(error?.message || 'File read failed.')
+      if (isCurrent(op)) setImportError('File read failed; no import was submitted.')
+    } finally {
+      if (isCurrent(op)) setFileLoading(false)
     }
   }
 
   const handlePreview = async () => {
-    if (!filePayload) return
+    if (!fileRef.current || fileLoading || pendingRef.current || consumedRef.current) return
+    const payload = evidenceImportPayload(fileRef.current, mappingRef.current)
+    const op = { epoch: epochRef.current, caseId, queryKey }
+    pendingRef.current = op
+    preparedRef.current = null
+    setPreview(null)
+    setCommitResult(null)
+    setImportScope(null)
+    setImportNotice('')
     setImportLoading(true)
     setImportError('')
     try {
-      const result = await previewCaseEvidenceImport(currentCase.case_id, evidenceImportPayload(filePayload, columnMapping))
+      const result = await previewCaseEvidenceImport(caseId, payload)
+      if (!isCurrent(op)) return
+      if (result?.case_id !== caseId || result.filename !== payload.filename ||
+          !Array.isArray(result.preview_rows) || !Array.isArray(result.detected_columns) ||
+          result.detected_columns.some((column) => typeof column !== 'string') || !result.column_mapping ||
+          typeof result.column_mapping !== 'object' || Array.isArray(result.column_mapping) ||
+          Object.values(result.column_mapping).some((column) => column != null &&
+            (typeof column !== 'string' || !result.detected_columns.includes(column)))) {
+        throw new Error('Preview context mismatch.')
+      }
+      mappingRef.current = { ...result.column_mapping }
+      const commitPayload = evidenceImportPayload(fileRef.current, mappingRef.current)
+      Object.freeze(commitPayload.column_mapping)
+      Object.freeze(commitPayload)
+      preparedRef.current = Object.freeze({ payload: commitPayload,
+        validRows: result.valid_row_count, batch: csvPreviewBatch(result, caseId, payload.filename) })
       setPreview(result)
-      setColumnMapping(result.column_mapping || {})
+      setColumnMapping(mappingRef.current)
+      setDetectedColumns(result.detected_columns)
+      if (!preparedRef.current.batch) {
+        setImportNotice('本次预览不符合完整 1–3 条 CSV 小批次；仍可正常导入，但须使用持久化证据复核队列，不会直接运行。')
+      }
     } catch (error) {
-      setImportError(error?.response?.data?.detail?.message || error?.message || 'Import preview failed.')
+      if (isCurrent(op)) setImportError('Import preview failed or changed context; no import was submitted.')
     } finally {
-      setImportLoading(false)
+      finish(op)
     }
   }
 
   const handleCommit = async () => {
-    if (!filePayload) return
+    const prepared = preparedRef.current
+    if (!prepared || !prepared.validRows || pendingRef.current || consumedRef.current ||
+        uncertainCasesRef.current.has(caseId)) return
+    const op = { epoch: epochRef.current, caseId, queryKey }
+    pendingRef.current = op
     setImportLoading(true)
     setImportError('')
+    setImportScope(null)
+    let postStarted = false
     try {
-      const result = await commitCaseEvidenceImport(currentCase.case_id, evidenceImportPayload(filePayload, columnMapping))
+      const baseline = await getCase(caseId)
+      if (!isCurrent(op)) return
+      if (baseline?.case_id !== caseId || normalizeGuidedQuery(baseline.keyword) !== queryKey ||
+          !Array.isArray(baseline.evidence_items)) throw new Error('Unconfirmed case context.')
+      postStarted = true
+      consumedRef.current = true
+      uncertainCasesRef.current.add(caseId)
+      const result = await commitCaseEvidenceImport(caseId, prepared.payload)
+      if (!isCurrent(op)) return
+      if (result?.case_id !== caseId || result.filename !== prepared.payload.filename ||
+          !['committed', 'empty'].includes(result.status)) throw new Error('Unconfirmed import receipt.')
       setCommitResult(result)
-      const refreshedCase = await getCase(currentCase.case_id)
+      const refreshedCase = await getCase(caseId)
+      if (!isCurrent(op)) return
+      if (refreshedCase?.case_id !== caseId || normalizeGuidedQuery(refreshedCase.keyword) !== queryKey ||
+          !Array.isArray(refreshedCase.evidence_items)) throw new Error('Unconfirmed persisted case.')
+      const scope = csvPersistedScope(baseline, result, refreshedCase, prepared.batch, caseId, prepared.payload.filename)
+      setImportScope(scope)
+      setImportNotice(scope ? '' : '导入已提交，但未确认完整的新小批次身份；请使用正常持久化证据复核队列，不会直接运行或重新提交。')
+      uncertainCasesRef.current.delete(caseId)
       onCaseReady?.(refreshedCase)
     } catch (error) {
-      setImportError(error?.response?.data?.detail?.message || error?.message || 'Import commit failed.')
+      if (postStarted) uncertainCasesRef.current.add(caseId)
+      if (isCurrent(op)) {
+        setImportError(postStarted
+          ? '提交可能已保存，但持久化状态尚未确认；请核对正常证据复核队列，不要重复提交。'
+          : '无法确认当前案例的持久化基线；未提交导入。')
+      }
     } finally {
-      setImportLoading(false)
+      finish(op)
     }
   }
 
   const handleMappingChange = (field, value) => {
-    setColumnMapping((current) => ({ ...current, [field]: value }))
+    invalidatePrepared()
+    consumedRef.current = false
+    mappingRef.current = { ...mappingRef.current, [field]: value }
+    setColumnMapping(mappingRef.current)
   }
 
   return (
@@ -717,7 +904,10 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
             </Button>
           </Space>
         </Space>
-        {importError ? <Alert message="证据导入失败" description={importError} type="error" showIcon /> : null}
+        {importError ? <Alert message={persistenceUncertain ? '证据导入状态尚未确认' : '证据导入未完成'}
+          description={importError} type="error" showIcon /> : null}
+        {persistenceUncertain && !importError ? <Alert type="warning" showIcon
+          message="此案例有尚未确认的导入请求；请核对正常证据复核队列，不要重复提交。" /> : null}
         <Dragger
           accept=".csv,.txt,.xlsx"
           beforeUpload={(file) => {
@@ -727,9 +917,14 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
           fileList={filePayload ? [{ uid: 'evidence-import-file', name: filePayload.filename, status: 'done' }] : []}
           maxCount={1}
           onRemove={() => {
+            invalidatePrepared()
+            consumedRef.current = false
+            fileRef.current = null
+            mappingRef.current = {}
             setFilePayload(null)
-            setPreview(null)
-            setCommitResult(null)
+            setColumnMapping({})
+            setDetectedColumns([])
+            setFileLoading(false)
           }}
         >
           <p className="ant-upload-drag-icon">
@@ -738,7 +933,7 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
           <p className="ant-upload-text">上传 CSV / Excel</p>
           <p className="ant-upload-hint">支持 UTF-8 / UTF-8-BOM / GBK CSV 和宏禁用 XLSX。仅保存规范化后的证据项。</p>
         </Dragger>
-        {preview?.detected_columns?.length ? (
+        {detectedColumns.length ? (
           <Space direction="vertical" className="full-width" size={10}>
             <Text strong>字段映射</Text>
             <div className="evidence-import-mapping-grid">
@@ -759,20 +954,21 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
           </Space>
         ) : null}
         <Space wrap>
-          <Button disabled={!filePayload} loading={importLoading} onClick={handlePreview}>
+          <Button disabled={!filePayload || fileLoading || importLoading || consumedRef.current}
+            loading={importLoading} onClick={handlePreview}>
             预览导入结果
           </Button>
-          <Button disabled={!preview?.valid_row_count} loading={importLoading} onClick={handleCommit} type="primary">
+          <Button disabled={!preview?.valid_row_count || fileLoading || importLoading || consumedRef.current || persistenceUncertain}
+            loading={importLoading} onClick={handleCommit} type="primary">
             确认导入
           </Button>
-          <Button
-            disabled={!commitResult?.imported_count}
-            icon={<PlayCircle size={15} />}
-            onClick={() => onRunCase?.(currentCase.case_id, 'analysis')}
-          >
-            导入后运行分析
-          </Button>
+          {importScope ? <Button disabled={importLoading || persistenceUncertain || !onOpenGuidedEvidenceReview}
+            onClick={() => {
+              if (!pendingRef.current && !uncertainCasesRef.current.has(caseId)) onOpenGuidedEvidenceReview?.(importScope)
+            }}>复核本次导入的证据</Button> : null}
         </Space>
+        <Text type="secondary">CSV 小批次需先复核全部证据，再单独运行分析；导航范围不是后端授权或事实验证。</Text>
+        {importNotice ? <Alert message={importNotice} type="warning" showIcon /> : null}
         {preview ? (
           <Space direction="vertical" className="full-width" size={10}>
             <Space wrap>
@@ -802,7 +998,7 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
         ) : null}
         {commitResult ? (
           <Alert
-            message="导入完成"
+            message={persistenceUncertain ? '已收到导入回执，持久化状态尚未确认' : '导入完成'}
             description={
               <Space direction="vertical" size={6}>
                 <Space wrap>
@@ -817,7 +1013,7 @@ function EvidenceImportPanel({ currentCase, onCaseReady, onRunCase }) {
             }
             icon={<CheckCircle2 size={16} />}
             showIcon
-            type="success"
+            type={persistenceUncertain ? 'warning' : 'success'}
           />
         ) : null}
       </Space>
@@ -1735,7 +1931,8 @@ export function Cases({
       ) : null}
 
       {currentCase && !guided ? (
-        <EvidenceImportPanel currentCase={currentCase} onCaseReady={onCaseReady} onRunCase={onRunCase} />
+        <EvidenceImportPanel currentCase={currentCase} onCaseReady={onCaseReady}
+          onOpenGuidedEvidenceReview={onOpenGuidedEvidenceReview} />
       ) : null}
 
       <Card className="panel-card cases-panel">

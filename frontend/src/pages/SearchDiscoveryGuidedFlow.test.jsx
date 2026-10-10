@@ -18,6 +18,7 @@ const apiMocks = vi.hoisted(() => Object.fromEntries([
   'simulateSendNotification', 'simulateSendPendingNotifications', 'getCaseEvidenceCoverage', 'getCaseEvidenceJobs',
   'getCaseEvidenceReviewAuditSummary', 'getCaseEvidenceReviewHistory', 'getCaseEvidenceReviewQueue',
   'getCaseEvidenceReviewTimeline', 'getCaseEvidenceSummary', 'reviewCaseEvidence',
+  'previewCaseEvidenceImport', 'commitCaseEvidenceImport',
 ].map((name) => [name, vi.fn()])))
 
 vi.mock('../api/sentigraphApi.js', async (importOriginal) => ({ ...(await importOriginal()), ...apiMocks }))
@@ -42,6 +43,7 @@ vi.mock('./SearchDiscovery.jsx', async (importOriginal) => {
     })}>Open synthetic receipt</button>
     <button onClick={() => props.onOpenCase('case_b')}>Open synthetic other case</button>
     <button onClick={() => props.onOpenCase('case_manual')}>Open synthetic manual case</button>
+    <button onClick={() => props.onOpenCase('case_csv')}>Open synthetic CSV case</button>
   </div> : <actual.SearchDiscovery {...props} /> }
 })
 
@@ -242,6 +244,226 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   window.history.replaceState(null, '', '/')
+})
+
+describe('CSV small batch → existing App explicit Review → separate Run and exact current result', () => {
+  function csvFixtures(n = 1) {
+    const items = Array.from({ length: n }, (_, index) => ({ case_id: 'case_csv', evidence_id: `csv_ev_${index + 1}`,
+      normalized_content_hash: String(index + 1).repeat(64), platform: 'uploaded_dataset',
+      source_type: 'uploaded_dataset', acquisition_mode: 'user_upload', evidence_type: 'comment',
+      title: `Synthetic CSV item ${index + 1}`, body_text: null, comment_text: `Synthetic CSV public comment ${index + 1}`,
+      url: null, review_status: 'not_reviewed', trust_label: 'unverified', verification_status: 'needs_review',
+      provenance_type: 'user_upload', review_reason_codes: [], duplicate_count: 1, source_url_present: false }))
+    const base = { case_id: 'case_csv', title: 'Synthetic CSV case', keyword: 'Synthetic CSV query', status: 'draft',
+      case_revision: 0, evidence_item_count: 0, evidence_items: [], raw_posts: [], raw_comments: [],
+      raw_post_count: 0, raw_comment_count: 0, analysis_result: null, report: null, markdown_available: false,
+      analysis_revision: null, analysis_run_id: null, updated_at: '2026-10-10T00:00:00Z' }
+    const imported = { ...base, case_revision: 1, evidence_item_count: n, evidence_items: items }
+    const preview = { case_id: 'case_csv', filename: 'synthetic.csv', status: 'preview_ready', detected_format: 'csv',
+      detected_columns: ['comment_text'], column_mapping: { comment_text: 'comment_text' }, total_rows: n,
+      valid_row_count: n, duplicate_row_count: 0, skipped_row_count: 0, warnings: [],
+      preview_rows: items.map((item, index) => ({ ...item, row_number: index + 2, warnings: [] })) }
+    const receipt = { case_id: 'case_csv', filename: 'synthetic.csv', status: 'committed', detected_format: 'csv',
+      imported_count: n, total_evidence_item_count: n, duplicate_row_count: 0, skipped_row_count: 0,
+      evidence_items: items, source_distribution: {}, evidence_type_counts: {} }
+    return { base, imported, preview, receipt }
+  }
+  function configureCsv(n = 1) {
+    const value = csvFixtures(n)
+    let persisted = value.base
+    const queue = () => ({ queue_items: persisted.evidence_items })
+    apiMocks.getAnalysisCase.mockImplementation(async () => persisted)
+    apiMocks.getCase.mockImplementation(async () => persisted)
+    apiMocks.getCaseEvidenceReviewQueue.mockImplementation(async () => queue())
+    apiMocks.previewCaseEvidenceImport.mockResolvedValue(value.preview)
+    apiMocks.commitCaseEvidenceImport.mockImplementation(async () => { persisted = value.imported; return value.receipt })
+    const statuses = { approve: 'approved', reject: 'rejected', mark_weak: 'marked_weak',
+      request_more_source: 'needs_more_source', merge_duplicate: 'duplicate_merged', reset_review: 'not_reviewed' }
+    apiMocks.reviewCaseEvidence.mockImplementation(async (_, id, { decision }) => {
+      persisted = { ...persisted, case_revision: persisted.case_revision + 1,
+        evidence_items: persisted.evidence_items.map((item) => item.evidence_id === id
+          ? { ...item, review_status: statuses[decision], trust_label: decision === 'reject' ? 'rejected' : 'medium' } : item) }
+      return { summary: queue(), review_status: statuses[decision] }
+    })
+    const completed = () => ({ ...persisted, status: 'completed', analysis_revision: 15, analysis_run_id: 'run_csv15',
+      analysis_input_source: 'case_evidence_items', visualization_data: {},
+      analysis_result: { summary: 'SYNTHETIC CSV GUIDED COMPLETION', analysis_input_source: 'case_evidence_items' },
+      report: { summary: 'Synthetic CSV governed report' } })
+    apiMocks.runAnalysisCase.mockImplementation(async () => { persisted = completed(); return persisted })
+    return { ...value, completed, setPersisted: (detail) => { persisted = detail } }
+  }
+  async function importCsvAndOpenReview() {
+    controls.appHarness = true
+    window.history.replaceState(null, '', '#/demo')
+    const rendered = render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Navigate search' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open synthetic CSV case' }))
+    await waitFor(() => expect(screen.getByTestId('synthetic-opened-case').textContent).toBe('case_csv'))
+    fireEvent.click(screen.getByRole('button', { name: 'Navigate cases' }))
+    await screen.findByText('导入证据数据')
+    fireEvent.change(rendered.container.querySelector('input[type="file"]'), {
+      target: { files: [new File(['comment_text\nSynthetic public CSV comment'], 'synthetic.csv', { type: 'text/csv' })] },
+    })
+    const preview = screen.getByRole('button', { name: '预览导入结果' })
+    await waitFor(() => expect(preview.disabled).toBe(false), { timeout: 5000 })
+    expect(apiMocks.getCase).not.toHaveBeenCalled()
+    expect(apiMocks.commitCaseEvidenceImport).not.toHaveBeenCalled()
+    fireEvent.click(preview)
+    const commit = screen.getByRole('button', { name: /确认导入/ })
+    await waitFor(() => expect(commit.disabled).toBe(false), { timeout: 5000 })
+    fireEvent.click(commit)
+    const review = await screen.findByRole('button', { name: '复核本次导入的证据' })
+    expect(apiMocks.getCase).toHaveBeenCalledTimes(2)
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: '导入后运行分析' })).toBeNull()
+    act(() => { fireEvent.click(review); fireEvent.click(review) })
+    await screen.findByTestId('guided-case-review')
+    await waitFor(() => expect(csvDecision(1).disabled).toBe(false), { timeout: 5000 })
+    return rendered
+  }
+  function csvDecision(index, label = /通\s*过/) {
+    const row = screen.getAllByRole('row').find((candidate) =>
+      candidate.textContent.includes(`Synthetic CSV item ${index}`) &&
+      within(candidate).queryByRole('button', { name: label }))
+    if (!row) throw new Error(`Missing synthetic CSV Review row ${index}`)
+    return within(row).getByRole('button', { name: label })
+  }
+  async function approveCsv(index = 1) {
+    fireEvent.click(csvDecision(index))
+    await waitFor(() => expect(apiMocks.getCase).toHaveBeenCalledTimes(index + 2), { timeout: 5000 })
+    await waitFor(() => expect(csvDecision(index).disabled).toBe(false), { timeout: 5000 })
+  }
+
+  it.each([1, 2, 3])('requires every one of %i CSV rows to be reviewed, then one explicit Run', async (n) => {
+    configureCsv(n)
+    await importCsvAndOpenReview()
+    const guided = screen.getByTestId('guided-case-review')
+    expect(within(guided).getByText(`Scoped Evidence IDs: ${Array.from({ length: n }, (_, i) => `csv_ev_${i + 1}`).join(', ')}`)).toBeTruthy()
+    expect(guided.textContent).not.toMatch(/public comment|normalized_content_hash|content_base64/)
+    expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+    for (let i = 1; i <= n; i += 1) {
+      await approveCsv(i)
+      if (i < n) expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+    }
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(false), { timeout: 5000 })
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    const run = deferred()
+    apiMocks.runAnalysisCase.mockReturnValue(run.promise)
+    const result = { ...csvFixtures(n).imported, status: 'completed', analysis_revision: 15, analysis_run_id: 'run_csv15',
+      evidence_items: csvFixtures(n).imported.evidence_items.map((item) => ({ ...item, review_status: 'approved' })),
+      analysis_input_source: 'case_evidence_items', visualization_data: {},
+      analysis_result: { summary: 'SYNTHETIC CSV GUIDED COMPLETION' }, report: { summary: 'Synthetic CSV governed report' } }
+    const runButton = screen.getByRole('button', { name: 'Run analysis' })
+    act(() => { fireEvent.click(runButton); fireEvent.click(runButton) })
+    expect(apiMocks.runAnalysisCase).toHaveBeenCalledExactlyOnceWith('case_csv')
+    expect(screen.queryByText('Current guided result')).toBeNull()
+    expect(screen.getByRole('button', { name: 'View current result' }).disabled).toBe(true)
+    await act(async () => run.resolve(result))
+    await screen.findByText('Current guided result')
+    expect(screen.getByText('analysis_revision=15')).toBeTruthy()
+    expect(screen.getByText('analysis_run_id=run_csv15')).toBeTruthy()
+    expect(screen.getByText('SYNTHETIC CSV GUIDED COMPLETION')).toBeTruthy()
+    // The existing App only certifies a current pair when its report is present.
+    // The CSV panel introduces no alternate report or result controller.
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledTimes(n)
+    expect(apiMocks.runAnalysisCase).toHaveBeenCalledTimes(1)
+    for (const action of ['createAnalysisCase', 'attachCaseEvidence', 'getYouTubeOfficialApiLiveCandidates',
+      'getYouTubeOfficialApiLivePublicDiscussion', 'runCaseForecast', 'runCaseMonitoringCheck', 'getCaseMarkdownReport']) {
+      expect(apiMocks[action]).not.toHaveBeenCalled()
+    }
+  }, 20000)
+
+  it.each([
+    ['通过', 'approve', true], ['标记为弱证据', 'mark_weak', true],
+    ['驳回', 'reject', false], ['要求补充来源', 'request_more_source', false],
+    ['合并重复', 'merge_duplicate', false], ['重置', 'reset_review', false],
+  ])('inherits explicit %s decision semantics and never runs just because Review saved', async (label, decision, ready) => {
+    configureCsv(); await importCsvAndOpenReview()
+    const name = label.length === 2 ? new RegExp([...label].join('\\s*')) : label
+    const button = csvDecision(1, name)
+    act(() => { fireEvent.click(button); fireEvent.click(button) })
+    await waitFor(() => expect(apiMocks.getCase).toHaveBeenCalledTimes(3), { timeout: 5000 })
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledExactlyOnceWith('case_csv', 'csv_ev_1', {
+      decision, reviewer_label: 'local_human_reviewer', notes: undefined,
+    })
+    await waitFor(() => expect(csvDecision(1, name).disabled).toBe(false), { timeout: 5000 })
+    expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(!ready)
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    expect(screen.queryByText('Current guided result')).toBeNull()
+  }, 20000)
+
+  it('uses the full governed App path for backend record numbers 2 and 4', async () => {
+    const state = configureCsv(2)
+    state.preview.preview_rows[1].row_number = 4
+    await importCsvAndOpenReview()
+    expect(within(screen.getByTestId('guided-case-review')).getByText('Scoped Evidence IDs: csv_ev_1, csv_ev_2')).toBeTruthy()
+    await approveCsv(1)
+    expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+    await approveCsv(2)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(false))
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Run analysis' }))
+    await screen.findByText('Current guided result')
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledTimes(2)
+    expect(apiMocks.runAnalysisCase).toHaveBeenCalledExactlyOnceWith('case_csv')
+  }, 20000)
+
+  it('blocks Run until the fresh post-Review case read succeeds, not merely the decision receipt', async () => {
+    const state = configureCsv(); await importCsvAndOpenReview()
+    const readback = deferred()
+    apiMocks.getCase.mockReturnValueOnce(readback.promise)
+    fireEvent.click(csvDecision(1))
+    await waitFor(() => expect(apiMocks.getCase).toHaveBeenCalledTimes(3))
+    expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Run analysis' }))
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    const reviewed = { ...state.imported, case_revision: 2,
+      evidence_items: state.imported.evidence_items.map((item) => ({ ...item, review_status: 'approved' })) }
+    state.setPersisted(reviewed)
+    await act(async () => readback.resolve(reviewed))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(false))
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+  }, 20000)
+
+  it('a persisted Review read failure stays blocked without automatic decision or Run retry', async () => {
+    configureCsv(); await importCsvAndOpenReview()
+    apiMocks.getCase.mockRejectedValueOnce(new Error('Synthetic Review read unavailable'))
+    fireEvent.click(csvDecision(1))
+    await screen.findByText(/Review decision failed/)
+    expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledTimes(1)
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+  }, 20000)
+
+  it('does not certify an analysis receipt without the current report', async () => {
+    const state = configureCsv(); await importCsvAndOpenReview(); await approveCsv()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(false))
+    apiMocks.runAnalysisCase.mockResolvedValue({ ...state.completed(), report: null })
+    fireEvent.click(screen.getByRole('button', { name: 'Run analysis' }))
+    const casesPage = screen.getByRole('heading', { name: '分析案例', level: 2 }).closest('.page-stack')
+    expect(casesPage).not.toBeNull()
+    await within(casesPage).findByText(/The Run receipt is not a current completed result/)
+    expect(screen.queryByText('Current guided result')).toBeNull()
+    expect(apiMocks.runAnalysisCase).toHaveBeenCalledTimes(1)
+  }, 20000)
+
+  it.each([
+    ['revision', { analysis_revision: 16 }], ['run ID', { analysis_run_id: 'run_csv_other' }],
+  ])('a changed persisted %s makes the previously current CSV result stale', async (_, changed) => {
+    const state = configureCsv(); await importCsvAndOpenReview(); await approveCsv()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: 'Run analysis' }))
+    await screen.findByText('Current guided result')
+    state.setPersisted({ ...state.completed(), ...changed })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh current' }))
+    await screen.findByText('当前案例分析不再有效')
+    expect(screen.queryByText('Current guided result')).toBeNull()
+    expect(apiMocks.runAnalysisCase).toHaveBeenCalledTimes(1)
+  }, 20000)
 })
 
 describe('guided SearchDiscovery explicit creation and safe receipt navigation', () => {

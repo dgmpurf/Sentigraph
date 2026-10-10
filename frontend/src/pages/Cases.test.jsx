@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   getCase: vi.fn(),
   attachCaseEvidence: vi.fn(),
+  previewCaseEvidenceImport: vi.fn(),
+  commitCaseEvidenceImport: vi.fn(),
   getCaseEvidenceReviewQueue: vi.fn(),
   getCaseEvidenceReviewTimeline: vi.fn(),
   getCaseEvidenceReviewAuditSummary: vi.fn(),
@@ -21,7 +23,7 @@ vi.mock('../api/sentigraphApi.js', async (importOriginal) => ({
   ...apiMocks,
 }))
 
-import { Cases, EvidenceReviewQueuePanel, ManualEvidencePanel } from './Cases.jsx'
+import { Cases, EvidenceImportPanel, EvidenceReviewQueuePanel, ManualEvidencePanel } from './Cases.jsx'
 import { guidedAnalysisPair, makeGuidedEvidenceScope } from '../utils/guidedCaseFlow.js'
 
 const currentCase = { case_id: 'case_exact_audit', evidence_item_count: 1, updated_at: '2026-09-29T00:00:00Z' }
@@ -100,6 +102,342 @@ afterEach(() => {
   expect(syntheticNetworkAttempts).toBe(0)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+describe('CSV complete small-batch identity and explicit persisted Review navigation', () => {
+  const caseId = 'case_csv_synthetic', filename = 'synthetic.csv'
+  const reviewLabel = '复核本次导入的证据'
+  const previewButton = () => screen.getByRole('button', { name: '预览导入结果' })
+  const commitButton = () => screen.getByRole('button', { name: '确认导入' })
+  function fixtures(n = 1) {
+    const items = Array.from({ length: n }, (_, index) => ({
+      case_id: caseId, evidence_id: `csv_evidence_${index + 1}`, normalized_content_hash: String(index + 1).repeat(64),
+      platform: 'uploaded_dataset', source_type: 'uploaded_dataset', acquisition_mode: 'user_upload',
+      evidence_type: 'comment', title: `Synthetic CSV ${index + 1}`, body_text: null,
+      comment_text: `Synthetic public CSV comment ${index + 1}`, url: null,
+      review_status: 'not_reviewed', trust_label: 'unverified', verification_status: 'needs_review',
+      duplicate_count: 1, review_reason_codes: [],
+    }))
+    const baseline = { case_id: caseId, keyword: 'Synthetic CSV query', status: 'draft', case_revision: 0,
+      evidence_items: [], evidence_item_count: 0, raw_posts: [], raw_comments: [], raw_post_count: 0,
+      raw_comment_count: 0, analysis_result: null, report: null, markdown_available: false,
+      analysis_revision: null, analysis_run_id: null }
+    const preview = { case_id: caseId, filename, status: 'preview_ready', detected_format: 'csv',
+      detected_columns: ['platform', 'comment_text'], column_mapping: { comment_text: 'comment_text' },
+      total_rows: n, valid_row_count: n, duplicate_row_count: 0, skipped_row_count: 0, warnings: [],
+      preview_rows: items.map((item, index) => ({ ...item, row_number: index + 2, warnings: [] })) }
+    const receipt = { case_id: caseId, filename, status: 'committed', detected_format: 'csv',
+      imported_count: n, total_evidence_item_count: n, duplicate_row_count: 0, skipped_row_count: 0,
+      evidence_items: items, source_distribution: {}, evidence_type_counts: {} }
+    const persisted = { ...baseline, case_revision: 1, evidence_items: items, evidence_item_count: n }
+    return { baseline, preview, receipt, persisted }
+  }
+  function configure(value = fixtures()) {
+    apiMocks.previewCaseEvidenceImport.mockResolvedValue(value.preview)
+    apiMocks.commitCaseEvidenceImport.mockResolvedValue(value.receipt)
+    apiMocks.getCase.mockResolvedValueOnce(value.baseline).mockResolvedValue(value.persisted)
+    return value
+  }
+  function view(value = fixtures()) {
+    const callbacks = { onCaseReady: vi.fn(), onOpenGuidedEvidenceReview: vi.fn(), onRunCase: vi.fn() }
+    const rendered = render(<EvidenceImportPanel currentCase={value.baseline} {...callbacks} />)
+    return { ...callbacks, rendered }
+  }
+  async function selectFile(rendered, name = filename) {
+    const file = new File(['platform,comment_text\nuploaded_dataset,Synthetic public CSV comment'], name, { type: 'text/csv' })
+    fireEvent.change(rendered.container.querySelector('input[type="file"]'), { target: { files: [file] } })
+    await screen.findByText(name, { exact: true })
+  }
+  async function prepare(rendered) {
+    await selectFile(rendered)
+    await waitFor(() => expect(previewButton().disabled).toBe(false), { timeout: 5000 })
+    fireEvent.click(previewButton())
+    await waitFor(() => expect(commitButton().disabled).toBe(false), { timeout: 5000 })
+  }
+  async function commitSettled() {
+    await waitFor(() => expect(previewButton().classList.contains('ant-btn-loading')).toBe(false), { timeout: 5000 })
+  }
+  function expectNoReview(callbacks) {
+    expect(screen.queryByRole('button', { name: reviewLabel })).toBeNull()
+    expect(callbacks.onOpenGuidedEvidenceReview).not.toHaveBeenCalled()
+    expect(callbacks.onRunCase).not.toHaveBeenCalled()
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: '导入后运行分析' })).toBeNull()
+  }
+  function csvDeferred() {
+    let resolve, reject
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+    return { promise, resolve, reject }
+  }
+  async function changeMapping() {
+    fireEvent.mouseDown(screen.getAllByRole('combobox')[0])
+    const options = await screen.findAllByText('platform', { exact: true })
+    fireEvent.click(options.at(-1))
+  }
+
+  it('mount, file selection, focus and hover have no API or business side effects', async () => {
+    const callbacks = view()
+    await selectFile(callbacks.rendered)
+    fireEvent.focus(previewButton()); fireEvent.mouseEnter(previewButton())
+    await act(async () => {})
+    for (const mock of Object.values(apiMocks)) expect(mock).not.toHaveBeenCalled()
+    expectNoReview(callbacks)
+  })
+
+  it.each([1, 2, 3])('binds all %i new persisted IDs, never a slice, only on a separate Review click', async (n) => {
+    const value = configure(fixtures(n)), callbacks = view(value)
+    await prepare(callbacks.rendered)
+    expect(apiMocks.getCase).not.toHaveBeenCalled()
+    const frozenPreview = apiMocks.previewCaseEvidenceImport.mock.calls[0][1]
+    fireEvent.click(commitButton())
+    const review = await screen.findByRole('button', { name: reviewLabel })
+    expect(apiMocks.getCase).toHaveBeenCalledTimes(2)
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledExactlyOnceWith(caseId, {
+      ...frozenPreview, column_mapping: value.preview.column_mapping,
+    })
+    expect(apiMocks.getCase.mock.invocationCallOrder[0]).toBeLessThan(apiMocks.commitCaseEvidenceImport.mock.invocationCallOrder[0])
+    expect(callbacks.onCaseReady).toHaveBeenCalledExactlyOnceWith(value.persisted)
+    expect(callbacks.onOpenGuidedEvidenceReview).not.toHaveBeenCalled()
+    expect(callbacks.onRunCase).not.toHaveBeenCalled()
+    fireEvent.click(review)
+    const scope = callbacks.onOpenGuidedEvidenceReview.mock.calls[0][0]
+    expect(scope).toEqual(makeGuidedEvidenceScope({ case_id: caseId,
+      evidence_ids: value.persisted.evidence_items.map((item) => item.evidence_id), query: value.baseline.keyword }))
+    expect(Object.keys(scope).sort()).toEqual(['case_id', 'evidence_ids', 'query', 'step'])
+    expect(JSON.stringify(scope)).not.toMatch(/comment|normalized_content_hash|source_type|column_mapping|content_base64/)
+    expect(previewButton().disabled).toBe(true)
+    expect(commitButton().disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: '导入后运行分析' })).toBeNull()
+  })
+
+  it('single-flights Preview and Commit synchronously, including baseline and readback waits', async () => {
+    const value = configure(), callbacks = view(value), preview = csvDeferred(), baseline = csvDeferred(), post = csvDeferred()
+    apiMocks.previewCaseEvidenceImport.mockReturnValue(preview.promise)
+    apiMocks.getCase.mockReset().mockReturnValueOnce(baseline.promise).mockReturnValueOnce(post.promise)
+    await selectFile(callbacks.rendered)
+    act(() => { fireEvent.click(previewButton()); fireEvent.click(previewButton()) })
+    expect(apiMocks.previewCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    await act(async () => preview.resolve(value.preview))
+    act(() => { fireEvent.click(commitButton()); fireEvent.click(commitButton()) })
+    expect(apiMocks.getCase).toHaveBeenCalledTimes(1)
+    expect(apiMocks.commitCaseEvidenceImport).not.toHaveBeenCalled()
+    await act(async () => baseline.resolve(value.baseline))
+    await waitFor(() => expect(apiMocks.getCase).toHaveBeenCalledTimes(2))
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expectNoReview(callbacks)
+    await act(async () => post.resolve(value.persisted))
+    await screen.findByRole('button', { name: reviewLabel })
+    expect(apiMocks.previewCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([{ numbers: [2, 4] }, { numbers: [5, 10] }])('accepts parsed-record gaps $numbers without deriving IDs from row numbers', async ({ numbers }) => {
+    const value = fixtures(2)
+    value.preview.preview_rows.forEach((row, index) => { row.row_number = numbers[index] })
+    configure(value)
+    const callbacks = view(value)
+    await prepare(callbacks.rendered); fireEvent.click(commitButton())
+    fireEvent.click(await screen.findByRole('button', { name: reviewLabel }))
+    expect(callbacks.onOpenGuidedEvidenceReview).toHaveBeenCalledExactlyOnceWith(makeGuidedEvidenceScope({
+      case_id: caseId, evidence_ids: ['csv_evidence_1', 'csv_evidence_2'], query: value.baseline.keyword,
+    }))
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expect(callbacks.onRunCase).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['four rows', (value) => Object.assign(value, fixtures(4))],
+    ['hidden fourth row', (value) => { value.preview.total_rows = 4 }],
+    ['skipped row', (value) => { value.preview.skipped_row_count = 1 }],
+    ['duplicate row', (value) => { value.preview.duplicate_row_count = 1 }],
+    ['truncated preview', (value) => { value.preview.preview_rows.pop() }],
+    ['duplicate ID', (value) => { value.preview.preview_rows[1].evidence_id = value.preview.preview_rows[0].evidence_id }],
+    ['duplicate row number', (value) => { value.preview.preview_rows[1].row_number = 2 }],
+    ['header row number', (value) => { value.preview.preview_rows[0].row_number = 1 }],
+    ['noninteger record number', (value) => { value.preview.preview_rows[0].row_number = 2.5 }],
+    ['unsafe record number', (value) => { value.preview.preview_rows[1].row_number = Number.MAX_SAFE_INTEGER + 1 }],
+    ['decreasing record numbers', (value) => { value.preview.preview_rows[0].row_number = 4 }],
+    ['unsafe ID', (value) => { value.preview.preview_rows[0].evidence_id = '../foreign' }],
+    ['clipped body', (value) => { value.preview.preview_rows[0].body_text = 'x'.repeat(180) }],
+    ['error warning', (value) => { value.preview.warnings = [{ code: 'synthetic_error', severity: 'error' }] }],
+    ['non-CSV format', (value) => { value.preview.detected_format = 'xlsx' }],
+  ])('keeps %s available only through normal import and persisted Queue, not guided Run', async (_, change) => {
+    const value = fixtures(2); change(value); configure(value)
+    const callbacks = view(value)
+    await prepare(callbacks.rendered)
+    fireEvent.click(commitButton())
+    await commitSettled()
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expectNoReview(callbacks)
+    expect(screen.getByText(/请使用正常持久化证据复核队列/)).toBeTruthy()
+  })
+
+  it.each([
+    ['foreign case', (value) => { value.preview.case_id = 'case_foreign' }],
+    ['foreign file', (value) => { value.preview.filename = 'other.csv' }],
+    ['missing rows', (value) => { value.preview.preview_rows = null }],
+    ['invalid mapping', (value) => { value.preview.column_mapping = { comment_text: { raw: 'invalid' } } }],
+  ])('rejects %s preview without a Commit or automatic retry', async (_, change) => {
+    const value = fixtures(); change(value); configure(value)
+    const callbacks = view(value)
+    await selectFile(callbacks.rendered); fireEvent.click(previewButton())
+    await screen.findByText(/Import preview failed or changed context/)
+    expect(commitButton().disabled).toBe(true)
+    expect(apiMocks.commitCaseEvidenceImport).not.toHaveBeenCalled()
+    expect(apiMocks.previewCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expectNoReview(callbacks)
+  })
+
+  it.each([
+    ['preexisting Evidence', (value) => { value.baseline.evidence_items = [value.persisted.evidence_items[0]]; value.baseline.evidence_item_count = 1 }],
+    ['raw posts', (value) => { value.baseline.raw_posts = [{}]; value.baseline.raw_post_count = 1 }],
+    ['raw comments', (value) => { value.baseline.raw_comments = [{}]; value.baseline.raw_comment_count = 1 }],
+    ['completed analysis', (value) => { value.baseline.analysis_result = { summary: 'prior' } }],
+    ['old analysis identity', (value) => { value.baseline.analysis_run_id = 'prior_run' }],
+    ['non-draft case', (value) => { value.baseline.status = 'completed' }],
+    ['concurrent same-ID mutation', (value) => { value.persisted.case_revision = 2 }],
+    ['additional concurrent ID', (value) => { value.persisted.evidence_items = [...value.persisted.evidence_items, { ...value.persisted.evidence_items[0], evidence_id: 'external_id' }]; value.persisted.evidence_item_count = 2 }],
+    ['missing persisted ID', (value) => { value.persisted.evidence_items = []; value.persisted.evidence_item_count = 0 }],
+    ['ambiguous receipt ID', (value) => { value.receipt.evidence_items = [{ ...value.receipt.evidence_items[0], evidence_id: 'different_id' }] }],
+    ['foreign persisted item', (value) => { value.persisted.evidence_items = [{ ...value.persisted.evidence_items[0], case_id: 'case_foreign' }] }],
+    ['changed content', (value) => { value.persisted.evidence_items = [{ ...value.persisted.evidence_items[0], comment_text: 'Different content' }] }],
+    ['changed content hash', (value) => { value.persisted.evidence_items = [{ ...value.persisted.evidence_items[0], normalized_content_hash: 'f'.repeat(64) }] }],
+    ['wrong receipt count', (value) => { value.receipt.imported_count = 0 }],
+  ])('does not create a guided scope for %s; preserves actual normal import state', async (_, change) => {
+    const value = fixtures(); change(value); configure(value)
+    const callbacks = view(value)
+    await prepare(callbacks.rendered); fireEvent.click(commitButton()); await commitSettled()
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getCase).toHaveBeenCalledTimes(2)
+    expectNoReview(callbacks)
+    expect(screen.getByText(/未确认完整的新小批次身份/)).toBeTruthy()
+  })
+
+  it.each(['foreign baseline', 'changed query'])('does not POST after %s readback', async (kind) => {
+    const value = configure(), callbacks = view(value)
+    apiMocks.getCase.mockReset().mockResolvedValue({ ...value.baseline,
+      ...(kind === 'foreign baseline' ? { case_id: 'case_other' } : { keyword: 'Other query' }) })
+    await prepare(callbacks.rendered); fireEvent.click(commitButton())
+    await screen.findByText(/未提交导入/)
+    expect(apiMocks.commitCaseEvidenceImport).not.toHaveBeenCalled()
+    expectNoReview(callbacks)
+  })
+
+  it.each(['commit failure', 'readback failure', 'foreign receipt', 'foreign readback'])('retains unknown writes after %s without rollback, Review or resubmit', async (kind) => {
+    const value = configure(), callbacks = view(value)
+    if (kind === 'commit failure') apiMocks.commitCaseEvidenceImport.mockRejectedValue(new Error('synthetic unknown write'))
+    if (kind === 'readback failure') apiMocks.getCase.mockReset().mockResolvedValueOnce(value.baseline).mockRejectedValue(new Error('synthetic read unavailable'))
+    if (kind === 'foreign receipt') apiMocks.commitCaseEvidenceImport.mockResolvedValue({ ...value.receipt, case_id: 'case_other' })
+    if (kind === 'foreign readback') apiMocks.getCase.mockReset().mockResolvedValueOnce(value.baseline).mockResolvedValue({ ...value.persisted, case_id: 'case_other' })
+    await prepare(callbacks.rendered); fireEvent.click(commitButton())
+    await screen.findByText(/提交可能已保存/)
+    await commitSettled(); fireEvent.click(commitButton()); fireEvent.click(previewButton())
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expect(commitButton().disabled).toBe(true)
+    expectNoReview(callbacks)
+    if (kind === 'readback failure' || kind === 'foreign readback') {
+      expect(screen.getByText('imported: 1')).toBeTruthy()
+      expect(screen.getByText('已收到导入回执，持久化状态尚未确认')).toBeTruthy()
+      expect(screen.queryByText('导入完成', { exact: true })).toBeNull()
+    }
+  })
+
+  it.each(['case A→B→A', 'new file', 'mapping', 'unmount'])('ignores pending Preview after %s', async (kind) => {
+    const value = configure(), callbacks = view(value), pending = csvDeferred()
+    if (kind === 'mapping') await prepare(callbacks.rendered)
+    else await selectFile(callbacks.rendered)
+    apiMocks.previewCaseEvidenceImport.mockReturnValue(pending.promise)
+    fireEvent.click(previewButton())
+    if (kind === 'case A→B→A') {
+      callbacks.rendered.rerender(<EvidenceImportPanel currentCase={{ ...value.baseline, case_id: 'case_b' }} {...callbacks} />)
+      callbacks.rendered.rerender(<EvidenceImportPanel currentCase={value.baseline} {...callbacks} />)
+    } else if (kind === 'new file') await selectFile(callbacks.rendered, 'replacement.csv')
+    else if (kind === 'mapping') await changeMapping()
+    else callbacks.rendered.unmount()
+    await act(async () => pending.resolve(value.preview))
+    expect(apiMocks.commitCaseEvidenceImport).not.toHaveBeenCalled()
+    expect(callbacks.onCaseReady).not.toHaveBeenCalled()
+    expect(callbacks.onOpenGuidedEvidenceReview).not.toHaveBeenCalled()
+    if (kind !== 'unmount') expect(commitButton().disabled).toBe(true)
+  })
+
+  it.each(['case A→B→A', 'new file', 'mapping', 'unmount'])('invalidates pending baseline on %s before any POST', async (kind) => {
+    const value = configure(), callbacks = view(value), pending = csvDeferred()
+    apiMocks.getCase.mockReset().mockReturnValue(pending.promise)
+    await prepare(callbacks.rendered); fireEvent.click(commitButton())
+    if (kind === 'case A→B→A') {
+      callbacks.rendered.rerender(<EvidenceImportPanel currentCase={{ ...value.baseline, case_id: 'case_b' }} {...callbacks} />)
+      callbacks.rendered.rerender(<EvidenceImportPanel currentCase={value.baseline} {...callbacks} />)
+    } else if (kind === 'new file') await selectFile(callbacks.rendered, 'replacement.csv')
+    else if (kind === 'mapping') await changeMapping()
+    else callbacks.rendered.unmount()
+    await act(async () => pending.resolve(value.baseline))
+    expect(apiMocks.getCase).toHaveBeenCalledTimes(1)
+    expect(apiMocks.commitCaseEvidenceImport).not.toHaveBeenCalled()
+    expect(callbacks.onOpenGuidedEvidenceReview).not.toHaveBeenCalled()
+  })
+
+  it.each(['case A→B→A', 'new file', 'mapping', 'unmount'])('never retries an already posted import after %s', async (kind) => {
+    const value = configure(), callbacks = view(value), pending = csvDeferred()
+    apiMocks.commitCaseEvidenceImport.mockReturnValue(pending.promise)
+    await prepare(callbacks.rendered); fireEvent.click(commitButton())
+    await waitFor(() => expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1))
+    if (kind === 'case A→B→A') {
+      callbacks.rendered.rerender(<EvidenceImportPanel currentCase={{ ...value.baseline, case_id: 'case_b' }} {...callbacks} />)
+      callbacks.rendered.rerender(<EvidenceImportPanel currentCase={value.baseline} {...callbacks} />)
+    } else if (kind === 'new file') await selectFile(callbacks.rendered, 'replacement.csv')
+    else if (kind === 'mapping') await changeMapping()
+    else callbacks.rendered.unmount()
+    await act(async () => pending.resolve(value.receipt))
+    expect(apiMocks.getCase).toHaveBeenCalledTimes(1)
+    expect(apiMocks.commitCaseEvidenceImport).toHaveBeenCalledTimes(1)
+    expect(callbacks.onCaseReady).not.toHaveBeenCalled()
+    expect(callbacks.onOpenGuidedEvidenceReview).not.toHaveBeenCalled()
+    if (kind !== 'unmount') {
+      expect(screen.getByText(/此案例有尚未确认的导入请求/)).toBeTruthy()
+      expect(commitButton().disabled).toBe(true)
+    }
+  })
+
+  it('ignores a superseded file read rather than pairing an old file with the new selection', async () => {
+    const value = configure(), callbacks = view(value), readers = []
+    vi.stubGlobal('FileReader', class {
+      constructor() { readers.push(this) }
+      readAsDataURL() {}
+    })
+    const input = callbacks.rendered.container.querySelector('input[type="file"]')
+    fireEvent.change(input, { target: { files: [new File(['old'], 'old.csv', { type: 'text/csv' })] } })
+    await waitFor(() => expect(readers).toHaveLength(1))
+    fireEvent.change(callbacks.rendered.container.querySelector('input[type="file"]'), {
+      target: { files: [new File(['new'], filename, { type: 'text/csv' })] },
+    })
+    await waitFor(() => expect(readers).toHaveLength(2))
+    await act(async () => { readers[1].result = 'data:text/csv;base64,bmV3'; readers[1].onload() })
+    await act(async () => { readers[0].result = 'data:text/csv;base64,b2xk'; readers[0].onload() })
+    fireEvent.click(previewButton())
+    await waitFor(() => expect(apiMocks.previewCaseEvidenceImport).toHaveBeenCalledTimes(1))
+    expect(apiMocks.previewCaseEvidenceImport).toHaveBeenCalledWith(caseId, {
+      filename, content_base64: 'bmV3', column_mapping: {},
+    })
+    expect(apiMocks.commitCaseEvidenceImport).not.toHaveBeenCalled()
+  })
+
+  it('unmount during file read performs no Preview, Commit or callback', async () => {
+    const callbacks = view(), readers = []
+    vi.stubGlobal('FileReader', class {
+      constructor() { readers.push(this) }
+      readAsDataURL() {}
+    })
+    fireEvent.change(callbacks.rendered.container.querySelector('input[type="file"]'), {
+      target: { files: [new File(['synthetic'], filename, { type: 'text/csv' })] },
+    })
+    await waitFor(() => expect(readers).toHaveLength(1))
+    callbacks.rendered.unmount()
+    await act(async () => { readers[0].result = 'data:text/csv;base64,c3ludGhldGlj'; readers[0].onload() })
+    expect(apiMocks.previewCaseEvidenceImport).not.toHaveBeenCalled()
+    expect(apiMocks.commitCaseEvidenceImport).not.toHaveBeenCalled()
+    expect(callbacks.onCaseReady).not.toHaveBeenCalled()
+  })
 })
 
 describe('manual evidence explicit submission and exact persisted review scope', () => {
