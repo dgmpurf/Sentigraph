@@ -3,7 +3,7 @@ import { CheckCircle2, Download, FileText, Link2, PlayCircle, PlusCircle, Refres
 
 import { riskTone } from '../utils/formatters.js'
 import { getAnalysisSourceStatus } from '../utils/dataSourceStatus.js'
-import { guidedResultIsCurrent, guidedReviewReadiness } from '../utils/guidedCaseFlow.js'
+import { guidedResultIsCurrent, guidedReviewReadiness, makeGuidedEvidenceScope } from '../utils/guidedCaseFlow.js'
 import {
   attachCaseEvidence,
   commitCaseEvidenceImport,
@@ -228,20 +228,73 @@ function evidenceImportPayload(filePayload, columnMapping) {
   }
 }
 
-function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
+// A cumulative attach receipt is not itself a newly-added-item receipt.
+// Bind only a unique manual ID shared by both fresh persisted deltas.
+function manualEvidenceScope(baseline, receipt, persisted, caseId, submittedItem) {
+  const ids = (detail) => {
+    if (detail?.case_id !== caseId || !Array.isArray(detail.evidence_items)) return null
+    const items = detail.evidence_items
+    if (items.some((item) => item?.case_id !== caseId ||
+        typeof item.evidence_id !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(item.evidence_id))) return null
+    const set = new Set(items.map((item) => item.evidence_id))
+    return set.size === items.length ? set : null
+  }
+  const before = ids(baseline), attached = ids(receipt), after = ids(persisted)
+  if (!before || !attached || !after || receipt.status !== 'attached' ||
+      [...before].some((id) => !attached.has(id) || !after.has(id)) ||
+      attached.size !== after.size || [...attached].some((id) => !after.has(id))) return null
+  const added = [...after].filter((id) => !before.has(id))
+  if (added.length !== 1) return null
+  const newItem = persisted.evidence_items.find((item) => item.evidence_id === added[0])
+  const receiptItem = receipt.evidence_items.find((item) => item.evidence_id === added[0])
+  if (newItem.acquisition_mode !== 'manual_url' || receiptItem.acquisition_mode !== 'manual_url') return null
+  // An unrelated concurrent addition must not become "this submission" merely
+  // because it is the only new ID. Compare locally; navigation carries IDs only.
+  if ([newItem, receiptItem].some((item) => ['platform', 'source_type', 'evidence_type',
+    'url', 'source_url', 'title', 'body_text', 'comment_text']
+    .some((field) => trimValue(item[field]) !== trimValue(submittedItem[field])))) return null
+  return makeGuidedEvidenceScope({ case_id: caseId, evidence_ids: added, query: persisted.keyword })
+}
+
+export function ManualEvidencePanel({ currentCase, onCaseReady, onOpenGuidedEvidenceReview }) {
   const [form] = Form.useForm()
   const [manualLoading, setManualLoading] = useState(false)
   const [manualError, setManualError] = useState('')
   const [manualResult, setManualResult] = useState(null)
+  const [manualScope, setManualScope] = useState(null)
+  const [manualNotice, setManualNotice] = useState('')
+  const [persistenceUncertain, setPersistenceUncertain] = useState(false)
+  const pendingRef = useRef(false)
+  const uncertainRef = useRef(false)
+  const contextEpoch = useRef(0)
+  const caseId = currentCase?.case_id
+
+  useEffect(() => {
+    contextEpoch.current += 1
+    pendingRef.current = false
+    uncertainRef.current = false
+    setManualLoading(false)
+    setManualError('')
+    setManualResult(null)
+    setManualScope(null)
+    setManualNotice('')
+    setPersistenceUncertain(false)
+    form.resetFields()
+    return () => { contextEpoch.current += 1 }
+  }, [caseId, form])
 
   if (!currentCase?.case_id) return null
 
-  const latestEvidence = manualResult?.evidence_items?.[manualResult.evidence_items.length - 1]
+  const latestEvidence = manualScope
+    ? manualResult?.evidence_items?.find((item) => item.evidence_id === manualScope.evidence_ids[0]) : null
   const manualSummary = buildEvidenceSummary(manualResult?.evidence_items || [])
 
   const handleAttach = async (values) => {
+    if (!caseId || pendingRef.current || uncertainRef.current) return
     setManualError('')
     setManualResult(null)
+    setManualScope(null)
+    setManualNotice('')
     const title = trimValue(values.title)
     const bodyText = trimValue(values.body_text)
     const commentText = trimValue(values.comment_text)
@@ -293,9 +346,25 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
       },
     }
 
+    pendingRef.current = true
+    const epoch = contextEpoch.current
+    const isCurrent = () => contextEpoch.current === epoch
+    let postStarted = false
+    setManualScope(null)
+    setManualNotice('')
     setManualLoading(true)
     try {
-      const result = await attachCaseEvidence(currentCase.case_id, {
+      const baseline = await getCase(caseId)
+      if (!isCurrent()) return
+      if (baseline?.case_id !== caseId || !Array.isArray(baseline.evidence_items) ||
+          baseline.evidence_items.some((item) => item?.case_id !== caseId ||
+            typeof item.evidence_id !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(item.evidence_id)) ||
+          new Set(baseline.evidence_items.map((item) => item.evidence_id)).size !== baseline.evidence_items.length) {
+        setManualError('无法确认当前案例的持久化证据基线；未提交证据。')
+        return
+      }
+      postStarted = true
+      const result = await attachCaseEvidence(caseId, {
         source: {
           platform,
           source_type: sourceType,
@@ -308,14 +377,32 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
         },
         evidence_items: [evidenceItem],
       })
+      if (!isCurrent()) return
+      const refreshedCase = await getCase(caseId)
+      if (!isCurrent()) return
+      if (result?.case_id !== caseId || result.status !== 'attached' || refreshedCase?.case_id !== caseId) {
+        throw new Error('Persisted manual Evidence identity is not confirmed.')
+      }
       setManualResult(result)
-      const refreshedCase = await getCase(currentCase.case_id)
+      const scope = manualEvidenceScope(baseline, result, refreshedCase, caseId, evidenceItem)
+      setManualScope(scope)
+      if (!scope) setManualNotice('已保存，但无法唯一确认本次新增证据；请在正常证据复核队列中核对。')
       onCaseReady?.(refreshedCase)
       form.resetFields()
     } catch (error) {
-      setManualError(error?.response?.data?.detail?.message || error?.message || 'Manual evidence attach failed.')
+      if (!isCurrent()) return
+      if (postStarted) {
+        uncertainRef.current = true
+        setPersistenceUncertain(true)
+        setManualError('提交可能已保存，但尚未完成持久化确认；请在正常证据复核队列中核对，不要重复提交。')
+      } else {
+        setManualError('无法读取当前案例的持久化证据基线；未提交证据。')
+      }
     } finally {
-      setManualLoading(false)
+      if (isCurrent()) {
+        pendingRef.current = false
+        setManualLoading(false)
+      }
     }
   }
 
@@ -345,7 +432,8 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
           showIcon
           type="info"
         />
-        {manualError ? <Alert message="手动证据添加失败" description={manualError} type="error" showIcon /> : null}
+        {manualError ? <Alert message={persistenceUncertain ? '手动证据持久化尚未确认' : '手动证据未提交'}
+          description={manualError} type="error" showIcon /> : null}
         <Form
           form={form}
           initialValues={{
@@ -431,21 +519,24 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
             Screenshot/transcribed evidence is not automatically verified by Sentigraph.
           </Text>
           <Space wrap>
-            <Button htmlType="submit" icon={<PlusCircle size={15} />} loading={manualLoading} type="primary">
+            <Button htmlType="submit" icon={<PlusCircle size={15} />} loading={manualLoading}
+              disabled={persistenceUncertain} type="primary">
               添加到案例
             </Button>
-            <Button
-              disabled={!manualResult?.evidence_item_count && !currentCase.evidence_item_count}
-              icon={<PlayCircle size={15} />}
-              onClick={() => onRunCase?.(currentCase.case_id, 'analysis')}
-            >
-              添加后运行分析
-            </Button>
+            {manualScope ? (
+              <Button disabled={manualLoading || !onOpenGuidedEvidenceReview}
+                onClick={() => {
+                  if (!pendingRef.current && !uncertainRef.current) onOpenGuidedEvidenceReview?.(manualScope)
+                }}>
+                复核本次新增证据
+              </Button>
+            ) : null}
           </Space>
         </Form>
+        {manualNotice ? <Alert message={manualNotice} showIcon type="warning" /> : null}
         {manualResult ? (
           <Alert
-            message="手动证据已添加"
+            message={manualScope ? '手动证据已添加' : '手动提交已保存，新增身份待核对'}
             description={
               <Space direction="vertical" size={6}>
                 <Space wrap>
@@ -470,7 +561,7 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
                   <Tag color="gold">acquisition_mode=manual_url</Tag>
                 </Space>
                 {latestEvidence ? (
-                  <Text type="secondary">Latest evidence: {evidenceTextPreview(latestEvidence)}</Text>
+                  <Text type="secondary">本次新增证据: {evidenceTextPreview(latestEvidence)}</Text>
                 ) : null}
                 {manualResult.warnings?.length ? (
                   <Space wrap size={[4, 4]}>
@@ -483,7 +574,7 @@ function ManualEvidencePanel({ currentCase, onCaseReady, onRunCase }) {
             }
             icon={<CheckCircle2 size={16} />}
             showIcon
-            type="success"
+            type={manualScope ? 'success' : 'info'}
           />
         ) : null}
       </Space>
@@ -1369,6 +1460,7 @@ export function Cases({
   onOpenCaseReport,
   onRefreshCases,
   onRunCase,
+  onOpenGuidedEvidenceReview,
   onOpenCase,
   onNavigate,
   guidedCaseFlow,
@@ -1638,7 +1730,8 @@ export function Cases({
       ) : null}
 
       {currentCase && !guided ? (
-        <ManualEvidencePanel currentCase={currentCase} onCaseReady={onCaseReady} onRunCase={onRunCase} />
+        <ManualEvidencePanel key={currentCase.case_id} currentCase={currentCase} onCaseReady={onCaseReady}
+          onOpenGuidedEvidenceReview={onOpenGuidedEvidenceReview} />
       ) : null}
 
       {currentCase && !guided ? (

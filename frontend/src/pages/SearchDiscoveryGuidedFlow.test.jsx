@@ -6,7 +6,7 @@ import { makeGuidedEvidenceScope } from '../utils/guidedCaseFlow.js'
 
 const controls = vi.hoisted(() => ({ appHarness: false }))
 const apiMocks = vi.hoisted(() => Object.fromEntries([
-  'attachSearchDiscoveryCandidates', 'attachYouTubeOfficialApiReviewedPublicDiscussion', 'createAnalysisCase',
+  'attachCaseEvidence', 'attachSearchDiscoveryCandidates', 'attachYouTubeOfficialApiReviewedPublicDiscussion', 'createAnalysisCase',
   'getAnalysisCase', 'getCase', 'getExternalCollectorStatus', 'getExternalCollectorDiscovery',
   'getMockSearchDiscoveryCandidates', 'getSearchDiscoveryProviders', 'getYouTubeOfficialApiLiveCandidates',
   'getYouTubeOfficialApiLivePublicDiscussion', 'getYouTubeOfficialApiMockCandidates',
@@ -41,6 +41,7 @@ vi.mock('./SearchDiscovery.jsx', async (importOriginal) => {
       case_id: 'case_a', evidence_ids: ['ev_a'], query: 'Synthetic A', body_text: 'must-discard',
     })}>Open synthetic receipt</button>
     <button onClick={() => props.onOpenCase('case_b')}>Open synthetic other case</button>
+    <button onClick={() => props.onOpenCase('case_manual')}>Open synthetic manual case</button>
   </div> : <actual.SearchDiscovery {...props} /> }
 })
 
@@ -69,6 +70,93 @@ const ATTACH = { case_id: 'case_a', video_id: 'current_001', status: 'attached',
   review_binding_mode: 'selected_item_v1', safe_mode: { server_side_refetch: true } }
 const QUEUE_ITEM = { ...CASE_A.evidence_items[0], title: 'Synthetic review row', platform: 'youtube',
   review_reason_codes: [], duplicate_count: 1, source_url_present: true }
+
+// These are synthetic API replacements, not real service/browser E2E evidence.
+// Manual attach returns the cumulative EvidenceIngestionResult, not a SearchDiscovery receipt.
+const MANUAL_OLD_ITEM = { case_id: 'case_manual', evidence_id: 'ev_existing',
+  review_status: 'approved', trust_label: 'medium', verification_status: 'source_url_provided_unverified',
+  source_type: 'public_web', provenance_type: 'manual_url', acquisition_mode: 'manual_url',
+  evidence_type: 'comment', duplicate_count: 1, source_url_present: true }
+const MANUAL_NEW_ITEM = { ...MANUAL_OLD_ITEM, evidence_id: 'ev_manual_new',
+  review_status: 'not_reviewed',
+  title: null, comment_text: null, platform: 'manual_url',
+  body_text: 'Synthetic user-provided body stays out of navigation',
+  url: 'https://example.invalid/synthetic-public-evidence',
+  source_url: 'https://example.invalid/synthetic-public-evidence',
+  user_attestation_required: true,
+  user_attestation_text: 'Synthetic lawful-source attestation', review_reason_codes: ['manual_needs_review'] }
+const MANUAL_BASE_CASE = { case_id: 'case_manual', title: 'Synthetic manual case',
+  keyword: 'Synthetic manual query', status: 'draft', updated_at: '2026-10-10T00:00:00Z',
+  evidence_item_count: 1, evidence_items: [MANUAL_OLD_ITEM] }
+const MANUAL_CACHED_CASE = { ...MANUAL_BASE_CASE,
+  evidence_items: [{ ...MANUAL_OLD_ITEM, evidence_id: 'ev_cached_only' }] }
+const MANUAL_ATTACHED_CASE = { ...MANUAL_BASE_CASE, updated_at: '2026-10-10T00:01:00Z',
+  evidence_item_count: 2, evidence_items: [MANUAL_OLD_ITEM, MANUAL_NEW_ITEM] }
+const MANUAL_ATTACH_RECEIPT = { case_id: 'case_manual', status: 'attached', evidence_item_count: 2,
+  evidence_items: MANUAL_ATTACHED_CASE.evidence_items,
+  source_distribution: { public_web: 2 }, evidence_type_counts: { comment: 2 }, warnings: [] }
+
+function manualReviewedCase(itemPatch = {}) {
+  return { ...MANUAL_ATTACHED_CASE, updated_at: '2026-10-10T00:02:00Z', evidence_items: [
+    MANUAL_OLD_ITEM, { ...MANUAL_NEW_ITEM, review_status: 'approved', ...itemPatch },
+  ] }
+}
+function manualCompletedCase() {
+  return { ...manualReviewedCase(), status: 'completed', analysis_revision: 7, analysis_run_id: 'run_manual7',
+    analysis_input_source: 'case_evidence_items',
+    analysis_result: { summary: 'SYNTHETIC MANUAL GUIDED COMPLETION', analysis_input_source: 'case_evidence_items' },
+    report: { summary: 'Synthetic manual governed report' }, visualization_data: {} }
+}
+function configureManualApi(reviewedCase = manualReviewedCase()) {
+  let persistedCase = MANUAL_BASE_CASE
+  const queueSummary = () => ({ queue_items: persistedCase.evidence_items
+    .filter((item) => item.evidence_id === 'ev_manual_new') })
+  apiMocks.getAnalysisCase.mockResolvedValueOnce(MANUAL_CACHED_CASE)
+    .mockImplementation(async () => persistedCase)
+  apiMocks.getCase.mockImplementation(async () => persistedCase)
+  apiMocks.getCaseEvidenceReviewQueue.mockImplementation(async () => queueSummary())
+  apiMocks.attachCaseEvidence.mockImplementation(async () => {
+    persistedCase = MANUAL_ATTACHED_CASE
+    return MANUAL_ATTACH_RECEIPT
+  })
+  apiMocks.reviewCaseEvidence.mockImplementation(async () => {
+    persistedCase = reviewedCase
+    return { summary: queueSummary(), review_status: 'approved' }
+  })
+  apiMocks.runAnalysisCase.mockResolvedValue(manualCompletedCase())
+  return { setPersisted: (value) => { persistedCase = value } }
+}
+async function openManualHarnessCase() {
+  controls.appHarness = true
+  window.history.replaceState(null, '', '#/demo')
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Navigate search' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Open synthetic manual case' }))
+  await waitFor(() => expect(screen.getByTestId('synthetic-opened-case').textContent).toBe('case_manual'))
+  fireEvent.click(screen.getByRole('button', { name: 'Navigate cases' }))
+  await screen.findByPlaceholderText('https://example.com/public-post')
+}
+function fillManualEvidence() {
+  fireEvent.change(screen.getByPlaceholderText('https://example.com/public-post'), {
+    target: { value: MANUAL_NEW_ITEM.source_url },
+  })
+  fireEvent.change(screen.getByPlaceholderText('手动粘贴公开正文、摘要或视频描述'), {
+    target: { value: MANUAL_NEW_ITEM.body_text },
+  })
+  fireEvent.click(screen.getByRole('checkbox', { name: '我确认该证据来源合法，且有权提交用于分析' }))
+}
+async function submitAndOpenManualReview() {
+  await openManualHarnessCase()
+  fillManualEvidence()
+  fireEvent.click(screen.getByRole('button', { name: /添加到案例/ }))
+  const reviewButton = await screen.findByRole('button', { name: '复核本次新增证据' })
+  await waitFor(() => expect(reviewButton.disabled).toBe(false))
+  expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+  expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+  fireEvent.click(reviewButton)
+  await screen.findByTestId('guided-case-review')
+  await screen.findByRole('button', { name: /通\s*过/ })
+}
 
 function deferred() {
   let resolve, reject
@@ -404,4 +492,235 @@ describe('App guided case integration with synthetic API replacements', () => {
     expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
     expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
   })
+})
+
+describe('manual Evidence → existing App Review → explicit Run with synthetic API replacements', () => {
+  it('requires explicit submit, fresh baseline, attach, persisted scope, Review readback and separate single-flight Run', async () => {
+    const state = configureManualApi()
+    const baseline = deferred(), attachment = deferred(), attachedReadback = deferred()
+    const decision = deferred(), reviewedReadback = deferred(), run = deferred()
+    apiMocks.getCase.mockReturnValueOnce(baseline.promise).mockReturnValueOnce(attachedReadback.promise)
+      .mockReturnValueOnce(reviewedReadback.promise)
+    apiMocks.attachCaseEvidence.mockReturnValue(attachment.promise)
+    apiMocks.reviewCaseEvidence.mockReturnValue(decision.promise)
+    apiMocks.runAnalysisCase.mockReturnValue(run.promise)
+
+    await openManualHarnessCase()
+    fillManualEvidence()
+    const submit = screen.getByRole('button', { name: /添加到案例/ })
+    fireEvent.focus(submit)
+    fireEvent.mouseEnter(submit)
+    expect(apiMocks.getCase).not.toHaveBeenCalled()
+    expect(apiMocks.attachCaseEvidence).not.toHaveBeenCalled()
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: '添加后运行分析' })).toBeNull()
+
+    act(() => { fireEvent.submit(submit.closest('form')); fireEvent.submit(submit.closest('form')) })
+    await waitFor(() => expect(apiMocks.getCase).toHaveBeenCalledExactlyOnceWith('case_manual'))
+    expect(apiMocks.attachCaseEvidence).not.toHaveBeenCalled()
+    await act(async () => baseline.resolve(MANUAL_BASE_CASE))
+    await waitFor(() => expect(apiMocks.attachCaseEvidence).toHaveBeenCalledTimes(1))
+    const [caseId, payload] = apiMocks.attachCaseEvidence.mock.calls[0]
+    expect(caseId).toBe('case_manual')
+    expect(payload.evidence_items).toHaveLength(1)
+    expect(payload.evidence_items[0]).toMatchObject({ body_text: MANUAL_NEW_ITEM.body_text,
+      verification_status: 'needs_review', acquisition_mode: 'manual_url',
+      raw_data_safe: { no_url_fetch: true, no_scraping: true } })
+    expect(payload.source).toMatchObject({ credential_present: false, access_scope: 'manual_url_user_provided' })
+    expect(apiMocks.getCase.mock.invocationCallOrder[0])
+      .toBeLessThan(apiMocks.attachCaseEvidence.mock.invocationCallOrder[0])
+
+    state.setPersisted(MANUAL_ATTACHED_CASE)
+    await act(async () => attachment.resolve(MANUAL_ATTACH_RECEIPT))
+    await waitFor(() => expect(apiMocks.getCase).toHaveBeenCalledTimes(2))
+    const prematureReview = screen.queryByRole('button', { name: '复核本次新增证据' })
+    expect(prematureReview === null || prematureReview.disabled).toBe(true)
+    expect(screen.queryByTestId('guided-case-review')).toBeNull()
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    await act(async () => attachedReadback.resolve(MANUAL_ATTACHED_CASE))
+    const openReview = await screen.findByRole('button', { name: '复核本次新增证据' })
+    await waitFor(() => expect(openReview.disabled).toBe(false))
+    expect(apiMocks.getAnalysisCase).toHaveBeenCalledTimes(1)
+    act(() => { fireEvent.click(openReview); fireEvent.click(openReview) })
+    await screen.findByTestId('guided-case-review')
+    await screen.findByRole('button', { name: /通\s*过/ })
+    expect(apiMocks.getAnalysisCase).toHaveBeenCalledTimes(2)
+    expect(apiMocks.getAnalysisCase).toHaveBeenLastCalledWith('case_manual')
+    const guidedPanel = screen.getByTestId('guided-case-review')
+    expect(within(guidedPanel).getByText('Scoped Evidence IDs: ev_manual_new')).toBeTruthy()
+    expect(guidedPanel.textContent).not.toMatch(/ev_existing|ev_cached_only|Synthetic user-provided body/)
+    expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+
+    const approve = screen.getByRole('button', { name: /通\s*过/ })
+    act(() => { fireEvent.click(approve); fireEvent.click(approve) })
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledExactlyOnceWith('case_manual', 'ev_manual_new', {
+      decision: 'approve', reviewer_label: 'local_human_reviewer', notes: undefined,
+    })
+    expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Run analysis' }))
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    await act(async () => decision.resolve({ summary: { queue_items: [{ ...MANUAL_NEW_ITEM, review_status: 'approved' }] },
+      review_status: 'approved' }))
+    await waitFor(() => expect(apiMocks.getCase).toHaveBeenCalledTimes(3))
+    expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    const reviewed = manualReviewedCase()
+    state.setPersisted(reviewed)
+    await act(async () => reviewedReadback.resolve(reviewed))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(false))
+    expect(apiMocks.reviewCaseEvidence.mock.invocationCallOrder[0])
+      .toBeLessThan(apiMocks.getCase.mock.invocationCallOrder[2])
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+
+    const runButton = screen.getByRole('button', { name: 'Run analysis' })
+    act(() => { fireEvent.click(runButton); fireEvent.click(runButton) })
+    expect(apiMocks.runAnalysisCase).toHaveBeenCalledExactlyOnceWith('case_manual')
+    expect(runButton.disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'View current result' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: /通\s*过/ }).disabled).toBe(true)
+    expect(screen.queryByText('Current guided result')).toBeNull()
+    await act(async () => run.resolve(manualCompletedCase()))
+    await screen.findByText('Current guided result')
+    expect(screen.getByText('case_id=case_manual')).toBeTruthy()
+    expect(screen.getByText('analysis_revision=7')).toBeTruthy()
+    expect(screen.getByText('analysis_run_id=run_manual7')).toBeTruthy()
+    expect(screen.getByText('SYNTHETIC MANUAL GUIDED COMPLETION')).toBeTruthy()
+    expect(apiMocks.attachCaseEvidence).toHaveBeenCalledTimes(1)
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledTimes(1)
+    expect(apiMocks.runAnalysisCase).toHaveBeenCalledTimes(1)
+    for (const action of ['createAnalysisCase', 'attachSearchDiscoveryCandidates',
+      'attachYouTubeOfficialApiReviewedPublicDiscussion', 'getYouTubeOfficialApiLiveCandidates',
+      'getYouTubeOfficialApiLivePublicDiscussion', 'runCaseForecast', 'runCaseMonitoringCheck',
+      'enableCaseMonitoring', 'disableCaseMonitoring', 'getCaseMarkdownReport']) {
+      expect(apiMocks[action]).not.toHaveBeenCalled()
+    }
+  }, 15000)
+
+  it('does not attribute a concurrent external manual addition to a submitted duplicate of existing evidence', async () => {
+    const state = configureManualApi()
+    const ownExistingItem = { ...MANUAL_NEW_ITEM, evidence_id: MANUAL_OLD_ITEM.evidence_id,
+      review_status: 'approved' }
+    const baseline = { ...MANUAL_BASE_CASE, evidence_items: [ownExistingItem] }
+    const externalItem = { ...MANUAL_NEW_ITEM, evidence_id: 'ev_external_manual_new',
+      body_text: 'Different synthetic manual evidence concurrently submitted by another actor' }
+    const persisted = { ...MANUAL_ATTACHED_CASE, evidence_items: [ownExistingItem, externalItem] }
+    const receipt = { ...MANUAL_ATTACH_RECEIPT, evidence_items: persisted.evidence_items,
+      deduplication_summary: { duplicate_items: 1 } }
+    apiMocks.getCase.mockResolvedValueOnce(baseline).mockResolvedValueOnce(persisted)
+    apiMocks.attachCaseEvidence.mockImplementation(async () => {
+      state.setPersisted(persisted)
+      return receipt
+    })
+
+    await openManualHarnessCase()
+    fillManualEvidence()
+    fireEvent.click(screen.getByRole('button', { name: /添加到案例/ }))
+    await screen.findByText(/无法唯一确认本次新增证据/)
+    expect(apiMocks.getCase).toHaveBeenCalledTimes(2)
+    expect(apiMocks.attachCaseEvidence).toHaveBeenCalledTimes(1)
+    expect(apiMocks.attachCaseEvidence.mock.calls[0][1].evidence_items[0]).toMatchObject({
+      title: null, comment_text: null, body_text: ownExistingItem.body_text,
+    })
+    expect(screen.queryByRole('button', { name: '复核本次新增证据' })).toBeNull()
+    expect(screen.queryByText('手动证据已添加')).toBeNull()
+    expect(screen.queryByTestId('guided-case-review')).toBeNull()
+    expect(apiMocks.getAnalysisCase).toHaveBeenCalledTimes(1)
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+  })
+
+  it('does not attribute concurrent identical text from a different URL to this submitted duplicate', async () => {
+    const state = configureManualApi()
+    const ownExistingItem = { ...MANUAL_NEW_ITEM, evidence_id: MANUAL_OLD_ITEM.evidence_id,
+      review_status: 'approved' }
+    const baseline = { ...MANUAL_BASE_CASE, evidence_items: [ownExistingItem] }
+    const externalItem = { ...MANUAL_NEW_ITEM, evidence_id: 'ev_external_manual_same_text',
+      url: 'https://example.invalid/synthetic-other-public-evidence',
+      source_url: 'https://example.invalid/synthetic-other-public-evidence' }
+    const persisted = { ...MANUAL_ATTACHED_CASE, evidence_items: [ownExistingItem, externalItem] }
+    const receipt = { ...MANUAL_ATTACH_RECEIPT, evidence_items: persisted.evidence_items,
+      deduplication_summary: { duplicate_items: 1 } }
+    apiMocks.getCase.mockResolvedValueOnce(baseline).mockResolvedValueOnce(persisted)
+    apiMocks.attachCaseEvidence.mockImplementation(async () => {
+      state.setPersisted(persisted)
+      return receipt
+    })
+
+    await openManualHarnessCase()
+    fillManualEvidence()
+    fireEvent.click(screen.getByRole('button', { name: /添加到案例/ }))
+    await screen.findByText(/无法唯一确认本次新增证据/)
+    const submitted = apiMocks.attachCaseEvidence.mock.calls[0][1].evidence_items[0]
+    expect(submitted).toMatchObject({ title: null, body_text: externalItem.body_text,
+      comment_text: null, platform: 'manual_url', source_type: 'public_web', evidence_type: 'comment',
+      url: MANUAL_NEW_ITEM.url, source_url: MANUAL_NEW_ITEM.source_url })
+    expect(externalItem.url).not.toBe(submitted.url)
+    expect(apiMocks.getCase).toHaveBeenCalledTimes(2)
+    expect(apiMocks.attachCaseEvidence).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: '复核本次新增证据' })).toBeNull()
+    expect(screen.queryByText('手动证据已添加')).toBeNull()
+    expect(screen.queryByTestId('guided-case-review')).toBeNull()
+    expect(apiMocks.getAnalysisCase).toHaveBeenCalledTimes(1)
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['missing scoped evidence', { ...MANUAL_ATTACHED_CASE, evidence_item_count: 1, evidence_items: [MANUAL_OLD_ITEM] },
+      'missing_or_mismatched_evidence'],
+    ['rejected scoped evidence', manualReviewedCase({ review_status: 'rejected', trust_label: 'rejected',
+      verification_status: 'rejected' }), 'no_usable_evidence'],
+    ['merged duplicate only', manualReviewedCase({ review_status: 'duplicate_merged' }), 'no_usable_evidence'],
+  ])('does not Run when persisted Review readback has %s', async (_, readback, reason) => {
+    configureManualApi(readback)
+    await submitAndOpenManualReview()
+    fireEvent.click(screen.getByRole('button', { name: /通\s*过/ }))
+    await waitFor(() => expect(apiMocks.getCase).toHaveBeenCalledTimes(3))
+    await screen.findByText(new RegExp(`readiness=${reason}`))
+    const runButton = screen.getByRole('button', { name: 'Run analysis' })
+    expect(runButton.disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'View current result' }).disabled).toBe(true)
+    fireEvent.click(runButton)
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Current guided result')).toBeNull()
+  })
+
+  it('failed Review persisted readback cannot promote a saved approval or automatically retry', async () => {
+    configureManualApi()
+    await submitAndOpenManualReview()
+    apiMocks.getCase.mockRejectedValueOnce(new Error('Synthetic persisted readback unavailable'))
+    fireEvent.click(screen.getByRole('button', { name: /通\s*过/ }))
+    await screen.findByText(/Review decision failed/)
+    expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(true)
+    expect(apiMocks.reviewCaseEvidence).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getCase).toHaveBeenCalledTimes(3)
+    expect(apiMocks.runAnalysisCase).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['revision', { analysis_revision: 8 }],
+    ['run ID', { analysis_run_id: 'run_manual_other' }],
+  ])('a fresh read changing only the %s does not certify the earlier successful current-result pair', async (_, changedPair) => {
+    const state = configureManualApi()
+    await submitAndOpenManualReview()
+    fireEvent.click(screen.getByRole('button', { name: /通\s*过/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run analysis' }).disabled).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: 'Run analysis' }))
+    await screen.findByText('Current guided result')
+    state.setPersisted({ ...manualCompletedCase(), ...changedPair })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh current' }))
+    await screen.findByText('当前案例分析不再有效')
+    expect(screen.queryByText('Current guided result')).toBeNull()
+    expect(apiMocks.getAnalysisCase).toHaveBeenCalledTimes(3)
+    expect(apiMocks.getAnalysisCase).toHaveBeenLastCalledWith('case_manual')
+    expect(apiMocks.runAnalysisCase).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Navigate cases' }))
+    await screen.findByTestId('guided-case-review')
+    expect(screen.getByRole('button', { name: 'View current result' }).disabled).toBe(true)
+    expect(apiMocks.runAnalysisCase).toHaveBeenCalledTimes(1)
+  }, 15000)
 })
