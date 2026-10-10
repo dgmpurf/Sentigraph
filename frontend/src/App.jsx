@@ -162,6 +162,7 @@ function App() {
   const guidedRunPendingRef = useRef(false)
   const guidedReviewPendingRef = useRef(false)
   const caseOpenEpochRef = useRef(0)
+  const caseReportLoadingEpochRef = useRef(null)
   const guidedMountedRef = useRef(true)
   const [markdownReport, setMarkdownReport] = useState(null)
   const [markdownLoading, setMarkdownLoading] = useState(false)
@@ -196,6 +197,12 @@ function App() {
   const publishGuidedFlow = useCallback((flow) => {
     guidedFlowRef.current = flow
     setGuidedCaseFlow(flow)
+  }, [])
+
+  const settleCaseReportLoading = useCallback(() => {
+    if (caseReportLoadingEpochRef.current === null) return
+    caseReportLoadingEpochRef.current = null
+    if (guidedMountedRef.current) setLoading(false)
   }, [])
 
   const platformOptions = useMemo(() => {
@@ -357,6 +364,8 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       guidedOperationEpochRef.current += 1
+      caseOpenEpochRef.current += 1
+      settleCaseReportLoading()
       setCurrentHash(window.location.hash)
       const nextPage = pageFromHash()
       if (nextPage !== 'dashboard') {
@@ -365,7 +374,7 @@ function App() {
     }
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
-  }, [])
+  }, [settleCaseReportLoading])
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
@@ -613,6 +622,7 @@ function App() {
 
   const handleOpenCase = useCallback(async (caseId) => {
     const epoch = ++caseOpenEpochRef.current
+    settleCaseReportLoading()
     const mayRefreshReviewReadback = !guidedReviewPendingRef.current
     guidedOperationEpochRef.current += 1
     if (guidedFlowRef.current?.scope.case_id !== caseId) {
@@ -638,7 +648,7 @@ function App() {
     } catch {
       if (caseOpenEpochRef.current === epoch) setError('Unable to open the selected case.')
     }
-  }, [applyCaseDetail, loadCaseMonitoring, publishGuidedFlow, refreshCases])
+  }, [applyCaseDetail, loadCaseMonitoring, publishGuidedFlow, refreshCases, settleCaseReportLoading])
 
   const handleCaseReady = useCallback(async (caseDetail, receipt = {}) => {
     if (!caseDetail?.case_id) return
@@ -655,17 +665,37 @@ function App() {
   }, [applyCaseDetail, loadCaseMonitoring, refreshCases, publishGuidedFlow])
 
   const handleOpenCaseReport = useCallback(async (caseId) => {
+    const epoch = ++caseOpenEpochRef.current
+    guidedOperationEpochRef.current += 1
+    caseReportLoadingEpochRef.current = epoch
+    const isCurrent = () => guidedMountedRef.current && caseOpenEpochRef.current === epoch
     setLoading(true)
     setError('')
     try {
       const caseDetail = await getAnalysisCase(caseId)
+      if (!isCurrent()) return null
+      if (caseDetail?.case_id !== caseId) {
+        setError('The selected case report response does not match the requested case.')
+        return null
+      }
       applyCaseDetail(caseDetail)
-      await loadCaseMonitoring(caseDetail.case_id)
+      const expectedIdentity = caseAnalysisIdentity(caseDetail)
+      try {
+        await loadCaseMonitoring(caseDetail.case_id)
+      } catch {
+        // Monitoring is auxiliary; its failure must not hide a valid persisted report.
+      }
+      if (!isCurrent() || caseAnalysisIdentity(currentCaseRef.current) !== expectedIdentity) return null
       setActivePage('summary')
-    } catch (requestError) {
-      setError(requestError?.message || 'Unable to open the selected case report.')
+      return caseDetail
+    } catch {
+      if (isCurrent()) setError('Unable to open the selected case report.')
+      return null
     } finally {
-      setLoading(false)
+      if (guidedMountedRef.current && caseReportLoadingEpochRef.current === epoch) {
+        caseReportLoadingEpochRef.current = null
+        setLoading(false)
+      }
     }
   }, [applyCaseDetail, loadCaseMonitoring])
 
@@ -916,6 +946,7 @@ function App() {
   const handleNavigate = useCallback((pageKey, hashOverride = null) => {
     guidedOperationEpochRef.current += 1
     caseOpenEpochRef.current += 1
+    settleCaseReportLoading()
     const hashByPage = {
       publicDemoGuide: '#/demo',
       publicEventPlaza: '#/public-events',
@@ -936,7 +967,7 @@ function App() {
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
     }
     setActivePage(pageKey)
-  }, [])
+  }, [settleCaseReportLoading])
 
   const appTheme = useMemo(
     () => ({
