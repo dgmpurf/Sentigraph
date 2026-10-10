@@ -217,6 +217,79 @@ describe('EvidenceReviewQueuePanel exact persisted-item history', () => {
     expect(screen.queryByText('Synthetic preview only', { exact: false })).not.toBeNull()
   })
 
+  it('preserves delegated audit attribution without claiming personal inspection', async () => {
+    const note = 'Authorized delegated mark_weak; the user did not personally inspect this evidence item.'
+    const entry = {
+      ...reviewEntry(), decision: 'mark_weak', new_review_status: 'marked_weak',
+      reason_code: 'decision:mark_weak', reviewer_label: 'local_human_reviewer', note,
+    }
+    apiMocks.getCaseEvidenceReviewTimeline.mockResolvedValue({
+      ...emptyCaseTimeline, entries: [entry], total_review_events: 1,
+    })
+    apiMocks.getCaseEvidenceReviewHistory.mockResolvedValue({
+      ...emptyExactTimeline, entries: [entry], total_review_events: 1,
+    })
+    await renderReviewPanel()
+    await screen.findByText(note)
+    expect(screen.getByText('local_human_reviewer').textContent).toBe('local_human_reviewer')
+    expect(apiMocks.getCaseEvidenceReviewHistory).not.toHaveBeenCalled()
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+    const notice = screen.getByText(/Review history records explicit decisions/).textContent
+    expect(notice).toContain('authorized delegated actions')
+    expect(notice).toContain('Recorded reviewer labels do not verify identity')
+    expect(notice).toContain('does not prove the user personally inspected the evidence')
+    expect(notice).toContain('Official API provenance does not certify factual truth')
+    expect(screen.queryByText(/Audit records only capture human review decisions/)).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText(/Optional audit note/), { target: { value: 'Unsaved synthetic note' } })
+    fireEvent.click(screen.getByRole('button', { name: 'View review history' }))
+    await waitFor(() => expect(screen.getAllByText(note)).toHaveLength(2))
+    expect(screen.getAllByText('local_human_reviewer')).toHaveLength(2)
+    expect(screen.getAllByText('mark_weak')).toHaveLength(2)
+    expect(screen.getAllByRole('columnheader', { name: 'Recorded reviewer label' })).toHaveLength(2)
+    expect(apiMocks.getCaseEvidenceReviewHistory).toHaveBeenCalledExactlyOnceWith(currentCase.case_id, evidenceId)
+    expect(apiMocks.getCaseEvidenceReviewTimeline).toHaveBeenCalledExactlyOnceWith(currentCase.case_id)
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['absent', undefined], ['null', null], ['empty', ''], ['blank', '   '],
+  ])('shows an %s reviewer label neutrally in both history views', async (_, reviewerLabel) => {
+    const entry = { ...reviewEntry(), reviewer_label: reviewerLabel }
+    if (reviewerLabel === undefined) delete entry.reviewer_label
+    apiMocks.getCaseEvidenceReviewTimeline.mockResolvedValue({
+      ...emptyCaseTimeline, entries: [entry], total_review_events: 1,
+    })
+    apiMocks.getCaseEvidenceReviewHistory.mockResolvedValue({
+      ...emptyExactTimeline, entries: [entry], total_review_events: 1,
+    })
+    await renderReviewPanel()
+    await screen.findByText('Not recorded')
+    expect(screen.queryByText('local_human_reviewer')).toBeNull()
+    expect(apiMocks.getCaseEvidenceReviewHistory).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'View review history' }))
+    await waitFor(() => expect(screen.getAllByText('Not recorded')).toHaveLength(2))
+    expect(screen.queryByText('local_human_reviewer')).toBeNull()
+    expect(apiMocks.getCaseEvidenceReviewHistory).toHaveBeenCalledExactlyOnceWith(currentCase.case_id, evidenceId)
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+  })
+
+  it('displays a nonblank recorded reviewer label exactly as stored', async () => {
+    const reviewerLabel = '  delegated reviewer  '
+    const entry = { ...reviewEntry(), reviewer_label: reviewerLabel }
+    apiMocks.getCaseEvidenceReviewTimeline.mockResolvedValue({
+      ...emptyCaseTimeline, entries: [entry], total_review_events: 1,
+    })
+    apiMocks.getCaseEvidenceReviewHistory.mockResolvedValue({
+      ...emptyExactTimeline, entries: [entry], total_review_events: 1,
+    })
+    await renderReviewPanel()
+    expect((await screen.findByText('delegated reviewer')).textContent).toBe(reviewerLabel)
+    fireEvent.click(screen.getByRole('button', { name: 'View review history' }))
+    await waitFor(() => expect(screen.getAllByText('delegated reviewer')).toHaveLength(2))
+    expect(screen.getAllByText('delegated reviewer').map((label) => label.textContent)).toEqual([reviewerLabel, reviewerLabel])
+    expect(apiMocks.reviewCaseEvidence).not.toHaveBeenCalled()
+  })
+
   it('shows loading, then a valid empty history distinct from missing evidence', async () => {
     let resolveHistory
     apiMocks.getCaseEvidenceReviewHistory.mockReturnValue(new Promise((resolve) => { resolveHistory = resolve }))

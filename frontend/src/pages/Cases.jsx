@@ -1042,12 +1042,12 @@ export function EvidenceReviewQueuePanel({ currentCase, onCaseReady, onReviewPen
       ),
     },
     {
-      title: 'Reviewer',
+      title: 'Recorded reviewer label',
       key: 'reviewer',
       width: 190,
       render: (_, record) => (
         <Space direction="vertical" size={3}>
-          <Text>{record.reviewer_label || 'local_human_reviewer'}</Text>
+          <Text>{typeof record.reviewer_label === 'string' && record.reviewer_label.trim() ? record.reviewer_label : 'Not recorded'}</Text>
           <Text type="secondary">{formatDate(record.reviewed_at)}</Text>
         </Space>
       ),
@@ -1162,7 +1162,7 @@ export function EvidenceReviewQueuePanel({ currentCase, onCaseReady, onReviewPen
         ) : null}
         <Alert
           message="Review history / audit timeline"
-          description="Audit records only capture human review decisions. They do not mean the platform officially verified the evidence. The system does not fetch URLs or use AI to verify screenshot authenticity."
+          description="Review history records explicit decisions, including authorized delegated actions. Recorded reviewer labels do not verify identity; a decision or label does not prove the user personally inspected the evidence. Official API provenance does not certify factual truth or platform verification. The system does not fetch URLs or use AI to verify screenshot authenticity."
           showIcon
           type="info"
         />
